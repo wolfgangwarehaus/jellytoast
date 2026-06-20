@@ -27,16 +27,23 @@
 
 ## Install
 
-| Platform | How |
-| --- | --- |
-| **Ubuntu / Debian** (22.04+ / 12+) | Download the `.deb` from [Releases](https://github.com/wolfgangwarehaus/jellytoast/releases/latest), then `sudo apt install ./jellytoast_*_amd64.deb` |
-| **Windows 10/11** (x64) | Installer or portable zip from [Releases](https://github.com/wolfgangwarehaus/jellytoast/releases). The build is unsigned, so SmartScreen warns on first run — click **More info → Run anyway** (verify the download's SHA256 against `SHA256SUMS`). |
-| **PyPI** (any OS) | `pipx install jellytoast` |
-| **From source** (any OS) | Python 3.11+, Qt 6, libmpv — see below |
+### Windows 10/11 (x64)
 
-> **Other channels:** **winget** — submitted, pending review. **AUR** — in progress, paused until the AUR reopens new-account registration.
+- **winget:** `winget install wolfgangwarehaus.jellytoast`
+- **Installer or portable zip** from [Releases](https://github.com/wolfgangwarehaus/jellytoast/releases) — the direct download is unsigned, so SmartScreen warns on first run; click **More info → Run anyway** (verify the SHA256 against `SHA256SUMS`).
+- **Microsoft Store** — coming soon.
 
-From source (any platform with Python 3.11+, Qt 6, libmpv):
+### Linux
+
+- **Ubuntu / Debian / Mint** (22.04+ / 12+): download the `.deb` from [Releases](https://github.com/wolfgangwarehaus/jellytoast/releases/latest), then `sudo apt install ./jellytoast_*_amd64.deb`
+- **AppImage** (any distro, no install needed) — coming soon.
+- **AUR** — coming soon.
+
+### Any OS
+
+- **PyPI:** `pipx install jellytoast`
+
+**From source** (Python 3.11+, Qt 6, libmpv):
 
 ```bash
 git clone https://github.com/wolfgangwarehaus/jellytoast.git
