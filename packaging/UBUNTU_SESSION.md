@@ -75,8 +75,9 @@ The spec header *intends* "libmpv intentionally NOT bundled," but nothing strips
 what PyInstaller's auto-scan drags in. *(Note: the stray bundled
 `_internal/libmpv.so.1` from the 22.04 build is dead weight — python-mpv never
 loads it by path — not the cause.)* **→ Fixed in PR #148** (strips libmpv's
-host-provided dep closure from the Linux bundle; fix direction proven locally,
-pending a full `.deb` rebuild on CI). CI's frozen smoke test never caught BUG-1
+host-provided dep closure from the Linux bundle; merged + shipped in v0.1.1. The
+fix direction was proven locally; an end-to-end launch of the rebuilt `.deb` on a
+newer distro is still pending — round-2 checklist in `UBUNTU_SESSION_2.md`). CI's frozen smoke test never caught BUG-1
 because it boots the bundle on the **same 22.04** it was built on, where the
 bundled libs still match the system.
 
@@ -176,7 +177,7 @@ this box. Wayland is unaffected (uses the `wayland` plugin). The `.deb` should
 add **`libxcb-cursor0`** to `Depends` (it bundles the xcb plugin but not this
 runtime dlopen dep) so X11/XWayland sessions work; pipx users need it installed
 system-wide. Lower severity than BUG-1 (Wayland is the Ubuntu default).
-**→ Fixed in PR #149** (adds `libxcb-cursor0` to the deb's `Depends`).
+**→ Fixed in PR #149** (adds `libxcb-cursor0` to the deb's `Depends`; merged + shipped in v0.1.1).
 
 **BUG-3 (AirPlay 2 discovery — import-lock deadlock on Python 3.14, degraded).**
 `cast_manager/_airplay.py:discover_airplay()` runs `_probe()` on a pool worker,
@@ -188,7 +189,7 @@ falls back to the AirPlay-1 zeroconf path, so impact is **degraded AirPlay 2
 discovery, not fatal** — and likely **3.14-specific** (the `.deb` bundles Python
 **3.12**, so the primary path probably isn't affected; needs confirming). Fix
 direction: serialize the discovery gateways' cold imports. **→ Fixed in PR #151**
-— one shared `cold_import_lock` in `async_io`, held (double-checked) around the
+(merged + shipped in v0.1.1) — one shared `cold_import_lock` in `async_io`, held (double-checked) around the
 cold import in all four lazy gateways (`airplay2.is_available`,
 `cast_manager._ensure_chromecast`, `cast.sonos._ensure_soco`,
 `cast.dlna.codec._ensure_async_upnp`). Reproduced 40/40, serialized 0/60, and
