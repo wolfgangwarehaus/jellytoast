@@ -21,7 +21,7 @@
   <Identity
       Name="wolfgangwarehaus.jellytoast"
       Publisher="CN=C9FAE1C4-4DEA-4550-8A71-969C88BABEB6"
-      Version="0.1.0.0"
+      Version="1.0.0.0"
       ProcessorArchitecture="x64" />
 
   <Properties>

@@ -196,6 +196,11 @@ reboot, confirm it doesn't.
 
 ## Partner Center submission (first time, manual)
 
+> **Use [`STORE-SUBMISSION.md`](STORE-SUBMISSION.md) for the authoritative,
+> paste-ready submission walkthrough** — every Partner Center field, verified,
+> with the build pre-flight and the pre-submission gates. The notes below are
+> the original outline.
+
 1. **Register** the free individual developer account
    (https://partner.microsoft.com → Windows & Xbox) — government ID + selfie,
    personal Microsoft account (not a work/Entra account). $0, no credit card.
@@ -221,8 +226,10 @@ reboot, confirm it doesn't.
    you use."* So:
    - Properties → **provide your own license terms** = the GPL (paste the text
      or link `https://github.com/wolfgangwarehaus/jellytoast/blob/v0.1.0/LICENSE`).
-   - **Convey the Store build specifically under GPL-2.0** (the `-or-later`
-     permits this) to avoid GPLv3 anti-tivoization friction with app-store DRM.
+   - **Convey the Store build under GPL-3.0-or-later.** The bundled PySide6
+     (LGPL-3.0/GPL-3.0) makes GPL-2.0-only conveyance license-incompatible; the
+     `-or-later` grant is what permits taking the combined binary to v3 (see
+     `docs/LICENSING.md`). The project *source* stays GPL-2.0-or-later.
    - **Source offer** (GPL §3): in the listing description, link the exact
      tagged source for the published version, e.g.
      `Source for this build: https://github.com/wolfgangwarehaus/jellytoast/tree/v0.1.0`.

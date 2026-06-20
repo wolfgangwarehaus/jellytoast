@@ -20,7 +20,7 @@ then Track B.
 
 ---
 
-## Track A — winget submission (do this first)
+## Track A — winget submission ✅ DONE (winget install is live)
 The manifests in `packaging/winget/` are already pointed at the live
 **v0.1.1** `setup.exe` (URL + sha256 from the release `SHA256SUMS`). Steps:
 - [x] **Validate the published installer on real Windows** — SHA256 verified,
@@ -31,14 +31,13 @@ The manifests in `packaging/winget/` are already pointed at the live
       has a bug with spaces in paths; run from `C:\Temp\wg-validate` or any
       space-free copy. Fixed root cause with `.gitattributes eol=lf` (CRLF
       from Windows git autocrlf was breaking the YAML scanner). ✅ 2026-06-18
-- [ ] `winget install --manifest packaging\winget` — needs
-      `winget settings --enable LocalManifestFiles` (admin elevation); skip if
-      you trust the SHA256-verified direct install above.
-- [x] Submit: `wingetcreate submit --prtitle "Add jellytoast v0.1.1" --token $(gh auth token) --no-open C:\Temp\wg-validate`
-      ✅ 2026-06-18 — user ran command; PR submitted to microsoft/winget-pkgs
-      (their CI runs sandbox install + SmartScreen checks; respond to any bot
-      feedback when the PR lands).
-- [ ] On merge, `winget install jellytoast` works globally.
+- [x] **winget is LIVE.** v0.1.0 PR microsoft/winget-pkgs#389422 merged
+      2026-06-18; v0.1.1 PR #390782 merged 2026-06-20 (full validation pipeline
+      passed). `winget install wolfgangwarehaus.jellytoast` → 0.1.1 works
+      globally. (The earlier "v0.1.1 submitted 6-18" note was WRONG — that
+      submission never produced a PR; #390782 via `wingetcreate update` was the
+      real one.)
+- [x] Future bumps: `wingetcreate update wolfgangwarehaus.jellytoast --version <v> --urls <setup.exe> --submit --token (gh auth token)` (`manifests/` is gitignored scratch).
 
 > If the `.exe` validation **fails**, stop and report back — both winget and the
 > direct-download channel depend on that same Inno build.
@@ -124,8 +123,9 @@ The manifests in `packaging/winget/` are already pointed at the live
 - [ ] Rebuild + repack with the **real** Identity (Phase 1) — no self-sign needed for upload
 - [ ] **runFullTrust justification** — paste the paragraph from README §"Partner Center"
 - [ ] **License terms = the GPL** (App Developer Agreement FOSS carve-out): supply
-      your own terms = `https://github.com/wolfgangwarehaus/jellytoast/blob/v0.1.0/LICENSE`;
-      convey the Store build under **GPL-2.0** (the `-or-later` permits it)
+      your own terms; convey the Store build under **GPL-3.0-or-later** (the
+      bundled PySide6 forces it — GPL-2.0-only is incompatible; see
+      `docs/LICENSING.md`). Paste-ready text in `STORE-SUBMISSION.md`.
 - [ ] **Source offer** (GPL §3): in the listing description, link
       `https://github.com/wolfgangwarehaus/jellytoast/tree/v0.1.0`
 - [ ] **Privacy policy URL** (required for Win32 apps) — reuse the Flathub one
@@ -143,6 +143,11 @@ release pipeline signs automatically. (Note: signing shows your verified name
 - [ ] Wire the `msstore` CLI + `microsoft/microsoft-store-apppublisher` action
       into `release.yml` for automated **updates** (free products only; first
       submission must be manual). See README §"Updates later".
+- [ ] **ARM64 native build** (future, separate track): Partner Center shows an
+      advisory that AArch32 support is being dropped — we're x64 (runs via
+      emulation on ARM64 Windows, which is fine for now). Native ARM64 requires:
+      ARM64 Python build + ARM64 libmpv-2.dll + PyInstaller on ARM64 hardware →
+      then ship an `.msixbundle` with both x64 + arm64 slices.
 
 ---
 
