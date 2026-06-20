@@ -11,11 +11,11 @@ this file's git history.
 > closure, #164 — also means v0.1.0/0.1.1 `.deb`s were broken on X11), plus the
 > release-readiness review fixes (P0 Jellyfin null-field crash, fresh-install
 > credential-perm leak, download-drain on server-switch, cast/offline/UI). Channels:
-> **PyPI** deferred (manual `twine` — only 0.1.0 is live; v0.1.1 was missed →
-> recommend setting up **Trusted Publishing** so it auto-publishes). **AUR**
-> deferred (registration still frozen). **Flathub** ⛔ never (dropped). **AppImage**
-> → 0.1.3. **winget + MSIX/Store** → PR #146 (`needs:windows`), commented with the
-> 0.1.2 installer URL+SHA. Publish worklist: `packaging/RELEASE_v0.1.2_PUBLISH.md`.
+> **PyPI 0.1.2 LIVE** via **Trusted Publishing** (#167 `pypi-publish.yml`, OIDC — no
+> token; future releases auto-publish on `release: published`). **AUR** deferred
+> (registration still frozen). **Flathub** ⛔ never (dropped). **AppImage** → 0.1.3.
+> **winget + MSIX/Store** → PR #146 (`needs:windows`), commented with the 0.1.2
+> installer URL+SHA. Publish worklist: `packaging/RELEASE_v0.1.2_PUBLISH.md`.
 
 > **2026-06-20 — packaging-channels round.** **winget LIVE** (v0.1.0 + v0.1.1
 > merged to microsoft/winget-pkgs; `winget install wolfgangwarehaus.jellytoast`).

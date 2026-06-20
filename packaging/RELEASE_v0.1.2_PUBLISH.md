@@ -63,13 +63,14 @@ when done. If a channel blocks, leave a PR comment so the next instance sees it.
       `…/releases/tag/v0.1.2`.
 - [x] Download URL resolves: `…/v0.1.2/jellytoast_0.1.2_amd64.deb` → HTTP 200.
 
-## 2. PyPI  *(manual — CI only runs `twine check`, never uploads)*
+## 2. PyPI  ✅ **DONE — via Trusted Publishing (no token)**
 
-- [ ] Build from the tag (or reuse the release's `.whl` + `.tar.gz`):
-      `python -m build` → `dist/jellytoast-0.1.2*`.
-- [ ] `python -m twine check dist/*` (must pass — same gate as `ci.yml`).
-- [ ] `python -m twine upload dist/jellytoast-0.1.2*` (needs the PyPI token).
-- [ ] Verify: `pipx install jellytoast==0.1.2` (or `pip index versions jellytoast`).
+Superseded the manual `twine` flow: **#167** added `.github/workflows/pypi-publish.yml`
+(OIDC Trusted Publishing). 0.1.2 was published by `gh workflow run pypi-publish.yml
+-f tag=v0.1.2` (run 27882715944, success).
+- [x] **0.1.2 live on PyPI** (`pypi.org/project/jellytoast` → 0.1.0, 0.1.2).
+- [x] **Future releases auto-publish** on `release: published` — no token, no more
+      missed versions (0.1.1 was the last manual miss).
 
 ## 3. AUR  *(first real publish — PKGBUILD is still at 0.1.0, never pushed)*
 
