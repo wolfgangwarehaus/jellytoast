@@ -26,12 +26,18 @@ DEBIAN_FRONTEND=noninteractive apt-get install -y -qq \
   python3 xvfb desktop-file-utils appstream >/dev/null
 
 # ── dependency guards ───────────────────────────────────────────────────
-# The bundled Qt xcb plugin hard-links cursor0 + icccm4 + keysyms1, and
-# libQt6Gui hard-links libGL; installing the .deb must pull ALL of them.
-for dep in libxcb-cursor0 libxcb-icccm4 libxcb-keysyms1 libgl1; do
+# Installing the .deb must pull the COMPLETE DT_NEEDED closure of the bundled Qt
+# xcb plugin + libQt6Gui (enumerated by readelf; see build_deb.sh). The boot
+# probe below is the authoritative test — this loop just fast-fails with a clear
+# name if Depends drifts out of sync with what the plugin links.
+for dep in \
+  libx11-6 libx11-xcb1 libxcb1 libxcb-cursor0 libxcb-icccm4 libxcb-image0 \
+  libxcb-keysyms1 libxcb-randr0 libxcb-render0 libxcb-render-util0 libxcb-shape0 \
+  libxcb-shm0 libxcb-sync1 libxcb-util1 libxcb-xfixes0 libxcb-xkb1 \
+  libxkbcommon0 libxkbcommon-x11-0 libgl1; do
   dpkg -s "$dep" >/dev/null
 done
-echo "OK: Qt runtime deps present (libxcb-cursor0/icccm4/keysyms1, libgl1)"
+echo "OK: full Qt xcb DT_NEEDED closure present"
 # One libmpv alternative must be installed (the audio stack comes from the host).
 dpkg -s libmpv2 >/dev/null 2>&1 || dpkg -s libmpv1 >/dev/null 2>&1
 echo "OK: a libmpv alternative is installed"

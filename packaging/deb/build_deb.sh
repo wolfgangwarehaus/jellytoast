@@ -11,17 +11,19 @@
 # The bundled Qt links several system libs that PyInstaller does NOT bundle and
 # that aren't pulled in transitively by libmpv, so they're explicit Depends.
 #
-# ⚠️ INCOMPLETE — the xcb plugin's DT_NEEDED closure below still has a gap: the
-# v0.1.2 release smoke test boots the xcb plugin under Xvfb and it ABORTS, so at
-# least one more libxcb-*/X/xkbcommon lib is missing here. Enumerate the WHOLE
-# closure (readelf -d) and declare it all — see packaging/deb/XCB_DEPS_WORKLIST.md.
-#   libxcb-cursor0, libxcb-icccm4, libxcb-keysyms1 — all hard DT_NEEDED of the
-#     bundled Qt "xcb" platform plugin (libqxcb.so / libQt6XcbQpa.so.6). Without
-#     ALL THREE, an X11/XWayland session aborts at startup ("could not load the
-#     Qt platform plugin xcb"). libxcb-cursor0 alone (Qt 6.5+'s documented need)
-#     is NOT enough — icccm4/keysyms1 are equally hard-linked and aren't deps of
-#     cursor0. (Wayland sessions use the bundled wayland plugin and need none of
-#     these, but we can't know the session at install time.)
+# The X/xcb set is the COMPLETE DT_NEEDED closure of the bundled Qt "xcb" platform
+# plugin (libqxcb.so) + its support lib (libQt6XcbQpa.so.6), enumerated with
+#   readelf -d .../PySide6/Qt/{plugins/platforms/libqxcb.so,lib/libQt6XcbQpa.so.6}
+# from the pyside6-essentials 6.11 manylinux wheel CI bundles. Earlier releases
+# declared only cursor0/icccm4/keysyms1 — incomplete: the rest happen to be present
+# on a normal desktop (pulled by mesa/X) but NOT on a minimal install, so an
+# X11/XWayland session aborts at startup ("could not load the Qt platform plugin
+# xcb"). Declaring the whole closure makes a clean install launch anywhere.
+# (Wayland sessions use the bundled wayland plugin and need none of these, but we
+# can't know the session at install time, so they're hard Depends.) See
+# packaging/deb/XCB_DEPS_WORKLIST.md — VERIFY this set in a minimal container
+# (the smoke test) before release; readelf gives the closure, the container proves
+# nothing's missing.
 #   libgl1 — hard DT_NEEDED of the bundled libQt6Gui.so.6 (every session); not
 #     bundled and not pulled by libmpv2 (which depends on glvnd libegl1 only,
 #     and EGL doesn't drag in GL). Without it the app aborts at Qt startup.
@@ -120,7 +122,7 @@ Version: $VERSION
 Architecture: amd64
 Maintainer: wolfgangwarehaus <augustvontrips@gmail.com>
 Installed-Size: $INSTALLED_SIZE
-Depends: libmpv2 | libmpv1, libxcb-cursor0, libxcb-icccm4, libxcb-keysyms1, libgl1
+Depends: libmpv2 | libmpv1, libx11-6, libx11-xcb1, libxcb1, libxcb-cursor0, libxcb-icccm4, libxcb-image0, libxcb-keysyms1, libxcb-randr0, libxcb-render0, libxcb-render-util0, libxcb-shape0, libxcb-shm0, libxcb-sync1, libxcb-util1, libxcb-xfixes0, libxcb-xkb1, libxkbcommon0, libxkbcommon-x11-0, libgl1
 Recommends: ffmpeg, libnotify-bin
 Section: sound
 Priority: optional

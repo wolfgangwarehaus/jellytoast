@@ -1,9 +1,15 @@
 # `.deb` xcb dependency fix — Ubuntu session worklist
 
-**Open this on the Ubuntu box (Docker + a real X11 session available) and work
-top to bottom.** This PR sorts out the Linux `.deb`'s Qt `xcb` platform-plugin
-dependencies *properly* — the whole `DT_NEEDED` class at once, not one lib at a
-time.
+**Open this on the Ubuntu box (Docker + a real X11 session available).** This PR
+sorts out the Linux `.deb`'s Qt `xcb` platform-plugin dependencies *properly* —
+the whole `DT_NEEDED` class at once, not one lib at a time.
+
+> ✅ **The complete closure is already declared.** `build_deb.sh`'s `Depends` was
+> extended to the full `readelf -d` closure of the `pyside6-essentials 6.11`
+> wheel's `libqxcb.so` + `libQt6XcbQpa.so.6` (done off-box, no container needed).
+> **This session is now VERIFICATION, not discovery** — build + smoke across the
+> three distro containers + boot on a real X11 session, confirm green. Re-derive
+> (steps 1–4 below) only if it still fails or PySide6 was bumped.
 
 ## The bug
 
