@@ -70,13 +70,24 @@ jobs:
       # reproduce the BUG-1 (libmpv host-lib shadowing) + BUG-2 (libxcb-cursor0)
       # checks. The frozen smoke test above runs on 22.04 where the bundled libs
       # still match the host, so it can't catch these — this can.
-      - name: Smoke-test the .deb on Ubuntu 24.04 (BUG-1/BUG-2 regression guard)
-        run: docker run --rm -v "$PWD:/src:ro" ubuntu:24.04 bash /src/packaging/deb/smoke_test_deb.sh
+      - name: Smoke-test the .deb across distros (BUG-1/BUG-2 regression guard)
+        run: |
+          # Cover the prior LTS, the newer LTS that actually surfaced BUG-1
+          # (26.04), and Debian — the bundle's host-lib + Qt-plugin deps differ
+          # across all three.
+          for img in ubuntu:24.04 ubuntu:26.04 debian:stable; do
+            echo "::group::smoke $img"
+            docker run --rm -v "$PWD:/src:ro" "$img" bash /src/packaging/deb/smoke_test_deb.sh
+            echo "::endgroup::"
+          done
       - name: Lint the .deb (lintian, advisory)
+        # Non-blocking, but DON'T swallow the exit code with `|| true` — that
+        # would also hide the "step failed" annotation, leaving lint fully blind.
+        # continue-on-error keeps the job green while still surfacing new tags.
         continue-on-error: true
         run: |
           sudo apt-get install -y lintian
-          lintian --no-tag-display-limit dist/*.deb || true
+          lintian --no-tag-display-limit dist/*.deb
       - uses: actions/upload-artifact@v7
         with:
           name: deb

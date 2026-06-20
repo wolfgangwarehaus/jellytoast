@@ -1,0 +1,145 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>jellytoast — Privacy Policy</title>
+<meta name="description" content="Privacy policy for jellytoast, a desktop music player for Jellyfin and Navidrome servers. No developer analytics or telemetry; optional scrobbling sends play history to the service you connect.">
+<meta name="robots" content="index, follow">
+<meta property="og:title" content="jellytoast — Privacy Policy">
+<meta property="og:description" content="The jellytoast developer collects nothing — no analytics or telemetry. Optional features you enable (scrobbling, radio cover art) contact services you choose.">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://wolfgangwarehaus.com/jellytoast/privacy.html">
+<link rel="icon" href="jellytoast.svg" type="image/svg+xml">
+<link rel="canonical" href="https://wolfgangwarehaus.com/jellytoast/privacy.html">
+<style>
+  :root {
+    --jelly: #7C66D0;
+    --jelly-bright: #9D8AE8;
+    --crust: #6B4221;
+    --bread: #EAD0A3;
+    --bg: #141218;
+    --panel: rgba(255,255,255,0.045);
+    --panel-border: rgba(255,255,255,0.09);
+    --text: #ECEAF2;
+    --dim: #A8A3B8;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background:
+      radial-gradient(1100px 500px at 70% -10%, rgba(124,102,208,0.22), transparent 60%),
+      radial-gradient(800px 400px at 10% 110%, rgba(224,164,76,0.10), transparent 60%),
+      var(--bg);
+    color: var(--text);
+    font: 16px/1.6 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    min-height: 100vh;
+  }
+  .wrap { max-width: 760px; margin: 0 auto; padding: 64px 24px; }
+  header { text-align: center; margin-bottom: 48px; }
+  header a { display: inline-block; text-decoration: none; }
+  header img { width: 88px; height: 88px; filter: drop-shadow(0 8px 28px rgba(124,102,208,0.35)); }
+  h1 { font-size: 2.2rem; letter-spacing: -0.02em; margin: 16px 0 6px; }
+  .updated { color: var(--dim); font-size: 0.92rem; }
+
+  .lead {
+    background: var(--panel); border: 1px solid var(--panel-border);
+    border-radius: 14px; padding: 22px 24px; margin-bottom: 36px;
+    color: var(--text); font-size: 1.05rem;
+  }
+
+  h2 { font-size: 1.32rem; margin: 40px 0 10px; letter-spacing: -0.01em; }
+  p { color: var(--dim); margin: 10px 0; }
+  ul { color: var(--dim); margin: 10px 0 10px 1.25rem; }
+  li { margin: 8px 0; }
+  a { color: var(--jelly-bright); }
+  a:hover { color: var(--text); }
+  strong { color: var(--text); font-weight: 600; }
+  code {
+    background: rgba(255,255,255,0.07); border-radius: 6px; padding: 2px 7px;
+    font: 0.88em ui-monospace, "Cascadia Code", monospace; color: var(--jelly-bright);
+    overflow-wrap: anywhere;
+  }
+
+  footer { margin-top: 56px; text-align: center; color: var(--dim); font-size: 0.88rem; }
+  footer a { color: var(--dim); }
+  footer a:hover { color: var(--text); }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <a href="./" aria-label="Back to the jellytoast home page">
+      <img src="jellytoast.svg" alt="jellytoast logo — toast with a jelly blob">
+    </a>
+    <h1>Privacy Policy</h1>
+    <p class="updated">jellytoast desktop music player · Last updated 20 June 2026</p>
+  </header>
+
+  <p class="lead">
+    jellytoast is a desktop music player. The developer collects nothing — no
+    analytics, telemetry, crash reporting, or advertising, and no data is ever
+    sent to the jellytoast developer. The app communicates only with the servers
+    and services you configure, as described below.
+  </p>
+
+  <h2>What the app stores locally on your device</h2>
+  <ul>
+    <li>Your Jellyfin or Navidrome server address and login credentials — stored
+      in your system keychain (Windows Credential Manager on Windows,
+      libsecret / KWallet on Linux). Never uploaded anywhere.</li>
+    <li>Playback queue, settings, and download cache — stored in your user
+      profile on this device only (<code>%LOCALAPPDATA%\jellytoast</code> on
+      Windows, <code>~/.local/share/jellytoast</code> on Linux).</li>
+  </ul>
+
+  <h2>Network connections</h2>
+  <p>
+    jellytoast connects to the media server URL you configure to stream your
+    music. No data is sent to the app developer. Optional cast features
+    (Chromecast, DLNA, AirPlay, Sonos, Snapcast) connect directly to devices on
+    your local network.
+  </p>
+
+  <h2>Third-party services (only when you enable them)</h2>
+  <p>
+    Some optional features contact services other than your media server, and
+    only when you turn them on or use them. None of this data ever reaches the
+    jellytoast developer:
+  </p>
+  <ul>
+    <li><strong>Scrobbling</strong> — if you connect a scrobble account,
+      jellytoast sends your playback history (artist, track, album, timestamp)
+      to the service you choose: ListenBrainz (<code>api.listenbrainz.org</code>)
+      and/or Last.fm (<code>last.fm</code>), under that service's own privacy
+      policy and your account there.</li>
+    <li><strong>Internet-radio cover art</strong> — when you play an
+      internet-radio station, jellytoast may look up cover art by sending the
+      current artist and track to MusicBrainz (<code>musicbrainz.org</code>) and
+      the Cover Art Archive (<code>coverartarchive.org</code>).</li>
+  </ul>
+
+  <h2>No analytics, no telemetry, no advertising</h2>
+  <p>
+    jellytoast contains no analytics, crash reporting, telemetry, or advertising
+    SDKs of any kind.
+  </p>
+
+  <h2>Open source</h2>
+  <p>
+    The full source code is available at
+    <a href="https://github.com/wolfgangwarehaus/jellytoast">github.com/wolfgangwarehaus/jellytoast</a>.
+  </p>
+  <p>
+    Questions? Open an issue at
+    <a href="https://github.com/wolfgangwarehaus/jellytoast/issues">github.com/wolfgangwarehaus/jellytoast/issues</a>.
+  </p>
+
+  <footer>
+    <a href="./">Home</a> ·
+    <a href="https://github.com/wolfgangwarehaus/jellytoast">Source</a> ·
+    <a href="https://github.com/wolfgangwarehaus/jellytoast/issues">Issues</a>
+  </footer>
+</div>
+</body>
+</html>

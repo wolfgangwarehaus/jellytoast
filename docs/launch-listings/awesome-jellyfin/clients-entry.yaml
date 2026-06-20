@@ -1,0 +1,15 @@
+# Insert into assets/clients/clients.yaml (NOT CLIENTS.md — that's generated),
+# in alphabetical order by canonical name (jellytoast sorts after "JellyRock",
+# before "Manet"). Verify the schema against the live clients.yaml at submission.
+  - name: jellytoast
+    targets: [Windows, Linux]
+    types: [Music]
+    oss: https://github.com/wolfgangwarehaus/jellytoast
+    official: false
+    beta: false
+    price:
+      free: true
+    downloads:
+      - type: github
+        owner: wolfgangwarehaus
+        repo: jellytoast
