@@ -779,7 +779,7 @@ class NowPlayingPage(_LeftPaneMixin, _LyricsMixin, QWidget):
         # favourites the album/playlist, not the active track, so this
         # tracks _live_source_fav rather than np.is_favorite).
         if self._preview_id:
-            cur_fav = bool(self._preview_meta.get("UserData", {}).get("IsFavorite", False))
+            cur_fav = bool((self._preview_meta.get("UserData") or {}).get("IsFavorite", False))
             has_track = True
         else:
             np = get_now_playing()
@@ -950,7 +950,7 @@ class NowPlayingPage(_LeftPaneMixin, _LyricsMixin, QWidget):
         if source_id != self.queue_mgr.context.source_id:
             return
         self._live_source_fav = bool(
-            (meta or {}).get("UserData", {}).get("IsFavorite", False)
+            ((meta or {}).get("UserData") or {}).get("IsFavorite", False)
         )
         self._refresh_fav_cta_icon()
 
@@ -961,7 +961,7 @@ class NowPlayingPage(_LeftPaneMixin, _LyricsMixin, QWidget):
         reapply, context change, external toggle, preview exit) stays
         consistent."""
         if self._preview_id:
-            cur_fav = bool(self._preview_meta.get("UserData", {}).get("IsFavorite", False))
+            cur_fav = bool((self._preview_meta.get("UserData") or {}).get("IsFavorite", False))
         else:
             cur_fav = self._live_source_fav
         self._fav_cta.setIcon(
@@ -1593,7 +1593,7 @@ class NowPlayingPage(_LeftPaneMixin, _LyricsMixin, QWidget):
         # favorite_toggled bus signal (incl. external clients).
         if self._preview_id:
             target_id = self._preview_id
-            cur_fav = bool(self._preview_meta.get("UserData", {}).get("IsFavorite", False))
+            cur_fav = bool((self._preview_meta.get("UserData") or {}).get("IsFavorite", False))
         else:
             target_id = self.queue_mgr.context.source_id
             cur_fav = self._live_source_fav
@@ -1769,7 +1769,7 @@ class NowPlayingPage(_LeftPaneMixin, _LyricsMixin, QWidget):
                 on_error=lambda: None,
             )
         # Reflect favorited state in the heart icon.
-        cur_fav = bool(meta.get("UserData", {}).get("IsFavorite", False))
+        cur_fav = bool((meta.get("UserData") or {}).get("IsFavorite", False))
         self._fav_cta.setIcon(
             accent_icon("favorite_filled") if cur_fav else icon("favorite_outline")
         )

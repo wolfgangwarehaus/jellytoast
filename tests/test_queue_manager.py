@@ -660,3 +660,52 @@ class TestMoveItem:
         qm.move_item(0, 99)  # dest out of range
         assert [i["Id"] for i in qm.queue] == before
         assert qm.current_index == 0
+
+
+# ── null-but-present Jellyfin fields ────────────────────────────────────────
+# Jellyfin returns items with RunTimeTicks / UserData PRESENT but null (un-probed
+# files, .strm/remote items, some live entries). The `.get(key, default)` default
+# only fires on an ABSENT key, so a present-null value flows through as None.
+# _build_now_playing runs every queued item through `RunTimeTicks // 10_000` and
+# `UserData.get("IsFavorite")` — on the play, prefetch, AND boot-restore paths —
+# where None used to raise TypeError / AttributeError (a play- and launch-crash
+# for Jellyfin users). Subsonic is immune (it int-coerces in _adapt_song).
+
+
+class TestNullJellyfinFieldsDoNotCrash:
+    @staticmethod
+    def _null_item(item_id="jf-null"):
+        return {
+            "Id": item_id,
+            "Name": "Un-probed Track",
+            "Type": "Audio",
+            "RunTimeTicks": None,  # present but null — default does NOT fire
+            "UserData": None,
+        }
+
+    def test_play_now_survives_null_runtimeticks_and_userdata(self, qm):
+        plays = _capture(qm.bus.play_requested)
+        qm.play_now([self._null_item()], 0, QueueContext(kind=QueueKind.ALBUM))
+        np: NowPlaying = plays[0][0]
+        assert np.item_id == "jf-null"
+        assert np.duration == 0  # None coerced to 0, not crashed
+        assert np.is_favorite is False
+
+    def test_restore_survives_null_runtimeticks_on_boot(
+        self, qapp, fake_provider, isolated_settings_singleton, fresh_bus
+    ):
+        # The boot/restore path: a persisted Jellyfin item with null
+        # RunTimeTicks runs through _build_now_playing inside __init__ when
+        # the saved resume-position belongs to the current item — this used
+        # to abort QueueManager construction (a crash before the GUI loads).
+        from jellytoast.player_state import Queue
+        from jellytoast.queue_manager import QueueManager
+
+        s = isolated_settings_singleton
+        s.save_queue(
+            Queue(original_items=[self._null_item("jf-restore")], play_order=[0], current_index=0)
+        )
+        s.saved_position_item_id = "jf-restore"
+        s.saved_position_ms = 5000
+        qm2 = QueueManager()  # must not raise
+        assert qm2.current_item["Id"] == "jf-restore"

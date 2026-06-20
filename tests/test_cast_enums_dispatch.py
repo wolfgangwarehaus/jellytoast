@@ -253,8 +253,8 @@ def test_start_track_routes_dlna(mgr, monkeypatch):
 def test_start_track_routes_sonos(mgr, monkeypatch):
     calls = {}
 
-    def _sonos(dev, url, *, title="", artist="", album="", art_url=""):
-        calls.update(dev=dev, url=url, title=title, artist=artist, album=album)
+    def _sonos(dev, url, *, title="", artist="", album="", art_url="", is_live=False):
+        calls.update(dev=dev, url=url, title=title, artist=artist, album=album, is_live=is_live)
         return True
 
     monkeypatch.setattr(mgr, "cast_to_sonos", _sonos)

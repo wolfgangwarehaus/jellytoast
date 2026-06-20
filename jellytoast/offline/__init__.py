@@ -120,12 +120,23 @@ def note_request_failure() -> None:
     _connectivity.note_network_failure()
 
 
+def reset_download_queue() -> None:
+    """Drain in-flight + queued downloads on any identity change (server
+    swap, sign-out) so jobs planned under the old server can't keep
+    committing into the new / empty server's offline library."""
+    from . import manager
+
+    manager.reset_queue()
+
+
 def reset_after_server_change() -> None:
     """Reset connectivity state after an in-app sign-in / server swap so
     the previous server's leftover failure state (or the new server's
     first-load request burst) can't flap the app into offline mode. A
-    user-set offline mode is preserved."""
+    user-set offline mode is preserved. Also drains the download queue so a
+    job planned against the old server doesn't land in the new one."""
     _connectivity.reset_after_server_change()
+    reset_download_queue()
 
 
 def note_auth_failure() -> None:
