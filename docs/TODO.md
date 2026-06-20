@@ -6,6 +6,19 @@ refreshed **2026-06-14** (Windows-standards round), **2026-06-15**
 collapses to one-liners; the dated detail lives in `docs/CHANGELOG.md` and
 this file's git history.
 
+> **2026-06-20 — packaging-channels round.** **winget LIVE** (v0.1.0 + v0.1.1
+> merged to microsoft/winget-pkgs; `winget install wolfgangwarehaus.jellytoast`).
+> **Microsoft Store** submission prep DONE — identity stamped, manifest 1.0.0.0,
+> `COPYING`/GPL-3.0 conveyance, privacy policy corrected + hosted, paste-ready
+> runbook (`packaging/msix/STORE-SUBMISSION.md`); gated only on the 0.1.2 cut +
+> a laptop build/WACK pass. **Flathub DROPPED** (AI-assisted-code policy —
+> definitive; see Packaging). **AppImage** researched, planned for 0.1.2 as the
+> universal-Linux channel. Docs PR #161 merged (Install restructure + winget +
+> hosted privacy page). Round-1 Ubuntu 26.04 verification + the BUG-1/2/3 fixes
+> (#148/#149/#151, all shipped in v0.1.1) are in PR #147; the real-`.deb`
+> launch/cleanup/bug pass that feeds 0.1.2 is checklisted in
+> `packaging/UBUNTU_SESSION_2.md` (#155).
+
 > **2026-06-17 — 🚀 v0.1.0 LAUNCHED.** GitHub release published (deb +
 > Windows installer/portable + sdist/wheel + SHA256SUMS). Live channels:
 > **PyPI** (`pipx install jellytoast`), the **landing page**
@@ -221,25 +234,35 @@ installer + portable zip + sdist/wheel), README restructure (long-form →
   2026-06-17). Left: `updpkgsums` + `makepkg -si` + `namcap` + `.SRCINFO` +
   push to `aur@aur.archlinux.org` (steps in `packaging/aur/README.md`) — with
   august.
-- **Flathub** — ⛔ **PARKED (do not submit).** Flathub's policy was tightened
-  **2026-05-28** to bar *AI-generated **or AI-assisted*** code (not just AI
-  submissions). A prior auto-submission (flathub/flathub#9022) was already closed
-  as a violation = **one strike** on the account, and **692/932 commits (74%)
-  carry a `Co-Authored-By: Claude` trailer**, so there is no quiet-submission
-  path. The manifest (`packaging/flatpak/*.yaml` + `python3-requirements.json`)
-  and runbook stay in-repo for the future. **Only** revisit via a transparent,
-  pre-cleared "mature, well-maintained project" exception request on Flathub
-  Discourse (the policy author said genuine projects with release cadence + CI
-  "would likely be exempted") — a deliberate human step, never an auto-submit.
+- **Flathub** — ⛔ **DROPPED (definitive, researched + primary-sourced 2026-06-20).**
+  The live policy bans **AI-*assisted*** code (not just AI-generated; commit
+  `992f57b`, 2026-05-28), covering the app, the manifest, and the PR. Our ~74%
+  `Co-Authored-By: Claude` history is the exact, unhideable disqualifier; we
+  already have an "AI Slop"-labeled, locked strike (flathub/flathub#9022); the
+  "mature project" exception is discretionary, precedent-free, and was conceived
+  for *established* projects that adopt AI — not AI-built-from-inception apps like
+  ours. **Don't cold-submit** (a repeat risks the permanent-ban clause).
+  **Flatpak ≠ Flathub:** the format is unrestricted — self-host the
+  `packaging/flatpak/` manifest off-Flathub (a `.flatpak` bundle as a release
+  asset, or an OSTree repo + `.flatpakref`) if that reach is wanted. Full verdict
+  in memory `flathub-and-linux-channels`.
+- **AppImage** — 🔬 **RESEARCHED 2026-06-20; planned for 0.1.2.** The universal
+  "any distro, no install, no root" Linux channel — worth doing precisely
+  *because Flathub is dropped*. Build via PyInstaller-onedir → static-runtime
+  `appimagetool` (reuse `jellytoast.spec`), self-contained variant (bundle
+  libmpv+FFmpeg via a separate path that skips the deb's libmpv-closure-strip);
+  add `libxcb-cursor.so.0`; pick the glibc floor deliberately (build on 20.04 for
+  Fedora/RHEL-8 reach); CI-smoke-test on a *newer* distro. Linux-only build (not
+  on the Windows box) → Linux instance.
 - **chaotic-AUR** — after the AUR package is live: one `[Request]` issue on
   `github.com/chaotic-aur/packages` (template asks for the AUR link). Their
   CI then auto-rebuilds from AUR forever. Best effort-to-reach ratio found.
-- **winget** — ✅ SUBMITTED 2026-06-17: PR microsoft/winget-pkgs#389422
-  (CLA signed, `license/cla` green). Waiting on a moderator merge (first
-  submission → manual review); then `winget install wolfgangwarehaus.jellytoast`
-  goes live. Future bumps: the `wingetcreate update` one-liner in
-  `packaging/winget/README.md`. Don't push new commits to the PR (resets the
-  review).
+- **winget** — ✅ **LIVE.** v0.1.0 PR microsoft/winget-pkgs#389422 merged
+  2026-06-18; v0.1.1 PR #390782 merged 2026-06-20 (full validation pipeline
+  passed). `winget install wolfgangwarehaus.jellytoast` → 0.1.1 works globally.
+  Future bumps: `wingetcreate update wolfgangwarehaus.jellytoast --version <v>
+  --urls <setup.exe> --submit --token (gh auth token)` (`manifests/` is
+  gitignored scratch).
 - [x] **PyPI** — ✅ LIVE: `pipx install jellytoast` works
   (pypi.org/project/jellytoast).
 - [x] **Landing page** — ✅ 2026-06-16: live at `wolfgangwarehaus.com/jellytoast`
@@ -251,19 +274,21 @@ installer + portable zip + sdist/wheel), README restructure (long-form →
 - [x] **Ko-fi funding** — ✅ 2026-06-12: `.github/FUNDING.yml`
   (`ko_fi: wolfgangwarehaus`) → repo Sponsor button on merge; README badge;
   landing-page tip box.
-- **Microsoft Store (MSIX)** — 🔧 SCAFFOLDED 2026-06-17 (`packaging/msix/`):
-  full-trust `AppxManifest.xml` (packagedClassicApp + mediumIL + runFullTrust
-  + windows.startupTask), 23 Store logo assets (`make-assets.sh`), and a
-  `README.md` playbook (build → pack → WACK → Partner Center; GPL custom
-  license terms + source offer; runFullTrust justification). The 3 code
-  blockers are applied behind `is_msix_packaged()`: libmpv `add_dll_directory`,
-  AUMID/shortcut skip-when-packaged, and the `_msix` autostart backend
-  (StartupTask WinRT). **Why the Store:** it's the ONLY free + immediate
-  SmartScreen fix — Microsoft re-signs the MSIX; EV/OV certs no longer bypass
-  SmartScreen since 2024. Left (at the Win 11 laptop): register the free
-  individual account, apply + verify the 3 blockers, build / test-sign / WACK,
-  first manual submission. The Win32-EXE Store route is a TRAP (needs a
-  purchased cert) — MSIX only.
+- **Microsoft Store (MSIX)** — 🔧 **SUBMISSION-READY (pending the 0.1.2 cut).**
+  Identity stamped from Partner Center (PFN `…_yswr9h87xar1w`, Store ID
+  `9PNLTPXGHN79`); the 3 code blockers applied behind `is_msix_packaged()`
+  (libmpv `add_dll_directory`, AUMID/shortcut skip-when-packaged, `_msix`
+  StartupTask autostart); manifest at `1.0.0.0` (Store rejects a leading-0
+  version). Cert researched + a **paste-ready runbook** at
+  `packaging/msix/STORE-SUBMISSION.md` — every Partner Center field verified
+  (listing copy, IARC age rating, data declarations, runFullTrust justification,
+  privacy URL, license terms). Store binary conveyed under **GPL-3.0** (`COPYING`
+  added + bundled via the spec). Privacy policy corrected to disclose 3rd-party
+  flows (scrobbling, radio cover art) + hosted at `…/jellytoast/privacy.html`.
+  **Why the Store:** ONLY free + immediate SmartScreen fix — Microsoft re-signs.
+  Pre-submit gates (in the runbook): cut+push `v0.1.2` tag, verify privacy URL
+  live, build → WACK → in-package QA on the laptop. Win32-EXE Store route is a
+  TRAP (purchased cert) — MSIX only.
 - **Azure Artifact Signing (GitHub `.exe` / zip)** — 🔧 WIRED 2026-06-17:
   two gated signing steps in `release.yml` (skipped until the Azure secrets
   exist). Fixes the *direct-download* SmartScreen warning (the Store only
@@ -271,13 +296,38 @@ installer + portable zip + sdist/wheel), README restructure (long-form →
   setup runbook in `packaging/windows/azure-signing.md`. Note: signing shows
   the verified publisher name + builds reputation but does NOT clear the
   warning on day one.
-- **Mint 22 deb smoke test** — one container run to confirm the
-  22.04-built deb's libmpv2 dep resolves on the Noble base.
+- [x] **Ubuntu/Mint deb smoke test** — ✅ done on a fresh **Ubuntu 26.04 LTS**
+  (GNOME/Wayland) box, two LTS newer than the Noble target: the 22.04-built
+  deb's `libmpv2 | libmpv1` Depends **resolves clean** (→ `libmpv2 0.41.0`) and
+  installs fine. BUT the session (PR #147) surfaced launch-blocking gaps the
+  dep-resolution check alone would miss — all three **fixed + shipped in v0.1.1**:
+  - **BUG-1 (launch-blocker; fixed in #148, shipped v0.1.1):** the PyInstaller
+    bundle ships the 22.04 host's copies of libmpv's dependency closure
+    (libstdc++, glib, ffmpeg, …); they shadow the host's newer ones, so
+    `import mpv` fails (`GLIBCXX_3.4.32 not found`) and the deb aborts at startup
+    on any distro > the builder. CI's frozen smoke test can't catch it (runs on
+    the same 22.04). **Add a newer-distro boot probe to CI.**
+  - **BUG-2 (X11; fixed in #149, shipped v0.1.1):** deb needs `libxcb-cursor0` in
+    Depends (Qt 6.5+ xcb plugin); Wayland unaffected.
+  - **BUG-3 (AirPlay/Python 3.14; fixed in #151, shipped v0.1.1):** cast-discovery
+    fan-out cold-imports overlapping module graphs (aiohttp via pyatv +
+    async_upnp_client) on parallel pool workers → CPython 3.14 `_DeadlockError`;
+    degrades to AirPlay-1. Fixed by serializing the four gateways' cold imports
+    behind one `cold_import_lock` (reproduced 40/40, serialized 0/60, 228 cast
+    tests pass). Likely not on the deb (bundles 3.12).
+  - **GNOME-verified working** (via pipx, which dodges BUG-1): playback
+    (mpv→PipeWire), MPRIS + control, tray (AppIndicator), Secret Service
+    credential persistence, autostart, mini-player (no always-on-top on Wayland —
+    expected), Chromecast casting (survives `ufw`), blur→opaque degradation.
+  - **Still pending:** the *fixed* `.deb` has not yet been launched end-to-end on
+    a newer distro (round 1 only verified via pipx). Round-2 checklist:
+    `packaging/UBUNTU_SESSION_2.md` (#155).
 - **Decided AGAINST** (don't re-litigate): Snap Store (KWin features dead under confinement, 3
   manual plugs; revisit only on real Ubuntu demand — name registration is
   free + ~2 days if we want to squat `jellytoast`), Steam store proper
   ($100 + category mismatch), CachyOS official repos (no benefit for pure
-  Python; AUR covers it), COPR/AppImage/brew (redundant with Flathub).
+  Python; AUR covers it), COPR/brew. (AppImage is NO LONGER on this list —
+  it's planned for 0.1.2 now that Flathub is dropped; see above.)
   openSUSE OBS parked until rpm users ask.
 - **Cast-proxy demo clip** — a ~30s hero clip (Chromecast playing from a
   Tailscale-only server while the laptop is offline); pairs with the screenshots.

@@ -8,12 +8,18 @@
 # stack (libmpv→ffmpeg) is the distro's own, matching how the AUR package
 # works on Arch.
 #
-# libxcb-cursor0 is a Depends too: the bundled Qt 6.5+ refuses to load its
-# "xcb" platform plugin without it ("From 6.5.0, xcb-cursor0 or libxcb-cursor0
-# is needed…"), so on an X11/XWayland session the app aborts at startup. PySide6
-# dlopens libxcb-cursor at runtime, so PyInstaller never bundles it — it has to
-# be a package dep. (Wayland sessions use the bundled wayland plugin and don't
-# need it, but we can't know the session at install time.)
+# The bundled Qt links several system libs that PyInstaller does NOT bundle and
+# that aren't pulled in transitively by libmpv, so they're explicit Depends:
+#   libxcb-cursor0, libxcb-icccm4, libxcb-keysyms1 — all hard DT_NEEDED of the
+#     bundled Qt "xcb" platform plugin (libqxcb.so / libQt6XcbQpa.so.6). Without
+#     ALL THREE, an X11/XWayland session aborts at startup ("could not load the
+#     Qt platform plugin xcb"). libxcb-cursor0 alone (Qt 6.5+'s documented need)
+#     is NOT enough — icccm4/keysyms1 are equally hard-linked and aren't deps of
+#     cursor0. (Wayland sessions use the bundled wayland plugin and need none of
+#     these, but we can't know the session at install time.)
+#   libgl1 — hard DT_NEEDED of the bundled libQt6Gui.so.6 (every session); not
+#     bundled and not pulled by libmpv2 (which depends on glvnd libegl1 only,
+#     and EGL doesn't drag in GL). Without it the app aborts at Qt startup.
 #
 # Usage (CI: .github/workflows/release.yml):
 #   pyinstaller packaging/pyinstaller/jellytoast.spec --noconfirm
@@ -26,6 +32,13 @@ set -euo pipefail
 VERSION="${1:?usage: build_deb.sh <version>}"
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 BUNDLE="$ROOT/dist/jellytoast"
+
+# Reproducible build: pin every timestamp to the commit so rebuilds are
+# byte-identical. dpkg-deb clamps the ar timestamp + all tar mtimes to
+# SOURCE_DATE_EPOCH; PyInstaller/install mtimes are always >= the commit time so
+# they collapse to it. Falls back to "now" outside a git checkout.
+: "${SOURCE_DATE_EPOCH:=$(git -C "$ROOT" log -1 --format=%ct 2>/dev/null || date +%s)}"
+export SOURCE_DATE_EPOCH
 STAGE="$(mktemp -d)"
 trap 'rm -rf "$STAGE"' EXIT
 
@@ -56,7 +69,30 @@ install -m644 "$ROOT/packaging/icons/hicolor/256x256/apps/$APP_ID.png" \
     "$STAGE/usr/share/icons/hicolor/256x256/apps/"
 
 mkdir -p "$STAGE/usr/share/doc/jellytoast"
-install -m644 "$ROOT/LICENSE" "$STAGE/usr/share/doc/jellytoast/copyright"
+# DEP-5 machine-readable copyright. (Shipping the raw GPL text as `copyright`
+# trips lintian copyright-without-copyright-notice; Policy also wants the license
+# referenced from /usr/share/common-licenses, which Debian/Ubuntu always ship.)
+cat > "$STAGE/usr/share/doc/jellytoast/copyright" <<EOF
+Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
+Upstream-Name: jellytoast
+Source: https://github.com/wolfgangwarehaus/jellytoast
+
+Files: *
+Copyright: 2026 august <augustvontrips@gmail.com>
+License: GPL-2.0-or-later
+ This program is free software: you can redistribute it and/or modify it under
+ the terms of the GNU General Public License as published by the Free Software
+ Foundation, either version 2 of the License, or (at your option) any later
+ version.
+ .
+ This program is distributed in the hope that it will be useful, but WITHOUT ANY
+ WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A
+ PARTICULAR PURPOSE.  See the GNU General Public License for more details.
+ .
+ On Debian systems, the complete text of the GNU General Public License version
+ 2 can be found in /usr/share/common-licenses/GPL-2.
+EOF
+chmod 644 "$STAGE/usr/share/doc/jellytoast/copyright"
 install -m644 "$ROOT/packaging/THIRD-PARTY-NOTICES.md" \
   "$STAGE/usr/share/doc/jellytoast/THIRD-PARTY-NOTICES.md"
 
@@ -66,7 +102,7 @@ install -m644 "$ROOT/packaging/THIRD-PARTY-NOTICES.md" \
   echo ""
   echo "  * Release $VERSION — see https://github.com/wolfgangwarehaus/jellytoast/releases"
   echo ""
-  echo " -- wolfgangwarehaus <augustvontrips@gmail.com>  $(date -R)"
+  echo " -- wolfgangwarehaus <augustvontrips@gmail.com>  $(date -u -R -d "@$SOURCE_DATE_EPOCH")"
 } | gzip -9n > "$STAGE/usr/share/doc/jellytoast/changelog.Debian.gz"
 chmod 644 "$STAGE/usr/share/doc/jellytoast/changelog.Debian.gz"
 
@@ -79,8 +115,8 @@ Version: $VERSION
 Architecture: amd64
 Maintainer: wolfgangwarehaus <augustvontrips@gmail.com>
 Installed-Size: $INSTALLED_SIZE
-Depends: libmpv2 | libmpv1, libxcb-cursor0
-Recommends: ffmpeg, libnotify4
+Depends: libmpv2 | libmpv1, libxcb-cursor0, libxcb-icccm4, libxcb-keysyms1, libgl1
+Recommends: ffmpeg, libnotify-bin
 Section: sound
 Priority: optional
 Homepage: https://github.com/wolfgangwarehaus/jellytoast
@@ -94,17 +130,46 @@ Description: Desktop music player for Jellyfin and Navidrome servers
  uses the system libmpv for audio.
 EOF
 
+# Maintainer scripts must act per dpkg argument (Policy 6.5): refresh the icon
+# cache + desktop database on install (configure) and on removal (remove|purge),
+# not on every phase (upgrade/abort/triggered).
 cat > "$STAGE/DEBIAN/postinst" <<'EOF'
 #!/bin/sh
 set -e
-command -v gtk-update-icon-cache >/dev/null 2>&1 && gtk-update-icon-cache -q /usr/share/icons/hicolor || true
-command -v update-desktop-database >/dev/null 2>&1 && update-desktop-database -q || true
+case "$1" in
+  configure)
+    command -v gtk-update-icon-cache >/dev/null 2>&1 && gtk-update-icon-cache -q /usr/share/icons/hicolor || true
+    command -v update-desktop-database >/dev/null 2>&1 && update-desktop-database -q || true
+    ;;
+esac
 EOF
 chmod 755 "$STAGE/DEBIAN/postinst"
-cp "$STAGE/DEBIAN/postinst" "$STAGE/DEBIAN/postrm"
+
+cat > "$STAGE/DEBIAN/postrm" <<'EOF'
+#!/bin/sh
+set -e
+case "$1" in
+  remove|purge)
+    command -v gtk-update-icon-cache >/dev/null 2>&1 && gtk-update-icon-cache -q /usr/share/icons/hicolor || true
+    command -v update-desktop-database >/dev/null 2>&1 && update-desktop-database -q || true
+    ;;
+esac
+EOF
+chmod 755 "$STAGE/DEBIAN/postrm"
 
 # ── build ─────────────────────────────────────────────────────────────
 mkdir -p "$ROOT/dist"
 OUT="$ROOT/dist/jellytoast_${VERSION}_amd64.deb"
+
+# Normalize modes so the package doesn't inherit the build host's umask.
+# `cp -a` of the bundle (above) preserves its source modes, and dpkg-deb
+# --root-owner-group fixes ownership but NOT modes — so a maintainer building
+# under a group-writable umask (Ubuntu's default 0002) would otherwise ship
+# 0775 dirs / 0664 files (lintian non-standard-dir-perm + non-reproducible).
+# Dirs → 0755; files → drop group/other write but KEEP the exec bit (the bundle
+# has 200+ executable .so/.bin files), so use `go-w` not a blanket 0644.
+find "$STAGE" -type d -exec chmod 0755 {} +
+find "$STAGE" -type f -exec chmod go-w {} +
+
 dpkg-deb --build --root-owner-group -Zxz "$STAGE" "$OUT"
 echo "built: $OUT"
