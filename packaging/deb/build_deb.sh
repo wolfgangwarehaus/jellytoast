@@ -8,8 +8,10 @@
 # stack (libmpv→ffmpeg) is the distro's own, matching how the AUR package
 # works on Arch.
 #
-# The bundled Qt links several system libs that PyInstaller does NOT bundle and
-# that aren't pulled in transitively by libmpv, so they're explicit Depends.
+# The bundled Qt links several system libs that PyInstaller does NOT bundle. We
+# declare the COMPLETE Qt runtime closure explicitly — even libs that libmpv
+# happens to pull transitively today — so a future libmpv repackaging (e.g. a
+# --disable-libass minimal build) can't silently strip a lib Qt needs.
 #
 # The X/xcb set is the COMPLETE DT_NEEDED closure of the bundled Qt "xcb" platform
 # plugin (libqxcb.so) + its support lib (libQt6XcbQpa.so.6), enumerated with
@@ -27,6 +29,12 @@
 #   libgl1 — hard DT_NEEDED of the bundled libQt6Gui.so.6 (every session); not
 #     bundled and not pulled by libmpv2 (which depends on glvnd libegl1 only,
 #     and EGL doesn't drag in GL). Without it the app aborts at Qt startup.
+#   libfontconfig1 / libfreetype6 / libegl1 — Qt's own font + EGL stack (every
+#     session; DT_NEEDED of the bundled libQt6Gui/libQt6XcbQpa). These ARE
+#     reachable transitively today via libmpv2→libass9 (fontconfig/freetype) and
+#     libmpv2→libegl1, but that's an incidental chain through the media player's
+#     subtitle renderer — declared explicitly so Qt's closure stands on its own
+#     (same principle as libgl1).
 #
 # Usage (CI: .github/workflows/release.yml):
 #   pyinstaller packaging/pyinstaller/jellytoast.spec --noconfirm
@@ -122,7 +130,7 @@ Version: $VERSION
 Architecture: amd64
 Maintainer: wolfgangwarehaus <augustvontrips@gmail.com>
 Installed-Size: $INSTALLED_SIZE
-Depends: libmpv2 | libmpv1, libx11-6, libx11-xcb1, libxcb1, libxcb-cursor0, libxcb-icccm4, libxcb-image0, libxcb-keysyms1, libxcb-randr0, libxcb-render0, libxcb-render-util0, libxcb-shape0, libxcb-shm0, libxcb-sync1, libxcb-util1, libxcb-xfixes0, libxcb-xkb1, libxkbcommon0, libxkbcommon-x11-0, libgl1
+Depends: libmpv2 | libmpv1, libx11-6, libx11-xcb1, libxcb1, libxcb-cursor0, libxcb-icccm4, libxcb-image0, libxcb-keysyms1, libxcb-randr0, libxcb-render0, libxcb-render-util0, libxcb-shape0, libxcb-shm0, libxcb-sync1, libxcb-util1, libxcb-xfixes0, libxcb-xkb1, libxkbcommon0, libxkbcommon-x11-0, libfontconfig1, libfreetype6, libegl1, libgl1
 Recommends: ffmpeg, libnotify-bin
 Section: sound
 Priority: optional

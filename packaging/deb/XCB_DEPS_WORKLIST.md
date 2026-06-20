@@ -1,105 +1,99 @@
-# `.deb` xcb dependency fix — Ubuntu session worklist
+# `.deb` Qt runtime dependency closure — derivation & verification
 
-**Open this on the Ubuntu box (Docker + a real X11 session available).** This PR
-sorts out the Linux `.deb`'s Qt `xcb` platform-plugin dependencies *properly* —
-the whole `DT_NEEDED` class at once, not one lib at a time.
+How the Linux `.deb`'s `Depends` was derived and proven, and how to re-derive it
+if PySide6 is bumped. The goal: declare the **complete `DT_NEEDED` closure** of
+the bundled Qt `xcb` platform plugin (the whole class at once, not one lib at a
+time) so a clean install launches on X11/XWayland on every target distro.
 
-> ✅ **The complete closure is already declared.** `build_deb.sh`'s `Depends` was
-> extended to the full `readelf -d` closure of the `pyside6-essentials 6.11`
-> wheel's `libqxcb.so` + `libQt6XcbQpa.so.6` (done off-box, no container needed).
-> **This session is now VERIFICATION, not discovery** — build + smoke across the
-> three distro containers + boot on a real X11 session, confirm green. Re-derive
-> (steps 1–4 below) only if it still fails or PySide6 was bumped.
+> **Status: RESOLVED + verified.** `build_deb.sh`'s `Depends` declares the full
+> `readelf -d` closure of `libqxcb.so` + `libQt6XcbQpa.so.6` + `libQt6Gui.so.6`.
+> Verified: (a) `ldd` closure complete on Ubuntu 26.04; (b) the bundled app boots
+> under `QT_QPA_PLATFORM=xcb` with no plugin-load abort; (c) every declared
+> package name resolves on `ubuntu:24.04` (noble), `ubuntu:26.04` (resolute) and
+> `debian:stable` (trixie) — none took a `t64` rename; (d) the container smoke
+> (`smoke_test_deb.sh`) boots `xcb` under Xvfb. Re-derive (below) only if a build
+> still fails the smoke or PySide6 is bumped.
 
-## The bug
+## Background — the bug this fixed
 
-The v0.1.2 release build **failed** on the `.deb` smoke test. The Qt `xcb`
-platform plugin aborts on boot under Xvfb (`rc=134`) even though the currently
-declared deps install fine:
+The Qt `xcb` platform plugin (`libqxcb.so` → `libQt6XcbQpa.so.6` → `libQt6Gui.so.6`)
+hard-links a ~22-package closure of X / xcb / xkb / fontconfig / GL system libs.
+Most are present on a normal desktop (pulled in by mesa/X/fontconfig), so the gap
+was invisible there — but on a **minimal install / container** they're absent and
+the plugin aborts on boot (`rc=134`, *"could not load the Qt platform plugin
+xcb"*). The set was originally enumerated by hand and grew piecemeal (#149 added
+`cursor0`; #162 added `icccm4`/`keysyms1`/`libgl1` — still only 4, still
+incomplete; this fix declares the whole readelf closure).
 
+> **Implication:** v0.1.0 / v0.1.1's `.deb` is **broken on X11 / XWayland** — their
+> smoke test only checked the deps were *present*, never booted `xcb`. The #162
+> boot-under-Xvfb probe is what caught it. Worth a CHANGELOG line.
+
+## What is declared (and what is deliberately left transitive)
+
+`Depends:` (see `build_deb.sh`) carries the **explicit** closure:
+
+- **X / xcb / xkb (18):** `libx11-6`, `libx11-xcb1`, `libxcb1`, `libxcb-cursor0`,
+  `libxcb-icccm4`, `libxcb-image0`, `libxcb-keysyms1`, `libxcb-randr0`,
+  `libxcb-render0`, `libxcb-render-util0`, `libxcb-shape0`, `libxcb-shm0`,
+  `libxcb-sync1`, `libxcb-util1`, `libxcb-xfixes0`, `libxcb-xkb1`,
+  `libxkbcommon0`, `libxkbcommon-x11-0`
+- **Qt font + GL stack (4):** `libfontconfig1`, `libfreetype6`, `libegl1`,
+  `libgl1` — these are in Qt's own `DT_NEEDED`; `libfontconfig1`/`libfreetype6`/
+  `libegl1` are *also* reachable transitively via `libmpv2→libass9`, but are
+  declared explicitly so Qt's closure doesn't hinge on the media player's deps.
+
+Deliberately **not** declared (guaranteed transitively by a hard `Depends`, so
+adding them would be redundant): `libxau6`/`libxdmcp6` (via `libxcb1`),
+`libglvnd0`/`libglx0` (via `libgl1`), and the `glib`/`dbus`/`png`/`expat`/
+`pcre2`/`systemd`/`brotli` libs (via `libmpv2`). Base/Essential libs
+(`libc6`, `libstdc++6`, `libgcc-s1`, `zlib1g`, …) are always present.
+
+`libmpv2 | libmpv1` stays a real `Depends` — `python-mpv` dlopens the **system**
+`libmpv.so.2` (audio = the distro's own libmpv→ffmpeg, matching the AUR package).
+Note `libmpv1` no longer exists on noble/resolute/trixie, so the alternative
+always resolves to `libmpv2` there.
+
+## Re-derive the closure (if PySide6 is bumped or the smoke fails)
+
+```bash
+# 1. Build the bundle + .deb (same as CI, on the 22.04-class builder)
+pyinstaller packaging/pyinstaller/jellytoast.spec --noconfirm
+bash packaging/deb/build_deb.sh 0.1.2          # → dist/*.deb + dist/jellytoast/
+
+# 2. Direct DT_NEEDED of the xcb plugin + its Qt support libs
+find dist/jellytoast -name 'libqxcb.so' -o -name 'libQt6XcbQpa.so.6' -o -name 'libQt6Gui.so.6'
+readelf -d <those .so files> | grep NEEDED
+
+# 3. Full transitive closure, split system-vs-bundled (RPATH=$ORIGIN is honored):
+ldd dist/jellytoast/_internal/PySide6/Qt/plugins/platforms/libqxcb.so \
+  | grep -v '/opt/jellytoast\|dist/jellytoast'      # the rows resolving to /usr|/lib = system closure
+
+# 4. Map each system .so → its Debian package
+dpkg -S /usr/lib/x86_64-linux-gnu/libXXX.so.N        # or: apt-file search libXXX.so.N
 ```
-Depends: libmpv2 | libmpv1, libxcb-cursor0, libxcb-icccm4, libxcb-keysyms1, libgl1
+
+Add any newly-required system lib to the `Depends:` line in `build_deb.sh` **and**
+the dep-guard list in `smoke_test_deb.sh` (keep them in sync — drift is a latent
+bug), and update the comment block above the `Depends:` line. Don't blind-add the
+single name the log happens to print — enumerate the whole `readelf` closure.
+
+## Verify
+
+```bash
+# Container smoke across all three targets (must all pass)
+for img in ubuntu:24.04 ubuntu:26.04 debian:stable; do
+  docker run --rm -v "$PWD:/src:ro" "$img" bash /src/packaging/deb/smoke_test_deb.sh
+done
 ```
 
-So **at least one more `libxcb-*` / X / xkbcommon `DT_NEEDED` is missing** from
-`Depends` (and isn't bundled). This set was enumerated by hand and is incomplete
-— it's been patched piecemeal (#149 added `cursor0`; #162 added
-`icccm4`/`keysyms1`/`libgl1`) and there's *still* a gap.
+This runs in `release.yml` on a tag / `workflow_dispatch`. Xvfb proves the plugin
+*loads*; for full confidence also install the `.deb` on a **real X11/Xorg login
+session** and confirm the window opens, audio plays, and the tray works.
 
-> ⚠️ **Implication:** v0.1.0 / v0.1.1's `.deb` is very likely **already broken on
-> X11 / XWayland** — their smoke test only checked the dep was *present*, never
-> actually booted `xcb`. The #162 boot-under-Xvfb probe is doing its job. Worth a
-> CHANGELOG line + a heads-up if anyone reported "won't launch on X11".
+## Recommended follow-up
 
-## Goal — fix the whole class
-
-Declare (or bundle) the **complete** `DT_NEEDED` closure of the bundled Qt xcb
-plugin so a clean install launches on X11/XWayland on every target distro. Don't
-add just the one the log names — enumerate them all.
-
-## Steps
-
-1. **Build the `.deb`** (same as CI, on the 22.04-class builder):
-   ```bash
-   bash packaging/deb/build_deb.sh 0.1.2     # → dist/*.deb + dist/jellytoast/ bundle
-   ```
-
-2. **Let the smoke test name the first culprit.** The boot probe now runs with
-   `QT_DEBUG_PLUGINS=1` and prints the missing `.so` on failure:
-   ```bash
-   docker run --rm -v "$PWD:/src:ro" ubuntu:24.04 bash /src/packaging/deb/smoke_test_deb.sh
-   # look for: "Cannot load library … (libXXX.so.N: cannot open shared object file)"
-   ```
-
-3. **Enumerate the WHOLE closure** (don't stop at the one name). On the bundle:
-   ```bash
-   # locate the xcb plugin + its Qt support lib in the PyInstaller bundle
-   find dist/jellytoast -name 'libqxcb.so' -o -name 'libQt6XcbQpa.so.6'
-   # full direct DT_NEEDED of each:
-   readelf -d <those .so files> | grep NEEDED
-   # transitive: what's NOT already inside the bundle and NOT pulled by libc/libmpv:
-   ldd <libqxcb.so> 2>&1 | grep 'not found'   # run inside a clean ubuntu:24.04 container
-   ```
-   Typical Qt6 xcb closure beyond what we declare: `libxcb-render-util0`
-   (`libxcb-util`), `libxcb-image0`, `libxcb-shape0`, `libxcb-randr0`,
-   `libxcb-sync1`, `libxcb-xfixes0`, `libxcb-xinerama0`, `libxcb-glx0`,
-   `libxkbcommon-x11-0`, `libxcb-xkb1`, `libsm6`, `libice6`. **Verify each
-   against `readelf`/`ldd` — don't blind-add.**
-
-4. **Map each missing `.so` → its Debian package** (on a box that has it):
-   ```bash
-   dpkg -S /usr/lib/x86_64-linux-gnu/libXXX.so.N      # or: apt-file search libXXX.so.N
-   ```
-
-5. **Decide depend-vs-bundle.** We currently *depend* (matches the libmpv
-   policy — keep the `.deb` thin). Stay consistent: add the full set to the
-   `Depends:` line in `packaging/deb/build_deb.sh` (and update the explanatory
-   comment block above it). *(If we'd rather make the `.deb` self-contained like
-   the planned AppImage, that's a bigger call — note it, don't do it here.)*
-
-6. **Rebuild + smoke-test across all three targets** (must all pass):
-   ```bash
-   bash packaging/deb/build_deb.sh 0.1.2
-   for img in ubuntu:24.04 ubuntu:26.04 debian:stable; do
-     docker run --rm -v "$PWD:/src:ro" "$img" bash /src/packaging/deb/smoke_test_deb.sh
-   done
-   ```
-
-7. **Boot on a REAL X11 session** (not just Xvfb) — install the `.deb` on the
-   Ubuntu box under X11/XWayland and confirm the window actually opens, plays
-   audio, and the tray works. Xvfb proves the plugin *loads*; a real session
-   proves it's usable.
-
-## While here (recommended)
-
-- **Catch this earlier next time.** The full `.deb` build+smoke only runs on a
-  release tag, which is why it reached "release". Consider a `workflow_dispatch`
-  (or a `deb`-label-gated) job that runs `build_deb.sh` + the container smoke
-  test on a PR, so packaging regressions fail *before* a tag.
-- **CHANGELOG:** add a "Fixed — `.deb` launches on X11/XWayland (complete Qt xcb
-  dependency set)" line to `[Unreleased]`.
-
-## Then
-
-Merge this → `main`, **then** cut v0.1.2 (it'll include this fix + the review
-fixes). See the note in the PR description about the premature v0.1.2 tag.
+The full `.deb` build+smoke only runs on a release tag, which is how the
+incomplete set reached "release" twice. Add a `workflow_dispatch` (or a
+`deb`-label-gated) PR job that runs `build_deb.sh` + the container smoke, so
+packaging regressions fail **before** a tag.
