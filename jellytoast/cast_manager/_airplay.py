@@ -156,18 +156,23 @@ class _AirplayMixin:
 
             body = f"Content-Location: {url}\nStart-Position: 0\n"
             conn = http.client.HTTPConnection(dev.host, dev.port, timeout=5)
-            conn.request(
-                "POST",
-                "/play",
-                body=body.encode(),
-                headers={
-                    "Content-Type": "text/parameters",
-                    "X-Apple-Session-ID": "1",
-                    "User-Agent": "MediaControl/1.0",
-                },
-            )
-            resp = conn.getresponse()
-            conn.close()
+            try:
+                conn.request(
+                    "POST",
+                    "/play",
+                    body=body.encode(),
+                    headers={
+                        "Content-Type": "text/parameters",
+                        "X-Apple-Session-ID": "1",
+                        "User-Agent": "MediaControl/1.0",
+                    },
+                )
+                resp = conn.getresponse()
+            finally:
+                # Always release the socket — request()/getresponse() can raise
+                # (timeout, refused, receiver dropped) and previously leaked the
+                # connection until GC.
+                conn.close()
             if resp.status in (200, 201):
                 self.active_cast = dev
                 return True
@@ -255,9 +260,11 @@ class _AirplayMixin:
                     conn = http.client.HTTPConnection(
                         self.active_cast.host, self.active_cast.port, timeout=3
                     )
-                    conn.request("POST", "/stop", headers={"X-Apple-Session-ID": "1"})
-                    conn.getresponse()
-                    conn.close()
+                    try:
+                        conn.request("POST", "/stop", headers={"X-Apple-Session-ID": "1"})
+                        conn.getresponse()
+                    finally:
+                        conn.close()
                 except Exception:
                     pass
         self.active_cast = None

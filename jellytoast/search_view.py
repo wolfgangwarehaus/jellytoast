@@ -808,6 +808,7 @@ class SearchView(QWidget):
             self._input.setFocus()
             self._input.selectAll()
             self._scroll.verticalScrollBar().setValue(0)
+            self._invalidate_smooth()
             return True
         if 0 <= target < len(sections):
             getter = getattr(sections[target], "first_focusable", None)
@@ -833,10 +834,12 @@ class SearchView(QWidget):
             # visible. Useful right after a section hop where focus
             # has just landed but currentIndex hasn't yet seeded.
             self._scroll.ensureWidgetVisible(view, 0, 40)
+            self._invalidate_smooth()
             return
         cell = view.visualRect(idx)
         if cell.isNull() or cell.isEmpty():
             self._scroll.ensureWidgetVisible(view, 0, 40)
+            self._invalidate_smooth()
             return
         # Map the cell into the scroll widget's coordinate space —
         # that's the space ensureVisible() expects.
@@ -847,6 +850,20 @@ class SearchView(QWidget):
         # ymargin keeps a little breathing room above and below.
         self._scroll.ensureVisible(top_left.x(), top_left.y(), 0, 60)
         self._scroll.ensureVisible(bot_right.x(), bot_right.y(), 0, 60)
+        self._invalidate_smooth()
+
+    def _invalidate_smooth(self):
+        """Drop the app SmoothScrollFilter's cached wheel-target for our
+        scroll area after a programmatic move (keyboard-nav section hop /
+        ensure-visible). Without it the next wheel notch computes its delta
+        from the stale cached target and snaps back — the same invariant
+        library_grid._on_alphabet_jump upholds."""
+        from PySide6.QtWidgets import QApplication
+
+        app = QApplication.instance()
+        sf = getattr(app, "_smooth_scroll", None)
+        if sf is not None:
+            sf.invalidate(self._scroll.verticalScrollBar())
 
     def eventFilter(self, obj, event):
         if event.type() != QEvent.Type.KeyPress:

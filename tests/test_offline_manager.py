@@ -241,3 +241,40 @@ class TestIngestPlanCancelledInFlightRace:
             assert "T" not in _mgr._queue
         finally:
             self._reset_mgr()
+
+
+# ── reset_queue (server-identity change drain) ──────────────────────────────
+
+
+class TestResetQueue:
+    """reset_queue() drains in-flight + queued downloads on a server-identity
+    change (server swap / sign-out) so a job planned under the old server
+    can't keep committing into the new (or signed-out) offline library."""
+
+    @pytest.fixture(autouse=True)
+    def _reset(self):
+        _mgr._reset_for_tests()
+        yield
+        _mgr._reset_for_tests()
+
+    def test_drops_queued_cancels_in_flight_and_resets_counters(self, qapp):
+        # One in-flight (active, dispatched) job + one queued-but-unstarted.
+        _mgr._active.add("active1")
+        _mgr._jobs["active1"] = {"item": {"Id": "active1"}, "parents": set()}
+        _mgr._pending["active1"] = {"got": 0}
+        _mgr._queue.append("queued1")
+        _mgr._session_total = 5
+        _mgr._session_expected_total = 5
+
+        _mgr.reset_queue()
+
+        # Queued work dropped; per-job state cleared.
+        assert len(_mgr._queue) == 0
+        assert _mgr._jobs == {}
+        assert _mgr._pending == {}
+        # In-flight job flagged cancelled so its _finish discards the partial
+        # rather than committing it under whoever signs in next.
+        assert "active1" in _mgr._cancelled
+        # Aggregate "downloading X of Y" counters cleared.
+        assert _mgr._session_total == 0
+        assert _mgr._session_expected_total == 0
