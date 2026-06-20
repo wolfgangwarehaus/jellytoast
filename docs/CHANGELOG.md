@@ -13,11 +13,19 @@ tagged version; snip it into a dated version block when cutting a release.
 ## [0.1.2] — 2026-06-20
 
 A correctness-and-hardening release from a full release-readiness review of the
-app: a Jellyfin playback/launch crash, a fresh-install credential-permission
-leak, and a set of cast, offline, and UI fixes.
+app: the Linux `.deb` now launches on X11/XWayland, plus a Jellyfin
+playback/launch crash, a fresh-install credential-permission leak, and a set of
+cast, offline, and UI fixes.
 
 ### Fixed
 
+- **The Linux `.deb` now launches on X11 / XWayland.** The bundled Qt `xcb`
+  platform plugin hard-links a large X / xcb / xkb / font / GL library closure
+  that the package only partially declared, so on a minimal install an X11 (or
+  XWayland) session aborted at startup (*"could not load the Qt platform plugin
+  xcb"*). The package now `Depends` on the complete closure, proven by a clean-
+  container boot across Ubuntu 24.04 / 26.04 and Debian stable. **v0.1.0 and
+  v0.1.1's `.deb` were affected too;** Wayland sessions were never affected.
 - **Jellyfin tracks with an unknown duration no longer crash playback — or
   launch.** Jellyfin reports `RunTimeTicks` / `UserData` as *present but null*
   for un-probed, `.strm`, and some live items; the now-playing builder treated
