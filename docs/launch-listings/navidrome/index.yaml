@@ -1,0 +1,29 @@
+name: jellytoast
+url: https://wolfgangwarehaus.com/jellytoast
+repoUrl: https://github.com/wolfgangwarehaus/jellytoast
+
+platforms:
+  windows: true
+  linux: true
+
+api: OpenSubsonic
+
+description: "Native PySide6/Qt desktop client for Jellyfin and Subsonic/OpenSubsonic servers. Bit-perfect gapless mpv playback, ReplayGain, offline downloads, casting (Chromecast/AirPlay/DLNA/Sonos), synced lyrics, and ListenBrainz scrobbling."
+
+isFree: true
+
+screenshots:
+  thumbnail: now-playing.webp
+  gallery:
+    - library.webp
+    - cast.webp
+    - downloads.webp
+    - smart-playlists.webp
+    - radio.webp
+
+keywords:
+  - jellyfin
+  - navidrome
+  - gapless
+  - chromecast
+  - offline
