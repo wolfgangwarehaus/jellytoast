@@ -20,6 +20,46 @@ then Track B.
 
 ---
 
+## 🧭 CURRENT STATUS — refreshed 2026-06-20 (read this first)
+
+A lot is already done; this trip is mostly **build → verify → submit for the
+v0.1.2 release**. The authoritative, paste-ready submission steps now live in
+**`packaging/msix/STORE-SUBMISSION.md`** — this file is the laptop checklist;
+that file is what you paste into Partner Center.
+
+**Done (verify, don't redo):** winget is LIVE (Track A); Partner Center account
++ identity stamped into the manifest (PFN `…_yswr9h87xar1w`, Store ID
+`9PNLTPXGHN79`, manifest `1.0.0.0`); MSIX has been built, packed, and
+self-signed once; `COPYING`/GPL-3.0 conveyance + privacy disclosures done.
+**Verified live from Linux 2026-06-20:** the hosted privacy URL
+(`…/jellytoast/privacy.html`, with the third-party-flow disclosures) returns
+200, and the Jellyfin demo server (`demo.jellyfin.org/stable`) is reachable —
+Store gates 2 and 6 are clear.
+
+**The release order matters — do it in this sequence:**
+1. **Cut + push `v0.1.2`** (`dev/cut_release.sh 0.1.2 --push`, from the Linux
+   box) so every `…/v0.1.2/` source-offer / license / privacy link resolves and
+   the Store build carries the right marketing version. The review fixes that
+   make up 0.1.2 are on `fix/v0.1.2-review-fixes`; merge that first.
+2. **Rebuild the MSIX from the v0.1.2 tag** on the laptop (PyInstaller spec →
+   `makeappx`), with the **real** identity (already in the manifest — no
+   self-sign needed for the upload package).
+3. **WACK + the in-package QA gate** (Part 1 / Phase C in STORE-SUBMISSION.md) —
+   **audio playing under read-only WindowsApps is the #1 risk.**
+4. **Submit** via the STORE-SUBMISSION.md runbook.
+
+> ⚠️ **Two things MUST be cleared before the final Store build:**
+> 1. **Remove the TEMP debug shim** in `jellytoast/autostart/_msix.py` (the
+>    `jt_msix_debug.txt` writer added 2026-06-20 for StartupTask diagnosis). It
+>    must not ship in the submitted package.
+> 2. **Resolve the StartupTask autostart diagnosis** the shim was added for —
+>    confirm "Launch at login" actually arms/disarms in-package (Phase C item 6)
+>    before relying on it. If it can't be fixed this trip, ship 0.1.2 with the
+>    Run-key fallback understanding that packaged autostart is unverified, and
+>    keep it off the Store listing's feature claims.
+
+---
+
 ## Track A — winget submission ✅ DONE (winget install is live)
 The manifests in `packaging/winget/` are already pointed at the live
 **v0.1.1** `setup.exe` (URL + sha256 from the release `SHA256SUMS`). Steps:
@@ -76,15 +116,13 @@ The manifests in `packaging/winget/` are already pointed at the live
 - [x] Python 3.11 + this repo checked out to branch `feat/windows-store-msix`
 - [x] `pip install . pyinstaller` — PyInstaller 6.21.0 in venv ✅
 
-## Phase 1 — free Microsoft Store account
-- [ ] Register an **individual** developer account at https://partner.microsoft.com
-      (Apps & games) — government ID + selfie, **personal** Microsoft account
-      (NOT a work/Entra account). $0, no credit card.
-- [ ] Reserve the app name **"jellytoast"**.
-- [ ] Copy the assigned **Product identity** into `packaging/msix/AppxManifest.xml`:
-      - `Identity/@Name` ← Package/Identity/Name
-      - `Identity/@Publisher` ← Package/Identity/Publisher (`CN=…` + GUID)
-      - `PublisherDisplayName` ← Package/Properties/PublisherDisplayName
+## Phase 1 — free Microsoft Store account ✅ DONE
+- [x] Registered an **individual** developer account (personal MS account, $0).
+- [x] Reserved the app name **"jellytoast"**.
+- [x] Stamped the assigned **Product identity** into `packaging/msix/AppxManifest.xml`
+      — `Name=wolfgangwarehaus.jellytoast`, `Publisher=CN=C9FAE1C4-…`, PFN
+      `…_yswr9h87xar1w`, Store ID `9PNLTPXGHN79`, Version `1.0.0.0`. Verified
+      byte-for-byte against Partner Center in `STORE-SUBMISSION.md` (Phase A).
 
 ## Phase 2 — build, pack, local test-install
 > Self-signing here is **local-only** (to sideload-test). The Store re-signs
@@ -120,16 +158,19 @@ The manifests in `packaging/winget/` are already pointed at the live
 - [ ] Single-instance: second launch focuses the existing window
 
 ## Phase 4 — Partner Center submission (manual, first time)
-- [ ] Rebuild + repack with the **real** Identity (Phase 1) — no self-sign needed for upload
-- [ ] **runFullTrust justification** — paste the paragraph from README §"Partner Center"
-- [ ] **License terms = the GPL** (App Developer Agreement FOSS carve-out): supply
-      your own terms; convey the Store build under **GPL-3.0-or-later** (the
-      bundled PySide6 forces it — GPL-2.0-only is incompatible; see
-      `docs/LICENSING.md`). Paste-ready text in `STORE-SUBMISSION.md`.
-- [ ] **Source offer** (GPL §3): in the listing description, link
-      `https://github.com/wolfgangwarehaus/jellytoast/tree/v0.1.0`
-- [ ] **Privacy policy URL** (required for Win32 apps) — reuse the Flathub one
-- [ ] Submit → first cert review ~1–5 business days
+**Use `packaging/msix/STORE-SUBMISSION.md` — every field below is paste-ready
+and adversarially verified there. This list is just the spine.**
+- [ ] Rebuild + repack from the **v0.1.2 tag** with the **real** Identity
+      (already in the manifest) — no self-sign needed for the upload package.
+- [ ] **runFullTrust justification** — paste from STORE-SUBMISSION.md Part 2.
+- [ ] **License terms = GPL-3.0-or-later** (App Developer Agreement FOSS
+      carve-out; the bundled PySide6 forces v3 — see `docs/LICENSING.md`).
+      Paste-ready text in STORE-SUBMISSION.md.
+- [ ] **Source offer** (GPL §3): link `https://github.com/wolfgangwarehaus/jellytoast/tree/v0.1.2`
+      (must resolve → cut the tag first).
+- [ ] **Privacy policy URL** — `https://wolfgangwarehaus.com/jellytoast/privacy.html`
+      (LIVE + discloses the third-party flows; verified 2026-06-20).
+- [ ] Submit → first cert review ~1–5 business days (the runFullTrust manual review).
 
 ## Phase 5 (optional, separate track) — sign the GitHub `.exe` too
 The Store only clears SmartScreen for the **Store copy**. To also fix the
