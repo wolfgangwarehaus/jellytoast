@@ -22,17 +22,22 @@ Round-1 fixes now on `main` (need real-`.deb` validation):
 ---
 
 ## Get a fixed `.deb` to test
-The released v0.1.0 `.deb` is the **broken** one (and was pulled from the
-release). Test a `.deb` built from current `main`:
+**v0.1.1 is released** (2026-06-17) and its assets include
+`jellytoast_0.1.1_amd64.deb`, built from post-fix `main` — so it carries
+#148/#149/#151/#152/#153. (v0.1.0 is the pre-fix release; its `.deb` is the
+broken one and was never published to that release.)
 
-- **Build from main:**
+- **Preferred — download the released v0.1.1 `.deb`** (the real shipping artifact):
+  ```bash
+  gh release download v0.1.1 --pattern 'jellytoast_*_amd64.deb'
+  ```
+- **Or build one from current `main`** (fallback — e.g. to test a fix not yet
+  in a release):
   ```bash
   pip install . pyinstaller
   pyinstaller packaging/pyinstaller/jellytoast.spec --noconfirm
   bash packaging/deb/build_deb.sh 0.1.1-test    # → dist/jellytoast_0.1.1-test_amd64.deb
   ```
-- **Or**, if **v0.1.1** has been cut by then, download that `.deb` from the
-  release instead (preferred — it's the real artifact).
 
 ## Phase 1 — the `.deb` works flawlessly  ⭐ main goal
 Exercise on the versions that were broken (this box is **26.04**; also try
