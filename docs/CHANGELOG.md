@@ -10,6 +10,49 @@ tagged version; snip it into a dated version block when cutting a release.
 
 ## [Unreleased]
 
+## [0.1.2] — 2026-06-20
+
+A correctness-and-hardening release from a full release-readiness review of the
+app: a Jellyfin playback/launch crash, a fresh-install credential-permission
+leak, and a set of cast, offline, and UI fixes.
+
+### Fixed
+
+- **Jellyfin tracks with an unknown duration no longer crash playback — or
+  launch.** Jellyfin reports `RunTimeTicks` / `UserData` as *present but null*
+  for un-probed, `.strm`, and some live items; the now-playing builder treated
+  only an *absent* field as missing, so such a track raised a `TypeError` when
+  played or prefetched, and — if it was the saved resume track — aborted startup
+  before the window appeared. Subsonic / Navidrome were unaffected.
+- **Downloads no longer follow you across a sign-out or server switch.**
+  In-flight and queued downloads planned against the previous server are now
+  cancelled on sign-out / server change, so they can't land in the next
+  account's offline library.
+- **Internet radio casts reliably to DLNA and Sonos.** Live / ICY radio streams
+  are now handed to the speaker directly instead of through the local cast relay
+  (matching the Chromecast path), which could stall an endless stream.
+- **Legacy AirPlay no longer leaks a connection** when a receiver drops
+  mid-request.
+- **Less spurious offline flicker on a slow failover** — the connectivity check
+  re-confirms its timing window, not just the failure count, before switching to
+  offline mode.
+- **Keyboard navigation in Search no longer makes the next mouse-wheel scroll
+  jump back.** Programmatic scrolls now reset the smooth-scroll state.
+
+### Security
+
+- **The credential file is owner-only from the very first launch.** The config
+  file — which holds the encrypted token plus your username and server address —
+  was briefly created world-readable on a fresh Linux install and only tightened
+  to `0600` on the *next* launch; it is now tightened the moment it is first
+  written. (No effect on Windows, which stores credentials in the OS credential
+  manager.)
+
+### Performance
+
+- **Large libraries build their A–Z index faster** — a per-row sort-field lookup
+  that is constant across a load is now computed once instead of per item.
+
 ## [0.1.1] — 2026-06-17
 
 This release is the **working Linux `.deb`** — the v0.1.0 package failed to

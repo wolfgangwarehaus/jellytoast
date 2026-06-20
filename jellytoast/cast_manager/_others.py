@@ -198,7 +198,15 @@ class _OtherProtocolsMixin:
     # push, so it has no ``cast_to_*`` here.
 
     def cast_to_dlna(
-        self, dev, stream_url, meta, *, transcode_url_fn=None, force_transcode=False, start_sec=0.0
+        self,
+        dev,
+        stream_url,
+        meta,
+        *,
+        transcode_url_fn=None,
+        force_transcode=False,
+        start_sec=0.0,
+        is_live=False,
     ) -> bool:
         """Push the current track to a DLNA renderer. ``dev.cast_object``
         is the ``DlnaDevice``; ``meta`` is a ``TrackMetadata``. The
@@ -216,7 +224,11 @@ class _OtherProtocolsMixin:
             return False
         if not _dlna.is_available():
             return False
-        url = resolve_cast_url(stream_url) if stream_url else stream_url
+        # Skip the cast proxy for live/internet-radio streams (mirrors the
+        # Chromecast path): a radio URL is a public CDN the renderer fetches
+        # directly, so routing an endless ICY stream through the fixed-port
+        # local proxy only adds a failure point and can stall it.
+        url = resolve_cast_url(stream_url) if (stream_url and not is_live) else stream_url
         controller = _dlna.get_dlna_controller()
         try:
             ok = controller.play(
@@ -238,7 +250,9 @@ class _OtherProtocolsMixin:
                 logger.warning("DLNA start_polling: %s", e)
         return bool(ok)
 
-    def cast_to_sonos(self, dev, url, *, title="", artist="", album="", art_url="") -> bool:
+    def cast_to_sonos(
+        self, dev, url, *, title="", artist="", album="", art_url="", is_live=False
+    ) -> bool:
         """Push the current track to a Sonos zone's coordinator with DIDL
         metadata. ``dev.cast_object`` is the ``SonosZone``. The backend
         ``cast_to_sonos`` routes ``url`` through the cast proxy itself."""
@@ -257,6 +271,7 @@ class _OtherProtocolsMixin:
                 artist=artist,
                 album=album,
                 art_url=art_url,
+                is_live=is_live,
             )
         except Exception as e:
             logger.warning("Sonos cast: %s", e)

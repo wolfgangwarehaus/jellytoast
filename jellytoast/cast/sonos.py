@@ -266,6 +266,7 @@ def cast_to_sonos(
     album: str = "",
     art_url: str = "",
     apply_volume_floor: bool = True,
+    is_live: bool = False,
 ) -> bool:
     """Push ``url`` to the zone's coordinator with DIDL metadata.
 
@@ -291,8 +292,11 @@ def cast_to_sonos(
         def resolve_cast_url(u: str) -> str:  # type: ignore[no-redef]
             return u
 
-    proxy_url = resolve_cast_url(url) if url else url
-    proxy_art = resolve_cast_url(art_url) if art_url else ""
+    # Live/internet-radio: hand the speaker the public URL directly and skip
+    # the local proxy (mirrors Chromecast/DLNA) — an endless ICY stream can
+    # stall behind the fixed-port proxy and only adds a failure point.
+    proxy_url = resolve_cast_url(url) if (url and not is_live) else url
+    proxy_art = resolve_cast_url(art_url) if (art_url and not is_live) else (art_url or "")
     didl = build_didl(title, artist=artist, album=album, art_url=proxy_art)
     try:
         if apply_volume_floor:

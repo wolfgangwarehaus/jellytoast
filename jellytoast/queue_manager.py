@@ -673,11 +673,11 @@ class QueueManager(QObject):
             subtitle=subtitle,
             album=item.get("Album", ""),
             year=str(item.get("ProductionYear", "")),
-            duration=item.get("RunTimeTicks", 0) // 10_000,
+            duration=(item.get("RunTimeTicks", 0) or 0) // 10_000,
             stream_url=stream_url,
             thumb_url=thumb_url,
             item_type=item_type,
-            is_favorite=item.get("UserData", {}).get("IsFavorite", False),
+            is_favorite=(item.get("UserData") or {}).get("IsFavorite", False),
             is_local=is_local,
             raw=item,
         )

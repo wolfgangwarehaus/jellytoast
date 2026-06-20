@@ -253,7 +253,15 @@ def note_network_failure() -> None:
         # stale pre-probe evidence would be a spurious offline flap (the
         # next success lifts it, but it's a visible flicker). If a success
         # reset the counter below threshold, abandon the flip.
-        if not _server_reachable or _consecutive_failures < _UNREACHABLE_THRESHOLD:
+        # Re-check the elapsed-window guard too (not just the count): a fresh
+        # burst that re-crossed the threshold DURING the slow failover probe
+        # would otherwise flip offline on sub-window evidence, defeating the
+        # burst-immunity the line-235 gate provides.
+        if (
+            not _server_reachable
+            or _consecutive_failures < _UNREACHABLE_THRESHOLD
+            or (_now() - _first_failure_ts) < _UNREACHABLE_MIN_WINDOW_S
+        ):
             return
         _server_reachable = False
     _emit_connectivity_changed(False)

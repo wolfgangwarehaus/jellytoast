@@ -419,7 +419,12 @@ class CastManager(_ChromecastMixin, _AirplayMixin, _OtherProtocolsMixin):
             tfn = None if is_radio_item else make_transcode_fn(provider, np.item_id)
             self._run_off_thread_result(
                 lambda: self.cast_to_dlna(
-                    dev, np.stream_url, meta, transcode_url_fn=tfn, start_sec=start_sec
+                    dev,
+                    np.stream_url,
+                    meta,
+                    transcode_url_fn=tfn,
+                    start_sec=start_sec,
+                    is_live=is_radio_item,
                 ),
                 _done,
             )
@@ -433,6 +438,7 @@ class CastManager(_ChromecastMixin, _AirplayMixin, _OtherProtocolsMixin):
                     artist=np.subtitle,
                     album=np.album,
                     art_url=np.thumb_url,
+                    is_live=is_radio_item,
                 ),
                 _done,
             )
