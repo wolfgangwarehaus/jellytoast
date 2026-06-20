@@ -26,7 +26,7 @@ the catalog/badge entries are what the announcements link to.
   2. `mkdir -p assets/apps/jellytoast` and copy `index.yaml` + the 6 webp files in.
   3. `npm install && npm run validate:app jellytoast` — must pass.
   4. Commit, push, open a PR to `navidrome/website` (default branch).
-- **Notes:** `api: OpenSubsonic` is case-sensitive and required. Thumbnail must be real UI (it is). The release-date badge auto-populates from the v0.1.0 GitHub release.
+- **Notes:** `api: OpenSubsonic` is case-sensitive and required. Thumbnail must be real UI (it is). The release-date badge auto-populates from the latest GitHub release.
 
 ## 2. Jellyfin website clients page → `jellyfin/jellyfin.org`
 
