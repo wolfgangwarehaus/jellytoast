@@ -36,16 +36,18 @@ what CI/containers use, since `appimagetool` itself wants FUSE otherwise).
 `.AppImage.zsync` alongside the AppImage, so users running `AppImageUpdate` /
 `appimageupdatetool` get delta updates. jellytoast ships no updater of its own.
 
-## ⚠️ Status — needs a real CI build before shipping
+## Status — CI-verified; one real-desktop audio check before shipping
 
-Authored on the Arch dev box; **not yet built end-to-end** (PyInstaller isn't on
-that box, and an Arch-built AppImage's glibc floor is non-distributable). The
-authoritative verification is the CI job. Before relying on this for 0.1.3:
+Authored on the Arch dev box (can't build there — no PyInstaller, and Arch's
+glibc floor is non-distributable), then verified in CI.
 
-- [ ] **Run the build:** `gh workflow run release.yml` (workflow_dispatch dry-run)
-      or push a `-rc` tag, and confirm the `build-linux-appimage` job is green —
-      especially the clean-container smoke (`ubuntu:24.04` + `debian:stable` with
-      NO libmpv installed). That step is the real "is libmpv self-contained?" test.
+- [x] **CI build + self-containment smoke GREEN** — workflow_dispatch dry-run on
+      `4f56556` (run 27911274573): `build-linux-appimage` built a ~195 MB AppImage
+      on ubuntu-22.04 and booted it in clean `ubuntu:24.04` + `debian:stable`
+      containers with NO libmpv and none of the Qt xcb-util/cursor closure
+      installed (only the host GL baseline). Three bugs fixed en route: 22.04
+      ships `libmpv.so.1`; `find_library('mpv')` can't see inside an AppImage;
+      the Qt xcb closure needed a generic ldd-closure walk.
 - [ ] **Verify the `import mpv` path** on a real desktop: download the artifact,
       `chmod +x`, run it on a distro WITHOUT system libmpv (e.g. a clean Fedora),
       and confirm audio plays. The `APPDIR` hook in `player_backend.py` +
