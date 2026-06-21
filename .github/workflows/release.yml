@@ -1,6 +1,8 @@
 # Release builds — runs on every v* tag and produces a DRAFT GitHub
 # release holding all binary artifacts:
 #   • jellytoast_<ver>_amd64.deb        (Ubuntu 22.04+/Debian 12+, self-contained)
+#   • jellytoast-<ver>-x86_64.AppImage  (universal Linux, self-contained libmpv;
+#                                        + .zsync for AppImageUpdate delta updates)
 #   • jellytoast-<ver>-windows-x64-setup.exe   (Inno Setup installer, libmpv bundled)
 #   • jellytoast-<ver>-windows-x64-portable.zip
 #   • sdist + wheel (PyPI-shaped, also attached)
@@ -100,6 +102,75 @@ jobs:
         uses: actions/attest-build-provenance@v4
         with:
           subject-path: dist/*.deb
+
+  build-linux-appimage:
+    # The universal-Linux channel: a self-contained AppImage that runs on any
+    # glibc-compatible distro with no install/root. Matches the .deb's glibc
+    # floor (ubuntu-22.04 / glibc 2.35) so it runs forward on every current
+    # distro (Ubuntu 22.04+, Debian 12+, Fedora 36+, Arch, openSUSE…). AppImage
+    # is forward-compatible only — built on the oldest base we support. (A 20.04
+    # base would widen reach to Debian 11 / RHEL-8, but the hosted 20.04 runner
+    # is retired; building inside an ubuntu:20.04 container is the documented
+    # option — see packaging/appimage/APPIMAGE_WORKLIST.md.)
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: System libraries to vendor (libmpv + FFmpeg + the Qt xcb closure)
+        # build_appimage.sh vendors the ldd-closure of libmpv + the Qt xcb plugin
+        # into the AppImage, so every lib it needs must be PRESENT here for ldd to
+        # resolve it. This is the same closure the .deb declares as Depends.
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libmpv-dev libegl1 libgl1 libdbus-1-3 \
+            libxcb-cursor0 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 \
+            libxcb-randr0 libxcb-render0 libxcb-render-util0 libxcb-shape0 \
+            libxcb-shm0 libxcb-sync1 libxcb-util1 libxcb-xfixes0 libxcb-xkb1 \
+            libxkbcommon0 libxkbcommon-x11-0 libfontconfig1 libfreetype6
+      - name: Build PyInstaller bundle
+        run: |
+          python -m pip install --upgrade pip
+          pip install . pyinstaller
+          pyinstaller packaging/pyinstaller/jellytoast.spec --noconfirm
+      - name: Resolve version
+        id: ver
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            V="$(python -c 'import tomllib;print(tomllib.load(open("pyproject.toml","rb"))["project"]["version"])')"
+          else
+            V="${GITHUB_REF_NAME#v}"
+          fi
+          echo "version=$V" >> "$GITHUB_OUTPUT"
+      - name: Build the AppImage
+        run: bash packaging/appimage/build_appimage.sh "${{ steps.ver.outputs.version }}"
+      # Prove self-containment: boot the AppImage in clean containers that have
+      # NEITHER libmpv NOR the xcb closure installed. If a lib weren't bundled the
+      # app aborts (rc != 124/0) — the exact gap that let a broken .deb ship.
+      - name: Smoke-test the AppImage in clean containers (self-containment guard)
+        run: |
+          for img in ubuntu:24.04 debian:stable; do
+            echo "::group::appimage smoke $img"
+            docker run --rm -v "$PWD:/src:ro" "$img" bash /src/packaging/appimage/smoke_test_appimage.sh
+            echo "::endgroup::"
+          done
+      - uses: actions/upload-artifact@v7
+        with:
+          name: appimage
+          path: |
+            dist/*.AppImage
+            dist/*.AppImage.zsync
+      - name: Attest AppImage provenance
+        if: github.event_name == 'push'
+        uses: actions/attest-build-provenance@v4
+        with:
+          subject-path: dist/*.AppImage
 
   build-windows:
     runs-on: windows-latest
@@ -216,7 +287,7 @@ jobs:
 
   draft-release:
     if: github.event_name == 'push'
-    needs: [build-linux-deb, build-windows, build-python]
+    needs: [build-linux-deb, build-linux-appimage, build-windows, build-python]
     runs-on: ubuntu-latest
     permissions:
       contents: write  # only this job mints the release

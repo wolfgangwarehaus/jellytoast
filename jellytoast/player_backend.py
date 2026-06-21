@@ -36,7 +36,7 @@ from typing import Optional
 
 from PySide6.QtCore import QObject, QTimer, Signal, Slot
 
-from jellytoast.platform_compat import IS_WINDOWS
+from jellytoast.platform_compat import IS_LINUX, IS_WINDOWS
 
 logger = logging.getLogger(__name__)
 
@@ -117,6 +117,30 @@ if IS_WINDOWS and getattr(sys, "frozen", False):
         os.add_dll_directory(os.path.dirname(sys.executable))
     except OSError:
         pass
+
+# AppImage (Linux, frozen): the bundle vendors its own libmpv under usr/lib (the
+# .deb gets libmpv from the host via Depends; an AppImage can't, so it must
+# self-contain it). python-mpv loads libmpv at import via
+# ``ctypes.util.find_library("mpv")`` then ``CDLL(<that>)`` — and find_library
+# only scans the SYSTEM ldconfig cache, so it never sees a lib inside a mounted
+# AppImage. Redirect find_library at the bundled copy (soname-agnostic: Ubuntu
+# 22.04 ships libmpv.so.1, newer distros .so.2). AppRun also puts usr/lib on
+# LD_LIBRARY_PATH so libmpv's own FFmpeg deps resolve. APPDIR is set only by the
+# AppImage runtime, so this is a no-op for the .deb / pipx / source runs.
+_appdir = os.environ.get("APPDIR")
+if IS_LINUX and getattr(sys, "frozen", False) and _appdir:
+    import ctypes.util
+    import glob
+
+    _bundled = sorted(glob.glob(os.path.join(_appdir, "usr", "lib", "libmpv.so*")))
+    if _bundled:
+        _mpv_lib = _bundled[-1]  # highest soname version present
+        _orig_find_library = ctypes.util.find_library
+
+        def _find_library(name, _orig=_orig_find_library, _mpv=_mpv_lib):
+            return _mpv if name == "mpv" else _orig(name)
+
+        ctypes.util.find_library = _find_library
 
 try:
     import mpv
