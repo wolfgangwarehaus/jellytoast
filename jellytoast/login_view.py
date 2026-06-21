@@ -22,6 +22,7 @@ from PySide6.QtWidgets import (
 )
 
 from jellytoast.async_io import run_async
+from jellytoast.demo_servers import demo_for_kind
 from jellytoast.design_tokens import (
     RADIUS_WINDOW,
     SPACE_LG,
@@ -296,6 +297,9 @@ class LoginView(QWidget):
         self.provider = get_provider()
         self._settings = get_settings()
         self._submitting = False
+        # True while a "Try a demo" attempt is in flight, so the probe-failure
+        # message can explain it's a public server we don't control.
+        self._pending_demo = False
 
         self.setObjectName("loginView")
         self._refresh_loginview_qss()
@@ -427,6 +431,21 @@ class LoginView(QWidget):
         self._submit_btn.clicked.connect(self._submit)
         card_layout.addWidget(self._submit_btn)
 
+        # "Try a demo" — no server of your own? Explore against a public,
+        # read-only demo run by the Navidrome / Jellyfin projects. It fills the
+        # form for the SELECTED server type (so the existing picker doubles as
+        # the demo selector) and submits through the normal auth path.
+        card_layout.addSpacing(SPACE_XS)
+        self._demo_btn = QPushButton("No server? Try a demo →")
+        self._demo_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._demo_btn.setStyleSheet(
+            f"QPushButton {{ background: transparent; border: none; "
+            f"color: {TEXT_DIM}; {type_qss(TYPE_CAPTION)} }} "
+            f"QPushButton:hover {{ color: {ACCENT}; }}"
+        )
+        self._demo_btn.clicked.connect(self._try_demo)
+        card_layout.addWidget(self._demo_btn, 0, Qt.AlignmentFlag.AlignHCenter)
+
         # Live-accent: re-stamp the submit-button QSS + combo
         # accents on PlayerBus.theme_changed. The form bakes both
         # at construction; without this, picking a new accent
@@ -552,8 +571,31 @@ class LoginView(QWidget):
 
     @Slot()
     def _submit(self):
+        self._do_submit(demo=False)
+
+    @Slot()
+    def _try_demo(self):
+        """Fill the form for the selected server type from the public demo list
+        and submit through the normal auth path (no special-case code, so the
+        demo behaves exactly like a real login)."""
         if self._submitting:
             return
+        kind = self._kind_combo.currentData() or "jellyfin"
+        demo = demo_for_kind(kind)
+        if demo is None:
+            self._show_error("No demo server is available for this server type.")
+            return
+        # Reflect the demo in the form so the user SEES what they're connecting
+        # to (and can tweak or sign in normally afterwards).
+        self._server_field.setText(demo.url)
+        self._username_field.setText(demo.username)
+        self._password_field.setText(demo.password)
+        self._do_submit(demo=True)
+
+    def _do_submit(self, demo: bool = False):
+        if self._submitting:
+            return
+        self._pending_demo = demo
         server = self._server_field.text().strip()
         username = self._username_field.text().strip()
         password = self._password_field.text()
@@ -635,6 +677,15 @@ class LoginView(QWidget):
 
     def _on_probe_err(self, err: Exception):
         self._set_submitting(False)
+        if getattr(self, "_pending_demo", False):
+            # The user typed nothing — any failure here means the public demo
+            # itself is unreachable. Be honest that it's not our server.
+            self._show_error(
+                "The public demo looks offline right now — it's a shared server "
+                "run by the Navidrome / Jellyfin projects, not by jellytoast. "
+                "Try again later, or sign in to your own server above."
+            )
+            return
         msg = str(err) or err.__class__.__name__
         if "Connection" in msg or "Max retries" in msg or "timed out" in msg:
             msg = "Couldn't reach the server. Check the URL and your network."
@@ -714,6 +765,7 @@ class LoginView(QWidget):
         self._submitting = submitting
         self._submit_btn.setText("Signing in…" if submitting else "Sign in")
         self._submit_btn.setEnabled(not submitting)
+        self._demo_btn.setEnabled(not submitting)
         for f in (self._server_field, self._username_field, self._password_field):
             f.setEnabled(not submitting)
 
