@@ -10,6 +10,8 @@ tagged version; snip it into a dated version block when cutting a release.
 
 ## [Unreleased]
 
+## [0.1.3] — 2026-06-21
+
 Two new ways to get jellytoast — a universal-Linux **AppImage** and a one-click
 **demo** so you can try the app with no server of your own. Behind the scenes,
 Flatpak/Flathub are fully retired and the release pipeline is unified so one
