@@ -10,7 +10,7 @@
 # end-user application. arch=('any') — pure Python, no compiled extension.
 
 pkgname=jellytoast
-pkgver=0.1.0
+pkgver=0.1.2
 pkgrel=1
 pkgdesc='Audio-first native Jellyfin / Subsonic desktop music client with bit-perfect mpv playback'
 arch=('any')
@@ -53,10 +53,12 @@ optdepends=(
 makedepends=('python-build' 'python-installer' 'python-wheel' 'python-setuptools')
 
 # Pin the source to a release tag tarball (reproducible — preferred over a
-# moving branch). Refresh with `updpkgsums` on each release (digest below is
-# the v0.1.0 tag archive).
+# moving branch). `pkgver` is kept in lockstep with pyproject by
+# dev/cut_release.sh and gated by tests/test_version_consistency.py; the digest
+# is refreshed by `updpkgsums` (the aur.yml workflow runs it, as does a manual
+# cut). The value below is the v0.1.2 tag archive.
 source=("$pkgname-$pkgver.tar.gz::$url/archive/refs/tags/v$pkgver.tar.gz")
-sha256sums=('303e29a1fa2b1c8334860c8a2c31ab432c45975e5af1b9c694f31c1fa3d88622')
+sha256sums=('8ea68f42b6beb3642440493c064f7b901875e5e20d45ed1c763bdf6a15435f38')
 
 build() {
   cd "$srcdir/$pkgname-$pkgver"
