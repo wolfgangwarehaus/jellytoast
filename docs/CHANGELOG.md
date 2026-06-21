@@ -10,6 +10,41 @@ tagged version; snip it into a dated version block when cutting a release.
 
 ## [Unreleased]
 
+Two new ways to get jellytoast — a universal-Linux **AppImage** and a one-click
+**demo** so you can try the app with no server of your own. Behind the scenes,
+Flatpak/Flathub are fully retired and the release pipeline is unified so one
+push reaches every channel.
+
+### Added
+
+- **Universal-Linux AppImage.** A single self-contained
+  `jellytoast-<version>-x86_64.AppImage` that runs on essentially any modern
+  Linux distro with no install and no root — `chmod +x` it and run. It bundles
+  its own libmpv + FFmpeg, so it works even on a system that has no mpv, and it
+  carries update metadata for `AppImageUpdate` delta updates. Built on the same
+  glibc floor as the `.deb` and smoke-tested in clean containers to prove it's
+  truly self-contained.
+- **"Try a demo" on the sign-in screen.** No server of your own? One click fills
+  the form for the selected server type and signs you into a public, read-only
+  demo — Navidrome (`demo.navidrome.org`) or the Jellyfin project's demo server —
+  so you can explore jellytoast instantly. It uses the normal sign-in path, so
+  the demo behaves exactly like a real server (and you can point at your own any
+  time).
+
+### Changed
+
+- **Flatpak and Flathub are fully retired.** jellytoast is no longer packaged as
+  a Flatpak or distributed via Flathub; the manifest, the runtime
+  sandbox-detection code, and the references are gone. Linux is served by the
+  `.deb`, the new AppImage, and — when registration reopens — the AUR. *(Packaging
+  only; Flatpak was never actually shipped, so there's no user-facing change.)*
+- **Unified, single-push release pipeline.** `dev/cut_release.sh` now stamps the
+  version across **every** distribution channel's manifest in one pass (winget and
+  AUR alongside the existing files), and CI fails the release if any channel
+  drifts — so a release can no longer ship a channel pointing at a stale version.
+  Publishing then fans out to PyPI / winget / AUR automatically. Full runbook in
+  `docs/RELEASING.md`. *(Developer-facing.)*
+
 ## [0.1.2] — 2026-06-20
 
 A correctness-and-hardening release from a full release-readiness review of the
