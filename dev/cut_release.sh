@@ -18,6 +18,13 @@
 #   • pyproject.toml                              [project].version
 #   • jellytoast/version.py                       both __version__ fallbacks
 #   • packaging/…jellytoast.metainfo.xml          newest <release version=…>
+#   • packaging/winget/*.yaml                     PackageVersion + InstallerUrl
+#   • packaging/aur/PKGBUILD                      pkgver (pkgrel reset to 1)
+# So one cut stamps every distribution channel's manifest; the per-channel
+# fan-out workflows (winget/aur on release: published) then ship from them.
+# NOT stamped here (filled at publish from the built artifact): the winget
+# InstallerSha256 (winget-releaser computes it) and the AUR sha256sums
+# (`updpkgsums` refreshes it) — the tag tarball / .exe don't exist yet.
 # The CHANGELOG [Unreleased] block is moved verbatim into the new version's
 # section, leaving a fresh empty [Unreleased] at the top.
 set -euo pipefail
@@ -69,6 +76,12 @@ new = os.environ["NEW_VERSION"]
 date = os.environ["RELEASE_DATE"]
 root = Path(".")
 
+# Current (pre-bump) version — used to rewrite URLs that embed it literally
+# (the winget InstallerUrl), robust to any version format incl. -suffixes.
+old = re.search(
+    r'(?m)^version\s*=\s*"([^"]+)"', (root / "pyproject.toml").read_text("utf-8")
+).group(1)
+
 # 1. pyproject.toml — [project].version (first `version = "…"` line).
 pp = root / "pyproject.toml"
 text = pp.read_text(encoding="utf-8")
@@ -116,7 +129,39 @@ if body:
     out.append("\n" + body + "\n")
 out.append(tail if tail.startswith("\n") else "\n" + tail)
 cl.write_text("".join(out), encoding="utf-8")
-print(f"bumped pyproject + version.py + metainfo + CHANGELOG → {new} ({date})")
+
+# 5. winget manifests — PackageVersion in all three + the InstallerUrl that
+#    embeds the version (the `/v…/` path segment and the `-…-` filename). The
+#    InstallerSha256 stays (it's for the not-yet-built .exe; winget-releaser /
+#    `wingetcreate` recompute it at publish).
+import glob
+
+for wf in sorted(glob.glob("packaging/winget/*.yaml")):
+    p = root / wf
+    t = p.read_text(encoding="utf-8")
+    t, n = re.subn(r"(?m)^(PackageVersion:\s*)\S+\s*$", rf"\g<1>{new}", t)
+    assert n >= 1, f"did not bump PackageVersion in {wf}"
+    if old != new:
+        # Literal old→new so any version format (incl. -rc suffixes) is exact.
+        t = t.replace(f"/download/v{old}/", f"/download/v{new}/")
+        t = t.replace(f"jellytoast-{old}-windows", f"jellytoast-{new}-windows")
+    p.write_text(t, encoding="utf-8")
+
+# 6. AUR PKGBUILD — pkgver + reset pkgrel=1. The source URL uses $pkgver so it
+#    follows; sha256sums are refreshed by `updpkgsums` at publish (the tag
+#    tarball doesn't exist yet).
+pk = root / "packaging" / "aur" / "PKGBUILD"
+text = pk.read_text(encoding="utf-8")
+text, n = re.subn(r"(?m)^pkgver=\S+\s*$", f"pkgver={new}", text)
+assert n == 1, "did not bump pkgver in PKGBUILD"
+text, n = re.subn(r"(?m)^pkgrel=\S+\s*$", "pkgrel=1", text)
+assert n == 1, "did not reset pkgrel in PKGBUILD"
+pk.write_text(text, encoding="utf-8")
+
+print(
+    f"bumped pyproject + version.py + metainfo + CHANGELOG + winget + AUR "
+    f"→ {new} ({date})"
+)
 PY
 
 # ── Gate: the source-of-truth files must agree before we commit ─────────
@@ -126,8 +171,9 @@ PY
 # spuriously fail here. That runtime check runs in CI on the release commit
 # against a fresh install; locally we verify the three files we just edited
 # all carry the same version, which is the drift this script could cause.
-echo "→ verifying pyproject / version.py / metainfo agree…"
+echo "→ verifying pyproject / version.py / metainfo / winget / AUR agree…"
 python3 - <<'PY'
+import glob
 import re
 import sys
 from pathlib import Path
@@ -142,19 +188,33 @@ mi = (
     .findall("release")[0]
     .get("version")
 )
+wg = set()
+for wf in glob.glob("packaging/winget/*.yaml"):
+    m = re.search(r"(?m)^PackageVersion:\s*(\S+)\s*$", Path(wf).read_text("utf-8"))
+    if m:
+        wg.add(m.group(1))
+aur = re.search(r"(?m)^pkgver=(\S+)\s*$", Path("packaging/aur/PKGBUILD").read_text("utf-8")).group(1)
 errs = []
 if fallbacks != {pyv}:
     errs.append(f"version.py fallbacks {sorted(fallbacks)} != pyproject {pyv}")
 if mi != pyv:
     errs.append(f"metainfo newest <release> {mi} != pyproject {pyv}")
+if wg != {pyv}:
+    errs.append(f"winget PackageVersion {sorted(wg)} != pyproject {pyv}")
+if aur != pyv:
+    errs.append(f"AUR pkgver {aur} != pyproject {pyv}")
 if errs:
     sys.exit("consistency check FAILED: " + "; ".join(errs))
-print(f"✓ pyproject, version.py, and metainfo all agree at {pyv}")
+print(f"✓ pyproject, version.py, metainfo, winget, and AUR all agree at {pyv}")
 PY
 
 # ── Commit + annotated tag ──────────────────────────────────────────────
 git add pyproject.toml jellytoast/version.py \
-  packaging/io.github.wolfgangwarehaus.jellytoast.metainfo.xml docs/CHANGELOG.md
+  packaging/io.github.wolfgangwarehaus.jellytoast.metainfo.xml docs/CHANGELOG.md \
+  packaging/winget/wolfgangwarehaus.jellytoast.yaml \
+  packaging/winget/wolfgangwarehaus.jellytoast.installer.yaml \
+  packaging/winget/wolfgangwarehaus.jellytoast.locale.en-US.yaml \
+  packaging/aur/PKGBUILD
 git commit -q -m "release: v$NEW_VERSION"
 git tag -a "v$NEW_VERSION" -m "jellytoast v$NEW_VERSION"
 echo "✓ committed + tagged v$NEW_VERSION"

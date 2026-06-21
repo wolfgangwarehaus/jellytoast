@@ -1,0 +1,49 @@
+name: aur
+
+# Publish the PKGBUILD to the AUR when a release is PUBLISHED (it bumps pkgver
+# from the tag, regenerates .SRCINFO, refreshes the checksums via updpkgsums in
+# an Arch container, and pushes to aur@aur.archlinux.org).
+#
+# DORMANT until BOTH: (a) the AUR reopens new-package registration (frozen after
+# the 2026 malware wave) AND (b) you add the AUR_SSH_PRIVATE_KEY secret (a
+# dedicated AUR deploy keypair; public half on your AUR account). See
+# docs/RELEASING.md. Until then the steps are skipped.
+
+on:
+  release:
+    types: [released]
+
+permissions:
+  contents: read
+
+jobs:
+  aur:
+    runs-on: ubuntu-latest
+    env:
+      HAVE_KEY: ${{ secrets.AUR_SSH_PRIVATE_KEY != '' }}
+    steps:
+      - uses: actions/checkout@v6
+        if: env.HAVE_KEY == 'true'
+      - name: Stamp PKGBUILD pkgver from the tag
+        if: env.HAVE_KEY == 'true'
+        run: |
+          V="${{ github.event.release.tag_name }}"
+          V="${V#v}"
+          sed -i -E "s/^pkgver=.*/pkgver=${V}/; s/^pkgrel=.*/pkgrel=1/" packaging/aur/PKGBUILD
+      - name: Publish to the AUR
+        if: env.HAVE_KEY == 'true'
+        uses: KSXGitHub/github-actions-deploy-aur@v2.7.2
+        with:
+          pkgname: jellytoast
+          pkgbuild: packaging/aur/PKGBUILD
+          commit_username: wolfgangwarehaus
+          commit_email: augustvontrips@gmail.com
+          ssh_private_key: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
+          commit_message: jellytoast ${{ github.event.release.tag_name }}
+          updpkgsums: true
+          ssh_keyscan_types: rsa,ecdsa,ed25519
+      - name: Dormant — AUR_SSH_PRIVATE_KEY not set
+        if: env.HAVE_KEY != 'true'
+        run: |
+          echo "AUR_SSH_PRIVATE_KEY is not set → AUR auto-deploy is DORMANT (no-op)."
+          echo "(AUR new-package registration is also frozen.) See docs/RELEASING.md."
