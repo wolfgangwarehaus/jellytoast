@@ -31,6 +31,11 @@ datas = [
     # bundle ships GPL libmpv/FFmpeg; ship the corresponding-source offer
     # next to the exe).
     (str(REPO_ROOT / "LICENSE"), "."),
+    # GPLv3 text: the project source is GPL-2.0-or-later (LICENSE), but the frozen
+    # bundle (PySide6/Qt + a GPL build of libmpv/FFmpeg) is conveyed under GPL-3.0,
+    # so the package must also ship the v3 text (GPLv3: "give all recipients a copy
+    # of this License along with the Program").
+    (str(REPO_ROOT / "COPYING"), "."),
     (str(REPO_ROOT / "packaging" / "THIRD-PARTY-NOTICES.md"), "."),
 ]
 
