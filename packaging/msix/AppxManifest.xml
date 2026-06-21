@@ -1,0 +1,95 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Full-trust (packaged classic / "Desktop Bridge") MSIX manifest for jellytoast.
+
+  mediumIL + packagedClassicApp + runFullTrust  ->  NOT sandboxed: bundled
+  libmpv-2.dll, Win32 APIs (Acrylic, SMTC, taskbar, frameless, keep-awake)
+  and single-instance all work exactly as in the Inno build.
+
+  Identity stamped from Partner Center "Product identity" page 2026-06-18.
+  PFN: wolfgangwarehaus.jellytoast_yswr9h87xar1w
+  Store ID: 9PNLTPXGHN79
+-->
+<Package
+    xmlns="http://schemas.microsoft.com/appx/manifest/foundation/windows10"
+    xmlns:uap="http://schemas.microsoft.com/appx/manifest/uap/windows10"
+    xmlns:uap10="http://schemas.microsoft.com/appx/manifest/uap/windows10/10"
+    xmlns:desktop="http://schemas.microsoft.com/appx/manifest/desktop/windows10"
+    xmlns:rescap="http://schemas.microsoft.com/appx/manifest/foundation/windows10/restrictedcapabilities"
+    IgnorableNamespaces="uap uap10 desktop rescap">
+
+  <Identity
+      Name="wolfgangwarehaus.jellytoast"
+      Publisher="CN=C9FAE1C4-4DEA-4550-8A71-969C88BABEB6"
+      Version="1.0.0.0"
+      ProcessorArchitecture="x64" />
+
+  <Properties>
+    <DisplayName>jellytoast</DisplayName>
+    <PublisherDisplayName>wolfgang warehaus</PublisherDisplayName>
+    <Logo>Assets\StoreLogo.png</Logo>
+    <Description>A desktop music player for Jellyfin and Navidrome servers</Description>
+  </Properties>
+
+  <Dependencies>
+    <!-- 1809 (17763) is the floor for uap10 packagedClassicApp full-trust. -->
+    <TargetDeviceFamily Name="Windows.Desktop" MinVersion="10.0.17763.0" MaxVersionTested="10.0.26100.0" />
+  </Dependencies>
+
+  <Resources>
+    <Resource Language="en-us" />
+  </Resources>
+
+  <Applications>
+    <Application
+        Id="jellytoast"
+        Executable="jellytoast.exe"
+        EntryPoint="Windows.FullTrustApplication"
+        uap10:RuntimeBehavior="packagedClassicApp"
+        uap10:TrustLevel="mediumIL">
+
+      <uap:VisualElements
+          DisplayName="jellytoast"
+          Description="A desktop music player for Jellyfin and Navidrome servers"
+          BackgroundColor="transparent"
+          Square150x150Logo="Assets\Square150x150Logo.png"
+          Square44x44Logo="Assets\Square44x44Logo.png">
+        <uap:DefaultTile
+            Square71x71Logo="Assets\Square71x71Logo.png"
+            Square310x310Logo="Assets\Square310x310Logo.png"
+            Wide310x150Logo="Assets\Wide310x150Logo.png">
+          <uap:ShowNameOnTiles>
+            <uap:ShowOn Tile="square150x150Logo" />
+          </uap:ShowNameOnTiles>
+        </uap:DefaultTile>
+        <uap:SplashScreen Image="Assets\SplashScreen.png" BackgroundColor="transparent" />
+      </uap:VisualElements>
+
+      <Extensions>
+        <!--
+          Autostart for a packaged app MUST be a startupTask (Task Scheduler),
+          NOT the HKCU\...\Run key (Windows ignores Run-key entries from
+          packaged apps). Enabled="false" => off by default; the app flips it
+          on via StartupTask.RequestEnableAsync() when the user ticks
+          "Launch at login", and the user can always override in
+          Settings > Apps > Startup.
+        -->
+        <desktop:Extension
+            Category="windows.startupTask"
+            Executable="jellytoast.exe"
+            EntryPoint="Windows.FullTrustApplication">
+          <desktop:StartupTask
+              TaskId="jellytoastStartup"
+              Enabled="false"
+              DisplayName="jellytoast" />
+        </desktop:Extension>
+      </Extensions>
+    </Application>
+  </Applications>
+
+  <Capabilities>
+    <!-- Full Win32 trust. This is the RESTRICTED capability that triggers the
+         manual Store review — justify it in Partner Center (see README). -->
+    <rescap:Capability Name="runFullTrust" />
+  </Capabilities>
+</Package>

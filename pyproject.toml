@@ -118,6 +118,7 @@ dependencies = [
     # imports are lazy + guarded so a missing/old projection degrades to a
     # no-op rather than breaking boot. (jellytoast/media_controls/_windows.py)
     'winrt-runtime>=2.0 ; sys_platform == "win32"',
+    'winrt-Windows.ApplicationModel>=2.0 ; sys_platform == "win32"',
     'winrt-Windows.Media>=2.0 ; sys_platform == "win32"',
     'winrt-Windows.Media.Interop>=2.0 ; sys_platform == "win32"',
     'winrt-Windows.Storage.Streams>=2.0 ; sys_platform == "win32"',

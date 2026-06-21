@@ -315,6 +315,9 @@ risks bad first-iteration architecture at this scope.
 **Revisit if:** Features start landing without a research doc and
 quality holds — means design was obvious enough not to bother next
 time.
+**Update 2026-06-16 (#119):** `docs/research/` was removed in the docs
+trim — the notes had served their purpose and in-repo docs are kept
+minimal. New design rationale now goes straight into this file / the TODO.
 
 ## 2026-05-15 — Offline chip in top bar, not full-width banner
 

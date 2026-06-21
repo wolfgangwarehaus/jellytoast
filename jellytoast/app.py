@@ -1913,9 +1913,14 @@ def main():
     # Windows taskbar identity — must precede the first top-level window
     # or the taskbar button keeps the python launcher's icon. No-op
     # elsewhere. See windows_shortcut.set_process_app_user_model_id.
+    from jellytoast.platform_compat import is_msix_packaged
     from jellytoast.windows_shortcut import set_process_app_user_model_id
 
-    set_process_app_user_model_id()
+    # Under MSIX the package supplies the AUMID from its manifest; a second
+    # explicit stamp conflicts with it (and breaks toast grouping). Only
+    # stamp for the unpackaged shapes (Inno .exe, pip/pipx, source).
+    if not is_msix_packaged():
+        set_process_app_user_model_id()
     # HiDPI setup runs before any other Qt action — the rounding
     # policy is consulted during platform-plugin init, so a later
     # call has no effect.
@@ -2357,8 +2362,13 @@ def main():
         # icon). Idempotent marker check per boot; the .lnk authoring
         # runs on the pool. No-op off Windows / from a source checkout.
         from jellytoast import windows_shortcut
+        from jellytoast.platform_compat import is_msix_packaged
 
-        windows_shortcut.sync()
+        # Skip when packaged: the MSIX manifest generates the Start-menu
+        # entry, and the package dir is read-only so manual .lnk authoring
+        # both conflicts and fails. Unpackaged still needs the brand stamp.
+        if not is_msix_packaged():
+            windows_shortcut.sync()
 
     QTimer.singleShot(0, _post_show_init)
 

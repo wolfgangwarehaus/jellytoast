@@ -103,6 +103,11 @@ jobs:
 
   build-windows:
     runs-on: windows-latest
+    # Azure Artifact Signing activates only once the secrets exist (see
+    # packaging/windows/azure-signing.md); until then SIGN='false' and both
+    # signing steps below are skipped, so releases keep building unsigned.
+    env:
+      SIGN: ${{ secrets.AZURE_CLIENT_ID != '' }}
     permissions:
       contents: read
       id-token: write
@@ -119,6 +124,25 @@ jobs:
           python -m pip install --upgrade pip
           pip install . pyinstaller
           pyinstaller packaging/pyinstaller/jellytoast.spec --noconfirm
+      # Sign the frozen app (exe + bundled DLLs incl. libmpv-2.dll) BEFORE the
+      # installer + portable zip are built, so every shipped binary is signed.
+      # Skipped until the Azure secrets are configured.
+      - name: Code-sign frozen bundle (Azure Artifact Signing)
+        if: env.SIGN == 'true'
+        uses: azure/trusted-signing-action@v0
+        with:
+          azure-tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          azure-client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          azure-client-secret: ${{ secrets.AZURE_CLIENT_SECRET }}
+          endpoint: ${{ secrets.AZURE_SIGNING_ENDPOINT }}
+          trusted-signing-account-name: ${{ secrets.AZURE_SIGNING_ACCOUNT }}
+          certificate-profile-name: ${{ secrets.AZURE_SIGNING_PROFILE }}
+          files-folder: ${{ github.workspace }}\dist\jellytoast
+          files-folder-filter: exe,dll
+          files-folder-recurse: true
+          file-digest: SHA256
+          timestamp-rfc3161: http://timestamp.acs.microsoft.com
+          timestamp-digest: SHA256
       - name: Resolve version
         id: ver
         shell: pwsh
@@ -131,6 +155,22 @@ jobs:
           "version=$v" >> $env:GITHUB_OUTPUT
       - name: Build Inno Setup installer
         run: iscc /DAppVersion=${{ steps.ver.outputs.version }} packaging\windows\jellytoast.iss
+      # Sign the installer itself (the bundle inside it was signed above).
+      - name: Code-sign installer (Azure Artifact Signing)
+        if: env.SIGN == 'true'
+        uses: azure/trusted-signing-action@v0
+        with:
+          azure-tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          azure-client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          azure-client-secret: ${{ secrets.AZURE_CLIENT_SECRET }}
+          endpoint: ${{ secrets.AZURE_SIGNING_ENDPOINT }}
+          trusted-signing-account-name: ${{ secrets.AZURE_SIGNING_ACCOUNT }}
+          certificate-profile-name: ${{ secrets.AZURE_SIGNING_PROFILE }}
+          files-folder: ${{ github.workspace }}\dist
+          files-folder-filter: exe
+          file-digest: SHA256
+          timestamp-rfc3161: http://timestamp.acs.microsoft.com
+          timestamp-digest: SHA256
       - name: Build portable zip
         shell: pwsh
         run: |
