@@ -7,7 +7,7 @@ the catalog/badge entries are what the announcements link to.
 
 **Two corrections already applied** to the auto-drafts:
 - Name is lowercase **`jellytoast`** everywhere (our branding rule — never "Jellytoast"/"JellyToast").
-- **No Flathub links** — Flathub is parked (see `docs/TODO.md`); listing a Flathub URL that 404s would fail review.
+- **No Flathub links** — jellytoast does not ship Flatpak/Flathub (see `docs/TODO.md`); listing a Flathub URL that 404s would fail review.
 
 > ⚠️ Schemas drift. Before opening each PR, skim the live target file and a
 > neighbouring entry to confirm field names still match. Run each repo's

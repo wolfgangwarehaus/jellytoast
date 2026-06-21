@@ -129,10 +129,8 @@ backend that drives it and wire backend selection:
 
 - `jellytoast/autostart/__init__.py` — select an MSIX backend first:
   ```python
-  from jellytoast.platform_compat import IS_FLATPAK, IS_LINUX, IS_WINDOWS, is_msix_packaged
-  if IS_LINUX and IS_FLATPAK:
-      from jellytoast.autostart import _flatpak as _backend
-  elif IS_LINUX:
+  from jellytoast.platform_compat import IS_LINUX, IS_WINDOWS, is_msix_packaged
+  if IS_LINUX:
       from jellytoast.autostart import _linux as _backend
   elif IS_WINDOWS and is_msix_packaged():
       from jellytoast.autostart import _msix as _backend
@@ -234,8 +232,8 @@ reboot, confirm it doesn't.
      tagged source for the published version, e.g.
      `Source for this build: https://github.com/wolfgangwarehaus/jellytoast/tree/v0.1.0`.
    Precedent: VLC (a GPL media player) ships on the Store via this mechanism.
-5. **Privacy policy URL** is required for Win32/Desktop-Bridge apps — reuse the
-   one prepared for Flathub.
+5. **Privacy policy URL** is required for Win32/Desktop-Bridge apps — use the
+   hosted policy at wolfgangwarehaus.com/jellytoast/privacy.html.
 6. Submit. First cert review for a runFullTrust app typically takes ~1–5
    business days.
 

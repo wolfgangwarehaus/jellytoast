@@ -564,8 +564,8 @@ class DlnaController:
 
         NOTE: GENA event subscriptions (the spec-blessed alternative)
         are deferred to v2 — they need an inbound listener port that
-        fails under default KDE Wayland firewall configs + Flatpak
-        sandboxes. Polling works on every renderer."""
+        fails under default KDE Wayland firewall configs. Polling works
+        on every renderer."""
         self._loop_thread.start()
         self._cancel_poll_locked()
         with self._lock:

@@ -68,8 +68,8 @@ decisions, because someone will read this before that doc:
   "the renderer refused, please give me a transcoded URL".
 
 - **Poll, don't subscribe (v1)**.  GENA event subscriptions need an
-  inbound listener port, fail under default KDE Wayland firewall configs
-  + Flatpak sandboxes, and many cheap renderers silently drop them.
+  inbound listener port, fail under default KDE Wayland firewall configs,
+  and many cheap renderers silently drop them.
   ``GetTransportInfo`` + ``GetPositionInfo`` every 1 s is ~2 HTTP/sec
   and works on every renderer. GENA is a v2 problem.
 

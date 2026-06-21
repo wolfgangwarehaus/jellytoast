@@ -118,16 +118,15 @@ fix, not a preference, and matches how `keep_above`'s no-border rules
 already write KWin config without a toggle). `JT_NO_DRAG_REPAINT=1` is
 a support escape hatch.
 
-**Alternatives:** Compiled C++ KWin effect — robust, but per-KWin-ABI
-and can't ship inside a Flatpak. `WindowForceBlurRole` via the
+**Alternatives:** Compiled C++ KWin effect — robust, but per-KWin-ABI.
+`WindowForceBlurRole` via the
 `kwin-effects-forceblur` fork — changes the blur decision, not the
 render path; doesn't fix it. Tell users to enable Wobbly Windows —
 works, but global and unshippable. App-side opaque-while-dragging — not
 implementable; the client can't detect a compositor-driven move.
 
 **Revisit if:** KWin fixes 455526/457727 upstream (then the effect
-becomes dead weight and can be dropped). The Flatpak build needs
-`--filesystem=xdg-data/kwin` for the effect install to work sandboxed.
+becomes dead weight and can be dropped).
 
 ## 2026-05-20 — Context menus are built inline per view, not via shared installers
 
@@ -158,7 +157,7 @@ sites, not speculatively.
 backend each landed with a new runtime dep declared as a hard
 dependency: numpy (visualizer), async-upnp-client (DLNA), soco
 (Sonos), snapcast (Snapcast). All four are big, all four are useless
-without hardware / opt-in, and all four pad the Flatpak bundle.
+without hardware / opt-in, and all four would bloat every install.
 
 **Decision:** Each becomes a `[project.optional-dependencies]` extra
 (`visualizer`, `dlna`, `sonos`, `snapcast`). The matching module
@@ -217,8 +216,8 @@ into "Casting" + "Casting (advanced)".
 
 **Context:** Pre-packaging, the repo lacked a `[build-system]` table
 (comment said "not pip-installable as-is"). The original plan was to
-move `modules/` → `src/jellytoast/` and add the build-system. AUR +
-Flathub both need a buildable wheel.
+move `modules/` → `src/jellytoast/` and add the build-system. AUR
+needs a buildable wheel.
 
 **Decision:** Flat layout. `modules/` package tree stays at repo root;
 `jellytoast.py` stays at repo root as a single top-level module
@@ -245,8 +244,8 @@ flat-not-`src/` decision itself stands.
 deps; they had already drifted (pychromecast `<16` ceiling missing
 in requirements.txt).
 
-**Decision:** Drop `requirements.txt`. The AUR PKGBUILD and Flatpak
-manifest both read from pyproject.toml. The dev-install path
+**Decision:** Drop `requirements.txt`. The AUR PKGBUILD reads from
+pyproject.toml. The dev-install path
 (`bash dev/install.sh`) explicitly pip-installs the few packages
 not in the Arch repos.
 
@@ -403,9 +402,8 @@ in v1's budget.
 into Python → FFT on QThread → QPainter render → third
 `np_left_pane_mode = visualizer`. Per-OS loopback backends and
 ProjectM/OpenGL are v2+.
-**Alternatives:** ProjectM via Flatpak extension — heavy native dep
-for v1. butterchurn-in-WebView — would reverse the WebEngine
-removal.
+**Alternatives:** ProjectM/OpenGL — heavy native dep for v1.
+butterchurn-in-WebView — would reverse the WebEngine removal.
 **Revisit if:** Users want visualization during cast (cast → mpv
 goes silent so v1 tap returns nothing; ship "Casting to <device>"
 placeholder for now).
@@ -433,7 +431,7 @@ overlay (Phase 5 in the research doc).
 
 ## 2026-05-15 — Lowercase rename: `jellytoast`, not `JellyToast`
 
-**Context:** Brand pass before AUR/Flathub packaging.
+**Context:** Brand pass before AUR packaging.
 **Decision:** All branding uses lowercase. Two intentional
 `JellyToast` survivors live in `settings.py`: `_LEGACY_*` constants
 + the migration log line. Don't change those.

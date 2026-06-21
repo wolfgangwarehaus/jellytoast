@@ -35,7 +35,6 @@ class TestChoosePluginDir:
         base = dict(
             platform="linux",
             desktop="KDE",
-            flatpak=False,
             disabled=False,
             pyside_dir=PIPX_PYSIDE,
             existing_path="",
@@ -53,9 +52,6 @@ class TestChoosePluginDir:
 
     def test_disabled_escape_hatch_returns_none(self):
         assert self._call(disabled=True) is None
-
-    def test_flatpak_returns_none(self):
-        assert self._call(flatpak=True) is None
 
     def test_non_kde_returns_none(self):
         assert self._call(desktop="GNOME") is None
@@ -98,7 +94,6 @@ class TestHealQtPluginPath:
         monkeypatch.setattr(fix.os.path, "isdir", _isdir_with(ARCH_KF6))
         monkeypatch.setattr(fix.sys, "platform", "linux")
         monkeypatch.setenv("XDG_CURRENT_DESKTOP", "KDE")
-        monkeypatch.delenv("FLATPAK_ID", raising=False)
         monkeypatch.delenv("JT_NO_QT_PLUGIN_FIX", raising=False)
         monkeypatch.delenv("QT_PLUGIN_PATH", raising=False)
 
@@ -111,7 +106,6 @@ class TestHealQtPluginPath:
         monkeypatch.setattr(fix.os.path, "isdir", _isdir_with(ARCH_KF6))
         monkeypatch.setattr(fix.sys, "platform", "linux")
         monkeypatch.setenv("XDG_CURRENT_DESKTOP", "KDE")
-        monkeypatch.delenv("FLATPAK_ID", raising=False)
         monkeypatch.delenv("JT_NO_QT_PLUGIN_FIX", raising=False)
         monkeypatch.setenv("QT_PLUGIN_PATH", "/pre/existing")
 

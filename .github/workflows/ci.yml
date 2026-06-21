@@ -147,7 +147,7 @@ jobs:
   # Static validation of the distribution/packaging assets so they can't
   # silently rot as we build the per-channel release automation on top of
   # them (AppStream metainfo, the .desktop entry, the shell scripts, and
-  # that the Flatpak/winget manifests still parse). Fast — no build needed.
+  # that the winget manifests still parse). Fast — no build needed.
   packaging:
     runs-on: ubuntu-latest
     steps:
@@ -157,19 +157,16 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
             appstream desktop-file-utils shellcheck
-      - name: Validate AppStream metainfo (Flathub gate)
+      - name: Validate AppStream metainfo
         run: appstreamcli validate --no-net packaging/io.github.wolfgangwarehaus.jellytoast.metainfo.xml
       - name: Validate the .desktop entry
         run: desktop-file-validate packaging/io.github.wolfgangwarehaus.jellytoast.desktop
       - name: Shellcheck packaging + release scripts
         run: shellcheck packaging/deb/build_deb.sh packaging/install_icons.sh dev/cut_release.sh
-      - name: Flatpak + winget manifests parse
+      - name: winget manifests parse
         run: |
           python3 - <<'PY'
-          import glob, json, yaml
-          for f in ["packaging/flatpak/io.github.wolfgangwarehaus.jellytoast.yaml",
-                    *sorted(glob.glob("packaging/winget/*.yaml"))]:
+          import glob, yaml
+          for f in sorted(glob.glob("packaging/winget/*.yaml")):
               yaml.safe_load(open(f)); print("YAML ok:", f)
-          json.load(open("packaging/flatpak/python3-requirements.json"))
-          print("JSON ok: python3-requirements.json")
           PY

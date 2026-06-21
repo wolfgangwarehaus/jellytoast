@@ -2,8 +2,8 @@
 # jellytoast — DEV install helper (Arch Linux).
 #
 # This is the manual git-clone install path. For end-user installs
-# prefer the AUR package (`jellytoast`) or the Flathub Flatpak — both
-# handle their own deps without --break-system-packages.
+# prefer the AUR package (`jellytoast`) or the `.deb` — both handle
+# their own deps without --break-system-packages.
 #
 # This script installs runtime deps system-wide via pacman where
 # available, then falls back to `pip --break-system-packages` for the

@@ -5,8 +5,8 @@
 // (e.g. Feishin / Jellyamp); the schema drifts.
 //
 // Corrections vs the auto-draft: name is lowercase "jellytoast" (branding
-// rule), and the Flathub link was removed (Flathub is parked — see
-// packaging/flatpak / docs/TODO.md).
+// rule), and there is no Flathub link (jellytoast does not ship
+// Flatpak/Flathub — see docs/TODO.md).
 {
   id: 'jellytoast',
   name: 'jellytoast',

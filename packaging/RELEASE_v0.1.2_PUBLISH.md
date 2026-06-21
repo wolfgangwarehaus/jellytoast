@@ -98,17 +98,12 @@ coordinate:
       SHA) so the Windows box can submit winget + the Store MSIX. **done.**
 - [ ] (Tracking only — the actual MSIX/Store submission is `needs:windows`.)
 
-## 5. Universal-Linux channels (AppImage / Flathub)  *(heavier — split out if it stalls)*
+## 5. Universal-Linux channel (AppImage)  *(heavier — split out if it stalls)*
 
-`docs/TODO.md` planned these for 0.1.2; both are net-new and may deserve their own
-PR rather than blocking the publish.
 - [ ] **AppImage**: planned, **deferred to 0.1.3** — net-new universal-Linux
       channel (research in `docs/TODO.md`); does NOT block 0.1.2.
-- [x] **Flathub**: ⛔ **NOT a channel — never submit.** Flathub is **DROPPED**
-      (definitive; `docs/TODO.md` L237): it bans AI-*assisted* code and we hold a
-      locked "AI Slop" strike — a cold re-submit risks a **permanent ban**. (Flatpak
-      the *format* can be self-hosted off-Flathub if reach is ever wanted, but do
-      NOT submit to Flathub.) Corrected from the earlier "hand-submit" wording.
+- [x] **Flatpak / Flathub**: ⛔ **RETIRED — not a channel.** jellytoast does not
+      ship Flatpak or Flathub (see `docs/TODO.md`); no manifest is maintained.
 
 ## 6. Docs & download channels → 0.1.2
 

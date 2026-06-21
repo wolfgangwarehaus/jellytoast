@@ -67,9 +67,9 @@ dependencies = [
     # dbus-next is a Linux-only feature dep (MPRIS / freedesktop). The
     # platform marker keeps `pip install` clean on Windows / macOS.
     'dbus-next>=0.2.3 ; sys_platform == "linux"',
-    # jeepney is imported directly (color_picker.py portal PickColor,
-    # autostart/_flatpak.py portal Background) — declared so the import
-    # doesn't rely on keyring's transitive pin. Linux-only.
+    # jeepney is imported directly (color_picker.py portal PickColor) —
+    # declared so the import doesn't rely on keyring's transitive pin.
+    # Linux-only.
     'jeepney>=0.6 ; sys_platform == "linux"',
     # pyatv (AirPlay 2) is broken on Windows — relies on asyncio +
     # low-level network primitives that don't ship there. macOS / Linux
@@ -99,7 +99,7 @@ dependencies = [
     "cryptography>=43.0.1",
     # ── Cast / visualizer backends ────────────────────────────────────
     # Promoted from per-feature extras to required deps so EVERY install
-    # (pipx, source, future AUR / Flatpak) ships the same backend set — no
+    # (pipx, source, future AUR) ships the same backend set — no
     # more "DLNA missing on the pipx box". All cross-platform + small. Each
     # is still soft-imported behind an _ensure_* / is_available() guard and
     # gated by its Settings toggle, so a feature only runs when the user
@@ -171,17 +171,15 @@ macos = []
 
 # GUI entry point. `gui-scripts` (vs `scripts`) suppresses the console
 # window on Windows; on Linux it behaves identically to `scripts`.
-# packaging/aur/PKGBUILD and the Flatpak manifest
-# (packaging/flatpak/io.github.wolfgangwarehaus.jellytoast.yaml) both
-# invoke this entry point (authored + dry-run validated; AUR/Flathub
-# submissions still pending).
+# packaging/aur/PKGBUILD invokes this entry point (authored + dry-run
+# validated; AUR submission still pending).
 [project.gui-scripts]
 jellytoast = "jellytoast.app:main"
 
 # Canonical project URLs — point at the real repo home,
 # wolfgangwarehaus/jellytoast (matches the git `origin` remote). The
 # GitHub account name is now finalized as `wolfgangwarehaus`, so the
-# Flatpak app-id is aligned to io.github.wolfgangwarehaus.jellytoast (it
+# app-id is aligned to io.github.wolfgangwarehaus.jellytoast (it
 # names the packaging/ metainfo + desktop files).
 [project.urls]
 Homepage = "https://github.com/wolfgangwarehaus/jellytoast"

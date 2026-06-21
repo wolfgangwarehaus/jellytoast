@@ -20,7 +20,7 @@ A clear description of the bug.
 - jellytoast version / commit:
 - OS + desktop (e.g. CachyOS / KDE Plasma / Wayland):
 - Server: Jellyfin or Subsonic/Navidrome (+ version):
-- Install method: from source / pip / Flatpak / AUR
+- Install method: from source / pip / .deb / AUR / winget
 
 **Logs**
 Run with `JT_LOG_LEVEL=DEBUG` and paste relevant output (redact tokens/URLs).
