@@ -48,11 +48,17 @@ glibc floor is non-distributable), then verified in CI.
       installed (only the host GL baseline). Three bugs fixed en route: 22.04
       ships `libmpv.so.1`; `find_library('mpv')` can't see inside an AppImage;
       the Qt xcb closure needed a generic ldd-closure walk.
-- [ ] **Verify the `import mpv` path** on a real desktop: download the artifact,
-      `chmod +x`, run it on a distro WITHOUT system libmpv (e.g. a clean Fedora),
-      and confirm audio plays. The `APPDIR` hook in `player_backend.py` +
-      `AppRun`'s `LD_LIBRARY_PATH` are the two things that make python-mpv find the
-      bundled lib; if they regress, the symptom is the "Missing dependency" dialog.
+- [x] **Real-desktop build + boot VERIFIED on CachyOS (KDE/Wayland, 2026-06-21).**
+      Built locally (PyInstaller in a `--system-site-packages` venv → 193 MB
+      AppImage), booted clean offscreen, and `/proc/<pid>/maps` confirmed it loaded
+      the BUNDLED libmpv (`/tmp/appimage_extracted_*/usr/lib/libmpv.so.2`), not the
+      system one — self-containment holds even where system libmpv exists. This
+      also caught two latent bugs CI's minimal container masked (the
+      `ldconfig|awk exit` SIGPIPE and the loader absolute-path in `vendor_closure`)
+      — both fixed.
+- [ ] **Confirm a track actually PLAYS** (decode→PipeWire output) from the AppImage
+      against a real server — needs login creds, so it's a human step. Boot + the
+      bundled-libmpv load are proven; only end-to-end audio output is unverified.
 - [ ] **Tune the vendored-lib excludelist** if the smoke names a missing `.so`:
       `build_appimage.sh`'s `case` keeps glibc / GL / X-Wayland / the C++ runtime
       on the host (per the AppImage excludelist) and vendors everything else
