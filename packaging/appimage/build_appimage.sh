@@ -51,7 +51,11 @@ cp -a "$BUNDLE/." "$APPDIR/usr/bin/"   # jellytoast binary + _internal/
 # AppImage can't, so vendor them into usr/lib. EXCLUDE the AppImage excludelist —
 # glibc, the C++ runtime, GL/glvnd, base X/xcb, wayland — those MUST come from the
 # user's host so the GL stack matches their driver and forward-compat holds.
-resolve_so() { ldconfig -p | awk -v n="$1" '$1==n {print $NF; exit}'; }
+# NB: no early `awk exit` — that closes the pipe while ldconfig is still writing
+# and SIGPIPEs (141) under `set -o pipefail` on systems with a large ldconfig
+# cache (any real desktop; a minimal CI container is small enough to dodge it).
+# Read all input and print the first match.
+resolve_so() { ldconfig -p | awk -v n="$1" '$1==n && !f {print $NF; f=1}'; }
 
 is_excluded() {
   case "$1" in
@@ -67,13 +71,17 @@ is_excluded() {
 # recurses into THEIR deps) and copy each system-resolved dep that is neither
 # excludelisted nor already inside the bundle.
 vendor_closure() {
+  # Key off the RESOLVED path ($3) and its basename, not ldd's left column ($1):
+  # for the dynamic loader (and on some distros) $1 is an absolute path, which
+  # would otherwise corrupt the dest path. The basename is the real soname.
   LD_LIBRARY_PATH="$APPDIR/usr/bin/_internal" ldd "$1" 2>/dev/null \
-    | awk '/=> \// {print $1 " " $3}' | while read -r soname path; do
-    is_excluded "$soname" && continue
-    case "$path" in "$APPDIR"/*) continue ;; esac   # already bundled in _internal
+    | awk '/=> \// {print $3}' | while read -r path; do
     [ -e "$path" ] || continue
-    [ -e "$APPDIR/usr/lib/$soname" ] && continue
-    cp -Ln "$path" "$APPDIR/usr/lib/$soname" && echo "  + $soname"
+    case "$path" in "$APPDIR"/*) continue ;; esac   # already bundled in _internal
+    bn="$(basename "$path")"
+    is_excluded "$bn" && continue
+    [ -e "$APPDIR/usr/lib/$bn" ] && continue
+    cp -Ln "$path" "$APPDIR/usr/lib/$bn" && echo "  + $bn"
   done
 }
 
@@ -96,7 +104,8 @@ vendor_closure "$MPV_PATH"
 #    the #1 "could not load the Qt platform plugin xcb" failure) + the xcb-util /
 #    fontconfig / freetype libs PyInstaller leaves to the host.
 echo "Vendoring the Qt xcb platform-plugin closure:"
-XCB_PLUGIN="$(find "$APPDIR/usr/bin/_internal" -name 'libqxcb.so' 2>/dev/null | head -1)"
+# -print -quit stops at the first match cleanly (no `| head` SIGPIPE).
+XCB_PLUGIN="$(find "$APPDIR/usr/bin/_internal" -name 'libqxcb.so' -print -quit 2>/dev/null)"
 if [ -n "$XCB_PLUGIN" ]; then
   vendor_closure "$XCB_PLUGIN"
 else
