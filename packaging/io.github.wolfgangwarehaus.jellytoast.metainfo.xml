@@ -56,9 +56,8 @@
 
   <content_rating type="oars-1.1"/>
 
-  <!-- URLs use /main/ so they resolve immediately. When submitting to
-       Flathub, pin them to the v0.1.0 TAG (not /main/) for a reproducible
-       listing — see packaging/flatpak/README.md §3. -->
+  <!-- URLs use /main/ so they resolve immediately. For a release listing,
+       pin them to the release TAG (not /main/) for a reproducible result. -->
   <screenshots>
     <screenshot type="default">
       <image type="source" width="1600" height="900">https://raw.githubusercontent.com/wolfgangwarehaus/jellytoast/main/docs/screenshots/library.png</image>

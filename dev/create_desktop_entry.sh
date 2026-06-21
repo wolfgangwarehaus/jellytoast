@@ -1,7 +1,7 @@
 #!/bin/bash
 # Register jellytoast in your application menu — DEV helper.
 # Production installs use packaging/io.github.wolfgangwarehaus.jellytoast.desktop
-# via the AUR PKGBUILD or Flatpak manifest. This script is only for
+# via the AUR PKGBUILD or the `.deb`. This script is only for
 # running jellytoast out of a git checkout.
 
 # This script lives in dev/; SCRIPT_DIR resolves to the repo root.

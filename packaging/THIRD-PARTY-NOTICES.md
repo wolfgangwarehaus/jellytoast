@@ -42,4 +42,4 @@ CPython is under the **PSF License**. The bundled pure-Python
 dependencies retain their own licenses (MIT / Apache-2.0 / BSD / etc.);
 a full machine-readable manifest can be generated with
 `pip-licenses --with-license-file` against the release's pinned set
-(see `pyproject.toml` and, for Flatpak, `python3-requirements.json`).
+(see `pyproject.toml`).

@@ -3,9 +3,9 @@
 **Open this on the Ubuntu box in Claude Code and work top to bottom**, ticking
 boxes as you go. jellytoast's primary Ubuntu artifact is the **`.deb`** (built
 on 22.04 for a low glibc floor; depends on the system libmpv). It's also
-installable via **pipx** (PyPI) and eventually **Flatpak**. This verifies all
-three plus cross-desktop behavior on **GNOME** (Ubuntu's default), which differs
-from the KDE/Arch dev box in real ways.
+installable via **pipx** (PyPI). This verifies both plus cross-desktop
+behavior on **GNOME** (Ubuntu's default), which differs from the KDE/Arch
+dev box in real ways.
 
 ---
 
@@ -103,17 +103,10 @@ dialog; real window-chrome QA (Phase 4) is blocked until BUG-1 is fixed.
       state **running @ 44.1 kHz**). mpv → PipeWire audio path verified.
       *(GNOME: blur caveat moot — no blur; confirmed in Phase 4.)*
 
-## Phase 3 — Flatpak local build test → ⛔ SKIP (Flathub is parked)
-- [x] **Skip this phase.** Flathub is parked: as of 2026-05-28 its policy bars
-      *AI-assisted* code (not just AI submissions), and a prior auto-submission
-      (flathub/flathub#9022) was already closed as a violation — one strike on
-      the account. jellytoast's history is 74% Claude-co-authored, so there's no
-      quiet-submission path. The only future route is a transparent, pre-cleared
-      "mature, well-maintained project" exception request on Flathub Discourse —
-      a deliberate human step, not part of this verification pass. Local
-      `flatpak-builder` testing was only prep for that submission, so there's
-      nothing to do here. Linux coverage stands on the `.deb` + pipx (above) and
-      AUR. Don't spend time on Flatpak.
+## Phase 3 — Flatpak → ⛔ RETIRED (not a channel)
+- [x] **Nothing to do.** jellytoast does not ship Flatpak or Flathub (retired —
+      see `docs/TODO.md`). Linux coverage stands on the `.deb` + pipx (above) +
+      AUR, with the AppImage planned for 0.1.3.
 
 ## Phase 4 — GNOME / Ubuntu cross-desktop QA
 *(Run against the **pipx** build — the `.deb` is blocked by BUG-1. Verified

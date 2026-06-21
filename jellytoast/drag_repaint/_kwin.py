@@ -36,16 +36,7 @@ _SOURCE_DIR = Path(__file__).resolve().parent / "effect" / _EFFECT_ID
 def is_supported() -> bool:
     """KDE Wayland with `kwriteconfig` + `qdbus` on PATH, and the
     bundled effect actually present in the package. A False here is
-    what `__init__`'s callers read to skip the work entirely.
-
-    Hard-off inside Flatpak: the KDE runtime may ship these binaries,
-    but the kwinrc write would land in the sandbox's private config
-    (host KWin never reads it) and org.kde.KWin isn't on the filtered
-    session bus — better an honest no-op than garbage writes."""
-    from jellytoast.platform_compat import IS_FLATPAK
-
-    if IS_FLATPAK:
-        return False
+    what `__init__`'s callers read to skip the work entirely."""
     return bool(_kwriteconfig_bin() and _qdbus_bin() and _SOURCE_DIR.is_dir())
 
 

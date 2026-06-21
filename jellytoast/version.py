@@ -1,6 +1,6 @@
 """Single source of truth for the application version.
 
-When jellytoast is installed (wheel / Flatpak / AUR), the version is read
+When jellytoast is installed (wheel / AUR), the version is read
 straight from the package metadata that setuptools wrote from
 ``pyproject.toml`` ``[project].version`` — so a release bump in that one
 place flows everywhere automatically. When running from a source checkout

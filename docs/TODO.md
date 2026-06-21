@@ -13,7 +13,7 @@ this file's git history.
 > credential-perm leak, download-drain on server-switch, cast/offline/UI). Channels:
 > **PyPI 0.1.2 LIVE** via **Trusted Publishing** (#167 `pypi-publish.yml`, OIDC — no
 > token; future releases auto-publish on `release: published`). **AUR** deferred
-> (registration still frozen). **Flathub** ⛔ never (dropped). **AppImage** → 0.1.3.
+> (registration still frozen). **AppImage** → 0.1.3.
 > **winget + MSIX/Store** → PR #146 (`needs:windows`), commented with the 0.1.2
 > installer URL+SHA. Publish worklist: `packaging/RELEASE_v0.1.2_PUBLISH.md`.
 
@@ -22,8 +22,7 @@ this file's git history.
 > **Microsoft Store** submission prep DONE — identity stamped, manifest 1.0.0.0,
 > `COPYING`/GPL-3.0 conveyance, privacy policy corrected + hosted, paste-ready
 > runbook (`packaging/msix/STORE-SUBMISSION.md`); gated only on the 0.1.2 cut +
-> a laptop build/WACK pass. **Flathub DROPPED** (AI-assisted-code policy —
-> definitive; see Packaging). **AppImage** researched, planned for 0.1.2 as the
+> a laptop build/WACK pass. **AppImage** researched, planned for 0.1.3 as the
 > universal-Linux channel. Docs PR #161 merged (Install restructure + winget +
 > hosted privacy page). Round-1 Ubuntu 26.04 verification + the BUG-1/2/3 fixes
 > (#148/#149/#151, all shipped in v0.1.1) are in PR #147; the real-`.deb`
@@ -39,7 +38,7 @@ this file's git history.
 > session (`packaging/msix/`: full-trust manifest + assets + playbook; the
 > 3 code blockers applied behind `is_msix_packaged()`). **Azure Artifact
 > Signing** for the GitHub `.exe` wired into release.yml (gated on secrets).
-> Still to land: **AUR** publish, **Flathub** hand-submit, the directory
+> Still to land: **AUR** publish, the directory
 > PRs + the launch posts (see Launch below).
 >
 > **2026-06-15 release/CI workflow round — ✅ SHIPPED:** main is now
@@ -225,7 +224,7 @@ lowest-value):
 
 Authored on `feat/packaging-day`: PyInstaller spec (shared Linux/Windows),
 `.deb` builder, Inno Setup installer + pinned-libmpv fetch, winget manifests,
-Flatpak manifest, `release.yml` (tag → draft release with deb + Windows
+`release.yml` (tag → draft release with deb + Windows
 installer + portable zip + sdist/wheel), README restructure (long-form →
 `docs/user_guide.md`).
 
@@ -245,21 +244,13 @@ installer + portable zip + sdist/wheel), README restructure (long-form →
   2026-06-17). Left: `updpkgsums` + `makepkg -si` + `namcap` + `.SRCINFO` +
   push to `aur@aur.archlinux.org` (steps in `packaging/aur/README.md`) — with
   august.
-- **Flathub** — ⛔ **DROPPED (definitive, researched + primary-sourced 2026-06-20).**
-  The live policy bans **AI-*assisted*** code (not just AI-generated; commit
-  `992f57b`, 2026-05-28), covering the app, the manifest, and the PR. Our ~74%
-  `Co-Authored-By: Claude` history is the exact, unhideable disqualifier; we
-  already have an "AI Slop"-labeled, locked strike (flathub/flathub#9022); the
-  "mature project" exception is discretionary, precedent-free, and was conceived
-  for *established* projects that adopt AI — not AI-built-from-inception apps like
-  ours. **Don't cold-submit** (a repeat risks the permanent-ban clause).
-  **Flatpak ≠ Flathub:** the format is unrestricted — self-host the
-  `packaging/flatpak/` manifest off-Flathub (a `.flatpak` bundle as a release
-  asset, or an OSTree repo + `.flatpakref`) if that reach is wanted. Full verdict
-  in memory `flathub-and-linux-channels`.
-- **AppImage** — 🔬 **RESEARCHED 2026-06-20; planned for 0.1.2.** The universal
-  "any distro, no install, no root" Linux channel — worth doing precisely
-  *because Flathub is dropped*. Build via PyInstaller-onedir → static-runtime
+- **Flatpak / Flathub** — ⛔ **RETIRED — not a channel.** jellytoast does not
+  ship Flatpak or Flathub, and no manifest is maintained. Why: Flathub bans
+  AI-assisted code (definitive, primary-sourced 2026-06-20) and our
+  `Co-Authored-By: Claude` history is the disqualifier; the Flatpak format is
+  retired alongside it. Don't re-litigate or cold-submit.
+- **AppImage** — 🔬 **RESEARCHED 2026-06-20; planned for 0.1.3.** The universal
+  "any distro, no install, no root" Linux channel. Build via PyInstaller-onedir → static-runtime
   `appimagetool` (reuse `jellytoast.spec`), self-contained variant (bundle
   libmpv+FFmpeg via a separate path that skips the deb's libmpv-closure-strip);
   add `libxcb-cursor.so.0`; pick the glibc floor deliberately (build on 20.04 for
@@ -338,7 +329,7 @@ installer + portable zip + sdist/wheel), README restructure (long-form →
   free + ~2 days if we want to squat `jellytoast`), Steam store proper
   ($100 + category mismatch), CachyOS official repos (no benefit for pure
   Python; AUR covers it), COPR/brew. (AppImage is NO LONGER on this list —
-  it's planned for 0.1.2 now that Flathub is dropped; see above.)
+  it's planned for 0.1.3 as the universal-Linux channel; see above.)
   openSUSE OBS parked until rpm users ask.
 - **Cast-proxy demo clip** — a ~30s hero clip (Chromecast playing from a
   Tailscale-only server while the laptop is offline); pairs with the screenshots.
@@ -381,9 +372,9 @@ in #119; the checklist below is the source of truth now.)
   button):** r/linux (release flair; only once one-command install
   exists), r/kde (lead with KWin blur/Wayland polish), r/musichoarders,
   r/opensource; r/linuxaudio only with the bit-perfect/ALSA-direct angle.
-- **Show HN — one shot.** Only when Flathub is live + README is
-  screenshot-rich. Framing that lands: "native, not Electron." Be in the
-  comments all day.
+- **Show HN — one shot.** Only once the install story is solid
+  (winget / PyPI / `.deb` / AppImage) + README is screenshot-rich. Framing
+  that lands: "native, not Electron." Be in the comments all day.
 - **Cleanup:** alternativeto.net submission ("Feishin/Sonixd alternative"
   SEO), LinuxLinks contact-form suggestion.
 - **Skips (verified):** r/audiophile (bans self-promo), r/archlinux (AUR
@@ -413,4 +404,4 @@ Deliberately out of scope — each is a fight a competitor already wins:
 
 > **Note 2026-05-27.** "Heavy audiophile DSP" left this list after a Symfonium
 > benchmark found the gap closeable in ~1 work-week. Parametric EQ + bit-perfect
-> mode are now shipped; full convolution AutoEQ stays parked past Flathub.
+> mode are now shipped; full convolution AutoEQ stays parked for now.
