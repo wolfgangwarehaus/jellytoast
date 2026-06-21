@@ -1,0 +1,39 @@
+name: winget
+
+# Auto-submit the winget manifest update when a release is PUBLISHED. It runs on
+# `release: released` (NOT on the tag) because winget-releaser needs the
+# installer asset to be publicly downloadable — a draft 404s its validation.
+#
+# DORMANT until you activate it (one-time): create a CLASSIC PAT with the
+# `public_repo` scope, store it as the repo secret WINGET_TOKEN, and fork
+# microsoft/winget-pkgs under `wolfgangwarehaus`. See docs/RELEASING.md.
+# Until then the step is skipped and you keep using the `wingetcreate` one-liner
+# (the in-repo manifest version is already stamped by dev/cut_release.sh).
+
+on:
+  release:
+    types: [released] # a non-prerelease publish only
+
+permissions:
+  contents: read
+
+jobs:
+  winget:
+    runs-on: ubuntu-latest
+    env:
+      HAVE_TOKEN: ${{ secrets.WINGET_TOKEN != '' }}
+    steps:
+      - name: Submit version update to microsoft/winget-pkgs
+        if: env.HAVE_TOKEN == 'true'
+        uses: vedantmgoyal9/winget-releaser@v2
+        with:
+          identifier: wolfgangwarehaus.jellytoast
+          # Match ONLY the Inno setup.exe — never the portable .zip.
+          installers-regex: 'windows-x64-setup\.exe$'
+          token: ${{ secrets.WINGET_TOKEN }}
+      - name: Dormant — WINGET_TOKEN not set
+        if: env.HAVE_TOKEN != 'true'
+        run: |
+          echo "WINGET_TOKEN is not set → winget auto-submit is DORMANT (no-op)."
+          echo "Activate: add a CLASSIC PAT (public_repo) as WINGET_TOKEN + fork"
+          echo "microsoft/winget-pkgs under wolfgangwarehaus. See docs/RELEASING.md."

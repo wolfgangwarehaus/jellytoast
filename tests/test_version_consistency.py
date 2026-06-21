@@ -35,6 +35,8 @@ METAINFO = (
     / "packaging"
     / "io.github.wolfgangwarehaus.jellytoast.metainfo.xml"
 )
+WINGET_DIR = REPO_ROOT / "packaging" / "winget"
+AUR_PKGBUILD = REPO_ROOT / "packaging" / "aur" / "PKGBUILD"
 
 
 def _pyproject_version() -> str:
@@ -98,3 +100,56 @@ def test_runtime_version_matches_pyproject():
     # If a stale install IS present, this would surface the drift — which
     # is exactly the failure we want.
     assert jellytoast.version.__version__ == _pyproject_version()
+
+
+# ── Per-channel manifests (the unified-release single-source gate) ───────────
+# dev/cut_release.sh stamps these alongside pyproject; gating them here means a
+# release can never ship a channel pointing at a stale version (the class that
+# made v0.1.1 silently miss PyPI + AUR). The InstallerSha256 / AUR digest are
+# NOT gated — they depend on the built artifact and are filled at publish time
+# (winget-releaser computes the SHA; `updpkgsums` refreshes the AUR digest).
+
+
+def _winget_package_versions() -> dict[str, str]:
+    """Every ``PackageVersion:`` across the three winget manifests, keyed by
+    filename (no YAML parser needed — the field is a simple top-level scalar)."""
+    out: dict[str, str] = {}
+    for path in sorted(WINGET_DIR.glob("*.yaml")):
+        m = re.search(r"(?m)^PackageVersion:\s*(\S+)\s*$", path.read_text("utf-8"))
+        assert m, f"no PackageVersion in {path.name}"
+        out[path.name] = m.group(1)
+    return out
+
+
+def _winget_installer_url_versions() -> list[str]:
+    """The version tokens in the winget InstallerUrl — it must point at the
+    release whose version we're shipping (the URL carries it twice: the
+    ``/vX.Y.Z/`` path segment and the ``-X.Y.Z-`` filename segment)."""
+    text = (WINGET_DIR / "wolfgangwarehaus.jellytoast.installer.yaml").read_text("utf-8")
+    m = re.search(r"^\s*InstallerUrl:\s*(\S+)\s*$", text, re.MULTILINE)
+    assert m, "no InstallerUrl in the winget installer manifest"
+    url = m.group(1)
+    return re.findall(r"/v([0-9][^/]*?)/|jellytoast-([0-9][^-]*?)-windows", url)
+
+
+def _aur_pkgver() -> str:
+    m = re.search(r"(?m)^pkgver=(\S+)\s*$", AUR_PKGBUILD.read_text("utf-8"))
+    assert m, "no pkgver in the AUR PKGBUILD"
+    return m.group(1)
+
+
+def test_winget_package_versions_match_pyproject():
+    expected = _pyproject_version()
+    versions = _winget_package_versions()
+    assert len(versions) == 3, f"expected 3 winget manifests, found {sorted(versions)}"
+    assert set(versions.values()) == {expected}, f"winget drift: {versions} != {expected}"
+
+
+def test_winget_installer_url_points_at_pyproject_version():
+    expected = _pyproject_version()
+    found = {v for pair in _winget_installer_url_versions() for v in pair if v}
+    assert found == {expected}, f"winget InstallerUrl version(s) {found} != {expected}"
+
+
+def test_aur_pkgver_matches_pyproject():
+    assert _aur_pkgver() == _pyproject_version()
