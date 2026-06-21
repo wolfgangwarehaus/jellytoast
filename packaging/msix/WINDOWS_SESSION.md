@@ -36,6 +36,24 @@ self-signed once; `COPYING`/GPL-3.0 conveyance + privacy disclosures done.
 200, and the Jellyfin demo server (`demo.jellyfin.org/stable`) is reachable —
 Store gates 2 and 6 are clear.
 
+**🛠️ Build staged 2026-06-20 (Windows box, non-admin session):** the MSIX was
+rebuilt from this v0.1.2-synced branch and the no-admin steps are all done:
+- `C:\Temp\jellytoast-1.0.0.0.msix` (130 MB) — real-Publisher, **UNSIGNED**
+  Store-upload package. `libmpv-2.dll` (117 MB) confirmed bundled at
+  `_internal\libmpv-2.dll`; `makeappx` reported "Package creation succeeded".
+  ⚠️ This is the **diagnostic** build — it still contains the TEMP `_msix.py`
+  shim. Rebuild clean (shim removed) right before the *real* upload.
+- `C:\Temp\jellytoast-test.msix` (130 MB) — test-signed sideload copy
+  (`Publisher=CN=jellytoast-test`, cert thumbprint `75B04B…BD82`).
+- `C:\Temp\jellytoast-test.cer` / `.pfx` (pw `test`) — cert to trust.
+- **Elevated helper:** `C:\Temp\jt-elevated-sideload.ps1` does the two admin
+  steps (trust cert + `Add-AppxPackage`) and prints the QA gate. Run it from an
+  **elevated** PowerShell, then do the manual in-package QA (audio = #1 risk;
+  autostart = Blocker 2, check `%TEMP%\jt_msix_debug.txt` after toggling).
+- ⚠️ **WACK (`appcert.exe`) is NOT installed** on this box (NuGet gave only
+  makeappx/signtool). Install the Windows App Certification Kit for a local
+  pre-check, or rely on the Store's server-side certification.
+
 **The release order matters — do it in this sequence:**
 1. **Cut + push `v0.1.2`** (`dev/cut_release.sh 0.1.2 --push`, from the Linux
    box) so every `…/v0.1.2/` source-offer / license / privacy link resolves and
@@ -77,6 +95,12 @@ The manifests in `packaging/winget/` are already pointed at the live
       globally. (The earlier "v0.1.1 submitted 6-18" note was WRONG — that
       submission never produced a PR; #390782 via `wingetcreate update` was the
       real one.)
+- [x] **v0.1.2 submitted 2026-06-20** — microsoft/winget-pkgs **#391020**
+      (`wingetcreate update … --version 0.1.2`; InstallerSha256
+      `54febef…80cd2` validated, matches the published setup.exe). Pipeline
+      auto-validates + merges (same path as #389422 / #390782); `winget upgrade
+      jellytoast` → 0.1.2 once it lands. Tracked `packaging/winget/*.yaml` bumped
+      to 0.1.2 to match. **winget track DONE through 0.1.2.**
 - [x] Future bumps: `wingetcreate update wolfgangwarehaus.jellytoast --version <v> --urls <setup.exe> --submit --token (gh auth token)` (`manifests/` is gitignored scratch).
 
 > If the `.exe` validation **fails**, stop and report back — both winget and the
