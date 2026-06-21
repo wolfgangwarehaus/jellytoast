@@ -247,10 +247,9 @@ and single-instance window foregrounding.
   `WindowStaysOnTopHint` (no OS-level rule needed off KDE Wayland).
 - macOS OS-integration backends (NowPlaying via pyobjc).
 - Custom Cast receiver app (would surface "jellytoast" instead of "Default Media Receiver") — deferred.
-- Packaging is **published-pending**: the Flatpak manifest, deb, Windows
-  installer, AUR `PKGBUILD`, and winget manifests all exist in
-  `packaging/`; AUR/Flathub/winget/PyPI submissions are post-release
-  manual steps (see `docs/TODO.md`).
+- Packaging is **published-pending**: the deb, Windows installer, AUR
+  `PKGBUILD`, and winget manifests all exist in `packaging/`; AUR/winget/PyPI
+  submissions are post-release manual steps (see `docs/TODO.md`).
 
 > **Shipped since this list was last accurate (corrected 2026-05-28 audit):**
 > the items that used to sit under an "engine built, no UI" caveat all now

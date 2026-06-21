@@ -21,7 +21,6 @@ def _reload_autostart():
     for mod_name in (
         "jellytoast.autostart",
         "jellytoast.autostart._linux",
-        "jellytoast.autostart._flatpak",
         "jellytoast.autostart._windows",
         "jellytoast.autostart._unsupported",
     ):
@@ -33,7 +32,6 @@ def _force_linux(monkeypatch):
     import jellytoast.platform_compat as pc
 
     monkeypatch.setattr(pc, "IS_LINUX", True)
-    monkeypatch.setattr(pc, "IS_FLATPAK", False)
     monkeypatch.setattr(pc, "IS_WINDOWS", False)
 
 
@@ -41,7 +39,6 @@ def _force_windows(monkeypatch):
     import jellytoast.platform_compat as pc
 
     monkeypatch.setattr(pc, "IS_LINUX", False)
-    monkeypatch.setattr(pc, "IS_FLATPAK", False)
     monkeypatch.setattr(pc, "IS_WINDOWS", True)
 
 
@@ -49,15 +46,7 @@ def _force_non_linux(monkeypatch):
     import jellytoast.platform_compat as pc
 
     monkeypatch.setattr(pc, "IS_LINUX", False)
-    monkeypatch.setattr(pc, "IS_FLATPAK", False)
     monkeypatch.setattr(pc, "IS_WINDOWS", False)
-
-
-def _force_flatpak(monkeypatch):
-    import jellytoast.platform_compat as pc
-
-    monkeypatch.setattr(pc, "IS_LINUX", True)
-    monkeypatch.setattr(pc, "IS_FLATPAK", True)
 
 
 def test_imports_cleanly_on_linux(monkeypatch):
@@ -405,88 +394,3 @@ def _restore_autostart_module():
         "jellytoast.autostart._unsupported",
     ):
         sys.modules.pop(mod_name, None)
-
-
-# ── Flatpak backend (Background portal) ───────────────────────────────
-
-
-def test_flatpak_backend_selected_inside_sandbox(monkeypatch):
-    _force_flatpak(monkeypatch)
-    autostart = _reload_autostart()
-    assert autostart._backend.__name__ == "jellytoast.autostart._flatpak"
-
-
-def test_flatpak_build_options_shape():
-    """RequestBackground a{sv} options carry jeepney (signature, value)
-    variants and pass the requested autostart state through."""
-    from jellytoast.autostart import _flatpak
-
-    on = _flatpak.build_options(True)
-    off = _flatpak.build_options(False)
-    assert on["autostart"] == ("b", True)
-    assert off["autostart"] == ("b", False)
-    assert on["commandline"] == ("as", ["jellytoast"])
-    assert on["reason"][0] == "s"
-    assert on["dbus-activatable"] == ("b", False)
-
-
-def test_flatpak_is_enabled_reads_persisted_intent(isolated_settings):
-    """The portal has no read-back API — is_enabled() reports the
-    persisted settings flag."""
-    from jellytoast.autostart import _flatpak
-
-    isolated_settings.autostart = True
-    assert _flatpak.is_enabled() is True
-    isolated_settings.autostart = False
-    assert _flatpak.is_enabled() is False
-
-
-def test_flatpak_denied_response_flips_persisted_intent(isolated_settings):
-    from jellytoast.autostart import _flatpak
-
-    isolated_settings.autostart = True
-    _flatpak._on_response(requested=True, granted=False)
-    assert isolated_settings.autostart is False
-
-
-def test_flatpak_timeout_response_keeps_intent(isolated_settings):
-    from jellytoast.autostart import _flatpak
-
-    isolated_settings.autostart = True
-    _flatpak._on_response(requested=True, granted=None)
-    assert isolated_settings.autostart is True
-
-
-def test_flatpak_enable_dispatches_request(monkeypatch):
-    """enable()/disable() are dispatch-and-return: the worker carries the
-    portal round-trip, the call site gets True for 'request sent'."""
-    from jellytoast.autostart import _flatpak
-
-    calls = {}
-
-    def _fake_run_async(fn, on_result=None, on_error=None):
-        calls["result"] = fn()
-        if on_result:
-            on_result(calls["result"])
-
-    import jellytoast.async_io as aio
-
-    monkeypatch.setattr(aio, "run_async", _fake_run_async)
-    monkeypatch.setattr(_flatpak, "_request_background", lambda autostart: True)
-    monkeypatch.setattr(_flatpak, "is_supported", lambda: True)
-    assert _flatpak.enable() is True
-    assert calls["result"] is True
-
-
-def test_kwin_backends_self_disable_inside_flatpak(monkeypatch):
-    """drag_repaint + keep_above must hard-no-op in the sandbox: their
-    kwinrc/kwinrulesrc writes would land in the private app config and
-    org.kde.KWin isn't on the filtered bus."""
-    import jellytoast.platform_compat as pc
-
-    monkeypatch.setattr(pc, "IS_FLATPAK", True)
-    from jellytoast.drag_repaint import _kwin as drag_kwin
-    from jellytoast.keep_above import _kwin as above_kwin
-
-    assert drag_kwin.is_supported() is False
-    assert above_kwin.is_supported() is False

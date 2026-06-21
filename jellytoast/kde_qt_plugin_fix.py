@@ -21,8 +21,8 @@ crashing.
 
 A distro/system PySide6 (or a ``venv --system-site-packages`` over the
 packaged ``pyside6``) already integrates with the system plugins, so this is
-a no-op there. It's also a no-op off KDE, inside a Flatpak (the KDE runtime
-ships the plugins), and when ``JT_NO_QT_PLUGIN_FIX=1`` is set.
+a no-op there. It's also a no-op off KDE and when ``JT_NO_QT_PLUGIN_FIX=1``
+is set.
 
 ``heal_qt_plugin_path()`` MUST run before PySide6 is imported / QApplication
 is constructed — Qt reads ``QT_PLUGIN_PATH`` when it builds its library paths.
@@ -54,7 +54,6 @@ def _choose_plugin_dir(
     *,
     platform: str,
     desktop: str,
-    flatpak: bool,
     disabled: bool,
     pyside_dir: str,
     existing_path: str,
@@ -70,8 +69,6 @@ def _choose_plugin_dir(
     if platform != "linux":
         return None
     if disabled:
-        return None
-    if flatpak:
         return None
     if "KDE" not in desktop.upper():
         return None
@@ -115,7 +112,6 @@ def heal_qt_plugin_path() -> str | None:
     chosen = _choose_plugin_dir(
         platform=sys.platform,
         desktop=os.environ.get("XDG_CURRENT_DESKTOP", ""),
-        flatpak=bool(os.environ.get("FLATPAK_ID")),
         disabled=os.environ.get("JT_NO_QT_PLUGIN_FIX") == "1",
         pyside_dir=_pyside_location(),
         existing_path=os.environ.get("QT_PLUGIN_PATH", ""),

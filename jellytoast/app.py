@@ -178,8 +178,8 @@ sys.path.insert(0, str(_PKG_PARENT_DIR))
 # Qt plugins, so KWindowSystem fails to load its platform backend and frosted
 # blur silently degrades to the near-opaque fallback. Point Qt at the system
 # plugin dir so blur works on a plain `pipx install`. No-op on a distro/system
-# PySide6, off KDE, inside Flatpak, or with JT_NO_QT_PLUGIN_FIX=1. MUST run
-# before the PySide6 import below — Qt reads QT_PLUGIN_PATH at plugin-load
+# PySide6, off KDE, or with JT_NO_QT_PLUGIN_FIX=1. MUST run before the
+# PySide6 import below — Qt reads QT_PLUGIN_PATH at plugin-load
 # time. See jellytoast/kde_qt_plugin_fix.py.
 from jellytoast.kde_qt_plugin_fix import heal_qt_plugin_path  # noqa: E402
 

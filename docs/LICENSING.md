@@ -37,11 +37,12 @@ make it incompatible with the Qt binding it cannot run without. Keep the
 
 No proprietary or copyleft-incompatible dependency is present.
 
-## Distribution note (Flatpak / bundles)
+## Distribution note (bundles)
 
 A pip install links these dynamically and does not redistribute them. A
-**Flatpak bundle vendors them**, so a bundle should ship their notices —
-generate a `THIRD-PARTY-LICENSES` file at packaging time, e.g.:
+**self-contained bundle vendors them** (the AppImage, the PyInstaller
+.deb/.exe), so a bundle should ship their notices — generate a
+`THIRD-PARTY-LICENSES` file at packaging time, e.g.:
 
 ```bash
 pip install pip-licenses
