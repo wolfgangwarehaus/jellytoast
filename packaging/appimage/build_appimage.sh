@@ -58,13 +58,20 @@ copy_so() {
   fi
 }
 
-MPV_PATH="$(resolve_so libmpv.so.2)"
-[ -n "$MPV_PATH" ] || {
-  echo "error: libmpv.so.2 not on the build host — 'apt-get install libmpv-dev'." >&2
+# Soname varies by distro: Ubuntu 22.04 ships libmpv.so.1 (libmpv1), newer
+# distros libmpv.so.2 (libmpv2) — the .deb declares `libmpv2 | libmpv1` for the
+# same reason. Vendor whichever the build host has.
+MPV_SONAME=""
+for _cand in libmpv.so.2 libmpv.so.1; do
+  if [ -n "$(resolve_so "$_cand")" ]; then MPV_SONAME="$_cand"; break; fi
+done
+[ -n "$MPV_SONAME" ] || {
+  echo "error: no libmpv.so.{2,1} on the build host — 'apt-get install libmpv-dev'." >&2
   exit 1
 }
-echo "Vendoring libmpv + closure into the AppDir:"
-cp -Ln "$MPV_PATH" "$APPDIR/usr/lib/" && echo "  + libmpv.so.2"
+MPV_PATH="$(resolve_so "$MPV_SONAME")"
+echo "Vendoring $MPV_SONAME + closure into the AppDir:"
+cp -Ln "$MPV_PATH" "$APPDIR/usr/lib/" && echo "  + $MPV_SONAME"
 ldd "$MPV_PATH" | awk '/=> \// {print $1}' | while read -r so; do
   case "$so" in
     # Host-provided (AppImage excludelist + forward-compat runtimes):

@@ -118,21 +118,29 @@ if IS_WINDOWS and getattr(sys, "frozen", False):
     except OSError:
         pass
 
-# AppImage (Linux, frozen): the bundle vendors its own libmpv (the .deb gets
-# libmpv from the host via Depends; an AppImage can't, so it must self-contain
-# it). python-mpv resolves libmpv with ctypes.util.find_library('mpv'), which
-# does NOT look inside a mounted AppImage. AppRun puts the bundled lib dir on
-# LD_LIBRARY_PATH; pre-load libmpv by soname with RTLD_GLOBAL so python-mpv's
-# own CDLL picks up the already-loaded handle. Defensive — a miss just falls
-# through to python-mpv's normal resolution. APPDIR is set by the AppImage
-# runtime, so this is a no-op for the .deb / pipx / source runs.
-if IS_LINUX and getattr(sys, "frozen", False) and os.environ.get("APPDIR"):
-    try:
-        import ctypes
+# AppImage (Linux, frozen): the bundle vendors its own libmpv under usr/lib (the
+# .deb gets libmpv from the host via Depends; an AppImage can't, so it must
+# self-contain it). python-mpv loads libmpv at import via
+# ``ctypes.util.find_library("mpv")`` then ``CDLL(<that>)`` — and find_library
+# only scans the SYSTEM ldconfig cache, so it never sees a lib inside a mounted
+# AppImage. Redirect find_library at the bundled copy (soname-agnostic: Ubuntu
+# 22.04 ships libmpv.so.1, newer distros .so.2). AppRun also puts usr/lib on
+# LD_LIBRARY_PATH so libmpv's own FFmpeg deps resolve. APPDIR is set only by the
+# AppImage runtime, so this is a no-op for the .deb / pipx / source runs.
+_appdir = os.environ.get("APPDIR")
+if IS_LINUX and getattr(sys, "frozen", False) and _appdir:
+    import ctypes.util
+    import glob
 
-        ctypes.CDLL("libmpv.so.2", mode=ctypes.RTLD_GLOBAL)
-    except OSError:
-        pass
+    _bundled = sorted(glob.glob(os.path.join(_appdir, "usr", "lib", "libmpv.so*")))
+    if _bundled:
+        _mpv_lib = _bundled[-1]  # highest soname version present
+        _orig_find_library = ctypes.util.find_library
+
+        def _find_library(name, _orig=_orig_find_library, _mpv=_mpv_lib):
+            return _mpv if name == "mpv" else _orig(name)
+
+        ctypes.util.find_library = _find_library
 
 try:
     import mpv
