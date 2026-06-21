@@ -14,9 +14,12 @@
 set -euo pipefail
 
 apt-get update -qq
-# ONLY a real X server. DELIBERATELY NOT libmpv, NOT libxcb-cursor0, NOT the xcb
-# closure — those MUST come from inside the AppImage, or this test is meaningless.
-DEBIAN_FRONTEND=noninteractive apt-get install -y -qq xvfb >/dev/null
+# A real X server + the GL baseline (libgl1/libegl1). GL/EGL are driver-coupled
+# and on the AppImage excludelist, so they come from the host — present on any
+# real graphical desktop, so the container must have them too. DELIBERATELY still
+# NOT libmpv, NOT libxcb-cursor0, NOT the xcb-util/fontconfig closure: those MUST
+# come from inside the AppImage, or this self-containment test is meaningless.
+DEBIAN_FRONTEND=noninteractive apt-get install -y -qq xvfb libgl1 libegl1 >/dev/null
 
 shopt -s nullglob
 _imgs=(/src/dist/jellytoast-*-x86_64.AppImage)

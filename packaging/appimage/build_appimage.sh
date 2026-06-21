@@ -43,24 +43,42 @@ mkdir -p "$APPDIR/usr/bin" "$APPDIR/usr/lib" \
          "$APPDIR/usr/share/icons/hicolor/256x256/apps"
 cp -a "$BUNDLE/." "$APPDIR/usr/bin/"   # jellytoast binary + _internal/
 
-# ── Vendor libmpv + its FFmpeg closure ───────────────────────────────────────
-# The .deb gets these from the host; the AppImage can't, so copy libmpv.so.2 and
-# every shared lib it pulls EXCEPT the excludelist (glibc / GL / X-Wayland client
-# libs / the C++ runtime — those must come from the host so the GL stack matches
-# the user's driver and forward-compat holds).
+# ── Vendor the system shared-lib closure the frozen app + Qt plugins need ─────
+# PyInstaller's onedir bundles Python + Qt under usr/bin/_internal, but leaves a
+# set of system libs to the host: libmpv + its FFmpeg closure, and the Qt xcb
+# platform plugin's libxcb-cursor/icccm/util + fontconfig/freetype closure (the
+# same set the .deb declares as Depends). The .deb gets these from the host; the
+# AppImage can't, so vendor them into usr/lib. EXCLUDE the AppImage excludelist —
+# glibc, the C++ runtime, GL/glvnd, base X/xcb, wayland — those MUST come from the
+# user's host so the GL stack matches their driver and forward-compat holds.
 resolve_so() { ldconfig -p | awk -v n="$1" '$1==n {print $NF; exit}'; }
-copy_so() {
-  local src; src="$(resolve_so "$1")"
-  if [ -n "$src" ] && [ -e "$src" ]; then
-    cp -Ln "$src" "$APPDIR/usr/lib/" && echo "  + $1"
-  else
-    echo "  ! $1 not found on the build host" >&2
-  fi
+
+is_excluded() {
+  case "$1" in
+    libc.so.*|libm.so.*|libdl.so.*|libpthread.so.*|librt.so.*|libresolv.so.*|\
+    ld-linux*.so.*|libstdc++.so.*|libgcc_s.so.*|\
+    libGL.so.*|libEGL.so.*|libGLdispatch.so.*|libGLX.so.*|libOpenGL.so.*|libdrm.so.*|\
+    libX11.so.*|libX11-xcb.so.*|libxcb.so.*|libwayland-*.so.*) return 0 ;;
+    *) return 1 ;;
+  esac
 }
 
-# Soname varies by distro: Ubuntu 22.04 ships libmpv.so.1 (libmpv1), newer
-# distros libmpv.so.2 (libmpv2) — the .deb declares `libmpv2 | libmpv1` for the
-# same reason. Vendor whichever the build host has.
+# ldd a binary (with _internal on the path so the bundled Qt libs resolve and ldd
+# recurses into THEIR deps) and copy each system-resolved dep that is neither
+# excludelisted nor already inside the bundle.
+vendor_closure() {
+  LD_LIBRARY_PATH="$APPDIR/usr/bin/_internal" ldd "$1" 2>/dev/null \
+    | awk '/=> \// {print $1 " " $3}' | while read -r soname path; do
+    is_excluded "$soname" && continue
+    case "$path" in "$APPDIR"/*) continue ;; esac   # already bundled in _internal
+    [ -e "$path" ] || continue
+    [ -e "$APPDIR/usr/lib/$soname" ] && continue
+    cp -Ln "$path" "$APPDIR/usr/lib/$soname" && echo "  + $soname"
+  done
+}
+
+# 1. libmpv + its FFmpeg closure. Soname varies by distro: Ubuntu 22.04 ships
+#    libmpv.so.1 (libmpv1), newer distros libmpv.so.2 (libmpv2).
 MPV_SONAME=""
 for _cand in libmpv.so.2 libmpv.so.1; do
   if [ -n "$(resolve_so "$_cand")" ]; then MPV_SONAME="$_cand"; break; fi
@@ -70,23 +88,23 @@ done
   exit 1
 }
 MPV_PATH="$(resolve_so "$MPV_SONAME")"
-echo "Vendoring $MPV_SONAME + closure into the AppDir:"
-cp -Ln "$MPV_PATH" "$APPDIR/usr/lib/" && echo "  + $MPV_SONAME"
-ldd "$MPV_PATH" | awk '/=> \// {print $1}' | while read -r so; do
-  case "$so" in
-    # Host-provided (AppImage excludelist + forward-compat runtimes):
-    libc.so.*|libm.so.*|libdl.so.*|libpthread.so.*|librt.so.*|libresolv.so.*|\
-    ld-linux*.so.*|libstdc++.so.*|libgcc_s.so.*|\
-    libGL.so.*|libEGL.so.*|libGLdispatch.so.*|libGLX.so.*|libOpenGL.so.*|libdrm.so.*|\
-    libX11.so.*|libX11-xcb.so.*|libxcb.so.*|libwayland-*.so.*|libxkbcommon*.so.*) ;;
-    *) copy_so "$so" ;;
-  esac
-done
+echo "Vendoring $MPV_SONAME + the FFmpeg closure:"
+cp -Ln "$MPV_PATH" "$APPDIR/usr/lib/$MPV_SONAME" && echo "  + $MPV_SONAME"
+vendor_closure "$MPV_PATH"
 
-# Qt 6.5+ hard-requires libxcb-cursor0 to load the xcb platform plugin, and
-# PyInstaller bundles the plugin but NOT this lib — the #1 "could not load the Qt
-# platform plugin xcb" failure. Vendor it explicitly.
-copy_so libxcb-cursor.so.0
+# 2. The Qt xcb platform plugin's closure — libxcb-cursor0 (Qt 6.5+ hard-needs it,
+#    the #1 "could not load the Qt platform plugin xcb" failure) + the xcb-util /
+#    fontconfig / freetype libs PyInstaller leaves to the host.
+echo "Vendoring the Qt xcb platform-plugin closure:"
+XCB_PLUGIN="$(find "$APPDIR/usr/bin/_internal" -name 'libqxcb.so' 2>/dev/null | head -1)"
+if [ -n "$XCB_PLUGIN" ]; then
+  vendor_closure "$XCB_PLUGIN"
+else
+  echo "  ! libqxcb.so not found in the bundle — the AppImage may not start on X11" >&2
+fi
+
+# 3. The frozen launcher itself, to catch anything else it pulls from the host.
+vendor_closure "$APPDIR/usr/bin/jellytoast"
 
 # ── AppRun: bundled libs on the loader path, then exec the frozen app ─────────
 cat > "$APPDIR/AppRun" <<'EOF'
