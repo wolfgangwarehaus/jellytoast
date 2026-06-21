@@ -1,18 +1,25 @@
 name: winget
 
-# Auto-submit the winget manifest update when a release is PUBLISHED. It runs on
-# `release: released` (NOT on the tag) because winget-releaser needs the
+# Auto-submit the winget manifest update when a release is PUBLISHED — and a
+# manual `workflow_dispatch` to submit (or re-submit / backfill) a specific tag.
+# It runs on a PUBLISHED release (NOT the tag) because winget-releaser needs the
 # installer asset to be publicly downloadable — a draft 404s its validation.
 #
 # DORMANT until you activate it (one-time): create a CLASSIC PAT with the
-# `public_repo` scope, store it as the repo secret WINGET_TOKEN, and fork
-# microsoft/winget-pkgs under `wolfgangwarehaus`. See docs/RELEASING.md.
-# Until then the step is skipped and you keep using the `wingetcreate` one-liner
-# (the in-repo manifest version is already stamped by dev/cut_release.sh).
+# `public_repo` scope (fine-grained PATs are unsupported), store it as the repo
+# secret WINGET_TOKEN. The fork (wolfgangwarehaus/winget-pkgs) already exists.
+# See docs/RELEASING.md. Until then the submit step is skipped and you keep using
+# the `wingetcreate` one-liner (the in-repo manifest is already version-stamped
+# by dev/cut_release.sh).
 
 on:
   release:
     types: [released] # a non-prerelease publish only
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to submit (e.g. v0.1.3) — must be a PUBLISHED release"
+        required: true
 
 permissions:
   contents: read
@@ -31,6 +38,10 @@ jobs:
           # Match ONLY the Inno setup.exe — never the portable .zip.
           installers-regex: 'windows-x64-setup\.exe$'
           token: ${{ secrets.WINGET_TOKEN }}
+          # On a release event this is the published tag; on workflow_dispatch it
+          # is the input tag (so a release that published before the token existed
+          # can be backfilled). The PackageVersion derives from it (minus `v`).
+          release-tag: ${{ github.event.inputs.tag || github.event.release.tag_name }}
       - name: Dormant — WINGET_TOKEN not set
         if: env.HAVE_TOKEN != 'true'
         run: |
