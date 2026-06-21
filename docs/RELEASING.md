@@ -58,14 +58,24 @@ The fan-out workflows are committed but **inert** until you add their secret —
 nothing runs without it.
 
 ### winget (`winget.yml`)
-1. Create a **classic** PAT (fine-grained PATs are unsupported) with the
-   `public_repo` scope → store as repo secret **`WINGET_TOKEN`**.
-2. **Fork** `microsoft/winget-pkgs` under `wolfgangwarehaus`.
-3. Ensure the current version's manifest already exists in winget-pkgs (it does —
-   v0.1.0/0.1.1 are merged; winget-releaser templates off the previous version).
+**The only step left is the token** — the `wolfgangwarehaus/winget-pkgs` fork
+already exists, and jellytoast is live in winget-pkgs (0.1.0/0.1.1/0.1.2), so
+winget-releaser has a previous version to template from.
 
-Then every published release auto-opens the winget PR. Until activated, run:
-`wingetcreate update wolfgangwarehaus.jellytoast --version X.Y.Z --urls <setup.exe-url> --submit --token $(gh auth token)`.
+1. Create a **classic** PAT (fine-grained PATs are *not* supported) with the
+   `public_repo` scope: https://github.com/settings/tokens → *Generate new token
+   (classic)* → check **`public_repo`**.
+2. Store it as the repo secret **`WINGET_TOKEN`**:
+   `gh secret set WINGET_TOKEN --repo wolfgangwarehaus/jellytoast` (paste at the
+   prompt — never commit it), or via *Settings → Secrets and variables → Actions*.
+
+Then **every published release auto-opens the winget PR**. To submit (or
+backfill) a *specific* already-published release — e.g. 0.1.3, which published
+before the token existed — run the manual path:
+`gh workflow run winget.yml -f tag=vX.Y.Z`. The action only works on a PUBLISHED
+(non-draft) release. (Before the token is set, the fallback stays the
+`wingetcreate update wolfgangwarehaus.jellytoast --version X.Y.Z --urls
+<setup.exe-url> --submit --token $(gh auth token)` one-liner.)
 
 ### AUR (`aur.yml`)
 1. Wait for the AUR to reopen new-package registration (frozen after the 2026
