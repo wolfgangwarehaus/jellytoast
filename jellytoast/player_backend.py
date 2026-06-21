@@ -36,7 +36,7 @@ from typing import Optional
 
 from PySide6.QtCore import QObject, QTimer, Signal, Slot
 
-from jellytoast.platform_compat import IS_WINDOWS
+from jellytoast.platform_compat import IS_LINUX, IS_WINDOWS
 
 logger = logging.getLogger(__name__)
 
@@ -115,6 +115,22 @@ def _curate_audio_devices(devices: list) -> list:
 if IS_WINDOWS and getattr(sys, "frozen", False):
     try:
         os.add_dll_directory(os.path.dirname(sys.executable))
+    except OSError:
+        pass
+
+# AppImage (Linux, frozen): the bundle vendors its own libmpv (the .deb gets
+# libmpv from the host via Depends; an AppImage can't, so it must self-contain
+# it). python-mpv resolves libmpv with ctypes.util.find_library('mpv'), which
+# does NOT look inside a mounted AppImage. AppRun puts the bundled lib dir on
+# LD_LIBRARY_PATH; pre-load libmpv by soname with RTLD_GLOBAL so python-mpv's
+# own CDLL picks up the already-loaded handle. Defensive — a miss just falls
+# through to python-mpv's normal resolution. APPDIR is set by the AppImage
+# runtime, so this is a no-op for the .deb / pipx / source runs.
+if IS_LINUX and getattr(sys, "frozen", False) and os.environ.get("APPDIR"):
+    try:
+        import ctypes
+
+        ctypes.CDLL("libmpv.so.2", mode=ctypes.RTLD_GLOBAL)
     except OSError:
         pass
 
