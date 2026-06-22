@@ -1,16 +1,26 @@
+# Navidrome apps catalog entry → PR to github.com/navidrome/website
+# Path: assets/apps/jellytoast/index.yaml  (+ thumbnail.webp & gallery beside it)
+# Schema verified 2026-06-22 against assets/apps/_template/index.yaml on master.
+# Required: name, url, platforms, api, description (<=500 chars), screenshots.thumbnail.
+# Each platform is `true` OR an object with store:/url:. api ∈ {OpenSubsonic,Subsonic,Navidrome}.
+# repoUrl drives BOTH the open-source badge and the last-release-date badge.
+# Before the PR: `npm run convert:images jellytoast` then `npm run validate:app jellytoast`.
+# Template to copy: assets/apps/aonsoku/ (a real, accepted cross-platform Subsonic client).
 name: jellytoast
 url: https://wolfgangwarehaus.com/jellytoast
 repoUrl: https://github.com/wolfgangwarehaus/jellytoast
 
 platforms:
-  windows: true
   linux: true
+  windows:
+    store: https://apps.microsoft.com/detail/9PNLTPXGHN79
 
 api: OpenSubsonic
 
-description: "Native PySide6/Qt desktop client for Jellyfin and Subsonic/OpenSubsonic servers. Bit-perfect gapless mpv playback, ReplayGain, offline downloads, casting (Chromecast/AirPlay/DLNA/Sonos), synced lyrics, and ListenBrainz scrobbling."
+description: "Native PySide6/Qt6 desktop client (not Electron) for Jellyfin and Subsonic/OpenSubsonic servers. Bit-perfect gapless mpv playback, ReplayGain, offline downloads, multi-protocol casting (Chromecast/AirPlay 2/Sonos/DLNA/Snapcast) with a built-in relay, a floating mini player, synced lyrics, and ListenBrainz scrobbling."
 
 isFree: true
+isOpenSource: true
 
 screenshots:
   thumbnail: now-playing.webp
@@ -25,5 +35,6 @@ keywords:
   - jellyfin
   - navidrome
   - gapless
-  - chromecast
+  - casting
   - offline
+  - lyrics
