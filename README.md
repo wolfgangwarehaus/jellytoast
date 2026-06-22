@@ -27,17 +27,17 @@
 
 ## Install
 
-### Windows 10/11 (x64)
-
-- **winget:** `winget install wolfgangwarehaus.jellytoast`
-- **Installer or portable zip** from [Releases](https://github.com/wolfgangwarehaus/jellytoast/releases) — the direct download is unsigned, so SmartScreen warns on first run; click **More info → Run anyway** (verify the SHA256 against `SHA256SUMS`).
-- **Microsoft Store** — coming soon.
-
 ### Linux
 
-- **Ubuntu / Debian / Mint** (22.04+ / 12+): download the `.deb` from [Releases](https://github.com/wolfgangwarehaus/jellytoast/releases/latest), then `sudo apt install ./jellytoast_*_amd64.deb`
-- **AppImage** (any distro, no install needed) — coming soon.
-- **AUR** — coming soon.
+- **Ubuntu / Debian / Mint** (22.04+ / 12+) — download the `.deb` from [Releases](https://github.com/wolfgangwarehaus/jellytoast/releases/latest), then `sudo apt install ./jellytoast_*_amd64.deb`
+- **AppImage** (any distro, nothing to install) — download the `.AppImage` from [Releases](https://github.com/wolfgangwarehaus/jellytoast/releases/latest), `chmod +x` it, and run.
+- **AUR** (Arch Linux) — coming soon.
+
+### Windows 10/11 (x64)
+
+- **[Microsoft Store](https://apps.microsoft.com/detail/9PNLTPXGHN79)** — one click, auto-updating, no SmartScreen warning.
+- **winget** — `winget install wolfgangwarehaus.jellytoast`
+- **Installer or portable zip** from [Releases](https://github.com/wolfgangwarehaus/jellytoast/releases/latest) — the direct download is unsigned, so SmartScreen warns on first run; click **More info → Run anyway** (verify the SHA256 against `SHA256SUMS`).
 
 ### Any OS
 
