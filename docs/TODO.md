@@ -336,50 +336,61 @@ installer + portable zip + sdist/wheel), README restructure (long-form →
 
 ---
 
-## Launch — go-to-market (post-v0.1.0)
+## Launch — go-to-market (refreshed 2026-06-22)
 
-Order matters: packaging → screenshots → directory listings → posts → HN.
-(The detailed community-launch research doc was retired with `docs/research/`
-in #119; the checklist below is the source of truth now.)
+Order: directory listings → home-turf posts → Show HN → broader waves.
+**The install story is now COMPLETE** (Microsoft Store + winget + .deb + AppImage +
+PyPI all live), so the Show HN gate is cleared. Ready-to-submit listing entries live
+in `docs/launch-listings/`; copy-paste post drafts in
+`docs/launch-listings/launch-posts.md`. All venue schemas/rules re-verified 2026-06-22.
 
-- **NOW (account age gate):** create the alternativeto.net account —
-  submissions need it ≥1 week old.
-- [x] **Screenshots — ✅ DONE (#107).** Shot + wired in `docs/screenshots/`
-  (library / now-playing / cast / downloads / settings / smart-playlists /
-  radio / mini-compact / mini-expanded) with WebP variants for the Navidrome
-  catalog; landing-page carousel live. Still optional: a short GIF
+- [x] **Screenshots — DONE (#107)**; landing-page carousel live. Optional: a short GIF
   (now-playing + blur + cast) for social posts.
-- **Directory PRs (before any social posts):**
-  - [ ] **Navidrome apps catalog** — PR to `github.com/navidrome/website`:
-    `assets/apps/jellytoast/` with `index.yaml` (`api: OpenSubsonic`,
-    platforms linux+windows, repoUrl for the freshness badge) + WebP
-    screenshots; run their `npm run validate:app` first. Tag v0.1.0 BEFORE
-    this (badge reads GitHub releases).
-  - [ ] **jellyfin.org clients page** — PR editing `src/data/clients.ts`;
-    review Jellyfin branding guidelines first (the "jelly" name riff may
-    draw comment; precedent exists).
-  - [ ] **awesome-jellyfin** — PR editing `clients.yaml` (CLIENTS.md is
-    generated, don't touch). ~10 min.
-- **Announce, home turf first:** r/navidrome + Navidrome Discord
-  (discord.gg/xh7j7yF) + **forum.jellyfin.org** (⚠️ r/jellyfin is
-  permanently read-only — never plan a post there) + Lemmy
-  discuss.tchncs.de/c/navidrome.
-- **Wave 2:** r/selfhosted (disclosure + 90/10 ratio; frame as "client for
-  your self-hosted Navidrome/Jellyfin"), selfhosted@lemmy.world, Mastodon
-  (#linux #selfhosted #foss #jellyfin #navidrome). A good r/selfhosted
-  post often gets picked up by the selfh.st newsletter automatically.
-- **Wave 3 (staggered 1–2 weeks, rewritten per sub, never the crosspost
-  button):** r/linux (release flair; only once one-command install
-  exists), r/kde (lead with KWin blur/Wayland polish), r/musichoarders,
-  r/opensource; r/linuxaudio only with the bit-perfect/ALSA-direct angle.
-- **Show HN — one shot.** Only once the install story is solid
-  (winget / PyPI / `.deb` / AppImage) + README is screenshot-rich. Framing
-  that lands: "native, not Electron." Be in the comments all day.
-- **Cleanup:** alternativeto.net submission ("Feishin/Sonixd alternative"
-  SEO), LinuxLinks contact-form suggestion.
-- **Skips (verified):** r/audiophile (bans self-promo), r/archlinux (AUR
-  is the channel), awesome-selfhosted (servers only), apps.kde.org (KDE
-  Incubator projects only), OpenHub/AlternativeOSS (moribund).
+
+**Directory PRs — do first (the posts link to these). Entries drafted in `launch-listings/`:**
+  - [ ] **Navidrome apps catalog** → `navidrome/website`, `assets/apps/jellytoast/`
+    (`api: OpenSubsonic`; `repoUrl` drives the badges). Run `npm run convert:images
+    jellytoast` + `npm run validate:app jellytoast`. Template: the `aonsoku` entry.
+  - [ ] **awesome-jellyfin** → `assets/clients/clients.yaml` on `main` (NOT the generated
+    `CLIENTS.md`); `types: [Music]`; `github` type needs separate `owner:`/`repo:` keys;
+    alphabetical order (a sort-check bot enforces it); Conventional Commit. ~10 min.
+  - [ ] **Awesome-SelfHosted-Music** → `Tal0na/Awesome-SelfHosted-Music-Awesome`,
+    `Servers-Clients/linux.md` + `windows.md` (new — a self-hosted-music list that *does*
+    take clients, unlike awesome-selfhosted).
+  - [ ] **jellyfin.org clients** → `src/data/clients.ts` on `master`; Store+Releases in
+    `primaryLinks`, omit `recommended`. The "jelly" name may draw a branding comment.
+  - [ ] **AlternativeTo** (web form; account must be ≥1 wk old — **create it NOW**):
+    category *Audio Player*, then mark as an alt to Feishin/Supersonic/Sonixd.
+  - [ ] **selfh.st/apps** (email `hello@selfh.st`): companion-**client** listing → auto-feeds
+    the Self-Host Weekly newsletter via the generated release RSS.
+
+**Announce — home turf first:** r/navidrome · **forum.jellyfin.org → Client Development**
+  board (⚠️ r/jellyfin is permanently read-only — confirmed; the forum is the Jellyfin
+  venue) · Navidrome GitHub Discussions "Show and tell" · Lemmy (selfhosted@lemmy.world,
+  navidrome@discuss.tchncs.de, jellyfin@lemmy.world).
+
+**Discords (verified invites; post once in #showcase/projects, read #rules first):**
+  Sonixd/Feishin `discord.gg/FVKpcMDy5f` (the exact audience — be collegial, it's the
+  peer server) · /r/SelfHosted Chat `discord.gg/UrZKzYZfcS` · Navidrome `discord.gg/xh7j7yF`
+  · Homelab `discord.gg/homelab`. ⚠️ Jellyfin Discord needs mod OK for self-promo (no
+  #showcase) — prefer the forum.
+
+**Show HN — one shot (now unblocked).** `Show HN: jellytoast – a native Qt music player
+  for Jellyfin and Navidrome`; lead "native, not Electron"; no version-bump framing; be in
+  the comments all day; Tue–Thu AM ET. Draft in `launch-posts.md`.
+
+**Broader waves (staggered, rewritten per sub, never the crosspost button):** r/selfhosted
+  (flair REQUIRED → **"Release"**, *not* "Release (No AI)"; disclose authorship) · r/kde
+  (KWin blur / Wayland shots) · **r/musichoarder** (singular, ~48k) · r/linux ("Software
+  Release" flair) · r/opensource · r/unixporn (theme shots) · r/SideProject ·
+  r/coolgithubprojects · Mastodon (#Jellyfin #Navidrome #SelfHosted #FOSS #Linux) ·
+  OMG!Linux / OMG!Ubuntu tip lines · Changelog News · LinuxLinks.
+
+**Skips (verified):** r/audiophile (bans self-promo) · r/archlinux (AUR is the channel) ·
+  awesome-selfhosted (servers only) · console.dev (devtools only) · Lobsters (invite-only) ·
+  subsonic.org / OpenSubsonic site list / LibHunt / BetaList (moribund or low-fit) · the
+  Self-Hosted *podcast* Discord (a listener community, not a showcase — don't confuse it
+  with /r/SelfHosted Chat).
 
 ---
 
