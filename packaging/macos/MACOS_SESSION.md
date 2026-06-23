@@ -109,6 +109,19 @@ Tick these as you go; squash-merge only when the relevant ones are **verified**.
 
 ## Gotchas (from the research — don't relearn these the hard way)
 
+- **VERIFICATION TARGET = macOS 26 Tahoe (chosen 2026-06-23).** Carried over
+  from the App Store research: `disable-library-validation` — the `.dmg`'s
+  load-bearing entitlement (lets the bundled Qt/Python/libmpv dylibs load) — was
+  flagged as possibly crashing on **macOS 26 Tahoe**. That flag came from the
+  MAS track and is **unverified for this Developer-ID path**, but since we're
+  verifying on Tahoe, treat it as **suspect #1 if the app fails on first
+  launch**. Disambiguate in **Console.app** (filter `Library Validation` / `code
+  signature` while launching): if it's a library-validation error, the fix is to
+  **re-sign every nested dylib inside-out with our own Developer-ID identity and
+  drop the entitlement** (`sign_app.sh` already signs inside-out — confirm it
+  reached the whole dylib tree via `codesign -dv` spot checks). If instead it's
+  a JIT / "executable memory" crash, that's the separate LuaJIT path below.
+
 - LuaJIT needs `allow-unsigned-executable-memory`, **not** the narrower
   `allow-jit` (LuaJIT doesn't use Apple's `MAP_JIT` flag → "Code Signature
   Invalid" crash). Alternative: build libmpv `--disable-lua` and drop the
