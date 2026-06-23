@@ -163,11 +163,23 @@ dev = [
 # The DLNA / Sonos / Snapcast cast backends + the visualizer FFT dep are now
 # bundled as REQUIRED dependencies (see [project.dependencies]) so every
 # install ships the same backends — they're no longer opt-in extras.
-# Per-platform extras. Empty for now; populated when we add Windows
-# (SMTC via winrt, autostart via registry) and macOS (NowPlaying /
-# LaunchAgent via pyobjc) backends.
+# Per-platform extras. Windows stays empty (its winrt deps live in
+# [project.dependencies] behind sys_platform markers). macOS carries pyobjc
+# for the NowPlaying / Control Center backend and the future vibrancy bridge.
 windows = []
-macos = []
+# pyobjc powers the macOS native bits: media controls (MPNowPlayingInfoCenter +
+# MPRemoteCommandCenter, surfaced in Control Center / on media keys) and the
+# planned NSVisualEffectView vibrancy bridge. Kept as an EXTRA (not a hard
+# darwin dependency) until those backends land — the autostart LaunchAgent
+# backend that ships now is pure stdlib and needs none of this. Imports will be
+# lazy + guarded so a missing install degrades to the no-op backend. Markers
+# keep it a darwin-only resolve even when the extra is requested.
+# (jellytoast/media_controls/_macos.py, jellytoast/blur/_macos.py — Mac-phase.)
+macos = [
+    'pyobjc-core>=10.0 ; sys_platform == "darwin"',
+    'pyobjc-framework-Cocoa>=10.0 ; sys_platform == "darwin"',
+    'pyobjc-framework-MediaPlayer>=10.0 ; sys_platform == "darwin"',
+]
 
 # GUI entry point. `gui-scripts` (vs `scripts`) suppresses the console
 # window on Windows; on Linux it behaves identically to `scripts`.

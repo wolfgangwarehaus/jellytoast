@@ -36,7 +36,7 @@ from typing import Optional
 
 from PySide6.QtCore import QObject, QTimer, Signal, Slot
 
-from jellytoast.platform_compat import IS_LINUX, IS_WINDOWS
+from jellytoast.platform_compat import IS_LINUX, IS_MACOS, IS_WINDOWS
 
 logger = logging.getLogger(__name__)
 
@@ -135,6 +135,39 @@ if IS_LINUX and getattr(sys, "frozen", False) and _appdir:
     _bundled = sorted(glob.glob(os.path.join(_appdir, "usr", "lib", "libmpv.so*")))
     if _bundled:
         _mpv_lib = _bundled[-1]  # highest soname version present
+        _orig_find_library = ctypes.util.find_library
+
+        def _find_library(name, _orig=_orig_find_library, _mpv=_mpv_lib):
+            return _mpv if name == "mpv" else _orig(name)
+
+        ctypes.util.find_library = _find_library
+
+# macOS (frozen .app): the bundle vendors its own libmpv*.dylib (there is no
+# system libmpv on a clean Mac — same situation as the Windows DLL and the
+# AppImage). python-mpv loads libmpv at import via
+# ``ctypes.util.find_library("mpv")`` then ``CDLL(<that>)``, and on macOS that
+# helper searches the standard system dylib paths ONLY — never the .app bundle
+# — while the hardened runtime / SIP strips DYLD_* env vars from the notarized
+# binary, so a DYLD_LIBRARY_PATH redirect is unreliable. So redirect
+# find_library straight at the bundled copy (same approach as the AppImage
+# branch above). PyInstaller drops the dylib at the COLLECT root, which is
+# sys._MEIPASS at run time (Contents/Frameworks in the .app); also check the
+# executable dir as a fallback. No-op for source / pip / Homebrew runs (not
+# frozen), where the system/Homebrew libmpv resolves normally.
+if IS_MACOS and getattr(sys, "frozen", False):
+    import ctypes.util
+    import glob
+
+    _search = [
+        d
+        for d in (getattr(sys, "_MEIPASS", None), os.path.dirname(sys.executable))
+        if d
+    ]
+    _bundled = []
+    for _d in _search:
+        _bundled += glob.glob(os.path.join(_d, "libmpv*.dylib"))
+    if _bundled:
+        _mpv_lib = sorted(_bundled)[-1]  # highest version present (libmpv.2.dylib)
         _orig_find_library = ctypes.util.find_library
 
         def _find_library(name, _orig=_orig_find_library, _mpv=_mpv_lib):

@@ -11,14 +11,15 @@ Linux: writes/reads ~/.config/autostart/jellytoast.desktop (XDG).
 Windows: a value under the per-user Run registry key — or, when running as
 a packaged MSIX app (Run keys are ignored there), the manifest startupTask
 (see jellytoast/autostart/_msix.py).
-macOS: not yet implemented — the unsupported backend returns False from
-every call so call sites can no-op cleanly.
+macOS: a per-user LaunchAgent .plist in ~/Library/LaunchAgents/ with
+RunAtLoad=true (see jellytoast/autostart/_macos.py).
 """
 
 from __future__ import annotations
 
 from jellytoast.platform_compat import (
     IS_LINUX,
+    IS_MACOS,
     IS_WINDOWS,
     is_msix_packaged,
 )
@@ -30,6 +31,8 @@ elif IS_WINDOWS and is_msix_packaged():
     from jellytoast.autostart import _msix as _backend
 elif IS_WINDOWS:
     from jellytoast.autostart import _windows as _backend
+elif IS_MACOS:
+    from jellytoast.autostart import _macos as _backend
 else:
     from jellytoast.autostart import _unsupported as _backend
 

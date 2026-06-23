@@ -5,6 +5,8 @@
 #                                        + .zsync for AppImageUpdate delta updates)
 #   • jellytoast-<ver>-windows-x64-setup.exe   (Inno Setup installer, libmpv bundled)
 #   • jellytoast-<ver>-windows-x64-portable.zip
+#   • jellytoast-<ver>-macos.dmg        (arm64 .app, libmpv bundled; signed +
+#                                        notarized once the Apple secrets exist)
 #   • sdist + wheel (PyPI-shaped, also attached)
 #
 # The release is created as a DRAFT — publishing (and the AUR/winget
@@ -261,6 +263,116 @@ jobs:
             dist/*-setup.exe
             dist/*-portable.zip
 
+  build-macos:
+    # Apple-Silicon (arm64) runner — free + unlimited for public repos. Builds
+    # an arm64 .app, wraps it in a .dmg, and (once the Apple secrets exist)
+    # signs with Developer ID + notarizes. NB: this is an arm64-only build for
+    # now; a universal2 (arm64 + x86_64) build is a follow-up — see
+    # packaging/macos/MACOS_SESSION.md.
+    runs-on: macos-14
+    # Signing + notarization activate only once the secrets exist (see
+    # packaging/macos/MACOS_SESSION.md). Until then SIGN/NOTARIZE are 'false'
+    # and those steps are skipped, so releases keep building an UNSIGNED .dmg
+    # (locally runnable via right-click → Open; not yet distributable cleanly).
+    env:
+      SIGN: ${{ secrets.APPLE_SIGNING_IDENTITY != '' }}
+      NOTARIZE: ${{ secrets.APPLE_API_KEY_ID != '' }}
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: Stage libmpv (Homebrew) for the bundle
+        run: bash packaging/macos/get_libmpv.sh
+      - name: Build PyInstaller .app bundle
+        run: |
+          python -m pip install --upgrade pip
+          pip install . pyinstaller
+          pyinstaller packaging/pyinstaller/jellytoast.spec --noconfirm
+      # Import the Developer ID cert into a temporary keychain so codesign can
+      # use it non-interactively. Skipped until the Apple secrets are set.
+      - name: Import Developer ID certificate
+        if: env.SIGN == 'true'
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PWD: ${{ secrets.APPLE_CERTIFICATE_PWD }}
+          KEYCHAIN_PWD: ${{ secrets.APPLE_KEYCHAIN_PWD }}
+        run: |
+          CERT="$(mktemp)"
+          echo "$APPLE_CERTIFICATE" | base64 --decode > "$CERT"
+          security create-keychain -p "$KEYCHAIN_PWD" build.keychain
+          security default-keychain -s build.keychain
+          security unlock-keychain -p "$KEYCHAIN_PWD" build.keychain
+          security import "$CERT" -k build.keychain \
+            -P "$APPLE_CERTIFICATE_PWD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple:,codesign: \
+            -s -k "$KEYCHAIN_PWD" build.keychain
+          rm -f "$CERT"
+      - name: Code-sign the .app (Developer ID, hardened runtime)
+        if: env.SIGN == 'true'
+        env:
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+        run: bash packaging/macos/sign_app.sh dist/jellytoast.app
+      # Boot the frozen .app headless: an import/loader failure (e.g. libmpv
+      # not bundled) dies fast with a real exit code; surviving 12s means Qt +
+      # the bundle (incl. `import mpv`) initialized.
+      - name: Smoke-test the .app (boots headless, import mpv OK)
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: |
+          BIN=dist/jellytoast.app/Contents/MacOS/jellytoast
+          test -x "$BIN"
+          "$BIN" &
+          PID=$!
+          sleep 12
+          if kill -0 "$PID" 2>/dev/null; then
+            echo "still alive after 12s — Qt + bundle initialized OK"
+            kill "$PID" 2>/dev/null || true
+          else
+            wait "$PID"; rc=$?
+            echo "app exited early (rc=$rc) — likely an import/loader failure"
+            exit 1
+          fi
+      - name: Resolve version
+        id: ver
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            V="$(python -c 'import tomllib;print(tomllib.load(open("pyproject.toml","rb"))["project"]["version"])')"
+          else
+            V="${GITHUB_REF_NAME#v}"
+          fi
+          echo "version=$V" >> "$GITHUB_OUTPUT"
+      - name: Build the .dmg
+        run: bash packaging/macos/build_dmg.sh "${{ steps.ver.outputs.version }}" dist/jellytoast.app
+      # Notarize + staple the .dmg so Gatekeeper accepts it offline on first
+      # launch. Skipped until the Apple API-key secrets are set.
+      - name: Notarize + staple the .dmg
+        if: env.NOTARIZE == 'true'
+        env:
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          APPLE_API_KEY_B64: ${{ secrets.APPLE_API_KEY_B64 }}
+        run: |
+          KEY="$(mktemp /tmp/AuthKey_XXXXXX.p8)"
+          echo "$APPLE_API_KEY_B64" | base64 --decode > "$KEY"
+          export APPLE_API_KEY_PATH="$KEY"
+          bash packaging/macos/notarize.sh \
+            "dist/jellytoast-${{ steps.ver.outputs.version }}-macos.dmg"
+          rm -f "$KEY"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: macos
+          path: dist/*-macos.dmg
+      - name: Attest macOS artifact provenance
+        if: github.event_name == 'push'
+        uses: actions/attest-build-provenance@v4
+        with:
+          subject-path: dist/*-macos.dmg
+
   build-python:
     runs-on: ubuntu-latest
     permissions:
@@ -287,7 +399,7 @@ jobs:
 
   draft-release:
     if: github.event_name == 'push'
-    needs: [build-linux-deb, build-linux-appimage, build-windows, build-python]
+    needs: [build-linux-deb, build-linux-appimage, build-windows, build-macos, build-python]
     runs-on: ubuntu-latest
     permissions:
       contents: write  # only this job mints the release
