@@ -16,6 +16,7 @@ This repo is worked by several Claude Code instances on different machines:
 | `needs:linux` | primary CachyOS / Arch dev box | most development |
 | `needs:ubuntu` | the Ubuntu box | Linux `.deb` / packaging / X11 verification (Docker + real X11) |
 | `needs:windows` | the Windows 11 box | MSIX / Microsoft Store / winget / Windows verification |
+| `needs:mac` | the Scaleway M1 (rented macOS) | macOS `.dmg` signing/notarization verification, the Mac App Store feasibility spike, + the pyobjc native bits (media controls, vibrancy) — start at `packaging/macos/SIGNING_SETUP.md` + `MACOS_SESSION.md` (and `MAS_SESSION.md` for the App Store track) |
 
 **Claude's local memory (`~/.claude/…`) does NOT sync between machines.** The only
 channel all the machines share is **this GitHub repo**. So cross-machine work lives
@@ -24,7 +25,8 @@ memory, session notes, or this conversation.
 
 ### Picking up delegated work (you are the receiving machine)
 Identify your box (`cat /etc/os-release` → `ID=ubuntu` ⇒ `needs:ubuntu`,
-`ID=cachyos`/`arch` ⇒ `needs:linux`; on Windows ⇒ `needs:windows`), then:
+`ID=cachyos`/`arch` ⇒ `needs:linux`; `uname` = `Darwin` ⇒ `needs:mac`; on
+Windows ⇒ `needs:windows`), then:
 
 ```bash
 gh pr list --label needs:<your-machine>     # the shared task board for your box
