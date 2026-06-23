@@ -48,14 +48,14 @@ permitted outside the App Store. See `packaging/macos/entitlements.plist`.
 Tick these as you go; squash-merge only when the relevant ones are **verified**.
 
 #### 1. One-time accounts / setup (at-the-computer)
-- [ ] Enroll the **Apple Developer Program** ($99/yr, **Individual**) — photo ID
-      + your own card; ~24–48h approval. (Ships under your legal name; an Org
-      needs a D-U-N-S # + ~7 business days.)
+- [x] Enroll the **Apple Developer Program** ($99/yr, **Individual**). ✅ **DONE — account live 2026-06-23.**
 - [ ] Create a **Developer ID Application** certificate; export the `.p12`.
-- [ ] Create an **App Store Connect API key** (`.p8` + Key ID + Issuer) for
-      headless notarization (preferred over an app-specific password).
+      **→ exact steps in `packaging/macos/SIGNING_SETUP.md` (do on the Mac).**
+- [x] Create an **App Store Connect API key** (`.p8` + Key ID + Issuer) for
+      headless notarization. ✅ **DONE — have the `.p8`, Key ID, Issuer ID.**
 - [ ] Stand up the **Scaleway Mac mini M1** (~€0.11/hr, **24h min** ≈ €2.64/day),
-      access via VNC. `brew install python@3.12 mpv`.
+      access via VNC. `brew install python@3.12 mpv`. (Will also run a Claude
+      Code instance here — `needs:mac` pickup.)
 
 #### 2. Verify the build end-to-end (on the Mac)
 - [ ] Trigger `release.yml` via **workflow_dispatch** (dry run) and confirm the
@@ -71,6 +71,7 @@ Tick these as you go; squash-merge only when the relevant ones are **verified**.
       `/opt/homebrew/...` absolute paths, fix in the spec / a post-build step.
 
 #### 3. Add the secrets, sign + notarize
+**→ Full step-by-step (cert → `.p12` → 7 secrets → re-run → verify): `packaging/macos/SIGNING_SETUP.md`.**
 - [ ] Add repo secrets: `APPLE_CERTIFICATE` (base64 `.p12`),
       `APPLE_CERTIFICATE_PWD`, `APPLE_SIGNING_IDENTITY`
       (`Developer ID Application: NAME (TEAMID)`), `APPLE_KEYCHAIN_PWD`,
