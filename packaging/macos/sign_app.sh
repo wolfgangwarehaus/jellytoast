@@ -25,11 +25,19 @@ if [ ! -d "${APP}" ]; then
 fi
 
 echo "Signing nested binaries inside-out…"
+# Sign EVERY nested Mach-O, not just *.dylib/*.so. Qt ships its libraries as
+# .framework bundles whose real binary is extensionless (e.g.
+# QtCore.framework/Versions/A/QtCore), and the bundled CPython framework binary
+# (Python.framework/Versions/3.12/Python) is likewise extensionless — the Apple
+# notary rejects ANY unsigned Mach-O. Detect by content (`file`), not by name.
 # -print0 / -d '' so paths with spaces survive.
-find "${APP}" -type f \( -name '*.dylib' -o -name '*.so' \) -print0 \
-    | while IFS= read -r -d '' lib; do
-        codesign --force --options runtime --timestamp \
-            --entitlements "${ENTITLEMENTS}" --sign "${IDENTITY}" "${lib}"
+find "${APP}" -type f -print0 \
+    | while IFS= read -r -d '' f; do
+        case "$(file -b "${f}")" in
+            *Mach-O*)
+                codesign --force --options runtime --timestamp \
+                    --entitlements "${ENTITLEMENTS}" --sign "${IDENTITY}" "${f}" ;;
+        esac
     done
 
 echo "Signing the .app bundle…"
