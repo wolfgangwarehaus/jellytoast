@@ -165,7 +165,8 @@ jobs:
         run: |
           shellcheck packaging/deb/build_deb.sh packaging/install_icons.sh dev/cut_release.sh \
             packaging/macos/get_libmpv.sh packaging/macos/sign_app.sh \
-            packaging/macos/build_dmg.sh packaging/macos/notarize.sh
+            packaging/macos/build_dmg.sh packaging/macos/notarize.sh \
+            packaging/macos/mas/scan_symbols.sh
       - name: winget manifests parse
         run: |
           python3 - <<'PY'

@@ -16,6 +16,9 @@ permitted outside the App Store. See `packaging/macos/entitlements.plist`.
 > portable builds, the macOS `.app` **bundles its own libmpv** (there is no
 > system libmpv on a clean Mac). Unlike the `.deb`, which depends on the host.
 
+> **Mac App Store** is tracked separately in `mas/` → see `MAS_SESSION.md`. It's
+> the harder, sandboxed path (pursued in parallel); this `.dmg` ships first.
+
 ---
 
 ## Status
