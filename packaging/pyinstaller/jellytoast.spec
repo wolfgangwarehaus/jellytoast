@@ -263,11 +263,25 @@ if sys.platform == "darwin":
             "LSMinimumSystemVersion": "11.0",
             "LSApplicationCategoryType": "public.app-category.music",
             # macOS 15+ shows a one-time Local Network prompt the first time
-            # the app browses the LAN for Chromecast/AirPlay/DLNA/Sonos
+            # the app browses the LAN for Chromecast/AirPlay/DLNA/Sonos/Snapcast
             # devices; this string is the explanation shown in that dialog.
             "NSLocalNetworkUsageDescription": (
                 "jellytoast discovers and streams to Chromecast, AirPlay, "
-                "DLNA and Sonos devices on your local network."
+                "DLNA, Sonos and Snapcast devices on your local network."
             ),
+            # Bonjour/mDNS service types the cast discovery browses. REQUIRED
+            # under the App Sandbox (and good hygiene for the .dmg too): without
+            # this allow-list a sandboxed build's Bonjour browse returns nothing,
+            # so Chromecast/AirPlay/Snapcast discovery silently dies. DLNA and
+            # classic Sonos use SSDP (UPnP), not Bonjour — those ride the network
+            # entitlement + the Local Network prompt, not this list.
+            "NSBonjourServices": [
+                "_googlecast._tcp",      # Chromecast (pychromecast)
+                "_airplay._tcp",         # AirPlay (pyatv)
+                "_raop._tcp",            # AirPlay audio / RAOP (pyatv)
+                "_companion-link._tcp",  # AirPlay 2 companion/pairing (pyatv)
+                "_sonos._tcp",           # Sonos (mDNS-advertising models)
+                "_snapcast._tcp",        # Snapcast
+            ],
         },
     )
