@@ -1381,6 +1381,25 @@ class JellytoastWindow(_NavMixin, _SessionMixin, _CastDispatcherMixin, _ShuffleP
         # needed for the cache itself, only for what's already painted.
         from PySide6.QtCore import QEvent as _QEvent
 
+        # macOS: the transparent-titlebar top inset is only needed while the
+        # window has a titlebar — drop it in fullscreen (traffic lights gone,
+        # content should fill the screen) and restore it on exit.
+        from jellytoast.platform_compat import IS_MACOS as _IS_MAC
+
+        if (
+            _IS_MAC
+            and e.type() == _QEvent.Type.WindowStateChange
+            and hasattr(self, "_chrome_layout")
+        ):
+            from jellytoast.macos_window import TITLEBAR_INSET
+
+            _top = 0 if self.isFullScreen() else TITLEBAR_INSET
+            _m = self._chrome_layout.contentsMargins()
+            if _m.top() != _top:
+                self._chrome_layout.setContentsMargins(
+                    _m.left(), _top, _m.right(), _m.bottom()
+                )
+
         if e.type() == _QEvent.Type.DevicePixelRatioChange:
             try:
                 from jellytoast.player_state import PlayerBus as _PB
