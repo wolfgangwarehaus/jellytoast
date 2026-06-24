@@ -497,6 +497,22 @@ class MpvController(_CastTransportMixin, QObject):
         _out_dev = self.settings.audio_output_device
         if _out_dev and _out_dev != "auto":
             kwargs["audio_device"] = _out_dev
+        # Headless audio monitoring (JT_AUDIO_PCM_FILE) — write decoded PCM to a
+        # file/FIFO instead of a device, so jellytoast's real post-DSP output can
+        # be streamed off a box with no usable audio sink (e.g. a headless cloud
+        # Mac, where BlackHole's loopback is dead). Raw s16 / 48 kHz / stereo;
+        # dev/QA only, never set in a normal run.
+        _pcm_sink = os.environ.get("JT_AUDIO_PCM_FILE")
+        if _pcm_sink:
+            kwargs.pop("audio_device", None)
+            kwargs.pop("audio_exclusive", None)
+            kwargs.update(
+                ao="pcm",
+                ao_pcm_file=_pcm_sink,
+                ao_pcm_waveheader="no",
+                audio_format="s16",
+                audio_samplerate=48000,
+            )
         # Layered open fallback — the constructor must never leave the
         # app without audio:
         #  1. A pinned device can vanish (USB DAC unplugged, stale
