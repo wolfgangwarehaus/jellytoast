@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Hardened-Runtime entitlements for the Developer-ID (notarized) build.
+
+  This is the NON-sandbox path: distributed as a downloadable, notarized .dmg
+  (NOT the Mac App Store). The hardened runtime is required for notarization;
+  the App Sandbox is NOT, so networking, the local cast-proxy server, and LAN
+  multicast discovery all work with no network entitlements.
+
+  Only two exception entitlements are needed, both freely permitted outside the
+  App Store:
+
+  - allow-unsigned-executable-memory: libmpv embeds LuaJIT, which allocates
+    writable+executable memory WITHOUT Apple's MAP_JIT flag, so the narrow
+    com.apple.security.cs.allow-jit is insufficient (it crashes with "Code
+    Signature Invalid"). Building libmpv without Lua would remove the need for
+    this entirely — see packaging/macos/MACOS_SESSION.md.
+
+  - disable-library-validation: lets the app load the bundled Qt / Python /
+    libmpv dylibs that aren't signed by our Team ID. The stricter alternative
+    is to re-sign every nested dylib with our own identity and drop this key.
+-->
+<plist version="1.0">
+<dict>
+    <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+    <true/>
+    <key>com.apple.security.cs.disable-library-validation</key>
+    <true/>
+</dict>
+</plist>

@@ -9,9 +9,12 @@ Linux: shells out to `notify-send` (libnotify), which routes through the
 freedesktop.org `org.freedesktop.Notifications` D-Bus service. Picked up
 by KDE Plasma, GNOME Shell, dunst, mako, swaync, etc.
 
-Windows / macOS: not yet implemented — the unsupported backend's
-`notify()` is a silent no-op and `is_supported()` returns False so call
-sites can gate UX cleanly.
+macOS (`_macos`): shells out to `osascript -e 'display notification …'`,
+posting a Notification Center banner (attributed to the signed .app).
+
+Windows: not yet implemented — the unsupported backend's `notify()` is a
+silent no-op and `is_supported()` returns False so call sites can gate UX
+cleanly.
 
 Failures from the active backend (D-Bus down, no notification daemon
 running, notify-send missing mid-process) never raise to the caller —
@@ -32,13 +35,18 @@ def _select_backend() -> ModuleType:
     if _backend is not None:
         return _backend
 
-    from jellytoast.platform_compat import IS_LINUX, IS_WINDOWS
+    from jellytoast.platform_compat import IS_LINUX, IS_MACOS, IS_WINDOWS
 
     if IS_LINUX:
         from jellytoast.notifications import _linux as backend
     elif IS_WINDOWS:
         try:
             from jellytoast.notifications import _windows as backend
+        except Exception:
+            from jellytoast.notifications import _unsupported as backend
+    elif IS_MACOS:
+        try:
+            from jellytoast.notifications import _macos as backend
         except Exception:
             from jellytoast.notifications import _unsupported as backend
     else:

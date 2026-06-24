@@ -67,6 +67,28 @@ if sys.platform == "win32":
             "on PATH. CI must download it first.",
             file=sys.stderr,
         )
+elif sys.platform == "darwin":
+    # macOS: there is no system libmpv on a clean Mac, so BUNDLE it (like the
+    # Windows DLL — and UNLIKE the Linux .deb path, which strips it to use the
+    # host's). CI stages the Homebrew libmpv at packaging/macos/libmpv/ first
+    # (see packaging/macos/get_libmpv.sh). "." = the COLLECT root, which is
+    # sys._MEIPASS at run time; player_backend.py redirects find_library there.
+    # PyInstaller's macholib analysis follows the dylib's load commands and
+    # pulls libmpv's own dep closure (FFmpeg, libass, …) into the bundle,
+    # rewriting their install names — so the whole audio stack travels with the
+    # .app.
+    _libmpv_dir = REPO_ROOT / "packaging" / "macos" / "libmpv"
+    _dylibs = sorted(_libmpv_dir.glob("libmpv*.dylib")) if _libmpv_dir.is_dir() else []
+    if _dylibs:
+        for _dylib in _dylibs:
+            binaries.append((str(_dylib), "."))
+    else:
+        print(
+            "WARNING: no packaging/macos/libmpv/libmpv*.dylib found — the "
+            "frozen .app will fail at 'import mpv' unless libmpv is on the "
+            "system. CI must stage it first (packaging/macos/get_libmpv.sh).",
+            file=sys.stderr,
+        )
 
 a = Analysis(
     [str(REPO_ROOT / "packaging" / "pyinstaller" / "launch.py")],
@@ -203,3 +225,49 @@ coll = COLLECT(
     upx=False,
     name="jellytoast",
 )
+
+# --- macOS: wrap the COLLECT tree into a real .app bundle ------------------
+# BUNDLE produces dist/jellytoast.app with a proper Info.plist so the app gets
+# a Dock icon, Retina rendering, and the metadata Gatekeeper / the .dmg expect.
+# Signing + notarization happen AFTER the build (codesign --options runtime
+# with packaging/macos/entitlements.plist, then notarytool + stapler — see
+# packaging/macos/sign_app.sh / notarize.sh). The entitlements are applied at
+# sign time, not here.
+if sys.platform == "darwin":
+    # Read the version straight from pyproject so the bundle's CFBundleVersion
+    # matches the release. Defensive: fall back to 0.0.0 if anything goes wrong
+    # (a missing version must never break the build).
+    try:
+        import tomllib
+
+        with open(REPO_ROOT / "pyproject.toml", "rb") as _f:
+            _version = tomllib.load(_f)["project"]["version"]
+    except Exception:
+        _version = "0.0.0"
+
+    _icns = REPO_ROOT / "packaging" / "macos" / "jellytoast.icns"
+
+    app = BUNDLE(
+        coll,
+        name="jellytoast.app",
+        icon=str(_icns) if _icns.is_file() else None,
+        bundle_identifier="io.github.wolfgangwarehaus.jellytoast",
+        version=_version,
+        info_plist={
+            "CFBundleName": "jellytoast",
+            "CFBundleDisplayName": "jellytoast",
+            "CFBundleVersion": _version,
+            "CFBundleShortVersionString": _version,
+            "NSHighResolutionCapable": True,
+            # Audio stack relies on modern Qt6/PySide6 + Apple Silicon.
+            "LSMinimumSystemVersion": "11.0",
+            "LSApplicationCategoryType": "public.app-category.music",
+            # macOS 15+ shows a one-time Local Network prompt the first time
+            # the app browses the LAN for Chromecast/AirPlay/DLNA/Sonos
+            # devices; this string is the explanation shown in that dialog.
+            "NSLocalNetworkUsageDescription": (
+                "jellytoast discovers and streams to Chromecast, AirPlay, "
+                "DLNA and Sonos devices on your local network."
+            ),
+        },
+    )

@@ -22,6 +22,7 @@ def _reload_autostart():
         "jellytoast.autostart",
         "jellytoast.autostart._linux",
         "jellytoast.autostart._windows",
+        "jellytoast.autostart._macos",
         "jellytoast.autostart._unsupported",
     ):
         sys.modules.pop(mod_name, None)
@@ -33,6 +34,7 @@ def _force_linux(monkeypatch):
 
     monkeypatch.setattr(pc, "IS_LINUX", True)
     monkeypatch.setattr(pc, "IS_WINDOWS", False)
+    monkeypatch.setattr(pc, "IS_MACOS", False)
 
 
 def _force_windows(monkeypatch):
@@ -40,13 +42,24 @@ def _force_windows(monkeypatch):
 
     monkeypatch.setattr(pc, "IS_LINUX", False)
     monkeypatch.setattr(pc, "IS_WINDOWS", True)
+    monkeypatch.setattr(pc, "IS_MACOS", False)
 
 
-def _force_non_linux(monkeypatch):
+def _force_macos(monkeypatch):
     import jellytoast.platform_compat as pc
 
     monkeypatch.setattr(pc, "IS_LINUX", False)
     monkeypatch.setattr(pc, "IS_WINDOWS", False)
+    monkeypatch.setattr(pc, "IS_MACOS", True)
+
+
+def _force_non_linux(monkeypatch):
+    """Neither Linux, Windows, nor macOS → the unsupported backend."""
+    import jellytoast.platform_compat as pc
+
+    monkeypatch.setattr(pc, "IS_LINUX", False)
+    monkeypatch.setattr(pc, "IS_WINDOWS", False)
+    monkeypatch.setattr(pc, "IS_MACOS", False)
 
 
 def test_imports_cleanly_on_linux(monkeypatch):
@@ -239,6 +252,113 @@ def test_enable_returns_false_when_filesystem_hostile(monkeypatch, tmp_path):
 
 
 # ---------------------------------------------------------------------------
+# macOS backend — a per-user LaunchAgent .plist. Pure stdlib (plistlib), so
+# the plist content + write/remove logic is fully testable off a Mac.
+# ---------------------------------------------------------------------------
+
+
+def test_macos_backend_selected_when_macos(monkeypatch):
+    _force_macos(monkeypatch)
+    autostart = _reload_autostart()
+    assert autostart._backend.__name__ == "jellytoast.autostart._macos"
+
+
+def test_macos_is_supported(monkeypatch):
+    _force_macos(monkeypatch)
+    autostart = _reload_autostart()
+    assert autostart.is_supported() is True
+
+
+def test_macos_plist_is_valid_and_has_required_keys(monkeypatch):
+    import plistlib
+
+    _force_macos(monkeypatch)
+    _reload_autostart()
+    from jellytoast.autostart import _macos
+
+    data = plistlib.loads(_macos._plist_bytes())
+    assert data["Label"] == "io.github.wolfgangwarehaus.jellytoast"
+    assert data["RunAtLoad"] is True
+    assert isinstance(data["ProgramArguments"], list)
+    assert data["ProgramArguments"]  # non-empty
+
+
+def test_macos_program_arguments_source_run(monkeypatch):
+    _force_macos(monkeypatch)
+    _reload_autostart()
+    from jellytoast.autostart import _macos
+
+    monkeypatch.setattr(sys, "frozen", False, raising=False)
+    args = _macos._program_arguments()
+    assert args[-2:] == ["-m", "jellytoast"]
+
+
+def test_macos_program_arguments_frozen_app(monkeypatch):
+    _force_macos(monkeypatch)
+    _reload_autostart()
+    from jellytoast.autostart import _macos
+
+    exe = "/Applications/jellytoast.app/Contents/MacOS/jellytoast"
+    monkeypatch.setattr(sys, "frozen", True, raising=False)
+    monkeypatch.setattr(sys, "executable", exe)
+    assert _macos._program_arguments() == [exe]
+
+
+def test_macos_enable_writes_plist(monkeypatch, tmp_path):
+    import plistlib
+
+    _force_macos(monkeypatch)
+    autostart = _reload_autostart()
+    from jellytoast.autostart import _macos
+
+    agents = tmp_path / "LaunchAgents"
+    plist = agents / "io.github.wolfgangwarehaus.jellytoast.plist"
+    monkeypatch.setattr(_macos, "_AGENTS_DIR", agents)
+    monkeypatch.setattr(_macos, "_PLIST", plist)
+
+    assert autostart.enable() is True
+    assert plist.exists()
+    data = plistlib.loads(plist.read_bytes())
+    assert data["Label"] == "io.github.wolfgangwarehaus.jellytoast"
+    assert autostart.is_enabled() is True
+
+
+def test_macos_disable_removes_plist(monkeypatch, tmp_path):
+    _force_macos(monkeypatch)
+    autostart = _reload_autostart()
+    from jellytoast.autostart import _macos
+
+    plist = tmp_path / "io.github.wolfgangwarehaus.jellytoast.plist"
+    plist.write_bytes(b"<plist/>")
+    monkeypatch.setattr(_macos, "_PLIST", plist)
+
+    assert autostart.disable() is True
+    assert not plist.exists()
+
+
+def test_macos_disable_returns_false_when_nothing_to_remove(monkeypatch, tmp_path):
+    _force_macos(monkeypatch)
+    autostart = _reload_autostart()
+    from jellytoast.autostart import _macos
+
+    monkeypatch.setattr(_macos, "_PLIST", tmp_path / "missing.plist")
+    assert autostart.disable() is False
+
+
+def test_macos_enable_returns_false_when_filesystem_hostile(monkeypatch):
+    _force_macos(monkeypatch)
+    autostart = _reload_autostart()
+    from jellytoast.autostart import _macos
+
+    class BadPath:
+        def mkdir(self, *a, **k):
+            raise PermissionError("read-only home")
+
+    monkeypatch.setattr(_macos, "_AGENTS_DIR", BadPath())
+    assert autostart.enable() is False
+
+
+# ---------------------------------------------------------------------------
 # Windows backend — winreg is absent on Linux CI, so the tests run the
 # backend against an in-memory fake patched over the module attribute.
 # ---------------------------------------------------------------------------
@@ -391,6 +511,7 @@ def _restore_autostart_module():
         "jellytoast.autostart",
         "jellytoast.autostart._linux",
         "jellytoast.autostart._windows",
+        "jellytoast.autostart._macos",
         "jellytoast.autostart._unsupported",
     ):
         sys.modules.pop(mod_name, None)
