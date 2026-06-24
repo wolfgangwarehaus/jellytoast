@@ -2197,6 +2197,17 @@ def main():
     win.tray = TrayController(app, mini, win)
     _boot_mark("mini player + tray constructed")
 
+    # macOS: the global menu bar (App/File/Edit/View/Window/Help), the Dock
+    # transport menu, and Dock-click reopen — native conventions a Qt app
+    # otherwise lacks. Pure PySide6; only built on macOS.
+    from jellytoast.platform_compat import IS_MACOS as _IS_MACOS
+
+    if _IS_MACOS:
+        from jellytoast import macos_menubar
+
+        macos_menubar.install(win)
+        _boot_mark("macOS menu bar installed")
+
     # Dev-only remote-control bridge for live end-to-end testing. OFF
     # unless JT_TEST_BRIDGE=1 is set at launch. Stands up a per-user
     # local socket that evaluates Python on the GUI thread, so a test
