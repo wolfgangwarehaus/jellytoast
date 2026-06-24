@@ -142,10 +142,18 @@ def body_color_tuple(surface: str = "main") -> tuple:
     main / mini / dialog. Does NOT apply the main window's JT_OPAQUE override
     (that's main-window-only; the caller handles it). Never raises."""
     from jellytoast import blur
+    from jellytoast.platform_compat import IS_MACOS
     from jellytoast.theme import body_color_for, get_active_theme
 
     theme = get_active_theme()
     status = blur.status() if theme.blur else blur.BlurStatus.DISABLED
+    # macOS: the frameless mini-player + dialog surfaces paint a faux-frost /
+    # near-opaque body instead of riding native vibrancy — the NSVisualEffectView
+    # content-view swap doesn't reliably composite Qt's content after a
+    # frameless-window resize (blank windows). Force the near-opaque fallback
+    # colour for them; the main window (native titlebar) keeps glass + vibrancy.
+    if IS_MACOS and surface in ("mini", "dialog") and status is blur.BlurStatus.ACTIVE:
+        status = blur.BlurStatus.UNSUPPORTED
     return body_color_for(theme, status, surface)
 
 

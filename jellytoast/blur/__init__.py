@@ -145,6 +145,23 @@ def apply(
         # User forced opaque chrome — never request blur (and remove any
         # already-applied blur on this widget).
         enabled = False
+    # macOS: frameless translucent surfaces (mini player, dialogs) paint a
+    # faux-frost / near-opaque body instead of riding native vibrancy — the
+    # NSVisualEffectView content-view swap doesn't reliably composite Qt's
+    # content after a frameless-window resize (blank windows). Skip vibrancy
+    # for them (and remove any already applied); the main window (native
+    # titlebar, NOT frameless) keeps the real backdrop.
+    if enabled and IS_MACOS:
+        try:
+            from PySide6.QtCore import Qt as _Qt
+
+            win = widget.window()
+            if win is not None and (
+                win.windowFlags() & _Qt.WindowType.FramelessWindowHint
+            ):
+                enabled = False
+        except Exception:
+            pass
     # "Never raises" is part of the contract (blur is progressive enhancement)
     # — theme resolution + the backend call are best-effort, so swallow errors.
     try:

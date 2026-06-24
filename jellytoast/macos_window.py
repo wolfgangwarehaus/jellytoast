@@ -69,20 +69,26 @@ def apply(window) -> bool:
 
 
 def _install_position_sync(window, nswin) -> None:
-    """Keep Qt's window position synced with the real NSWindow.
+    """Keep Qt's window position synced with the real NSWindow — **debounced**.
 
     ``setMovableByWindowBackground_`` lets the user drag the window by its
     frosted body, but AppKit moves the window WITHOUT Qt's QWindow learning
     about it — so Qt's geometry goes stale, and everything positioned via
     ``mapToGlobal`` / the window geometry (dropdown menus, centered dialogs)
-    lands hundreds of px off (the menu pops to the side, dialogs open on the
-    desktop). Observe ``NSWindowDidMove`` and push the real top-left back into
-    Qt so those stay aligned. Best-effort; never raises."""
+    lands hundreds of px off (menu pops to the side, dialogs open on the
+    desktop).
+
+    A drag fires ``NSWindowDidMove`` ~60×/s. Syncing on every one — calling
+    ``window.move()`` back into an ACTIVE AppKit drag — fights the drag and
+    floods the main thread, freezing the UI. So we DEBOUNCE: each move just
+    (re)arms a short timer, and we sync once the window has been still for a
+    beat (drag released). Best-effort; never raises."""
     try:
         from AppKit import NSScreen, NSWindowDidMoveNotification
         from Foundation import NSNotificationCenter
+        from PySide6.QtCore import QTimer
 
-        def _resync(_note):
+        def _do_sync():
             try:
                 screens = NSScreen.screens()
                 if not screens:
@@ -94,17 +100,26 @@ def _install_position_sync(window, nswin) -> None:
                 tl_x = int(round(f.origin.x))
                 tl_y = int(round(main_h - f.origin.y - f.size.height))
                 if abs(window.x() - tl_x) > 1 or abs(window.y() - tl_y) > 1:
-                    # Moves the NSWindow to where it already is (no-op natively)
-                    # while updating Qt's stale position — no loop, no jump.
                     window.move(tl_x, tl_y)
             except Exception:
                 pass
 
+        timer = QTimer(window)
+        timer.setSingleShot(True)
+        timer.timeout.connect(_do_sync)
+
+        def _on_move(_note):
+            try:
+                timer.start(140)  # restart on each move; fires after the drag
+            except Exception:
+                pass
+
         token = NSNotificationCenter.defaultCenter().addObserverForName_object_queue_usingBlock_(
-            NSWindowDidMoveNotification, nswin, None, _resync
+            NSWindowDidMoveNotification, nswin, None, _on_move
         )
-        # Keep refs so the observer token + closure survive GC.
+        # Keep refs so the observer token + closure + timer survive GC.
         window._jt_macos_move_observer = token
-        window._jt_macos_move_cb = _resync
+        window._jt_macos_move_cb = _on_move
+        window._jt_macos_move_timer = timer
     except Exception as e:  # pragma: no cover — macOS-only
         logger.info("macOS position-sync install failed: %s", e)
