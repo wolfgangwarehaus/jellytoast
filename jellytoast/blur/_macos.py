@@ -52,6 +52,20 @@ def is_supported() -> bool:
         return False
 
 
+def _reduce_transparency() -> bool:
+    """True when the user's macOS *Reduce transparency* accessibility setting
+    is on (System Settings → Accessibility → Display). HIG requires honoring
+    it — drop the vibrancy for a solid fill. Best-effort; defaults to False."""
+    try:
+        from AppKit import NSWorkspace
+
+        return bool(
+            NSWorkspace.sharedWorkspace().accessibilityDisplayShouldReduceTransparency()
+        )
+    except Exception:
+        return False
+
+
 def apply(widget, enabled, corner_radius=0, dark=True, elevated=False) -> bool:
     """Install (``enabled=True``) or remove vibrancy behind ``widget``'s
     window. The QWindow must already exist (call after ``show()``). Returns
@@ -80,7 +94,9 @@ def apply(widget, enabled, corner_radius=0, dark=True, elevated=False) -> bool:
         if window is None:
             return False
 
-        if not enabled:
+        # Honor the macOS "Reduce transparency" accessibility setting (HIG):
+        # treat it as a request to drop the vibrancy for the solid fallback.
+        if not enabled or _reduce_transparency():
             return _remove(key, window)
 
         state = _active.get(key)
@@ -167,12 +183,18 @@ def _remove(key, window) -> bool:
 
 
 def probe():
-    """NSVisualEffectView is a real, verified backdrop on macOS, so frosted
-    bodies ride it at full glass alpha (never the near-opaque fallback)."""
-    return BlurStatus.ACTIVE if is_supported() else BlurStatus.UNSUPPORTED
+    """NSVisualEffectView is a real, verified backdrop on macOS — so frosted
+    bodies ride it at full glass alpha — UNLESS the user asked to Reduce
+    Transparency (HIG), in which case we report no backdrop so the theme falls
+    back to its near-opaque body."""
+    if not is_supported() or _reduce_transparency():
+        return BlurStatus.UNSUPPORTED
+    return BlurStatus.ACTIVE
 
 
 def reason(status):
     if status is BlurStatus.ACTIVE:
         return "macOS vibrancy (NSVisualEffectView) active"
+    if _reduce_transparency():
+        return "Reduce Transparency is on — using a near-opaque body"
     return "macOS vibrancy unavailable — using a near-opaque body"
