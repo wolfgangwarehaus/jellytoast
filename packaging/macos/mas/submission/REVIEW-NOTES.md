@@ -1,0 +1,17 @@
+Wrote `/home/august/Projects/jellytoast/submission/REVIEW-NOTES.md` — a copy/paste source for the **App Review Information** section of App Store Connect (Mac App Store), with each block mapped to a specific App Store Connect field.
+
+## What it covers
+- **Field-mapped structure** — verified against Apple's current docs: Notes = **4000-byte** limit; Sign-in = one Username + one Password field (extra accounts go in Notes); Contact = Name + Email + Phone. I built the doc around these exact constraints rather than inventing fields.
+- **"Streams only the user's own server" statement** — explicit plain-language block: no media/catalog/storefront of its own, sells nothing, no IAP; analogized to a generic protocol client (like an IMAP/SSH client) to pre-empt a **5.2.3 content-rights** misread. Paired with a dedicated CONTENT RIGHTS paragraph stating the app holds and needs no content licenses.
+- **Independent-client disclaimer** — "not affiliated with, sponsored by, or endorsed by Jellyfin, Subsonic, or Navidrome; names used referentially only; none in the app name" (the 5.2.5 mitigation).
+- **Demo Server block** — verbatim reviewer-facing block with `<DEMO_SERVER_URL>` / `<DEMO_USERNAME>` / `<DEMO_PASSWORD>` placeholders + a ~60-second numbered sign-in walkthrough (launch → pick Jellyfin → paste URL → user/pass → Connect → play a track). I split this from the Sign-in fields deliberately: App Store Connect's Sign-in area has no URL field, so the server URL + steps live in Notes while the credentials also populate the Username/Password fields (2.1 demo-account requirement satisfied, no-2FA called out).
+- **Local Network permission note** — states the macOS LAN prompt is for **optional** casting (Chromecast/AirPlay/DLNA/Sonos/Snapcast) only; reviewer can **deny** it and core sign-in/browse/playback still work fully (demo server is reached over the internet, not the LAN).
+- **4.3 differentiation** — the moats foregrounded as the why-not-a-duplicate argument: both Jellyfin AND Subsonic/Navidrome in one app, SQLite-node-graph offline downloads, 5-protocol casting + cast proxy, keep-above mini-player, frosted theming, bit-perfect, EQ, ReplayGain, ListenBrainz.
+- **Approved precedents** — Agin Music, NaviBeat, Phyn, Sound Room cited as the same-category-already-live evidence.
+- **Contact + Pre-submission checklist** — contact pulled from project files (William August Mueller / augustvontrips@gmail.com; phone left as `<CONTACT_PHONE_E164>` placeholder), plus a 7-item checklist (demo server up, no 2FA, all placeholders replaced, credentials match between Sign-in and Notes, ≤4000-byte Notes, Privacy answered separately, listing copy carries the disclaimer).
+
+## Verification done
+- Ran a byte-count check on the combined Notes blocks (Demo Server + Notes-for-Review, since both go in the single Notes field): **3875 bytes**, and **3915 after** realistic placeholder substitution — **under the 4000-byte limit with 85 bytes headroom**. I had to trim the differentiation/precedent prose to get there (first draft was 34 bytes over).
+- Aligned bundle ID (`io.github.wolfgangwarehaus.jellytoast`), license (GPL-2.0-or-later, sole-authored self-authorization), and contact name with the in-repo MAS signing docs (`packaging/macos/MAS_SESSION.md`).
+
+The doc is ready to fill in once the demo server is stood up. It does **not** set the App Privacy questionnaire (separate App Store Connect section) — flagged in the checklist and open questions.
