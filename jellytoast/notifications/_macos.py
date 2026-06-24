@@ -1,25 +1,88 @@
-"""macOS desktop notifications — Notification Center banner via ``osascript``.
+"""macOS desktop notifications — real Notification Center banners.
 
-Mirrors the Linux backend's shell-out approach (``notify-send``): posts a
-banner through ``osascript -e 'display notification …'``. The title/body are
-passed as AppleScript *run arguments* — never interpolated into the script
-source — so arbitrary track/album text can neither break nor inject into the
-script. Best-effort by the module contract (never raises). On a signed
-``.app`` the banner is attributed to jellytoast.
+Posts ``UNUserNotificationCenter`` banners attributed to **jellytoast** (the
+proper, reliable API). That framework needs a *bundle identifier*, so it only
+works inside the signed ``.app`` (where ``CFBundleIdentifier`` is set); a
+from-source ``python -m jellytoast`` run has no bundle, so we detect that and
+fall back to an ``osascript`` banner (which the OS attributes to "Script
+Editor" and may suppress — hence the upgrade to the native API for the shipped
+app).
 
-``icon`` and ``tag`` aren't expressible through this API (Notification Center
-groups by app on its own); they're accepted-and-ignored for signature parity
-with the other backends.
+The title/body in the osascript fallback are passed as AppleScript *run
+arguments* — never interpolated into the script source — so arbitrary
+track/album text can neither break nor inject into the script. ``icon`` and
+``tag`` aren't expressible (Notification Center groups by app itself); ``tag``
+is reused as the request identifier so a new track replaces the previous
+banner rather than stacking. Best-effort by the module contract — never raises.
 """
 
 from __future__ import annotations
 
+import logging
 import shutil
 import subprocess
 
+logger = logging.getLogger(__name__)
+
+_center = object()  # sentinel: "not yet resolved"
+_auth_requested = False
+
+
+def _is_bundled() -> bool:
+    """True only inside a real app bundle (has a CFBundleIdentifier). A
+    from-source run has none — and calling UNUserNotificationCenter there
+    raises/aborts, so we must gate on this before touching the framework."""
+    try:
+        from Foundation import NSBundle
+
+        return NSBundle.mainBundle().bundleIdentifier() is not None
+    except Exception:
+        return False
+
+
+def _get_center():
+    """The shared UNUserNotificationCenter, or None when unavailable
+    (not bundled / framework missing). Resolved once and cached."""
+    global _center
+    if _center is not object():
+        return _center
+    _center = None
+    if not _is_bundled():
+        return None
+    try:
+        from UserNotifications import UNUserNotificationCenter
+
+        _center = UNUserNotificationCenter.currentNotificationCenter()
+    except Exception as e:  # framework not bundled / unavailable
+        logger.debug("UNUserNotificationCenter unavailable: %s", e)
+        _center = None
+    return _center
+
+
+def _ensure_auth(center) -> None:
+    """Request alert+sound authorization once (the OS prompts on first call,
+    then remembers). Async; an early banner may be dropped before the user
+    answers, but every later one lands."""
+    global _auth_requested
+    if _auth_requested:
+        return
+    _auth_requested = True
+    try:
+        from UserNotifications import (
+            UNAuthorizationOptionAlert,
+            UNAuthorizationOptionSound,
+        )
+
+        center.requestAuthorizationWithOptions_completionHandler_(
+            UNAuthorizationOptionAlert | UNAuthorizationOptionSound,
+            lambda _granted, _err: None,
+        )
+    except Exception as e:
+        logger.debug("notification auth request failed: %s", e)
+
 
 def is_supported() -> bool:
-    return shutil.which("osascript") is not None
+    return _get_center() is not None or shutil.which("osascript") is not None
 
 
 def notify(
@@ -29,6 +92,28 @@ def notify(
     app_name: str = "jellytoast",
     tag: str | None = None,
 ) -> None:
+    center = _get_center()
+    if center is not None:
+        try:
+            from UserNotifications import (
+                UNMutableNotificationContent,
+                UNNotificationRequest,
+            )
+
+            _ensure_auth(center)
+            content = UNMutableNotificationContent.alloc().init()
+            content.setTitle_(str(title or app_name))
+            if body:
+                content.setBody_(str(body))
+            req = UNNotificationRequest.requestWithIdentifier_content_trigger_(
+                str(tag or "jellytoast-notify"), content, None
+            )
+            center.addNotificationRequest_withCompletionHandler_(req, None)
+            return
+        except Exception as e:  # fall through to osascript
+            logger.debug("UN notify failed (%s) — falling back to osascript", e)
+
+    # Fallback (from-source run, or UN unavailable): an osascript banner.
     osa = shutil.which("osascript")
     if not osa:
         return

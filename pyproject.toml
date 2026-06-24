@@ -179,6 +179,10 @@ macos = [
     'pyobjc-core>=10.0 ; sys_platform == "darwin"',
     'pyobjc-framework-Cocoa>=10.0 ; sys_platform == "darwin"',
     'pyobjc-framework-MediaPlayer>=10.0 ; sys_platform == "darwin"',
+    # Real Notification Center banners (track-change / download-complete),
+    # attributed to jellytoast — only fires in the bundled .app; falls back to
+    # osascript from source. (jellytoast/notifications/_macos.py.)
+    'pyobjc-framework-UserNotifications>=10.0 ; sys_platform == "darwin"',
 ]
 
 # GUI entry point. `gui-scripts` (vs `scripts`) suppresses the console
