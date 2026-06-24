@@ -129,7 +129,10 @@ class EqSettingsPage(QWidget):
         # long for a checkbox tooltip, so a tight sub-row pairs the box with an
         # info button that surfaces the trade-offs on hover or click.
         lp_row = QHBoxLayout()
-        lp_row.setSpacing(4)
+        # Match the breathing room before the other ⓘ icons in the dialog. A
+        # touch wider than their 10 because this button has padding:0 (no
+        # built-in side margin like the _info_button IconButtons).
+        lp_row.setSpacing(12)
         lp_row.setContentsMargins(0, 0, 0, 0)
         self._eq_linear_phase_check = QCheckBox("Linear phase")
         self._eq_linear_phase_check.setChecked(self.s.eq_linear_phase)

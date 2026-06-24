@@ -49,6 +49,7 @@ from PySide6.QtWidgets import (
 from jellytoast import image_cache as _disk_image_cache
 from jellytoast.async_io import get_qnam
 from jellytoast.icon_button import IconButton
+from jellytoast.platform_compat import IS_MACOS
 
 # ── Theme ────────────────────────────────────────────────────────────────────
 # Palette + body fills come from the active Theme (jellytoast/theme.py).
@@ -64,6 +65,29 @@ from jellytoast.icon_button import IconButton
 from jellytoast.theme import get_active_theme, ink_alpha  # noqa: F401  (re-exported)
 
 _THEME = get_active_theme()
+
+
+def _popup_fill_opaque_on_macos(fill: str) -> str:
+    """Force a popup body fill near-opaque on macOS.
+
+    The themed ``popup_opaque_fill`` carries ~0.65 alpha so it reads as frosted
+    glass over a compositor blur. macOS has no app-controllable window blur and
+    its menu / combobox popup windows are translucent, so that 0.65 lets the
+    surface behind a dropdown bleed through — busy, hard-to-read popups. Bump it
+    near-opaque on macOS so every popup reads clean (covers both the
+    GLOBAL_STYLE bare QMenu/QComboBox path and the blur-aware
+    ``popup_body_fill``). No-op off macOS, where the fill rides real blur or an
+    opaque popup window. Accepts an ``rgba(r, g, b, a)`` literal; returns it
+    unchanged if it can't parse. Never raises."""
+    if not IS_MACOS:
+        return fill
+    s = fill.strip()
+    if s.startswith("rgba(") and s.endswith(")"):
+        parts = [p.strip() for p in s[5:-1].split(",")]
+        if len(parts) == 4:
+            return f"rgba({parts[0]}, {parts[1]}, {parts[2]}, 0.97)"
+    return fill
+
 
 # Every UI color now lives on the active Theme as a semantic token
 # (jellytoast/theme.py). The constants below are flat re-exports of those
@@ -116,7 +140,9 @@ SLIDER_GROOVE = _THEME.slider_groove  # slider track (volume / seek / EQ)
 # ── Overlays / popups ──────────────────────────────────────────────────
 OVERLAY_DARK = _THEME.overlay_dark  # cover-art heart bg + downloads chip
 OVERLAY_DARK_HOVER = _THEME.overlay_dark_hover  # overlay on hover
-POPUP_OPAQUE_FILL = _THEME.popup_opaque_fill  # opaque popup body
+POPUP_OPAQUE_FILL = _popup_fill_opaque_on_macos(
+    _THEME.popup_opaque_fill
+)  # opaque popup body (near-opaque on macOS — no blur to ride)
 
 # ── Painted body fills ─────────────────────────────────────────────────
 # Used as `QColor(*BODY_COLOR)` inside paintEvent. Three slots because
@@ -142,18 +168,10 @@ def body_color_tuple(surface: str = "main") -> tuple:
     main / mini / dialog. Does NOT apply the main window's JT_OPAQUE override
     (that's main-window-only; the caller handles it). Never raises."""
     from jellytoast import blur
-    from jellytoast.platform_compat import IS_MACOS
     from jellytoast.theme import body_color_for, get_active_theme
 
     theme = get_active_theme()
     status = blur.status() if theme.blur else blur.BlurStatus.DISABLED
-    # macOS: the frameless mini-player + dialog surfaces paint a faux-frost /
-    # near-opaque body instead of riding native vibrancy — the NSVisualEffectView
-    # content-view swap doesn't reliably composite Qt's content after a
-    # frameless-window resize (blank windows). Force the near-opaque fallback
-    # colour for them; the main window (native titlebar) keeps glass + vibrancy.
-    if IS_MACOS and surface in ("mini", "dialog") and status is blur.BlurStatus.ACTIVE:
-        status = blur.BlurStatus.UNSUPPORTED
     return body_color_for(theme, status, surface)
 
 
@@ -517,7 +535,7 @@ def refresh_theme() -> str:
     SLIDER_GROOVE = _THEME.slider_groove
     OVERLAY_DARK = _THEME.overlay_dark
     OVERLAY_DARK_HOVER = _THEME.overlay_dark_hover
-    POPUP_OPAQUE_FILL = _THEME.popup_opaque_fill
+    POPUP_OPAQUE_FILL = _popup_fill_opaque_on_macos(_THEME.popup_opaque_fill)
     BODY_COLOR = _THEME.body_color
     MINI_BODY_COLOR = _THEME.mini_body_color
     DIALOG_BODY_COLOR = _THEME.dialog_body_color

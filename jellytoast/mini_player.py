@@ -892,13 +892,8 @@ class FloatingMiniPlayer(QWidget):
         # near-opaque fallback, never see-through) both land here without a
         # cache to invalidate. Mirrors the main window's body resolution.
         from jellytoast import ui_helpers as _uih
-        from jellytoast.platform_compat import IS_MACOS
-        from jellytoast.theme import get_active_theme
 
-        # macOS skips native vibrancy on frameless windows (see blur.apply — the
-        # NSVisualEffectView swap doesn't composite reliably after a resize), so
-        # paint the faux-frost body here too, exactly like a no-real-blur fallback.
-        if _uih.frosted_fallback_active() or (IS_MACOS and get_active_theme().blur):
+        if _uih.frosted_fallback_active():
             # No-real-blur fallback: paint the same dark frosted material as the
             # main window instead of a flat near-opaque body, a pinch more
             # transparent so it reads as glass. See blur/_faux_frost.py.

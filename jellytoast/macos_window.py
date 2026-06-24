@@ -60,6 +60,21 @@ def apply(window) -> bool:
         # The transparent titlebar no longer offers a grab strip of its own,
         # so let the user drag the window by the (frosted) chrome background.
         nswin.setMovableByWindowBackground_(True)
+        # The frosted body is painted by Qt (faux-frost), so make the NSWindow
+        # itself clear + non-opaque — otherwise its alpha reveals the opaque
+        # system windowBackgroundColor and the whole window reads SOLID. Native
+        # vibrancy (which used to supply the clear backdrop) is off on macOS
+        # (see blur/_macos.py); without this the main window looks fully opaque
+        # while the frameless mini player — already clear — shows the desktop
+        # through at the same body alpha. This is the fix for "main + mini frost
+        # don't match".
+        try:
+            from AppKit import NSColor
+
+            nswin.setOpaque_(False)
+            nswin.setBackgroundColor_(NSColor.clearColor())
+        except Exception:
+            pass
         _install_position_sync(window, nswin)
         logger.info("macOS native chrome: transparent titlebar + full-size content")
         return True

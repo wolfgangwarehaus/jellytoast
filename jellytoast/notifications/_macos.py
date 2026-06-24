@@ -2,11 +2,12 @@
 
 Posts ``UNUserNotificationCenter`` banners attributed to **jellytoast** (the
 proper, reliable API). That framework needs a *bundle identifier*, so it only
-works inside the signed ``.app`` (where ``CFBundleIdentifier`` is set); a
-from-source ``python -m jellytoast`` run has no bundle, so we detect that and
-fall back to an ``osascript`` banner (which the OS attributes to "Script
-Editor" and may suppress — hence the upgrade to the native API for the shipped
-app).
+works inside the signed ``.app`` (whose ``CFBundleIdentifier`` is jellytoast's
+own); a from-source ``python -m jellytoast`` run is hosted by the *interpreter's*
+bundle instead (e.g. Homebrew Python's ``org.python.python``), so we gate on
+jellytoast's exact id and otherwise fall back to an ``osascript`` banner (which
+the OS attributes to "Script Editor" and may suppress — hence the upgrade to the
+native API for the shipped app).
 
 The title/body in the osascript fallback are passed as AppleScript *run
 arguments* — never interpolated into the script source — so arbitrary
@@ -24,18 +25,32 @@ import subprocess
 
 logger = logging.getLogger(__name__)
 
-_center = object()  # sentinel: "not yet resolved"
+# Stable "not yet resolved" sentinel. MUST be a module-level constant — an
+# inline ``object()`` in the guard mints a fresh object each call, so the
+# identity check never matches and _get_center() would return unresolved.
+_UNRESOLVED = object()
+_center = _UNRESOLVED
 _auth_requested = False
 
 
+# CFBundleIdentifier of the shipped .app — see packaging/pyinstaller/jellytoast.spec.
+_BUNDLE_ID = "io.github.wolfgangwarehaus.jellytoast"
+
+
 def _is_bundled() -> bool:
-    """True only inside a real app bundle (has a CFBundleIdentifier). A
-    from-source run has none — and calling UNUserNotificationCenter there
-    raises/aborts, so we must gate on this before touching the framework."""
+    """True only inside jellytoast's OWN signed ``.app``.
+
+    A from-source ``python -m jellytoast`` run is hosted by the interpreter's
+    bundle — Homebrew/python.org Python ships a ``Python.app`` whose identifier
+    is ``org.python.python`` — so a bare ``is not None`` check false-positives
+    and routes UN banners through *that* bundle (attributed to "Python", and
+    needing a separate Python notification authorization). Gate on jellytoast's
+    exact id so only the shipped app takes the UN path; everything else falls
+    through to the osascript banner."""
     try:
         from Foundation import NSBundle
 
-        return NSBundle.mainBundle().bundleIdentifier() is not None
+        return NSBundle.mainBundle().bundleIdentifier() == _BUNDLE_ID
     except Exception:
         return False
 
@@ -44,7 +59,7 @@ def _get_center():
     """The shared UNUserNotificationCenter, or None when unavailable
     (not bundled / framework missing). Resolved once and cached."""
     global _center
-    if _center is not object():
+    if _center is not _UNRESOLVED:
         return _center
     _center = None
     if not _is_bundled():
