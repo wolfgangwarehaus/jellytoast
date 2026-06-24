@@ -22,7 +22,7 @@ jobs:
     env:
       HAVE_KEY: ${{ secrets.AUR_SSH_PRIVATE_KEY != '' }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         if: env.HAVE_KEY == 'true'
       - name: Stamp PKGBUILD pkgver from the tag
         if: env.HAVE_KEY == 'true'
@@ -32,7 +32,7 @@ jobs:
           sed -i -E "s/^pkgver=.*/pkgver=${V}/; s/^pkgrel=.*/pkgrel=1/" packaging/aur/PKGBUILD
       - name: Publish to the AUR
         if: env.HAVE_KEY == 'true'
-        uses: KSXGitHub/github-actions-deploy-aur@v2.7.2
+        uses: KSXGitHub/github-actions-deploy-aur@v4.1.3
         with:
           pkgname: jellytoast
           pkgbuild: packaging/aur/PKGBUILD

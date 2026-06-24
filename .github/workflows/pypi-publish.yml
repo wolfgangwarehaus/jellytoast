@@ -40,7 +40,7 @@ jobs:
       contents: read
       id-token: write # mint the short-lived OIDC token Trusted Publishing needs
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           # release event → the published tag; manual run → the tag input.
           ref: ${{ github.event.release.tag_name || inputs.tag }}
