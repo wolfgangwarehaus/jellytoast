@@ -809,6 +809,16 @@ class JellytoastWindow(_NavMixin, _SessionMixin, _CastDispatcherMixin, _ShuffleP
         # gymnastics that the frameless variant required.
         self._chrome_layout.setSpacing(0)
         self._chrome_layout.setContentsMargins(0, 0, 0, 0)
+        # macOS: reserve a thin top strip for the transparent native titlebar
+        # (full-size content view, see jellytoast/macos_window.py) so the top
+        # bar clears the floating traffic lights while the frosted backdrop
+        # shows through behind them.
+        from jellytoast.platform_compat import IS_MACOS as _IS_MAC
+
+        if _IS_MAC:
+            from jellytoast.macos_window import TITLEBAR_INSET
+
+            self._chrome_layout.setContentsMargins(0, TITLEBAR_INSET, 0, 0)
         layout = self._chrome_layout
 
         # Borderless: the top bar doubles as the window's titlebar —
@@ -2203,10 +2213,11 @@ def main():
     from jellytoast.platform_compat import IS_MACOS as _IS_MACOS
 
     if _IS_MACOS:
-        from jellytoast import macos_menubar
+        from jellytoast import macos_menubar, macos_window
 
         macos_menubar.install(win)
-        _boot_mark("macOS menu bar installed")
+        macos_window.apply(win)
+        _boot_mark("macOS menu bar + native chrome")
 
     # Dev-only remote-control bridge for live end-to-end testing. OFF
     # unless JT_TEST_BRIDGE=1 is set at launch. Stands up a per-user
