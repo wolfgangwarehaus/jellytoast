@@ -917,6 +917,14 @@ class FloatingMiniPlayer(QWidget):
 
     def showEvent(self, event):
         super().showEvent(event)
+        # First map: a move() issued before show() doesn't stick on macOS
+        # (Cocoa assigns the position when the window is mapped), and a stale
+        # (0,0) may have been persisted from such a run — so if we mapped at
+        # the degenerate top-left origin (jammed under the menu bar), nudge to
+        # the bottom-right work area once the surface actually exists.
+        if not getattr(self, "_first_mapped", False):
+            self._first_mapped = True
+            QTimer.singleShot(0, self._ensure_onscreen)
         # KWin needs a real X11 winId before it honors EWMH state atoms.
         QTimer.singleShot(0, lambda: skip_taskbar_x11(self))
         # Repaint stored covers — when a load lands while the mini is
@@ -974,6 +982,19 @@ class FloatingMiniPlayer(QWidget):
         # need the final size.
         if hasattr(self, "_save_geom_timer") and not self._aspect_adjust:
             self._save_geom_timer.start()
+
+    def _ensure_onscreen(self):
+        """If the mini player mapped at the degenerate (0,0) origin (see
+        showEvent — common on macOS, where a pre-show move() is ignored), move
+        it to the bottom-right of the work area. No-op once it sits anywhere
+        else, so it never overrides a position the user actually chose."""
+        if (self.x(), self.y()) != (0, 0):
+            return
+        screen = QApplication.primaryScreen().availableGeometry()
+        self.move(
+            screen.right() - self.width() - 24,
+            screen.bottom() - self.height() - 24,
+        )
 
     def moveEvent(self, event):
         super().moveEvent(event)
