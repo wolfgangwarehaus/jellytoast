@@ -2,32 +2,48 @@
 # Build the MAS .app: swap in the LGPL/no-Lua libmpv, PyInstaller-bundle it
 # (macholib follows the load commands to pull the LGPL FFmpeg + deps), patch
 # the CPython itms-services string, and scan the whole bundle for GPL leaks.
-LOG=/tmp/mas_app_build.log
-exec > "$LOG" 2>&1
+#
+# Paths are env-overridable so this runs unchanged on the rented Mac (the
+# defaults) AND in CI (the build-mas job sets JT_SRC/JT_PIP/JT_PYI/JT_PY +
+# JT_LOG_STDOUT=1):
+#   JT_SRC        repo checkout         (default /tmp/jellytoast-src)
+#   LGPL_PREFIX   LGPL libmpv prefix    (default /tmp/lgpl)
+#   JT_PIP/JT_PYI/JT_PY   pip / pyinstaller / python3 (default rented-Mac venv)
+#   JT_DIST/JT_WORK       PyInstaller out/work dirs
+#   JT_LOG_STDOUT=1       log to stdout (so CI shows the build) instead of $JT_LOG
+LOG="${JT_LOG:-/tmp/mas_app_build.log}"
+[ -n "${JT_LOG_STDOUT:-}" ] || exec > "$LOG" 2>&1
 set -x
 fail() { set +x; echo "MAS_APP_FAIL: $1"; exit 1; }
+SRC="${JT_SRC:-/tmp/jellytoast-src}"
+LGPL="${LGPL_PREFIX:-/tmp/lgpl}"
+PIP="${JT_PIP:-/tmp/jtvenv/bin/pip}"
+PYI="${JT_PYI:-/tmp/jtvenv/bin/pyinstaller}"
+PY="${JT_PY:-/tmp/jtvenv/bin/python3}"
+DIST="${JT_DIST:-/tmp/mas_dist}"
+WORK="${JT_WORK:-/tmp/mas_build}"
 eval "$(/opt/homebrew/bin/brew shellenv)"
-cd /tmp/jellytoast-src || fail cd
+cd "$SRC" || fail cd
 
 echo "=== STEP 1: stage the LGPL libmpv where the spec picks it up ==="
 mkdir -p packaging/macos/libmpv
-cp -f /tmp/lgpl/lib/libmpv.2.dylib packaging/macos/libmpv/ || fail "copy lgpl libmpv"
+cp -f "$LGPL/lib/libmpv.2.dylib" packaging/macos/libmpv/ || fail "copy lgpl libmpv"
 otool -L packaging/macos/libmpv/libmpv.2.dylib | grep -iE "libav|lua" | head -3
 
 echo "=== STEP 2: PyInstaller build ==="
-/tmp/jtvenv/bin/pip install --quiet pyinstaller || fail "pip pyinstaller"
+"$PIP" install --quiet pyinstaller || fail "pip pyinstaller"
 # macholib reads load commands (no dlopen), but make the LGPL ffmpeg + brew deps discoverable too.
-export DYLD_FALLBACK_LIBRARY_PATH=/tmp/lgpl/lib:/opt/homebrew/lib
-rm -rf /tmp/mas_dist /tmp/mas_build
-/tmp/jtvenv/bin/pyinstaller packaging/pyinstaller/jellytoast.spec --noconfirm \
-  --distpath /tmp/mas_dist --workpath /tmp/mas_build || fail "pyinstaller"
-APP=/tmp/mas_dist/jellytoast.app
+export DYLD_FALLBACK_LIBRARY_PATH="$LGPL/lib:/opt/homebrew/lib"
+rm -rf "$DIST" "$WORK"
+"$PYI" packaging/pyinstaller/jellytoast.spec --noconfirm \
+  --distpath "$DIST" --workpath "$WORK" || fail "pyinstaller"
+APP="$DIST/jellytoast.app"
 [ -d "$APP" ] || fail "no .app produced"
 echo "built: $APP ($(du -sh "$APP" | cut -f1))"
 
 echo "=== STEP 3: patch CPython itms-services (App Review auto-reject string) ==="
-/tmp/jtvenv/bin/python3 - "$APP" <<'PYEOF'
-import sys, os, zipfile, io, shutil
+"$PY" - "$APP" <<'PYEOF'
+import sys, os, zipfile, shutil
 app = sys.argv[1]
 needle = b"itms-services"
 repl   = b"xtms-services"  # same length (13) → keeps marshal/.pyc valid; harmless scheme
@@ -76,7 +92,7 @@ BUNDLED_MPV=$(find "$APP" -name "libmpv*.dylib" | head -1)
 echo "libmpv: $BUNDLED_MPV"
 echo "--- GPL contamination scan across ALL bundled Mach-O ---"
 GPL=$(find "$APP" -type f \( -name "*.dylib" -o -name "*.so" \) -print0 | while IFS= read -r -d '' f; do
-  otool -L "$f" 2>/dev/null | grep -qiE "libx264|libx265|libpostproc" && echo "GPL-LEAK: ${f#$APP/}"
+  otool -L "$f" 2>/dev/null | grep -qiE "libx264|libx265|libpostproc" && echo "GPL-LEAK: ${f#"$APP"/}"
 done)
 [ -z "$GPL" ] && echo "  no x264/x265/postproc anywhere ✓" || echo "$GPL"
 echo "--- residual itms-services anywhere? ---"

@@ -2,10 +2,11 @@
 # Build LGPL-only, no-Lua libmpv from source for the Mac App Store track.
 # FFmpeg --disable-gpl --disable-nonfree (audio-only player loses nothing) +
 # libmpv -Dgpl=false -Dlua=disabled (drops the LuaJIT JIT entitlement).
-PREFIX=/tmp/lgpl
-SRC=/tmp/lgpl_src
-LOG=/tmp/lgpl_build.log
-exec > "$LOG" 2>&1
+PREFIX="${LGPL_PREFIX:-/tmp/lgpl}"
+SRC="${LGPL_SRC:-/tmp/lgpl_src}"
+LOG="${JT_LOG:-/tmp/lgpl_build.log}"
+# CI sets JT_LOG_STDOUT=1 so the build is visible in the workflow log.
+[ -n "${JT_LOG_STDOUT:-}" ] || exec > "$LOG" 2>&1
 set -x
 fail() { set +x; echo "LGPL_BUILD_FAIL: $1"; exit 1; }
 eval "$(/opt/homebrew/bin/brew shellenv)"
@@ -15,7 +16,8 @@ NCPU=$(sysctl -n hw.ncpu)
 echo "=== STEP 1: build tools + LGPL deps (libass/libplacebo/freetype/etc are already LGPL) ==="
 brew install meson ninja nasm pkg-config libass libplacebo little-cms2 2>&1 | tail -2 || fail "brew deps"
 
-mkdir -p "$PREFIX" "$SRC" && cd "$SRC" || fail cd
+mkdir -p "$PREFIX" "$SRC" || fail mkdir
+cd "$SRC" || fail cd
 
 echo "=== STEP 2: LGPL FFmpeg from source (n7.1) ==="
 [ -d FFmpeg ] || git clone --depth 1 --branch n7.1 https://github.com/FFmpeg/FFmpeg.git FFmpeg || fail "ffmpeg clone"
@@ -46,7 +48,7 @@ cd "$SRC" || fail
 echo "=== STEP 4: VERIFY LGPL + no-Lua ==="
 echo "--- meson config (want gpl=false, lua=disabled) ---"
 meson configure "$SRC/mpv/build" 2>/dev/null | grep -iE "^\s*(gpl|lua)\b" | head
-LIBMPV=$(ls "$PREFIX"/lib/libmpv*.dylib 2>/dev/null | head -1)
+LIBMPV=$(find "$PREFIX/lib" -name 'libmpv*.dylib' 2>/dev/null | head -1)
 echo "libmpv: $LIBMPV"
 echo "--- GPL/Lua contamination check (otool -L) ---"
 if otool -L "$LIBMPV" 2>&1 | grep -iE "x264|x265|postproc|/liblua|luajit|/libmpv.*gpl"; then
