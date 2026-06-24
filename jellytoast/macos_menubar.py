@@ -24,6 +24,26 @@ logger = logging.getLogger(__name__)
 _HELP_URL = "https://wolfgangwarehaus.com/jellytoast"
 
 
+def set_app_name(name: str = "jellytoast") -> None:
+    """Force the macOS application-menu name. A from-source ``python -m
+    jellytoast`` run shows "Python" in the menu bar (no .app bundle → the
+    process name); the frozen ``.app`` already gets "jellytoast" from its
+    ``CFBundleName``. Overwrite the running bundle's ``CFBundleName`` via
+    pyobjc so the app menu reads "jellytoast" either way. MUST run before
+    ``QApplication`` builds the native menu. Best-effort; never raises."""
+    try:
+        from Foundation import NSBundle
+
+        bundle = NSBundle.mainBundle()
+        if bundle is None:
+            return
+        info = bundle.localizedInfoDictionary() or bundle.infoDictionary()
+        if info is not None:
+            info["CFBundleName"] = name
+    except Exception:
+        pass
+
+
 def install(window) -> None:
     """Build the global menu bar + Dock menu + Dock-reopen. Call once, after
     the window + PlayerBus exist. Never raises."""

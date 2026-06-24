@@ -1956,6 +1956,15 @@ def main():
         _startup_id = ""
     else:
         _startup_id = os.environ.pop("DESKTOP_STARTUP_ID", "")
+    # macOS: set the application-menu name BEFORE QApplication builds the
+    # native menu, so a from-source run reads "jellytoast" rather than
+    # "Python" (the frozen .app already gets it from CFBundleName).
+    from jellytoast.platform_compat import IS_MACOS as _IS_MAC
+
+    if _IS_MAC:
+        from jellytoast.macos_menubar import set_app_name
+
+        set_app_name("jellytoast")
     app = QApplication(sys.argv)
     _boot_mark("QApplication constructed")
     app.setApplicationName("jellytoast")
