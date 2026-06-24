@@ -48,6 +48,29 @@ def is_msix_packaged() -> bool:
         return False
 
 
+def is_macos_sandboxed() -> bool:
+    """True iff running inside the macOS App Sandbox — i.e. the Mac App Store
+    build, NOT the Developer-ID .dmg or a source / pip run. The single gate for
+    the MAS-only behaviours, the macOS analog of ``is_msix_packaged()`` on
+    Windows:
+      - autostart via SMAppService login items (a sandboxed app cannot write
+        ``~/Library/LaunchAgents`` the way the .dmg build does);
+      - a one-time migration of settings/downloads/caches from the
+        non-sandboxed location into the app container on first launch;
+      - security-scoped bookmarks for any folder the user picks OUTSIDE the
+        container (downloads target).
+    No-op off macOS.
+
+    Detection: macOS exports ``APP_SANDBOX_CONTAINER_ID`` into a sandboxed
+    process's environment. Belt-and-suspenders fallback: a sandboxed process's
+    HOME is redirected under ``~/Library/Containers/<bundle-id>/Data``."""
+    if not IS_MACOS:
+        return False
+    if os.environ.get("APP_SANDBOX_CONTAINER_ID"):
+        return True
+    return "/Library/Containers/" in os.environ.get("HOME", "")
+
+
 def will_be_wayland() -> bool:
     """Pre-QApplication Wayland probe. Honors an explicit
     QT_QPA_PLATFORM override; falls back to WAYLAND_DISPLAY. Always

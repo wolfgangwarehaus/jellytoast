@@ -183,6 +183,10 @@ macos = [
     # attributed to jellytoast — only fires in the bundled .app; falls back to
     # osascript from source. (jellytoast/notifications/_macos.py.)
     'pyobjc-framework-UserNotifications>=10.0 ; sys_platform == "darwin"',
+    # SMAppService login-item autostart in the sandboxed Mac App Store build
+    # (the .dmg uses a LaunchAgent; the sandbox forbids writing LaunchAgents).
+    # jellytoast/autostart/_macos.py.
+    'pyobjc-framework-ServiceManagement>=10.0 ; sys_platform == "darwin"',
 ]
 
 # GUI entry point. `gui-scripts` (vs `scripts`) suppresses the console

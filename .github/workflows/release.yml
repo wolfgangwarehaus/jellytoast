@@ -401,7 +401,7 @@ jobs:
       - name: Build the sandboxed MAS .app (LGPL libmpv + itms-services patch)
         run: |
           python -m pip install --upgrade pip
-          pip install . pyinstaller
+          pip install '.[macos]' pyinstaller
           JT_LOG_STDOUT=1 JT_SRC="$PWD" LGPL_PREFIX=/tmp/lgpl \
             JT_PIP=pip JT_PYI=pyinstaller JT_PY=python3 \
             JT_DIST=dist JT_WORK=build \
