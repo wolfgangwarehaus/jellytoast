@@ -10,6 +10,43 @@ tagged version; snip it into a dated version block when cutting a release.
 
 ## [Unreleased]
 
+jellytoast comes to **macOS** — a native, notarized app with the platform's
+frosted look and deep system integration built in.
+
+### Added
+
+- **macOS support.** jellytoast now ships for macOS as a Developer-ID-signed,
+  **notarized `.dmg`** — verified on macOS 26 Tahoe (Gatekeeper-clean, no
+  right-click-to-open dance) — with first-class native integration:
+  - **Media keys + Now Playing.** The hardware media keys, Control Center, and
+    the lock screen drive playback and show the current track + artwork
+    (`MPNowPlayingInfoCenter` + `MPRemoteCommandCenter`).
+  - **Window vibrancy.** The frosted chrome rides a real macOS
+    `NSVisualEffectView` backdrop (the native equivalent of the Linux blur),
+    and honors the **Reduce Transparency** accessibility setting — falling back
+    to a near-opaque body when it's on.
+  - **Native menu bar + Dock menu.** A proper global menu bar (About / Settings
+    / Quit in the application menu) plus a Dock transport menu.
+  - **Integrated titlebar.** A transparent, full-height titlebar so the window
+    chrome flows up under the traffic lights — and the inset drops away in
+    fullscreen.
+  - **Notifications + launch-at-login.** Track-change banners via Notification
+    Center, and optional autostart through a per-user LaunchAgent.
+
+### Changed
+
+- **winget auto-submits on publish.** Publishing a release now automatically
+  submits the updated winget manifest to `microsoft/winget-pkgs`, with a
+  `workflow_dispatch` backfill to (re)submit an already-published tag.
+  *(Release-process plumbing; no user-facing change.)*
+
+### Fixed
+
+- **(macOS) Mini-player + app naming.** The floating mini-player now reliably
+  appears at the bottom-right — driven through the native window, since Qt
+  won't order a frameless always-on-top window front on macOS — and the app
+  menu reads "jellytoast" instead of "Python" when run from source.
+
 ## [0.1.3] — 2026-06-21
 
 Two new ways to get jellytoast — a universal-Linux **AppImage** and a one-click

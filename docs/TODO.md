@@ -1,353 +1,185 @@
 # jellytoast — what's left to do
 
-The running backlog. Last boiled down **2026-06-12** (packaging day),
-refreshed **2026-06-14** (Windows-standards round), **2026-06-15**
-(release/CI workflow), and **2026-06-17** (v0.1.0 launch). Closed work
-collapses to one-liners; the dated detail lives in `docs/CHANGELOG.md` and
-this file's git history.
+The running backlog. Closed work collapses to one-liners; the dated detail lives
+in `docs/CHANGELOG.md`, the release pipeline in `docs/RELEASING.md`, and the rest
+in this file's git history. **Last tidied 2026-06-24** (post-macOS, 0.1.4 prep).
 
-> **2026-06-20 (eve) — 🚀 v0.1.2 PUBLISHED.** GitHub release public + Latest:
-> the headline **Linux `.deb` X11/XWayland launch fix** (complete Qt xcb dependency
-> closure, #164 — also means v0.1.0/0.1.1 `.deb`s were broken on X11), plus the
-> release-readiness review fixes (P0 Jellyfin null-field crash, fresh-install
-> credential-perm leak, download-drain on server-switch, cast/offline/UI). Channels:
-> **PyPI 0.1.2 LIVE** via **Trusted Publishing** (#167 `pypi-publish.yml`, OIDC — no
-> token; future releases auto-publish on `release: published`). **AUR** deferred
-> (registration still frozen). **AppImage** → 0.1.3.
-> **winget + MSIX/Store** → PR #146 (`needs:windows`), commented with the 0.1.2
-> installer URL+SHA. Publish worklist: `packaging/RELEASE_v0.1.2_PUBLISH.md`.
-
-> **2026-06-20 — packaging-channels round.** **winget LIVE** (v0.1.0 + v0.1.1
-> merged to microsoft/winget-pkgs; `winget install wolfgangwarehaus.jellytoast`).
-> **Microsoft Store** submission prep DONE — identity stamped, manifest 1.0.0.0,
-> `COPYING`/GPL-3.0 conveyance, privacy policy corrected + hosted, paste-ready
-> runbook (`packaging/msix/STORE-SUBMISSION.md`); gated only on the 0.1.2 cut +
-> a laptop build/WACK pass. **AppImage** researched, planned for 0.1.3 as the
-> universal-Linux channel. Docs PR #161 merged (Install restructure + winget +
-> hosted privacy page). Round-1 Ubuntu 26.04 verification + the BUG-1/2/3 fixes
-> (#148/#149/#151, all shipped in v0.1.1) are in PR #147; the real-`.deb`
-> launch/cleanup/bug pass that feeds 0.1.2 is checklisted in
-> `packaging/UBUNTU_SESSION_2.md` (#155).
-
-> **2026-06-17 — 🚀 v0.1.0 LAUNCHED.** GitHub release published (deb +
-> Windows installer/portable + sdist/wheel + SHA256SUMS). Live channels:
-> **PyPI** (`pipx install jellytoast`), the **landing page**
-> (wolfgangwarehaus.com/jellytoast), and screenshots shot + wired (#107).
-> **winget** submitted — PR microsoft/winget-pkgs#389422, CLA signed,
-> awaiting a moderator merge. **Microsoft Store (MSIX)** scaffolded this
-> session (`packaging/msix/`: full-trust manifest + assets + playbook; the
-> 3 code blockers applied behind `is_msix_packaged()`). **Azure Artifact
-> Signing** for the GitHub `.exe` wired into release.yml (gated on secrets).
-> Still to land: **AUR** publish, the directory
-> PRs + the launch posts (see Launch below).
+> **Status — 🍎 0.1.4 in prep (the macOS release).** v0.1.3 is Latest
+> (2026-06-21). **0.1.4** rolls up the macOS arc: a Developer-ID-signed,
+> **notarized `.dmg`** with full native integration (media keys / Now Playing,
+> vibrancy, global menu bar + Dock menu, integrated titlebar, notifications,
+> launch-at-login, Reduce-Transparency), verified on macOS 26 Tahoe. Cut with
+> `dev/cut_release.sh 0.1.4 --push` once dependabot #179 lands.
 >
-> **2026-06-15 release/CI workflow round — ✅ SHIPPED:** main is now
-> branch-protected (4 required CI checks, admin override), squash-only;
-> CI auto-retries the flaky `-n auto` worker crash (#93). Bug-hunt punch
-> list fully drained (#90 queue drag, #91 offline scope/migration-v3).
-> Release automation: `dev/cut_release.sh` (#94), signed build provenance
-> + curated release notes (#95, Phase 0), a packaging-validation CI gate
-> (#97), and a pre-publish accuracy pass (#98). (The multi-channel
-> rollout-plan research doc was retired with `docs/research/` in #119.)
+> **Shipped (detail in CHANGELOG):** native Windows integration + packaging
+> (#85/#86), the release/CI workflow + `cut_release.sh` + branch protection, the
+> P0–P3 bug-hunt sweeps, the v0.1.0 launch, the unified multi-channel pipeline,
+> the v0.1.2 `.deb` X11 fix (#164), and v0.1.3 (AppImage + try-a-demo).
 
-> **2026-06-14 Windows-standards round — ✅ SHIPPED + VERIFIED (PR #86):**
-> SMTC (hardware media keys + the now-playing flyout/lock-screen),
-> prevent-sleep during playback (cross-platform — fixed the Linux gap
-> too), single-instance window foregrounding, Windows toasts
-> (download-complete now works + an opt-in now-playing toast), and the
-> taskbar play/pause overlay badge — all live-verified on the Windows 11
-> laptop and merged. Plus the image-cache async-write drain on
-> sign-out / shutdown (pre-merge review fix). The earlier 2026-06-12
-> Windows-parity items (autostart, taskbar icon/AUMID, boot-stall fix,
-> visualizer rebuild) verified + merged in PR #85.
->
-> Open Windows tail (both LOW):
-> - [ ] **Visualizer track-switch latency on WiFi** — bars wait for the
->       full compressed body download (~1s on laptop WiFi vs ~0.1s wired);
->       audio is unaffected. Planned: two-phase fetch (Range-limited first
->       chunk for instant bars). Risky vs the buffer-complete invariant.
-> - [ ] **Construction-time icon baking** — a lazy `QIconEngine` was tried
->       (PR branch `perf/lazy-icons`) and **reverted**: softened/chunked
->       glyphs at fractional scale on Windows. The baked path stays; the
->       real cold-boot win is the installer, not this.
+## Install channels — all LIVE (macOS `.dmg` arrives in 0.1.4)
+**Microsoft Store** (ID `9PNLTPXGHN79`) · **winget** (`wolfgangwarehaus.jellytoast`)
+· **`.deb`** · **AppImage** · **PyPI** (`pipx install jellytoast`) ·
+**macOS notarized `.dmg`** · landing page + Ko-fi. One publish already
+auto-fans-out to **PyPI + winget** and builds the signed `.dmg`; the remaining
+auto-update wiring is the streamlining item below.
 
-> **2026-06-15 core bug-hunt — ✅ ALL 9 FIXED + MERGED.** Adversarial
-> correctness sweep of playback/queue/providers/offline/cast/ui-state, each
-> fix regression-tested.
-> - **7 via PRs #88/#89:** mute-while-casting no-op + icon desync;
->   planning-failure leaking the download session failure-counter; NP-bar
->   clobbering the ICY radio title on a replayed `_on_started`;
->   connectivity offline-flip dropping a concurrent `note_success`
->   (re-validate under the lock); cast status-listener leak on disconnect;
->   `_cast_paused` vs device-side pause desync (DLNA); failed auto-advance
->   cast tearing down to local instead of a frozen "Casting to…".
-> - **HIGH drag-reorder (PR #90, live-verified):** a drag in a shuffled
->   album moved the WRONG track — the view emitted source-order indices to
->   `queue_move_item`, which `QueueManager` treats as play-order. The view
->   now emits `reorder_requested(src, dest, src_id, anchor_id)` and the page
->   re-maps by Id in source-order display (mirrors the remove-path fix);
->   play-order passes through. (`tests/test_np_drag_reorder.py`)
-> - **MED offline scope refactor (PR #91):** per-server scope was an
->   `id LIKE '{ident}:%'` prefix that leaked across servers when one
->   `server_url` was a `:`-boundary prefix of another (`:` is both the
->   ident↔item separator AND legal in a host:port URL). Replaced with
->   dedicated `provider_kind`/`server_url` columns + `idx_nodes_scope`
->   matched by exact equality (schema **migration v3**, backfills existing
->   DBs). Swept all 9 scoped sites + the INSERT; dropped `_ident_like`.
->
-> Remaining tail (a separate small feature, not a bug-hunt finding):
-> - [ ] Sonos out-of-band pause is undetectable (no Sonos status poll).
+## august's eyes-on checklist
+*Live-verification tasks from the 2026-06-11 round — still unverified, and they
+predate the macOS / Windows / AppImage work, so they're due one fresh pass:*
 
-**august's eyes-on checklist** (from the 2026-06-11 live round, still pending):
-
-- [ ] §-1 audio output re-walk (the picker WORKS now — Linux first, then
-      Windows; both pipx installs need a refresh first, see CHANGELOG note)
-- [ ] F1 visual check on the live compositor: Search results + Suggestions
-      right edge — gutter should show clean frost/body, no black strip,
-      all 4 themes
-- [ ] View dropdown: open, arrow keys — current tab should be pre-highlighted
+- [ ] §-1 audio output re-walk (picker works; Linux first, then Windows — both
+      pipx installs need a refresh first, see the CHANGELOG note)
+- [ ] F1 Search results + Suggestions right edge — clean frost/body, no black
+      strip, all 4 themes
+- [ ] View dropdown: current tab pre-highlighted on open
 - [ ] F2 design call: mini-player button is checkable but only ever opens
-      (no toggle-close, stale check state, `queue_btn` naming drift) —
-      decide toggle vs plain button
-- [ ] §1 smart-playlist remainder on Subsonic: Save / Save & Play / provider
-      grey-out (editor + live preview verified working this round)
-- [ ] PR #82 spot check: on `fix/platform-sweep`, Settings → General →
-      "Launch jellytoast at login" still visible AND functional on CachyOS
-      (the new `is_supported()` gate must not hide it on Linux) — verify
-      across a reboot
+      (toggle-close vs plain button; `queue_btn` naming drift)
+- [ ] §1 smart-playlist remainder on Subsonic: Save / Save & Play / provider grey-out
+- [ ] Settings → General → "Launch at login" still visible AND functional on
+      CachyOS across a reboot (the `is_supported()` gate must not hide it on Linux)
 
-Companion docs: `docs/SPEC.md` (what the app does), `docs/CHANGELOG.md`
-(shipped, dated), `docs/decisions.md` (why).
-
-Priorities: **P0** confirmed bugs → **P1** medium bugs → **P2** tidy →
-**P3** low bugs + features → **P4** hardware-gated / cross-platform → then
+Priorities: **P0** confirmed bugs → **P1** medium → **P2** tidy → **P3** low /
+features → **P4** hardware-gated / cross-platform → then release pipeline,
 packaging, launch, parked, not-on-roadmap.
+
+Companion docs: `docs/SPEC.md` (what the app does), `docs/CHANGELOG.md` (shipped,
+dated), `docs/RELEASING.md` (the release pipeline), `docs/decisions.md` (why).
 
 ---
 
 ## P0 — confirmed behaviour bugs
 
-✅ **ALL FIXED & MERGED** (`fix/review-2026-06-08-bugs`, `7b8481a`; re-audited
-in main 2026-06-09), each with a regression test: crossfade+skip near-silent
-volume, failed-cast dead playback, shuffled-queue wrong-row remove,
-color-token Reset drift, blocking primary climb-back probe. Full write-ups:
-git history of this file.
-
----
+✅ **ALL FIXED & MERGED**, each with a regression test (crossfade+skip near-silent
+volume, failed-cast dead playback, shuffled-queue wrong-row remove, color-token
+Reset drift, blocking primary climb-back probe). Write-ups: this file's git history.
 
 ## P1 — medium behaviour bugs
 
-✅ **ALL 8 FIXED & MERGED** (same branch/audit as P0): stale top-bar menu
-colours, mini-player `playback_restored`, replayed-pause play icon,
-`_compute_subtitle` delegate crash, genres blank-grid refresh, AutoEQ
-Q-preserve no-op, stale MPRIS shuffle/loop, AirPlay zeroconf + pairing-loop
-leaks. Full write-ups: git history of this file.
-
----
+✅ **ALL 8 FIXED & MERGED** (stale top-bar menu colours, mini-player
+`playback_restored`, replayed-pause play icon, `_compute_subtitle` delegate
+crash, genres blank-grid refresh, AutoEQ Q-preserve no-op, stale MPRIS
+shuffle/loop, AirPlay zeroconf + pairing-loop leaks). Write-ups: git history.
 
 ## P2 — tidy / cleanup
 
-✅ **DRAINED** across the 2026-06-08/09 sweeps (dead-code removal, tidy
-refactors, docs-accuracy audit, theming audit + restamp sweeps — detail in
-`docs/CHANGELOG.md` and git history) and the 2026-06-12 branch cleanup
-(stale branches audited + deleted, auto-delete-on-merge ON). Two items
-remain:
+- ⏸️ **Mixed-DPI icon bake** (`jellytoast/icons.py` + `icon_button.py`) — pixmaps
+  baked at app-DPR but painted at widget-DPR; blurry only on a mixed-DPI
+  multi-monitor setup (a no-op on single-DPI). The fix touches the core icon
+  paint path. **HARDWARE-GATED** — verify on actual differing-DPR monitors
+  before landing (Approach B: a `svg_pixmap(name,color,size,dpr)` helper + an
+  opt-in `IconButton.set_glyph`).
+- [ ] **Bare-`QDialog` theming parity (low):** the Last.fm connect modal
+  (`settings_dialog._lf_open_auth_modal`, gated behind an unshipped API key) and
+  `SnapcastControlDialog` (hardware-gated) are still bare `QDialog` — bring to
+  `FrostedDialog` parity when surfaced. *(The colors-page CRUD now has a wired UI
+  entry point and is a settings page, not a dialog — dropped from this list.)*
 
-- ⏸️ **Mixed-DPI icon bake** (`jellytoast/icons.py` + `icon_button.py`) —
-  pixmaps baked at app-DPR but painted at widget-DPR (blurry only on a
-  mixed-DPI multi-monitor setup; a no-op on single-DPI). The fix touches the
-  core icon paint path, so it needs verification on actual differing-DPR
-  monitors before landing. Approach B (a `svg_pixmap(name,color,size,dpr)`
-  helper + an opt-in `IconButton.set_glyph`) is the low-churn route.
-  HARDWARE-GATED — do not land unverified.
-- [ ] **Latent / unreachable theming parity (low):** Last.fm connect modal
-  (`settings_dialog._lf_open_auth_modal`, gated behind an unshipped API key),
-  the `settings_colors_page.py` palette CRUD (no UI entry point), and
-  `SnapcastControlDialog` (hardware-gated) — all bare `QDialog`/native-msgbox;
-  bring to `FrostedDialog` parity when surfaced.
+## P3 — low-severity bugs + features
 
----
-
-## P3 — low-severity bugs + features not yet pulling weight
-
-### Low-severity behaviour bugs
-
-✅ **16 of 18 fixed 2026-06-08** (`fix/review-2026-06-08-low-bugs`, 9
-regression tests — list in git history). **2 deferred** (higher-risk /
-lowest-value):
+✅ **16 of 18 low bugs fixed 2026-06-08** (regression-tested; list in git history).
+Still deferred:
 
 - `cast_toggle_pause` flips `_cast_paused` even when the off-thread SOAP
   pause/resume fails — needs the DLNA/Sonos pause methods to report success
-  and a `_run_off_thread_result` + `call_on_gui` flag flip (cross-thread,
-  hardware path).
-- Icon pixmaps baked at app-DPR but painted at widget-DPR — only mixed-DPI
-  multi-monitor setups; the common downscale stays acceptably sharp
-  (`jellytoast/icons.py`). (Same item as the P2 mixed-DPI bake.)
+  (cross-thread, hardware path). *(Same root as the P4 cast-hardware item.)*
 
-### Features
+### Features (not yet pulling weight)
 
-- [x] **OS media-integration enable/disable toggle** — ✅ SHIPPED (#106,
-  2026-06-16): Settings → Playback "OS media integration" checkbox bound to the
-  `playback/media_integration_enabled` QSetting (default on), gating
-  `media_controls` start/stop. (SMTC backend was #86.)
 - **A registered Cast receiver app** — Chromecast screens show "Default Media
-  Receiver" not "jellytoast". Needs a $5 Google dev account + a hosted receiver.
+  Receiver" not "jellytoast"; needs a $5 Google dev account + a hosted receiver.
 - **AirPlay 2 edge cases** — older LG webOS TVs / shairport-sync 5.x misbehave.
-- **`QNetworkInformation` supplementary network-status signal** — flaky on Linux;
-  revisit during the Windows/macOS push.
-- **Importing server-side playlist files (m3u, …)** — probably out of scope unless
-  asked.
-
----
+- **`QNetworkInformation` supplementary network-status signal** — flaky on Linux.
+- **Importing server-side playlist files (m3u, …)** — likely out of scope unless asked.
 
 ## P4 — hardware-gated / cross-platform
 
-- **Windows native integration — SHIPPED** (#85/#86, verified on Win 11):
-  autostart, SMTC media keys + flyout, toast notifications, taskbar overlay
-  badge, prevent-sleep, single-instance foreground, HiDPI + Acrylic blur +
-  borderless chrome. Remaining stub: mini-player always-on-top uses Qt's
-  native `WindowStaysOnTopHint` (no OS-level rule needed off KDE Wayland).
-- **Cross-thread cast write-race** — `active_cast`/`_cast_paused` written off the
-  GUI thread inside `_CastTransportMixin`; needs a hardware cast session to verify
-  the fix safely.
-- **Sonos / Snapcast live cast verification** — code wired, not yet exercised on
-  real hardware (Chromecast / AirPlay / DLNA already live-verified).
-- **macOS support** — native bits via the Mac APIs (vibrancy, NowPlaying, …).
-- **iOS** — only after a Mac exists.
+- **Windows native integration — SHIPPED** (#85/#86, verified on Win 11:
+  autostart, SMTC media keys + flyout, toasts, taskbar overlay badge,
+  prevent-sleep, single-instance foreground, HiDPI + Acrylic blur + borderless).
+  Tail (both **LOW**): visualizer track-switch latency on WiFi (bars wait for the
+  full compressed body; a two-phase Range fetch is risky vs the buffer-complete
+  invariant); construction-time icon baking (a lazy `QIconEngine` was tried +
+  **reverted** — softened glyphs at fractional scale; the baked path stays).
+- **macOS — SHIPPED** (#177/#181: notarized `.dmg` + native integration).
+  Tail: a **universal2** build (arm64-only today) and the **Mac App Store track**
+  (PR #178/#180, `needs:mac` — LGPL libmpv proven; needs Apple certs + the MAS
+  secrets + a `build-mas` job; see the streamlining item).
+- **Cast hardware verification** — the cross-thread `active_cast`/`_cast_paused`
+  write-race in `_CastTransportMixin` needs a live cast session to verify safely;
+  **Sonos / Snapcast** are wired but unexercised on real hardware (Chromecast /
+  AirPlay / DLNA already live-verified); Sonos out-of-band pause is undetectable
+  (the 500ms status poll covers only Chromecast + DLNA; `SonosEventBridge` push
+  is unwired).
 - **Exclusive audio output (ASIO)** — Windows-only; only if a Windows user asks.
-- **Per-OS visualizer audio taps** — Linux tap works; Windows/macOS/iOS need
-  equivalents for parity.
+- Optional: a Windows **WASAPI** shared-mode loopback visualizer backend — the
+  cross-platform `QtDecodeTap` already covers every OS, so this is an extra, not
+  a parity gap.
 
 ---
 
-## Packaging — in flight (packaging day 2026-06-12)
+## Release pipeline — streamline the update process (🎯 active)
 
-Authored on `feat/packaging-day`: PyInstaller spec (shared Linux/Windows),
-`.deb` builder, Inno Setup installer + pinned-libmpv fetch, winget manifests,
-`release.yml` (tag → draft release with deb + Windows
-installer + portable zip + sdist/wheel), README restructure (long-form →
-`docs/user_guide.md`).
+One `dev/cut_release.sh X.Y.Z --push` → a draft GitHub release with every
+artifact → one **publish** click. That already auto-fans-out to **PyPI + winget**
+and builds the **signed, notarized macOS `.dmg`**. The goal: make **every**
+channel auto-update from that single publish. Remaining wiring (canonical
+pipeline reference: `docs/RELEASING.md`):
 
-- [x] **Package rename `modules` → `jellytoast`** — ✅ DONE 2026-06-10.
-- [x] **PyInstaller spec** — ✅ `packaging/pyinstaller/jellytoast.spec`; Linux
-  onedir build verified locally (boots offscreen, clean SIGTERM shutdown).
-- [x] **Windows installer** — ✅ `packaging/windows/jellytoast.iss` + pinned
-  libmpv-2.dll fetch (`get_libmpv.ps1`, shinchiro 20260610, sha256-pinned) +
-  multi-size `jellytoast.ico`. CI-built; needs one validation pass on the
-  Win 11 laptop after the first workflow run.
-- [x] **.deb** — ✅ `packaging/deb/build_deb.sh` (self-contained /opt bundle,
-  system libmpv as Depends). Built by `release.yml` on ubuntu-22.04.
-- [x] **Release automation** — ✅ `.github/workflows/release.yml`: v* tag →
-  draft release with all artifacts; `workflow_dispatch` for dry runs.
-- **AUR** — PKGBUILD written + dry-run validated; v0.1.0 is now tagged +
-  published (unblocks it). **Not yet live** (AUR shows no `jellytoast` as of
-  2026-06-17). Left: `updpkgsums` + `makepkg -si` + `namcap` + `.SRCINFO` +
-  push to `aur@aur.archlinux.org` (steps in `packaging/aur/README.md`) — with
-  august.
-- **Flatpak / Flathub** — ⛔ **RETIRED — not a channel.** jellytoast does not
-  ship Flatpak or Flathub, and no manifest is maintained. Why: Flathub bans
-  AI-assisted code (definitive, primary-sourced 2026-06-20) and our
-  `Co-Authored-By: Claude` history is the disqualifier; the Flatpak format is
-  retired alongside it. Don't re-litigate or cold-submit.
-- **AppImage** — 🔬 **RESEARCHED 2026-06-20; planned for 0.1.3.** The universal
-  "any distro, no install, no root" Linux channel. Build via PyInstaller-onedir → static-runtime
-  `appimagetool` (reuse `jellytoast.spec`), self-contained variant (bundle
-  libmpv+FFmpeg via a separate path that skips the deb's libmpv-closure-strip);
-  add `libxcb-cursor.so.0`; pick the glibc floor deliberately (build on 20.04 for
-  Fedora/RHEL-8 reach); CI-smoke-test on a *newer* distro. Linux-only build (not
-  on the Windows box) → Linux instance.
-- **chaotic-AUR** — after the AUR package is live: one `[Request]` issue on
-  `github.com/chaotic-aur/packages` (template asks for the AUR link). Their
-  CI then auto-rebuilds from AUR forever. Best effort-to-reach ratio found.
-- **winget** — ✅ **LIVE.** v0.1.0 PR microsoft/winget-pkgs#389422 merged
-  2026-06-18; v0.1.1 PR #390782 merged 2026-06-20 (full validation pipeline
-  passed). `winget install wolfgangwarehaus.jellytoast` → 0.1.1 works globally.
-  Future bumps: `wingetcreate update wolfgangwarehaus.jellytoast --version <v>
-  --urls <setup.exe> --submit --token (gh auth token)` (`manifests/` is
-  gitignored scratch).
-- [x] **PyPI** — ✅ LIVE: `pipx install jellytoast` works
-  (pypi.org/project/jellytoast).
-- [x] **Landing page** — ✅ 2026-06-16: live at `wolfgangwarehaus.com/jellytoast`
-  (`site/index.html`, frosted-dark, screenshot carousel, auto-wired download
-  buttons via the releases API, Ko-fi tip). The apex `wolfgangwarehaus.com`
-  is the `wolfgangwarehaus.github.io` umbrella repo (owns the `CNAME` + DNS);
-  project repos serve at `/<repo>` automatically, so new apps get a subpath
-  for free.
-- [x] **Ko-fi funding** — ✅ 2026-06-12: `.github/FUNDING.yml`
-  (`ko_fi: wolfgangwarehaus`) → repo Sponsor button on merge; README badge;
-  landing-page tip box.
-- **Microsoft Store (MSIX)** — 🔧 **SUBMISSION-READY (pending the 0.1.2 cut).**
-  Identity stamped from Partner Center (PFN `…_yswr9h87xar1w`, Store ID
-  `9PNLTPXGHN79`); the 3 code blockers applied behind `is_msix_packaged()`
-  (libmpv `add_dll_directory`, AUMID/shortcut skip-when-packaged, `_msix`
-  StartupTask autostart); manifest at `1.0.0.0` (Store rejects a leading-0
-  version). Cert researched + a **paste-ready runbook** at
-  `packaging/msix/STORE-SUBMISSION.md` — every Partner Center field verified
-  (listing copy, IARC age rating, data declarations, runFullTrust justification,
-  privacy URL, license terms). Store binary conveyed under **GPL-3.0** (`COPYING`
-  added + bundled via the spec). Privacy policy corrected to disclose 3rd-party
-  flows (scrobbling, radio cover art) + hosted at `…/jellytoast/privacy.html`.
-  **Why the Store:** ONLY free + immediate SmartScreen fix — Microsoft re-signs.
-  Pre-submit gates (in the runbook): cut+push `v0.1.2` tag, verify privacy URL
-  live, build → WACK → in-package QA on the laptop. Win32-EXE Store route is a
-  TRAP (purchased cert) — MSIX only.
-- **Azure Artifact Signing (GitHub `.exe` / zip)** — 🔧 WIRED 2026-06-17:
-  two gated signing steps in `release.yml` (skipped until the Azure secrets
-  exist). Fixes the *direct-download* SmartScreen warning (the Store only
-  covers the Store copy). august is eligible (US/Canada individual), ~$9.99/mo;
-  setup runbook in `packaging/windows/azure-signing.md`. Note: signing shows
-  the verified publisher name + builds reputation but does NOT clear the
-  warning on day one.
-- [x] **Ubuntu/Mint deb smoke test** — ✅ done on a fresh **Ubuntu 26.04 LTS**
-  (GNOME/Wayland) box, two LTS newer than the Noble target: the 22.04-built
-  deb's `libmpv2 | libmpv1` Depends **resolves clean** (→ `libmpv2 0.41.0`) and
-  installs fine. BUT the session (PR #147) surfaced launch-blocking gaps the
-  dep-resolution check alone would miss — all three **fixed + shipped in v0.1.1**:
-  - **BUG-1 (launch-blocker; fixed in #148, shipped v0.1.1):** the PyInstaller
-    bundle ships the 22.04 host's copies of libmpv's dependency closure
-    (libstdc++, glib, ffmpeg, …); they shadow the host's newer ones, so
-    `import mpv` fails (`GLIBCXX_3.4.32 not found`) and the deb aborts at startup
-    on any distro > the builder. CI's frozen smoke test can't catch it (runs on
-    the same 22.04). **Add a newer-distro boot probe to CI.**
-  - **BUG-2 (X11; fixed in #149, shipped v0.1.1):** deb needs `libxcb-cursor0` in
-    Depends (Qt 6.5+ xcb plugin); Wayland unaffected.
-  - **BUG-3 (AirPlay/Python 3.14; fixed in #151, shipped v0.1.1):** cast-discovery
-    fan-out cold-imports overlapping module graphs (aiohttp via pyatv +
-    async_upnp_client) on parallel pool workers → CPython 3.14 `_DeadlockError`;
-    degrades to AirPlay-1. Fixed by serializing the four gateways' cold imports
-    behind one `cold_import_lock` (reproduced 40/40, serialized 0/60, 228 cast
-    tests pass). Likely not on the deb (bundles 3.12).
-  - **GNOME-verified working** (via pipx, which dodges BUG-1): playback
-    (mpv→PipeWire), MPRIS + control, tray (AppIndicator), Secret Service
-    credential persistence, autostart, mini-player (no always-on-top on Wayland —
-    expected), Chromecast casting (survives `ufw`), blur→opaque degradation.
-  - **Still pending:** the *fixed* `.deb` has not yet been launched end-to-end on
-    a newer distro (round 1 only verified via pipx). Round-2 checklist:
-    `packaging/UBUNTU_SESSION_2.md` (#155).
-- **Decided AGAINST** (don't re-litigate): Snap Store (KWin features dead under confinement, 3
-  manual plugs; revisit only on real Ubuntu demand — name registration is
-  free + ~2 days if we want to squat `jellytoast`), Steam store proper
-  ($100 + category mismatch), CachyOS official repos (no benefit for pure
-  Python; AUR covers it), COPR/brew. (AppImage is NO LONGER on this list —
-  it's planned for 0.1.3 as the universal-Linux channel; see above.)
-  openSUSE OBS parked until rpm users ask.
+- [ ] **Microsoft Store** — automate *updates* via the `msstore` CLI / Store
+  submission API (`microsoft/microsoft-store-apppublisher`) now the product is
+  live; the free-product tier qualifies. **Cert-gated** (up to 3 business days,
+  like the Mac App Store — *not* instant like winget). Sequenced after: (1) the
+  3 MSIX code blockers verified on the Win 11 box, (2) confirming a **free
+  individual Partner Center account can register the Azure AD app** (the
+  load-bearing unknown — check first). The first (manual) submission is done.
+- [ ] **AUR** — add `AUR_SSH_PRIVATE_KEY` + do the one-time AUR import (gated on
+  Arch registration reopening); `aur.yml` already fires on publish.
+- [ ] **Windows `.exe` signing** — add the `AZURE_*` secrets (Azure Artifact
+  Signing, ~$10/mo) so `build-windows` signs; clears the *direct-download*
+  SmartScreen warning (the Store copy is already covered by Microsoft's re-sign).
+- [ ] **winget** — verify the first *automatic* (non-backfill) publish fires on
+  0.1.4 (only the manual `workflow_dispatch` backfill has run so far).
+- [ ] **Mac App Store** — Apple certs + the 7 MAS secrets + a `build-mas` job
+  (PR #178/#180; the LGPL-libmpv showstopper is already solved).
+
+---
+
+## Packaging — channels
+
+✅ **DONE / LIVE** (detail in `docs/RELEASING.md` + CHANGELOG): PyInstaller spec,
+**`.deb`** (X11 closure fixed in v0.1.2 #164; CI smoke-tests Ubuntu 24.04/26.04 +
+Debian every release), Windows Inno installer + portable zip, **AppImage** (#169),
+**winget** (auto-submit), **PyPI** (OIDC Trusted Publishing), **Microsoft Store**
+(live; submission manual by design — Microsoft re-signs), **macOS `.dmg`** (signed
++ notarized; all `APPLE_*` secrets set), landing page, Ko-fi. **Flatpak / Flathub
+RETIRED** (#168 — Flathub bans AI-assisted code; don't re-litigate or cold-submit).
+
+🔵 **OPEN** (the auto-update wiring is in the streamlining item above):
+- **AUR** + **chaotic-AUR** — dormant (needs the SSH key + Arch registration; the
+  chaotic-AUR `[Request]` issue follows once AUR is live).
+- **Windows `.exe` Azure signing** — dormant (needs the `AZURE_*` secrets).
+- **Mac App Store** spike — PR #178/#180 (`needs:mac`).
 - **Cast-proxy demo clip** — a ~30s hero clip (Chromecast playing from a
   Tailscale-only server while the laptop is offline); pairs with the screenshots.
+
+**Decided AGAINST** (don't re-litigate): Snap Store (KWin features dead under
+confinement), Steam ($100 + category mismatch), CachyOS repos (AUR covers pure
+Python), COPR/brew; openSUSE OBS parked until rpm users ask.
 
 ---
 
 ## Launch — go-to-market (refreshed 2026-06-22)
 
 Order: directory listings → home-turf posts → Show HN → broader waves.
-**The install story is now COMPLETE** (Microsoft Store + winget + .deb + AppImage +
-PyPI all live), so the Show HN gate is cleared. Ready-to-submit listing entries live
-in `docs/launch-listings/`; copy-paste post drafts in
+**The install story is COMPLETE** (Microsoft Store + winget + .deb + AppImage +
+PyPI all live; macOS .dmg in 0.1.4), so the Show HN gate is cleared. Ready-to-submit
+entries live in `docs/launch-listings/`; copy-paste post drafts in
 `docs/launch-listings/launch-posts.md`. All venue schemas/rules re-verified 2026-06-22.
 
 - [x] **Screenshots — DONE (#107)**; landing-page carousel live. Optional: a short GIF
   (now-playing + blur + cast) for social posts.
 
-**Directory PRs — do first (the posts link to these). Entries drafted in `launch-listings/`:**
+**Directory PRs — do first (the posts link to these); none submitted yet. Entries drafted in `launch-listings/`:**
   - [ ] **Navidrome apps catalog** → `navidrome/website`, `assets/apps/jellytoast/`
     (`api: OpenSubsonic`; `repoUrl` drives the badges). Run `npm run convert:images
     jellytoast` + `npm run validate:app jellytoast`. Template: the `aonsoku` entry.
