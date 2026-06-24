@@ -14,19 +14,19 @@ Windows backend (`_windows`): SMTC (System Media Transport Controls) via
 the PyWinRT ``get_for_window`` interop — surfaces in the volume flyout
 and on the lock screen and picks up keyboard / bluetooth media keys.
 
-Off Linux/Windows (or if the backend can't initialise): the unsupported
-backend is a no-op MediaControlsService that satisfies the same shape so
-callers don't need platform branches.
+macOS backend (`_macos`): NowPlaying via pyobjc (MPNowPlayingInfoCenter +
+MPRemoteCommandCenter) — surfaces in Control Center's Now Playing module
+and on the lock screen, and routes the hardware media keys / headset
+buttons back to the app.
 
-Future backends:
-- macOS: NowPlaying via pyobjc (MPNowPlayingInfoCenter +
-  MPRemoteCommandCenter) — surfaces in Control Center and on the
-  Touch Bar / Watch.
+Off Linux/Windows/macOS (or if the backend can't initialise): the
+unsupported backend is a no-op MediaControlsService that satisfies the same
+shape so callers don't need platform branches.
 """
 
 from __future__ import annotations
 
-from jellytoast.platform_compat import IS_LINUX, IS_WINDOWS
+from jellytoast.platform_compat import IS_LINUX, IS_MACOS, IS_WINDOWS
 
 if IS_LINUX:
     try:
@@ -39,6 +39,15 @@ elif IS_WINDOWS:
     try:
         from jellytoast.media_controls._windows import (
             WindowsMediaControlsService as _Backend,
+        )
+    except Exception:
+        from jellytoast.media_controls._unsupported import (
+            UnsupportedMediaControlsService as _Backend,
+        )
+elif IS_MACOS:
+    try:
+        from jellytoast.media_controls._macos import (
+            MacMediaControlsService as _Backend,
         )
     except Exception:
         from jellytoast.media_controls._unsupported import (

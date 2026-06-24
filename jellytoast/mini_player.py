@@ -917,6 +917,21 @@ class FloatingMiniPlayer(QWidget):
 
     def showEvent(self, event):
         super().showEvent(event)
+        # First map: a move() issued before show() doesn't stick on macOS
+        # (Cocoa assigns the position when the window is mapped), and a stale
+        # (0,0) may have been persisted from such a run — so if we mapped at
+        # the degenerate top-left origin (jammed under the menu bar), nudge to
+        # the bottom-right work area once the surface actually exists.
+        if not getattr(self, "_first_mapped", False):
+            self._first_mapped = True
+            QTimer.singleShot(0, self._ensure_onscreen)
+        # macOS: Qt's show()/raise_() don't reliably ORDER a frameless,
+        # always-on-top NSWindow to the front — it reports isVisible()==True
+        # while the native window stays hidden — so force it on every show.
+        from jellytoast.platform_compat import IS_MACOS
+
+        if IS_MACOS:
+            QTimer.singleShot(0, self._macos_order_front)
         # KWin needs a real X11 winId before it honors EWMH state atoms.
         QTimer.singleShot(0, lambda: skip_taskbar_x11(self))
         # Repaint stored covers — when a load lands while the mini is
@@ -974,6 +989,58 @@ class FloatingMiniPlayer(QWidget):
         # need the final size.
         if hasattr(self, "_save_geom_timer") and not self._aspect_adjust:
             self._save_geom_timer.start()
+
+    def _ensure_onscreen(self):
+        """Place the mini player at a sensible default the first time it maps.
+        On macOS, Qt's move() doesn't sync to a frameless NSWindow's frame and
+        the window may not be ordered front, so drive the native window
+        directly; elsewhere a Qt move() off the degenerate (0,0) origin
+        suffices (and never overrides a position the user actually chose)."""
+        from jellytoast.platform_compat import IS_MACOS
+
+        if IS_MACOS:
+            self._macos_place_default()
+            return
+        if (self.x(), self.y()) != (0, 0):
+            return
+        screen = QApplication.primaryScreen().availableGeometry()
+        self.move(
+            screen.right() - self.width() - 24,
+            screen.bottom() - self.height() - 24,
+        )
+
+    def _macos_place_default(self):
+        """Set the NSWindow frame to the bottom-right of the work area and
+        order it front. Qt's geometry/order management is unreliable for a
+        frameless always-on-top window on macOS, so go native."""
+        try:
+            import objc
+            from AppKit import NSMakeRect, NSScreen
+
+            nswin = objc.objc_object(c_void_p=int(self.winId())).window()
+            if nswin is None:
+                return
+            vf = NSScreen.mainScreen().visibleFrame()  # work area, bottom-left origin
+            x = vf.origin.x + vf.size.width - self.width() - 24
+            y = vf.origin.y + 24
+            nswin.setFrame_display_(
+                NSMakeRect(x, y, self.width(), self.height()), True
+            )
+            nswin.orderFrontRegardless()
+        except Exception:
+            pass
+
+    def _macos_order_front(self):
+        """Force the frameless always-on-top NSWindow visible/front — Qt's
+        show()/raise_() don't reliably do it on macOS."""
+        try:
+            import objc
+
+            nswin = objc.objc_object(c_void_p=int(self.winId())).window()
+            if nswin is not None:
+                nswin.orderFrontRegardless()
+        except Exception:
+            pass
 
     def moveEvent(self, event):
         super().moveEvent(event)

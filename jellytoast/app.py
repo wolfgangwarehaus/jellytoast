@@ -809,6 +809,16 @@ class JellytoastWindow(_NavMixin, _SessionMixin, _CastDispatcherMixin, _ShuffleP
         # gymnastics that the frameless variant required.
         self._chrome_layout.setSpacing(0)
         self._chrome_layout.setContentsMargins(0, 0, 0, 0)
+        # macOS: reserve a thin top strip for the transparent native titlebar
+        # (full-size content view, see jellytoast/macos_window.py) so the top
+        # bar clears the floating traffic lights while the frosted backdrop
+        # shows through behind them.
+        from jellytoast.platform_compat import IS_MACOS as _IS_MAC
+
+        if _IS_MAC:
+            from jellytoast.macos_window import TITLEBAR_INSET
+
+            self._chrome_layout.setContentsMargins(0, TITLEBAR_INSET, 0, 0)
         layout = self._chrome_layout
 
         # Borderless: the top bar doubles as the window's titlebar —
@@ -1370,6 +1380,25 @@ class JellytoastWindow(_NavMixin, _SessionMixin, _CastDispatcherMixin, _ShuffleP
         # derive fresh from the L2 raw cache — no manual invalidation
         # needed for the cache itself, only for what's already painted.
         from PySide6.QtCore import QEvent as _QEvent
+
+        # macOS: the transparent-titlebar top inset is only needed while the
+        # window has a titlebar — drop it in fullscreen (traffic lights gone,
+        # content should fill the screen) and restore it on exit.
+        from jellytoast.platform_compat import IS_MACOS as _IS_MAC
+
+        if (
+            _IS_MAC
+            and e.type() == _QEvent.Type.WindowStateChange
+            and hasattr(self, "_chrome_layout")
+        ):
+            from jellytoast.macos_window import TITLEBAR_INSET
+
+            _top = 0 if self.isFullScreen() else TITLEBAR_INSET
+            _m = self._chrome_layout.contentsMargins()
+            if _m.top() != _top:
+                self._chrome_layout.setContentsMargins(
+                    _m.left(), _top, _m.right(), _m.bottom()
+                )
 
         if e.type() == _QEvent.Type.DevicePixelRatioChange:
             try:
@@ -1946,6 +1975,15 @@ def main():
         _startup_id = ""
     else:
         _startup_id = os.environ.pop("DESKTOP_STARTUP_ID", "")
+    # macOS: set the application-menu name BEFORE QApplication builds the
+    # native menu, so a from-source run reads "jellytoast" rather than
+    # "Python" (the frozen .app already gets it from CFBundleName).
+    from jellytoast.platform_compat import IS_MACOS as _IS_MAC
+
+    if _IS_MAC:
+        from jellytoast.macos_menubar import set_app_name
+
+        set_app_name("jellytoast")
     app = QApplication(sys.argv)
     _boot_mark("QApplication constructed")
     app.setApplicationName("jellytoast")
@@ -2196,6 +2234,18 @@ def main():
     # dangling local.
     win.tray = TrayController(app, mini, win)
     _boot_mark("mini player + tray constructed")
+
+    # macOS: the global menu bar (App/File/Edit/View/Window/Help), the Dock
+    # transport menu, and Dock-click reopen — native conventions a Qt app
+    # otherwise lacks. Pure PySide6; only built on macOS.
+    from jellytoast.platform_compat import IS_MACOS as _IS_MACOS
+
+    if _IS_MACOS:
+        from jellytoast import macos_menubar, macos_window
+
+        macos_menubar.install(win)
+        macos_window.apply(win)
+        _boot_mark("macOS menu bar + native chrome")
 
     # Dev-only remote-control bridge for live end-to-end testing. OFF
     # unless JT_TEST_BRIDGE=1 is set at launch. Stands up a per-user

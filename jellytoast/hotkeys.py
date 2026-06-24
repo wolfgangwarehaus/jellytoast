@@ -38,6 +38,8 @@ from PySide6.QtCore import QSettings
 from PySide6.QtGui import QKeySequence, QShortcut
 from PySide6.QtWidgets import QWidget
 
+from jellytoast.platform_compat import IS_MACOS
+
 logger = logging.getLogger(__name__)
 
 
@@ -280,6 +282,11 @@ def install_shortcuts(parent: QWidget) -> list[QShortcut]:
     for entry in registry:
         try:
             action_id = entry["action_id"]
+            # On macOS the global menu bar's Quit (Cmd-Q, QuitRole) owns quit;
+            # a second Cmd-Q QShortcut would make the shortcut AMBIGUOUS and
+            # then NEITHER fires. Skip it here (registry + Settings UI keep it).
+            if IS_MACOS and action_id == "quit":
+                continue
             seq = get_sequence(action_id, entry.get("default_seq"))
             sc = QShortcut(seq, parent)
             sc.activated.connect(entry["callable"])
