@@ -480,7 +480,7 @@ jobs:
             "dist/jellytoast-${V}-mas-unsigned.pkg" "dist/jellytoast-${V}-mas.pkg"
           rm -f /tmp/installer.p12
           pkgutil --check-signature "dist/jellytoast-${V}-mas.pkg"
-      - name: Validate against the App Store (the REAL go/no-go)
+      - name: Validate + upload the build to App Store Connect
         if: env.MAS_SIGN == 'true'
         env:
           APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
@@ -490,8 +490,14 @@ jobs:
           mkdir -p ~/.appstoreconnect/private_keys
           echo "$APPLE_API_KEY_B64" | base64 --decode \
             > ~/".appstoreconnect/private_keys/AuthKey_${APPLE_API_KEY_ID}.p8"
-          xcrun altool --validate-app -t macos \
-            -f "dist/jellytoast-${{ steps.ver.outputs.version }}-mas.pkg" \
+          PKG="dist/jellytoast-${{ steps.ver.outputs.version }}-mas.pkg"
+          # Validate first as a fast gate, then upload to App Store Connect.
+          # NOTE: the build number is CFBundleVersion (= the pyproject version), so
+          # App Store Connect rejects a re-upload of an already-seen build number —
+          # a repeat upload of the same version needs a CFBundleVersion bump.
+          xcrun altool --validate-app -t macos -f "$PKG" \
+            --apiKey "$APPLE_API_KEY_ID" --apiIssuer "$APPLE_API_ISSUER"
+          xcrun altool --upload-app -t macos -f "$PKG" \
             --apiKey "$APPLE_API_KEY_ID" --apiIssuer "$APPLE_API_ISSUER"
           rm -f ~/".appstoreconnect/private_keys/AuthKey_${APPLE_API_KEY_ID}.p8"
       - uses: actions/upload-artifact@v7
