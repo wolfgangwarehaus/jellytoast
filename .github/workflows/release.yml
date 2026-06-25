@@ -410,40 +410,27 @@ jobs:
       - name: Non-public-API symbol scan (Qt / CPython / lzma)
         run: bash packaging/macos/mas/scan_symbols.sh dist/jellytoast.app
       # --- everything below activates only once the MAS secrets exist ---
-      - name: Import Apple Distribution + Mac Installer certs
+      - name: Import the Apple Distribution cert (for the .app codesign)
         if: env.MAS_SIGN == 'true'
         env:
           APPLE_DIST_CERT: ${{ secrets.APPLE_DIST_CERT }}
           APPLE_DIST_CERT_PWD: ${{ secrets.APPLE_DIST_CERT_PWD }}
-          APPLE_INSTALLER_CERT: ${{ secrets.APPLE_INSTALLER_CERT }}
-          APPLE_INSTALLER_CERT_PWD: ${{ secrets.APPLE_INSTALLER_CERT_PWD }}
           KEYCHAIN_PWD: ${{ secrets.APPLE_KEYCHAIN_PWD }}
         run: |
+          # Only the Apple Distribution cert needs the keychain now — for the
+          # inside-out codesign of the .app. The .pkg is signed off-keychain by
+          # rcodesign (next steps) straight from the installer .p12, so the Mac
+          # Installer keychain import, the WWDR import, and the productbuild
+          # keychain hardening are gone (they only ever served productbuild --sign,
+          # which hung on the headless runner and is no longer used).
           KC=build.keychain
           security create-keychain -p "$KEYCHAIN_PWD" "$KC"
-          security set-keychain-settings "$KC"        # no auto-lock: a locked keychain hangs productbuild
           security default-keychain -s "$KC"
-          security list-keychains -d user -s "$KC" login.keychain
           security unlock-keychain -p "$KEYCHAIN_PWD" "$KC"
           DC="$(mktemp)"; echo "$APPLE_DIST_CERT" | base64 --decode > "$DC"
           security import "$DC" -f pkcs12 -k "$KC" -P "$APPLE_DIST_CERT_PWD" -T /usr/bin/codesign
-          IC="$(mktemp)"; echo "$APPLE_INSTALLER_CERT" | base64 --decode > "$IC"
-          security import "$IC" -f pkcs12 -k "$KC" -P "$APPLE_INSTALLER_CERT_PWD" -T /usr/bin/productbuild -T /usr/bin/pkgbuild
-          rm -f "$DC" "$IC"
-          # The Apple WWDR intermediate — REQUIRED for productbuild to trust the
-          # installer cert's chain. Without it the identity is CSSMERR_TP_NOT_TRUSTED
-          # and productbuild HANGS fetching the missing intermediate (the 6h timeout
-          # the first two runs hit). codesign signs the .app off the leaf key so it
-          # never needed this; the .pkg installer signature does. Verified on the Mac.
-          WC="$(mktemp)"; curl -fsSL -o "$WC" https://www.apple.com/certificateauthority/AppleWWDRCAG3.cer && security import "$WC" -k "$KC" || true
-          WC6="$(mktemp)"; curl -fsSL -o "$WC6" https://www.apple.com/certificateauthority/AppleWWDRCAG6.cer && security import "$WC6" -k "$KC" || true
-          rm -f "$WC" "$WC6"
-          # codesign: is the partition CLIENT NAME productbuild/productsign match for
-          # key access — the working .dmg job (sign_app.sh) has it. Dropping it made
-          # productbuild fire a non-interactive securityd prompt that hangs forever on
-          # the headless runner (codesign matches apple-tool: so it was unaffected).
-          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PWD" "$KC"
-          security find-identity -p basic "$KC"   # expect NO CSSMERR_TP_NOT_TRUSTED
+          rm -f "$DC"
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$KEYCHAIN_PWD" "$KC"
       - name: Embed the MAS provisioning profile
         if: env.MAS_SIGN == 'true'
         env:
