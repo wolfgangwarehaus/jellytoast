@@ -387,6 +387,7 @@ jobs:
     # Setup: packaging/macos/mas/MAS_SPIKE.md.
     if: github.event_name == 'workflow_dispatch'
     runs-on: macos-14
+    timeout-minutes: 50  # productbuild can hang on a keychain prompt — fail fast, never burn the 6h default
     env:
       MAS_SIGN: ${{ secrets.MAS_PROVISION_PROFILE != '' }}
     permissions:
@@ -420,14 +421,20 @@ jobs:
         run: |
           KC=build.keychain
           security create-keychain -p "$KEYCHAIN_PWD" "$KC"
+          security set-keychain-settings "$KC"        # no auto-lock: a locked keychain hangs productbuild
           security default-keychain -s "$KC"
+          security list-keychains -d user -s "$KC" login.keychain
           security unlock-keychain -p "$KEYCHAIN_PWD" "$KC"
           DC="$(mktemp)"; echo "$APPLE_DIST_CERT" | base64 --decode > "$DC"
           security import "$DC" -f pkcs12 -k "$KC" -P "$APPLE_DIST_CERT_PWD" -T /usr/bin/codesign
           IC="$(mktemp)"; echo "$APPLE_INSTALLER_CERT" | base64 --decode > "$IC"
-          security import "$IC" -f pkcs12 -k "$KC" -P "$APPLE_INSTALLER_CERT_PWD" -T /usr/bin/productbuild
+          security import "$IC" -f pkcs12 -k "$KC" -P "$APPLE_INSTALLER_CERT_PWD" -T /usr/bin/productbuild -T /usr/bin/pkgbuild
           rm -f "$DC" "$IC"
-          security set-key-partition-list -S apple-tool:,apple:,codesign:,productbuild: -s -k "$KEYCHAIN_PWD" "$KC"
+          # apple-tool: covers BOTH codesign and productbuild. The earlier
+          # codesign:/productbuild: aren't valid tokens, so productbuild never
+          # got non-interactive key access -> it sat on a GUI keychain prompt.
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$KEYCHAIN_PWD" "$KC"
+          security find-identity -v "$KC"
       - name: Embed the MAS provisioning profile
         if: env.MAS_SIGN == 'true'
         env:
@@ -447,7 +454,9 @@ jobs:
         if: env.MAS_SIGN == 'true'
         env:
           APPLE_INSTALLER_IDENTITY: ${{ secrets.APPLE_INSTALLER_IDENTITY }}
+          KEYCHAIN_PWD: ${{ secrets.APPLE_KEYCHAIN_PWD }}
         run: |
+          security unlock-keychain -p "$KEYCHAIN_PWD" build.keychain
           productbuild --component dist/jellytoast.app /Applications \
             --sign "$APPLE_INSTALLER_IDENTITY" \
             "dist/jellytoast-${{ steps.ver.outputs.version }}-mas.pkg"
