@@ -264,6 +264,12 @@ if sys.platform == "darwin":
             # only alternative is a universal x86_64+arm64 build; we ship arm64).
             "LSMinimumSystemVersion": "12.0",
             "LSApplicationCategoryType": "public.app-category.music",
+            # Export compliance: jellytoast uses only EXEMPT encryption (HTTPS +
+            # standard AES for the local credential blob), i.e. no non-exempt
+            # encryption. Declaring this auto-answers App Store Connect's "Missing
+            # Compliance" question on every upload (this build's predecessor had to
+            # answer it manually).
+            "ITSAppUsesNonExemptEncryption": False,
             # macOS 15+ shows a one-time Local Network prompt the first time
             # the app browses the LAN for Chromecast/AirPlay/DLNA/Sonos/Snapcast
             # devices; this string is the explanation shown in that dialog.
