@@ -259,8 +259,10 @@ if sys.platform == "darwin":
             "CFBundleVersion": _version,
             "CFBundleShortVersionString": _version,
             "NSHighResolutionCapable": True,
-            # Audio stack relies on modern Qt6/PySide6 + Apple Silicon.
-            "LSMinimumSystemVersion": "11.0",
+            # Audio stack relies on modern Qt6/PySide6 + Apple Silicon. 12.0+ is
+            # ALSO required by App Store validation for an arm64-only bundle (the
+            # only alternative is a universal x86_64+arm64 build; we ship arm64).
+            "LSMinimumSystemVersion": "12.0",
             "LSApplicationCategoryType": "public.app-category.music",
             # macOS 15+ shows a one-time Local Network prompt the first time
             # the app browses the LAN for Chromecast/AirPlay/DLNA/Sonos/Snapcast

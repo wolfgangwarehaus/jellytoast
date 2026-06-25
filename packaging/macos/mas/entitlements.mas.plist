@@ -47,9 +47,11 @@
     <true/>
     <key>com.apple.security.files.bookmarks.app-scope</key>
     <true/>
-    <key>keychain-access-groups</key>
-    <array>
-        <string>$(AppIdentifierPrefix)io.github.wolfgangwarehaus.jellytoast</string>
-    </array>
+    <!-- keychain-access-groups intentionally NOT declared: the sandbox already
+         scopes the app to its own default keychain group, which is all the
+         keyring needs. Declaring it explicitly requires the Keychain Sharing
+         capability on the App ID + provisioning profile; without that, altool
+         rejects the build with a -19241 entitlements/profile mismatch. The
+         dual-store AES-GCM blob in (container) QSettings is the fallback. -->
 </dict>
 </plist>
