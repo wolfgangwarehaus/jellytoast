@@ -245,18 +245,26 @@ if sys.platform == "darwin":
     except Exception:
         _version = "0.0.0"
 
-    # CFBundleVersion = a monotonic build number (git commit count), UNIQUE per
-    # commit so each Mac App Store re-upload is accepted (ASC rejects a repeat
-    # build number for a given CFBundleShortVersionString). Falls back to _version.
-    try:
-        import subprocess
+    # CFBundleVersion = a monotonic build number. Prefer the CI run number
+    # (GITHUB_RUN_NUMBER): it increments on EVERY workflow run, so re-uploads of
+    # the same marketing version are always accepted (ASC rejects a repeat build
+    # number for a given CFBundleShortVersionString). The git commit count is a
+    # local fallback — but CI's shallow checkout caps it at 1, which is exactly
+    # why the run number has to win.
+    import os as _os
 
-        _build = subprocess.run(
-            ["git", "rev-list", "--count", "HEAD"], cwd=str(REPO_ROOT),
-            capture_output=True, text=True, check=True,
-        ).stdout.strip() or _version
-    except Exception:
-        _build = _version
+    _build = _os.environ.get("GITHUB_RUN_NUMBER", "").strip()
+    if not _build:
+        try:
+            import subprocess
+
+            _build = subprocess.run(
+                ["git", "rev-list", "--count", "HEAD"], cwd=str(REPO_ROOT),
+                capture_output=True, text=True, check=True,
+            ).stdout.strip()
+        except Exception:
+            _build = ""
+    _build = _build or _version
 
     _icns = REPO_ROOT / "packaging" / "macos" / "jellytoast.icns"
 
