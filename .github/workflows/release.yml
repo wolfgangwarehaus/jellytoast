@@ -430,11 +430,17 @@ jobs:
           IC="$(mktemp)"; echo "$APPLE_INSTALLER_CERT" | base64 --decode > "$IC"
           security import "$IC" -f pkcs12 -k "$KC" -P "$APPLE_INSTALLER_CERT_PWD" -T /usr/bin/productbuild -T /usr/bin/pkgbuild
           rm -f "$DC" "$IC"
-          # apple-tool: covers BOTH codesign and productbuild. The earlier
-          # codesign:/productbuild: aren't valid tokens, so productbuild never
-          # got non-interactive key access -> it sat on a GUI keychain prompt.
+          # The Apple WWDR intermediate — REQUIRED for productbuild to trust the
+          # installer cert's chain. Without it the identity is CSSMERR_TP_NOT_TRUSTED
+          # and productbuild HANGS fetching the missing intermediate (the 6h timeout
+          # the first two runs hit). codesign signs the .app off the leaf key so it
+          # never needed this; the .pkg installer signature does. Verified on the Mac.
+          WC="$(mktemp)"; curl -fsSL -o "$WC" https://www.apple.com/certificateauthority/AppleWWDRCAG3.cer && security import "$WC" -k "$KC" || true
+          WC6="$(mktemp)"; curl -fsSL -o "$WC6" https://www.apple.com/certificateauthority/AppleWWDRCAG6.cer && security import "$WC6" -k "$KC" || true
+          rm -f "$WC" "$WC6"
+          # apple-tool: covers BOTH codesign and productbuild.
           security set-key-partition-list -S apple-tool:,apple: -s -k "$KEYCHAIN_PWD" "$KC"
-          security find-identity -v "$KC"
+          security find-identity -p basic "$KC"   # expect NO CSSMERR_TP_NOT_TRUSTED
       - name: Embed the MAS provisioning profile
         if: env.MAS_SIGN == 'true'
         env:
