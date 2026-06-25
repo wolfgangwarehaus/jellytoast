@@ -1,17 +1,49 @@
-Wrote `/home/august/Projects/jellytoast/submission/REVIEW-NOTES.md` — a copy/paste source for the **App Review Information** section of App Store Connect (Mac App Store), with each block mapped to a specific App Store Connect field.
+# App Review Information — Mac App Store (paste-ready)
 
-## What it covers
-- **Field-mapped structure** — verified against Apple's current docs: Notes = **4000-byte** limit; Sign-in = one Username + one Password field (extra accounts go in Notes); Contact = Name + Email + Phone. I built the doc around these exact constraints rather than inventing fields.
-- **"Streams only the user's own server" statement** — explicit plain-language block: no media/catalog/storefront of its own, sells nothing, no IAP; analogized to a generic protocol client (like an IMAP/SSH client) to pre-empt a **5.2.3 content-rights** misread. Paired with a dedicated CONTENT RIGHTS paragraph stating the app holds and needs no content licenses.
-- **Independent-client disclaimer** — "not affiliated with, sponsored by, or endorsed by Jellyfin, Subsonic, or Navidrome; names used referentially only; none in the app name" (the 5.2.5 mitigation).
-- **Demo Server block** — verbatim reviewer-facing block with `<DEMO_SERVER_URL>` / `<DEMO_USERNAME>` / `<DEMO_PASSWORD>` placeholders + a ~60-second numbered sign-in walkthrough (launch → pick Jellyfin → paste URL → user/pass → Connect → play a track). I split this from the Sign-in fields deliberately: App Store Connect's Sign-in area has no URL field, so the server URL + steps live in Notes while the credentials also populate the Username/Password fields (2.1 demo-account requirement satisfied, no-2FA called out).
-- **Local Network permission note** — states the macOS LAN prompt is for **optional** casting (Chromecast/AirPlay/DLNA/Sonos/Snapcast) only; reviewer can **deny** it and core sign-in/browse/playback still work fully (demo server is reached over the internet, not the LAN).
-- **4.3 differentiation** — the moats foregrounded as the why-not-a-duplicate argument: both Jellyfin AND Subsonic/Navidrome in one app, SQLite-node-graph offline downloads, 5-protocol casting + cast proxy, keep-above mini-player, frosted theming, bit-perfect, EQ, ReplayGain, ListenBrainz.
-- **Approved precedents** — Agin Music, NaviBeat, Phyn, Sound Room cited as the same-category-already-live evidence.
-- **Contact + Pre-submission checklist** — contact pulled from project files (William August Mueller / augustvontrips@gmail.com; phone left as `<CONTACT_PHONE_E164>` placeholder), plus a 7-item checklist (demo server up, no 2FA, all placeholders replaced, credentials match between Sign-in and Notes, ≤4000-byte Notes, Privacy answered separately, listing copy carries the disclaimer).
+Exact text for App Store Connect → (version) → **App Review Information**.
 
-## Verification done
-- Ran a byte-count check on the combined Notes blocks (Demo Server + Notes-for-Review, since both go in the single Notes field): **3875 bytes**, and **3915 after** realistic placeholder substitution — **under the 4000-byte limit with 85 bytes headroom**. I had to trim the differentiation/precedent prose to get there (first draft was 34 bytes over).
-- Aligned bundle ID (`io.github.wolfgangwarehaus.jellytoast`), license (GPL-2.0-or-later, sole-authored self-authorization), and contact name with the in-repo MAS signing docs (`packaging/macos/MAS_SESSION.md`).
+**Demo server VERIFIED 2026-06-25:** the official public Jellyfin demo is up
+(Jellyfin 10.11.11, "Stable Demo"), has a **Music** library (4 albums / 5 tracks),
+user `demo`, **no password**, and jellytoast connects to it (it's the same server
+the dev-test session used — the "Promo" / "Thraximundar" tracks).
 
-The doc is ready to fill in once the demo server is stood up. It does **not** set the App Privacy questionnaire (separate App Store Connect section) — flagged in the checklist and open questions.
+## Sign-In Information
+- **Sign-in required:** yes
+- **User Name:** `demo`
+- **Password:** the demo account has none. Leave blank if App Store Connect allows;
+  if it forces a value, put `demo` and rely on the Notes (which tell the reviewer to
+  leave the app's password field empty).
+
+## Contact Information
+- **Name:** August Mueller (legal: William August Mueller)
+- **Email:** augustvontrips@gmail.com
+- **Phone:** `<your phone, E.164>`
+
+## Notes  (≤ 4000 bytes — paste verbatim)
+
+```
+jellytoast is a music player for self-hosted Jellyfin and Subsonic/Navidrome servers. It has no content of its own — the user signs into a server they control and streams their own library. It is free, with no in-app purchases and no subscriptions.
+
+DEMO SERVER (for 2.1 review) — the official public Jellyfin demo:
+  Server type: Jellyfin
+  Server URL:  https://demo.jellyfin.org/stable
+  Username:    demo
+  Password:    (none — leave the password field empty)
+
+To test: open jellytoast, choose "Jellyfin", enter the URL above, type "demo" as the username, leave the password blank, and connect. The Music library loads — browse albums, play a track, download one for offline, and open the casting menu to see the device picker.
+
+WHY THE NETWORK-SERVER ENTITLEMENT: jellytoast runs a small local HTTP server (a "cast proxy") so it can relay audio to Chromecast / AirPlay / DLNA / Sonos / Snapcast receivers on the user's own local network, and serve offline downloads to them. It listens on the local network only and serves only the user's own media. The macOS Local Network prompt is for this optional casting only — a reviewer may deny it and sign-in, browsing, and playback all still work (the demo server is reached over the internet, not the LAN).
+
+"Jellyfin", "Subsonic", and "Navidrome" are third-party open-source server projects. jellytoast is an independent client, not affiliated with or endorsed by them; the names describe compatibility only.
+
+Source code (GPL): https://github.com/wolfgangwarehaus/jellytoast
+```
+
+## App Sandbox entitlements (the ➕ "App Sandbox Information" — Optional)
+Apple reads these from the build; pre-declaring is optional but smooths review of the
+network-server one. Our five:
+- `com.apple.security.app-sandbox` — the sandbox itself
+- `com.apple.security.network.client` — connect to the user's Jellyfin/Subsonic/Navidrome server
+- `com.apple.security.network.server` — local cast proxy (LAN only) — justified in Notes
+- `com.apple.security.files.user-selected.read-write` — a folder the user picks for offline downloads
+- `com.apple.security.files.bookmarks.app-scope` — persist that folder across launches
