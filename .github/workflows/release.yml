@@ -483,7 +483,10 @@ jobs:
           curl -fsSL -o /tmp/rc.tar.gz \
             "https://github.com/indygreg/apple-platform-rs/releases/download/apple-codesign%2F${RC}/apple-codesign-${RC}-aarch64-apple-darwin.tar.gz"
           tar xzf /tmp/rc.tar.gz -C /tmp
-          RCB="$(find /tmp -name rcodesign -type f | head -1)"; chmod +x "$RCB"
+          # Known path, not `find /tmp` — /tmp is a symlink to /private/tmp and BSD
+          # find won't descend a symlink start point (returns nothing).
+          RCB="/tmp/apple-codesign-${RC}-aarch64-apple-darwin/rcodesign"
+          chmod +x "$RCB"; "$RCB" --version
           printf '%s' "$APPLE_INSTALLER_CERT" | base64 --decode > /tmp/installer.p12
           V="${{ steps.ver.outputs.version }}"
           "$RCB" sign --p12-file /tmp/installer.p12 --p12-password "$APPLE_INSTALLER_CERT_PWD" \
