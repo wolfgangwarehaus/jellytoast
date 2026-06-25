@@ -438,8 +438,11 @@ jobs:
           WC="$(mktemp)"; curl -fsSL -o "$WC" https://www.apple.com/certificateauthority/AppleWWDRCAG3.cer && security import "$WC" -k "$KC" || true
           WC6="$(mktemp)"; curl -fsSL -o "$WC6" https://www.apple.com/certificateauthority/AppleWWDRCAG6.cer && security import "$WC6" -k "$KC" || true
           rm -f "$WC" "$WC6"
-          # apple-tool: covers BOTH codesign and productbuild.
-          security set-key-partition-list -S apple-tool:,apple: -s -k "$KEYCHAIN_PWD" "$KC"
+          # codesign: is the partition CLIENT NAME productbuild/productsign match for
+          # key access — the working .dmg job (sign_app.sh) has it. Dropping it made
+          # productbuild fire a non-interactive securityd prompt that hangs forever on
+          # the headless runner (codesign matches apple-tool: so it was unaffected).
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PWD" "$KC"
           security find-identity -p basic "$KC"   # expect NO CSSMERR_TP_NOT_TRUSTED
       - name: Embed the MAS provisioning profile
         if: env.MAS_SIGN == 'true'
@@ -463,8 +466,10 @@ jobs:
           KEYCHAIN_PWD: ${{ secrets.APPLE_KEYCHAIN_PWD }}
         run: |
           security unlock-keychain -p "$KEYCHAIN_PWD" build.keychain
+          # --timestamp=none: a trusted timestamp is a Developer-ID requirement, not a
+          # MAS one (App Store review validates the .pkg server-side); drops a network leg.
           productbuild --component dist/jellytoast.app /Applications \
-            --sign "$APPLE_INSTALLER_IDENTITY" \
+            --sign "$APPLE_INSTALLER_IDENTITY" --timestamp=none \
             "dist/jellytoast-${{ steps.ver.outputs.version }}-mas.pkg"
       - name: Validate against the App Store (the REAL go/no-go)
         if: env.MAS_SIGN == 'true'
