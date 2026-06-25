@@ -43,6 +43,12 @@
     <true/>
     <key>com.apple.security.network.server</key>
     <true/>
+    <!-- Must match the provisioning profile (else ITMS-90886: not TestFlight-
+         eligible). Signed onto the MAIN executable only. -->
+    <key>com.apple.application-identifier</key>
+    <string>UNP3CF774H.io.github.wolfgangwarehaus.jellytoast</string>
+    <key>com.apple.developer.team-identifier</key>
+    <string>UNP3CF774H</string>
     <key>com.apple.security.files.user-selected.read-write</key>
     <true/>
     <key>com.apple.security.files.bookmarks.app-scope</key>

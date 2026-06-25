@@ -36,15 +36,16 @@ if [ ! -f "${APP}/Contents/embedded.provisionprofile" ]; then
     echo "warn: no Contents/embedded.provisionprofile — MAS validation will reject this" >&2
 fi
 
-echo "Signing nested Mach-O inside-out (child/inherit entitlements)…"
+echo "Signing nested Mach-O (NO entitlements — Apple requires entitlements only on the main executable; ITMS-91166)…"
 # Detect Mach-O by content, not name: Qt .framework binaries + the bundled
 # CPython framework binary are extensionless. -print0/-d '' for spaces.
+# NO --entitlements here: nested dylibs/.so run inside the host process's sandbox;
+# entitlements belong ONLY on the main executable (applied via the .app sign below).
 find "${APP}" -type f -print0 \
     | while IFS= read -r -d '' f; do
         case "$(file -b "${f}")" in
             *Mach-O*)
-                codesign --force --timestamp \
-                    --entitlements "${ENT_CHILD}" --sign "${IDENTITY}" "${f}" ;;
+                codesign --force --timestamp --sign "${IDENTITY}" "${f}" ;;
         esac
     done
 

@@ -245,6 +245,19 @@ if sys.platform == "darwin":
     except Exception:
         _version = "0.0.0"
 
+    # CFBundleVersion = a monotonic build number (git commit count), UNIQUE per
+    # commit so each Mac App Store re-upload is accepted (ASC rejects a repeat
+    # build number for a given CFBundleShortVersionString). Falls back to _version.
+    try:
+        import subprocess
+
+        _build = subprocess.run(
+            ["git", "rev-list", "--count", "HEAD"], cwd=str(REPO_ROOT),
+            capture_output=True, text=True, check=True,
+        ).stdout.strip() or _version
+    except Exception:
+        _build = _version
+
     _icns = REPO_ROOT / "packaging" / "macos" / "jellytoast.icns"
 
     app = BUNDLE(
@@ -256,7 +269,7 @@ if sys.platform == "darwin":
         info_plist={
             "CFBundleName": "jellytoast",
             "CFBundleDisplayName": "jellytoast",
-            "CFBundleVersion": _version,
+            "CFBundleVersion": _build,
             "CFBundleShortVersionString": _version,
             "NSHighResolutionCapable": True,
             # Audio stack relies on modern Qt6/PySide6 + Apple Silicon. 12.0+ is
