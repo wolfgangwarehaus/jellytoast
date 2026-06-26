@@ -99,14 +99,30 @@ Still deferred:
 - **Windows native integration — SHIPPED** (#85/#86, verified on Win 11:
   autostart, SMTC media keys + flyout, toasts, taskbar overlay badge,
   prevent-sleep, single-instance foreground, HiDPI + Acrylic blur + borderless).
-  Tail (both **LOW**): visualizer track-switch latency on WiFi (bars wait for the
-  full compressed body; a two-phase Range fetch is risky vs the buffer-complete
-  invariant); construction-time icon baking (a lazy `QIconEngine` was tried +
-  **reverted** — softened glyphs at fractional scale; the baked path stays).
-- **macOS — SHIPPED** (#177/#181: notarized `.dmg` + native integration).
-  Tail: a **universal2** build (arm64-only today) and the **Mac App Store track**
-  (PR #178/#180, `needs:mac` — LGPL libmpv proven; needs Apple certs + the MAS
-  secrets + a `build-mas` job; see the streamlining item).
+  Tails:
+  - **Native ARM64 build** — we ship **x64 today** (runs on ARM64 Windows via
+    emulation, fine for now), but a native ARM64 build would serve the growing ARM
+    Windows market. Needs ARM64 Python + `libmpv-2.dll` + PyInstaller on ARM64
+    hardware → ship an `.msixbundle` with x64 + arm64 slices (see
+    `packaging/msix/WINDOWS_SESSION.md` Phase 6).
+  - *(LOW)* visualizer track-switch latency on WiFi (bars wait for the full
+    compressed body; a two-phase Range fetch is risky vs the buffer-complete
+    invariant); construction-time icon baking (a lazy `QIconEngine` was tried +
+    **reverted** — softened glyphs at fractional scale; the baked path stays).
+- **macOS — SHIPPED** (#177/#181: notarized `.dmg` + native integration). Tails:
+  - **Intel Mac support (universal2)** — the `.dmg` is **arm64-only today**, so it
+    will NOT run on Intel Macs. Ship a **universal2** (arm64 + x86_64) `.app` so both
+    architectures are covered. Needs an x86_64 Python + `libmpv` in the `build-macos`
+    job (see the note in `.github/workflows/release.yml`).
+  - **Mac App Store track** (PR #178/#180, `needs:mac`) — LGPL libmpv proven; Apple
+    certs + MAS secrets + the `build-mas` job in place; 0.1.3 build in Apple review.
+- **Back-port the macOS arc into `dough`** — the native-integration work (media
+  keys / Now Playing, `NSVisualEffectView` vibrancy + Reduce-Transparency fallback,
+  native menu bar + Dock menu, integrated titlebar, Notification Center,
+  launch-at-login, the faux-frost fallback) plus the sign / notarize + MAS-sandbox
+  packaging pipeline was a lot of hard-won work. Fold the reusable pieces into the
+  `dough` cross-platform base (the "develop in jellytoast → re-inject into dough →
+  next apps" plan) so future apps inherit them instead of re-deriving them.
 - **Cast hardware verification** — the cross-thread `active_cast`/`_cast_paused`
   write-race in `_CastTransportMixin` needs a live cast session to verify safely;
   **Sonos / Snapcast** are wired but unexercised on real hardware (Chromecast /
