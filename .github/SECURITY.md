@@ -21,7 +21,7 @@ Report privately via either:
 
 - GitHub's **private vulnerability reporting** ("Report a vulnerability"
   under the repository's Security tab), or
-- email **augustvontrips@gmail.com** with `SECURITY` in the subject.
+- email **august@wolfgangwarehaus.com** with `SECURITY` in the subject.
 
 Include what you can: affected version/commit, reproduction steps, and
 impact. You'll get an acknowledgement on a best-effort basis (this is a

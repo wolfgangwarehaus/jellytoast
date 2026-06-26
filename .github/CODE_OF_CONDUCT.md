@@ -13,7 +13,7 @@ discriminatory or demeaning conduct are not welcome in any project space
 ## Reporting
 
 Report unacceptable behavior privately to the maintainer at
-**augustvontrips@gmail.com**. Reports will be reviewed and handled
+**august@wolfgangwarehaus.com**. Reports will be reviewed and handled
 confidentially, on a best-effort basis for this single-maintainer project.
 
 Maintainers may remove, edit, or reject contributions and comments that

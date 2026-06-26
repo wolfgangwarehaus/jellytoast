@@ -6,10 +6,8 @@ backend:
   name: github
   repo: wolfgangwarehaus/jellytoast
   branch: main
-  # base_url = your deployed sveltia-cms-auth Cloudflare Worker.
-  # ⚠️ REPLACE this placeholder with your Worker URL before "Sign in" will work
-  #    (e.g. https://jellytoast-cms-auth.<your-subdomain>.workers.dev). See README.md.
-  base_url: https://REPLACE-ME.workers.dev
+  # base_url = the deployed sveltia-cms-auth Cloudflare Worker (see README.md).
+  base_url: https://sveltia-cms-auth.augustvontrips.workers.dev
 
 # Where images you add in a post are committed (posts are text by default).
 media_folder: site/blog/media
