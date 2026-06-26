@@ -290,6 +290,9 @@ solo project; loses local-edit speed. Memory-only — doesn't survive
 the truncation cliff.
 **Revisit if:** Sharing happens beyond august (collaborators need
 public-facing tracking), or if any doc exceeds ~400 lines.
+**Update (2026-06-26):** the operational tracking docs (`TODO.md` + the
+release / packaging / store runbooks) moved to a **private** ops repo; the public
+repo keeps only `CHANGELOG.md`, `SPEC.md`, and this decisions log.
 
 ## 2026-05-15 — Autonomous agents ship to `auto/*` worktree branches, never merge
 

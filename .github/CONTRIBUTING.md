@@ -71,7 +71,6 @@ Most of these exist to dodge a specific footgun, so please stick to them:
 
 - `docs/SPEC.md` — what the app does today.
 - `docs/decisions.md` — why certain choices were made.
-- `docs/TODO.md` — the backlog (P0–P4).
 - `packaging/` — build recipes for every platform (AUR, `.deb`, the Windows installer, winget).
 
 ## Reporting bugs & requesting features
