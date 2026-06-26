@@ -160,7 +160,7 @@ Three coordinated surfaces, all sharing `PlayerBus`:
 
 - **Subsystem:** `jellytoast/scrobble/` — eligibility math (play-fraction / minimum-duration thresholds), a JSON-backed offline queue, and a reconnect flush that drains the queue on the `connectivity_changed` rising edge (see §5).
 - **ListenBrainz — usable:** a Settings UI exposes a token field plus a *Validate* button; scrobbles submit to ListenBrainz.
-- **Last.fm — deferred:** the Last.fm client is built but parked (2026-05-20). Registering the in-app API credentials needs a Last.fm account, and their signup firewall kept blocking it; the `API_KEY` / `API_SECRET` constants stay empty, so its Settings section is hidden and it does not run. ListenBrainz is the supported scrobbling path. See `docs/TODO.md` → Parked.
+- **Last.fm — deferred:** the Last.fm client is built but parked (2026-05-20). Registering the in-app API credentials needs a Last.fm account, and their signup firewall kept blocking it; the `API_KEY` / `API_SECRET` constants stay empty, so its Settings section is hidden and it does not run. ListenBrainz is the supported scrobbling path.
 
 ---
 
@@ -249,7 +249,7 @@ and single-instance window foregrounding.
 - Custom Cast receiver app (would surface "jellytoast" instead of "Default Media Receiver") — deferred.
 - Packaging is **published-pending**: the deb, Windows installer, AUR
   `PKGBUILD`, and winget manifests all exist in `packaging/`; AUR/winget/PyPI
-  submissions are post-release manual steps (see `docs/TODO.md`).
+  submissions are post-release manual steps.
 
 > **Shipped since this list was last accurate (corrected 2026-05-28 audit):**
 > the items that used to sit under an "engine built, no UI" caveat all now
