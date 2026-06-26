@@ -16,7 +16,7 @@ the dev-test session used — the "Promo" / "Thraximundar" tracks).
 
 ## Contact Information
 - **Name:** August Mueller (legal: William August Mueller)
-- **Email:** augustvontrips@gmail.com
+- **Email:** august@wolfgangwarehaus.com
 - **Phone:** `<your phone, E.164>`
 
 ## Notes  (≤ 4000 bytes — paste verbatim)

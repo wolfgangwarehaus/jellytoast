@@ -45,7 +45,7 @@ Add to `LICENSING.md` and a top-of-tree notice:
 
 Keep a dated, signed record (does not go in the public repo):
 
-> I, august (augustvontrips@gmail.com), am the sole copyright holder of all
+> I, august (august@wolfgangwarehaus.com), am the sole copyright holder of all
 > first-party jellytoast source code. I authorize the distribution of this work
 > via the Apple App Store and other application stores under those stores'
 > terms, in addition to — and without affecting — the public release under
