@@ -163,6 +163,47 @@ def discard_part(part_path: Path) -> None:
         pass
 
 
+def adopt_orphan(item_id: str) -> bool:
+    """Recover a download stranded by a crash between ``commit_blob``'s
+    ``os.replace`` (the file is finalised) and its ``blobs`` INSERT: a
+    complete blob file is on disk but no ``blobs`` row references it, and the
+    node is stuck ``downloading``. If such an orphan exists, record the row
+    and return True (re-downloading a finished file would be wasted work);
+    return False otherwise. Called from ``manager.resume_pending`` at launch."""
+    node = index.node_id(item_id)
+    if db.query("SELECT 1 FROM blobs WHERE node_id = ? LIMIT 1", (node,)):
+        return False  # already recorded — not an orphan
+    h = _blob_hash(item_id)
+    shard = downloads_dir() / h[:2]
+    if not shard.is_dir():
+        return False
+    final = next(
+        (
+            p
+            for p in shard.glob(f"{h}.*")
+            if not p.name.endswith(".part") and p.is_file()
+        ),
+        None,
+    )
+    if final is None:
+        return False
+    with db.transaction() as conn:
+        conn.execute(
+            "INSERT OR REPLACE INTO blobs(node_id, rel_path, quality, "
+            "codec, bytes, sha, downloaded_at) VALUES(?,?,?,?,?,?,?)",
+            (
+                node,
+                to_relative(final),
+                "original",
+                final.suffix.lstrip("."),
+                final.stat().st_size,
+                None,
+                db.now_iso(),
+            ),
+        )
+    return True
+
+
 def delete_files(rel_paths: "list[str]") -> int:
     """Unlink the given blob files (``blobs.rel_path`` values, as
     returned by ``index.cascade_delete``). The DB rows are already gone

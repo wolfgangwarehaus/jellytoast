@@ -2476,6 +2476,15 @@ def main():
             get_scrobble_manager().flush_current_on_quit()
         except Exception:
             pass
+        # Drop any in-flight download gracefully: flip it back to PENDING so
+        # the next launch cleanly re-queues it instead of finding it stranded
+        # in DOWNLOADING (the worker thread dies with the process mid-write).
+        try:
+            from jellytoast.offline import manager as _dl_manager
+
+            _dl_manager.suspend()
+        except Exception:
+            pass
         # Flush any pending debounced queue save — see
         # `QueueManager._save` for the why. Runs first so the on-disk
         # queue.json reflects the user's final state even if a later
