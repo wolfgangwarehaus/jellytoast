@@ -1,0 +1,51 @@
+# Sveltia CMS config for the jellytoast blog editor (served at /jellytoast/admin/).
+# Writes Markdown posts into site/blog/posts/, which build_blog.py renders on deploy.
+# One-time auth setup (Cloudflare Worker + GitHub OAuth app): see README.md here.
+
+backend:
+  name: github
+  repo: wolfgangwarehaus/jellytoast
+  branch: main
+  # base_url = your deployed sveltia-cms-auth Cloudflare Worker.
+  # ⚠️ REPLACE this placeholder with your Worker URL before "Sign in" will work
+  #    (e.g. https://jellytoast-cms-auth.<your-subdomain>.workers.dev). See README.md.
+  base_url: https://REPLACE-ME.workers.dev
+
+# Where images you add in a post are committed (posts are text by default).
+media_folder: site/blog/media
+public_folder: media
+
+# Friendlier commit messages than the default.
+slug:
+  encoding: ascii
+  clean_accents: true
+
+collections:
+  - name: posts
+    label: Blog posts
+    label_singular: Post
+    description: Little updates for the jellytoast blog.
+    folder: site/blog/posts
+    create: true
+    # Filename → page URL. Date prefix keeps the folder ordered (build_blog.py
+    # sorts the index by the `date` field, not the filename).
+    slug: "{{year}}-{{month}}-{{day}}-{{slug}}"
+    extension: md
+    format: frontmatter
+    fields:
+      - { name: title, label: Title, widget: string }
+      - {
+          name: date,
+          label: Date,
+          widget: datetime,
+          format: "YYYY-MM-DD",
+          date_format: "YYYY-MM-DD",
+          time_format: false,
+        }
+      - {
+          name: summary,
+          label: "Summary (one line shown on the blog index)",
+          widget: string,
+          required: false,
+        }
+      - { name: body, label: Post, widget: markdown }
