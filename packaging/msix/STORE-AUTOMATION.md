@@ -53,8 +53,8 @@ ever needed for the **first** submission. (Researched + adversarially verified
 
 | Step | Automated? |
 |---|---|
-| Pack the `.msix` (`makeappx` on `windows-latest`) | ✅ CI |
-| Submit the package update to the Store (`msstore` CLI) | ✅ CI |
+| Pack the `.msix` + attach it to the release (`makeappx` on `windows-latest`) | ✅ CI (active now, any account) |
+| Submit the package update to the Store (`msstore` CLI) | ✅ CI **only on a Company account**; on Individual you upload the attached `.msix` by hand |
 | **Microsoft certification review** (runFullTrust ⇒ a human reviewer, ~1–5 business days **every** update) | ❌ Microsoft-side, unavoidable |
 | End users receiving the update | ✅ the Store auto-updates installed apps — already automatic, nothing to build |
 | First-ever submission, IARC age rating, listing copy | ❌ one-time, already done |

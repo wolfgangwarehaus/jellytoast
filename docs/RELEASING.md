@@ -38,7 +38,7 @@ issue** (from `.github/release-checklist-template.md`) — the per-release board
 | **AUR** | `release: published` → `aur.yml` | ✅ when key set **and** AUR unfrozen | dormant today |
 | **macOS `.dmg`** (Developer ID) | `v*` tag → `release.yml` | draft auto; **publish manual** | signed + notarized arm64 `.dmg`, in the GitHub Releases hub |
 | **Mac App Store** (`.pkg`) | `workflow_dispatch` → `build-mas` | semi-auto: builds + signs + **uploads to App Store Connect**; submit-for-review is manual in ASC | arm64 sandboxed `.pkg`; see below |
-| **Microsoft Store / MSIX** | `release: released` → `msstore.yml` | ⚪ **wired, DORMANT** (no Windows box; activates once the Entra secrets are set) | `packaging/msix/STORE-AUTOMATION.md` |
+| **Microsoft Store / MSIX** | `release: released` → `msstore.yml` | 🟡 CI builds + **attaches the `.msix`**; manual Partner Center upload (Individual acct). Hands-off auto-submit needs a Company acct | `packaging/msix/STORE-AUTOMATION.md` · `COMPANY-ACCOUNT.md` |
 | **Landing page** | download buttons auto-track `/releases/latest` | mostly | version *text* in `site/` is manual |
 
 ### Version single-sourcing (no channel can ship a stale version)

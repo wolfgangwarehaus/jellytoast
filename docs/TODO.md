@@ -20,8 +20,11 @@ in this file's git history. **Last tidied 2026-06-24** (post-macOS, 0.1.4 prep).
 **Microsoft Store** (ID `9PNLTPXGHN79`) · **winget** (`wolfgangwarehaus.jellytoast`)
 · **`.deb`** · **AppImage** · **PyPI** (`pipx install jellytoast`) ·
 **macOS notarized `.dmg`** · landing page + Ko-fi. One publish already
-auto-fans-out to **PyPI + winget** and builds the signed `.dmg`; the remaining
-auto-update wiring is the streamlining item below.
+auto-fans-out to **PyPI + winget** and builds the signed `.dmg`. Microsoft Store
+updates now build the `.msix` in CI and **attach it to the release** for a quick
+manual Partner Center upload (Option B, no Windows box); fully hands-off Store
+auto-submit (Option A) is gated on a **future move to a Company account** —
+tracked in `packaging/msix/COMPANY-ACCOUNT.md`.
 
 ## august's eyes-on checklist
 *Live-verification tasks from the 2026-06-11 round — still unverified, and they
