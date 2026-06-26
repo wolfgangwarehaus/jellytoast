@@ -93,7 +93,7 @@ Upstream-Name: jellytoast
 Source: https://github.com/wolfgangwarehaus/jellytoast
 
 Files: *
-Copyright: 2026 august <augustvontrips@gmail.com>
+Copyright: 2026 august <august@wolfgangwarehaus.com>
 License: GPL-2.0-or-later
  This program is free software: you can redistribute it and/or modify it under
  the terms of the GNU General Public License as published by the Free Software
@@ -117,7 +117,7 @@ install -m644 "$ROOT/packaging/THIRD-PARTY-NOTICES.md" \
   echo ""
   echo "  * Release $VERSION — see https://github.com/wolfgangwarehaus/jellytoast/releases"
   echo ""
-  echo " -- wolfgangwarehaus <augustvontrips@gmail.com>  $(date -u -R -d "@$SOURCE_DATE_EPOCH")"
+  echo " -- wolfgangwarehaus <august@wolfgangwarehaus.com>  $(date -u -R -d "@$SOURCE_DATE_EPOCH")"
 } | gzip -9n > "$STAGE/usr/share/doc/jellytoast/changelog.Debian.gz"
 chmod 644 "$STAGE/usr/share/doc/jellytoast/changelog.Debian.gz"
 
@@ -128,7 +128,7 @@ cat > "$STAGE/DEBIAN/control" <<EOF
 Package: jellytoast
 Version: $VERSION
 Architecture: amd64
-Maintainer: wolfgangwarehaus <augustvontrips@gmail.com>
+Maintainer: wolfgangwarehaus <august@wolfgangwarehaus.com>
 Installed-Size: $INSTALLED_SIZE
 Depends: libmpv2 | libmpv1, libx11-6, libx11-xcb1, libxcb1, libxcb-cursor0, libxcb-icccm4, libxcb-image0, libxcb-keysyms1, libxcb-randr0, libxcb-render0, libxcb-render-util0, libxcb-shape0, libxcb-shm0, libxcb-sync1, libxcb-util1, libxcb-xfixes0, libxcb-xkb1, libxkbcommon0, libxkbcommon-x11-0, libfontconfig1, libfreetype6, libegl1, libgl1
 Recommends: ffmpeg, libnotify-bin

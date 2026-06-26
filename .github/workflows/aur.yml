@@ -37,7 +37,7 @@ jobs:
           pkgname: jellytoast
           pkgbuild: packaging/aur/PKGBUILD
           commit_username: wolfgangwarehaus
-          commit_email: augustvontrips@gmail.com
+          commit_email: august@wolfgangwarehaus.com
           ssh_private_key: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
           commit_message: jellytoast ${{ github.event.release.tag_name }}
           updpkgsums: true

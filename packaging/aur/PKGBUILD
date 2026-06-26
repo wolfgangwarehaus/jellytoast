@@ -1,4 +1,4 @@
-# Maintainer: august <augustvontrips@gmail.com>
+# Maintainer: august <august@wolfgangwarehaus.com>
 #
 # AUR PKGBUILD for jellytoast — a native PySide6 Jellyfin/Subsonic music
 # client with bit-perfect mpv playback. Builds the pure-Python wheel via

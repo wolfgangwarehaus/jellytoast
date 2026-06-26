@@ -22,7 +22,7 @@ readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "GPL-2.0-or-later" }
 authors = [
-    { name = "august", email = "augustvontrips@gmail.com" },
+    { name = "august", email = "august@wolfgangwarehaus.com" },
 ]
 keywords = ["jellyfin", "navidrome", "subsonic", "media", "music", "mpv", "linux", "windows", "kde"]
 classifiers = [
