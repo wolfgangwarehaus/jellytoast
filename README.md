@@ -67,7 +67,6 @@ dev setup, the architecture, and the conventions this codebase follows.
 | [`docs/user_guide.md`](docs/user_guide.md) | Shortcuts, mini player, tray, casting, settings, themes & blur, troubleshooting |
 | [`CONTRIBUTING.md`](.github/CONTRIBUTING.md) | Dev setup, architecture & the conventions this codebase follows |
 | [`docs/SPEC.md`](docs/SPEC.md) | What the app actually does today |
-| [`docs/decisions.md`](docs/decisions.md) | Architecture decision log (why, not just what) |
 | [`SECURITY.md`](.github/SECURITY.md) | How to report a vulnerability |
 | [`CHANGELOG.md`](docs/CHANGELOG.md) | Dated history of what shipped |
 

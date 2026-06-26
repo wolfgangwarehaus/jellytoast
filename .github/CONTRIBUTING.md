@@ -70,7 +70,6 @@ Most of these exist to dodge a specific footgun, so please stick to them:
 ## Architecture & docs
 
 - `docs/SPEC.md` — what the app does today.
-- `docs/decisions.md` — why certain choices were made.
 - `packaging/` — build recipes for every platform (AUR, `.deb`, the Windows installer, winget).
 
 ## Reporting bugs & requesting features
