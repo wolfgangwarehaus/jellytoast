@@ -42,6 +42,12 @@ frosted look and deep system integration built in.
 
 ### Fixed
 
+- **Interrupted downloads no longer strand.** If the app quits or is killed
+  mid-download, in-flight downloads are now flipped back to *pending* on
+  shutdown (instead of being stuck "downloading" forever) and resume cleanly on
+  the next launch — and any orphaned partial blob files left behind are
+  reconciled against the database, so a cut-off download never wedges the queue
+  or leaks disk space. *(All platforms.)*
 - **(macOS) Mini-player + app naming.** The floating mini-player now reliably
   appears at the bottom-right — driven through the native window, since Qt
   won't order a frameless always-on-top window front on macOS — and the app
