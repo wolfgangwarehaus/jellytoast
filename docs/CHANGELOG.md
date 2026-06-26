@@ -10,6 +10,8 @@ tagged version; snip it into a dated version block when cutting a release.
 
 ## [Unreleased]
 
+## [0.1.4] — 2026-06-26
+
 jellytoast comes to **macOS** — a native, notarized app with the platform's
 frosted look and deep system integration built in.
 
