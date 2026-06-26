@@ -85,7 +85,14 @@ def parse_post(path: Path) -> tuple[dict[str, str], str]:
             for line in frontmatter.strip().splitlines():
                 if ":" in line:
                     key, value = line.split(":", 1)
-                    meta[key.strip().lower()] = value.strip()
+                    value = value.strip()
+                    # CMS-authored YAML may quote values — strip one matching pair.
+                    if len(value) >= 2 and value[0] in "\"'" and value[-1] == value[0]:
+                        value = value[1:-1]
+                    meta[key.strip().lower()] = value
+    # A datetime value (e.g. an ISO timestamp from the editor) → keep the date.
+    if "date" in meta:
+        meta["date"] = meta["date"].split("T")[0].strip()
     return meta, body
 
 
