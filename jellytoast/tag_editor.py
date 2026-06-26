@@ -240,6 +240,11 @@ class TagEditorDialog(QDialog):
     def _build_form_column(self) -> QFormLayout:
         form = QFormLayout()
         form.setLabelAlignment(Qt.AlignmentFlag.AlignLeft)
+        # Left-justify the form — macOS QFormLayout otherwise centers it (Aqua
+        # default), floating the fields mid-dialog. Matches the settings forms.
+        form.setFormAlignment(
+            Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop
+        )
         form.setHorizontalSpacing(16)
         form.setVerticalSpacing(8)
 

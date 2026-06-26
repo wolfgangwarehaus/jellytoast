@@ -33,6 +33,11 @@
 - **AppImage** (any distro, nothing to install) — download the `.AppImage` from [Releases](https://github.com/wolfgangwarehaus/jellytoast/releases/latest), `chmod +x` it, and run.
 - **AUR** (Arch Linux) — coming soon.
 
+### macOS (Apple Silicon)
+
+- **[Download the `.dmg`](https://github.com/wolfgangwarehaus/jellytoast/releases/latest)** — a Developer-ID-signed, **notarized** app (Gatekeeper-clean, no right-click-to-open dance). Open it and drag jellytoast to Applications. *(Apple Silicon / arm64; a universal build with Intel support is planned.)*
+- **Mac App Store** — coming soon.
+
 ### Windows 10/11 (x64)
 
 - **[Microsoft Store](https://apps.microsoft.com/detail/9PNLTPXGHN79)** — one click, auto-updating, no SmartScreen warning.

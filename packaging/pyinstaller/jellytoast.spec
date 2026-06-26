@@ -245,6 +245,27 @@ if sys.platform == "darwin":
     except Exception:
         _version = "0.0.0"
 
+    # CFBundleVersion = a monotonic build number. Prefer the CI run number
+    # (GITHUB_RUN_NUMBER): it increments on EVERY workflow run, so re-uploads of
+    # the same marketing version are always accepted (ASC rejects a repeat build
+    # number for a given CFBundleShortVersionString). The git commit count is a
+    # local fallback — but CI's shallow checkout caps it at 1, which is exactly
+    # why the run number has to win.
+    import os as _os
+
+    _build = _os.environ.get("GITHUB_RUN_NUMBER", "").strip()
+    if not _build:
+        try:
+            import subprocess
+
+            _build = subprocess.run(
+                ["git", "rev-list", "--count", "HEAD"], cwd=str(REPO_ROOT),
+                capture_output=True, text=True, check=True,
+            ).stdout.strip()
+        except Exception:
+            _build = ""
+    _build = _build or _version
+
     _icns = REPO_ROOT / "packaging" / "macos" / "jellytoast.icns"
 
     app = BUNDLE(
@@ -256,18 +277,40 @@ if sys.platform == "darwin":
         info_plist={
             "CFBundleName": "jellytoast",
             "CFBundleDisplayName": "jellytoast",
-            "CFBundleVersion": _version,
+            "CFBundleVersion": _build,
             "CFBundleShortVersionString": _version,
             "NSHighResolutionCapable": True,
-            # Audio stack relies on modern Qt6/PySide6 + Apple Silicon.
-            "LSMinimumSystemVersion": "11.0",
+            # Audio stack relies on modern Qt6/PySide6 + Apple Silicon. 12.0+ is
+            # ALSO required by App Store validation for an arm64-only bundle (the
+            # only alternative is a universal x86_64+arm64 build; we ship arm64).
+            "LSMinimumSystemVersion": "12.0",
             "LSApplicationCategoryType": "public.app-category.music",
+            # Export compliance: jellytoast uses only EXEMPT encryption (HTTPS +
+            # standard AES for the local credential blob), i.e. no non-exempt
+            # encryption. Declaring this auto-answers App Store Connect's "Missing
+            # Compliance" question on every upload (this build's predecessor had to
+            # answer it manually).
+            "ITSAppUsesNonExemptEncryption": False,
             # macOS 15+ shows a one-time Local Network prompt the first time
-            # the app browses the LAN for Chromecast/AirPlay/DLNA/Sonos
+            # the app browses the LAN for Chromecast/AirPlay/DLNA/Sonos/Snapcast
             # devices; this string is the explanation shown in that dialog.
             "NSLocalNetworkUsageDescription": (
                 "jellytoast discovers and streams to Chromecast, AirPlay, "
-                "DLNA and Sonos devices on your local network."
+                "DLNA, Sonos and Snapcast devices on your local network."
             ),
+            # Bonjour/mDNS service types the cast discovery browses. REQUIRED
+            # under the App Sandbox (and good hygiene for the .dmg too): without
+            # this allow-list a sandboxed build's Bonjour browse returns nothing,
+            # so Chromecast/AirPlay/Snapcast discovery silently dies. DLNA and
+            # classic Sonos use SSDP (UPnP), not Bonjour — those ride the network
+            # entitlement + the Local Network prompt, not this list.
+            "NSBonjourServices": [
+                "_googlecast._tcp",      # Chromecast (pychromecast)
+                "_airplay._tcp",         # AirPlay (pyatv)
+                "_raop._tcp",            # AirPlay audio / RAOP (pyatv)
+                "_companion-link._tcp",  # AirPlay 2 companion/pairing (pyatv)
+                "_sonos._tcp",           # Sonos (mDNS-advertising models)
+                "_snapcast._tcp",        # Snapcast
+            ],
         },
     )

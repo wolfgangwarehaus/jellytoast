@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import logging
 
-from PySide6.QtCore import QEvent, QObject, Qt, QUrl
+from PySide6.QtCore import QEvent, QObject, Qt, QTimer, QUrl
 from PySide6.QtGui import QAction, QDesktopServices, QKeySequence
 from PySide6.QtWidgets import QApplication, QMenu, QMenuBar, QMessageBox
 
@@ -51,6 +51,9 @@ def install(window) -> None:
         _install_menubar(window)
         _install_dock_menu(window)
         _install_dock_reopen(window)
+        # Deferred: Qt builds the native app menu (with its auto-added Services
+        # + About Qt) on the event loop, so strip them once it exists.
+        QTimer.singleShot(0, _strip_app_menu_noise)
         logger.info("macOS menu bar + Dock menu installed")
     except Exception as e:  # pragma: no cover — macOS-only
         logger.info("macOS menu bar setup failed: %s", e)
@@ -115,6 +118,50 @@ def _install_menubar(window):
     help_menu = mb.addMenu("Help")
     _act(help_menu, window, "jellytoast Help",
          slot=lambda: QDesktopServices.openUrl(QUrl(_HELP_URL)))
+
+
+def _strip_app_menu_noise():
+    """Remove Qt's auto-added **Services** submenu + **About Qt** from the
+    application menu — both are noise for a music app (Services surfaces the
+    OS's Development tools; About Qt is a toolkit detail) — and collapse the
+    separators they leave behind. Native (pyobjc) because Qt owns these items.
+    Best-effort; never raises."""
+    try:
+        from AppKit import NSApplication
+
+        app = NSApplication.sharedApplication()
+        app.setServicesMenu_(None)
+        main = app.mainMenu()
+        if main is None or main.numberOfItems() == 0:
+            return
+        appmenu = main.itemAtIndex_(0).submenu()
+        if appmenu is None:
+            return
+        for title in ("Services", "About Qt"):
+            idx = appmenu.indexOfItemWithTitle_(title)
+            if idx >= 0:
+                appmenu.removeItemAtIndex_(idx)
+        _collapse_separators(appmenu)
+    except Exception as e:  # pragma: no cover — macOS-only
+        logger.debug("strip app-menu noise failed: %s", e)
+
+
+def _collapse_separators(menu):
+    """Drop leading / trailing / consecutive separator items."""
+    while menu.numberOfItems() and menu.itemAtIndex_(0).isSeparatorItem():
+        menu.removeItemAtIndex_(0)
+    while menu.numberOfItems() and menu.itemAtIndex_(
+        menu.numberOfItems() - 1
+    ).isSeparatorItem():
+        menu.removeItemAtIndex_(menu.numberOfItems() - 1)
+    i = 1
+    while i < menu.numberOfItems():
+        if menu.itemAtIndex_(i).isSeparatorItem() and menu.itemAtIndex_(
+            i - 1
+        ).isSeparatorItem():
+            menu.removeItemAtIndex_(i)
+        else:
+            i += 1
 
 
 def _act(menu, parent, text, *, role=None, key=None, slot=None):

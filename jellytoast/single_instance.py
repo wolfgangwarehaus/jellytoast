@@ -134,14 +134,29 @@ class SingleInstance(QObject):
             mem.detach()
 
         if not mem.create(1):
-            # Race — another launch attempt won between our attach
-            # check and our create. Treat as "another instance" and
-            # signal it to come forward.
-            self._signal_existing()
-            return False
+            # create() failed. Usually a real race (another launch won
+            # between our attach probe and our create) — BUT under the
+            # macOS App Sandbox QSharedMemory's POSIX-shm backing is
+            # unavailable, so create() ALWAYS fails there. That left the
+            # app unable to launch at all: every start saw create() fail,
+            # logged "already running", and exited without ever showing a
+            # window. So probe for a REAL instance first: if one answers,
+            # defer to it; if not, the shared-memory lock is simply
+            # unavailable here — fall through and let the QLocalServer
+            # listener below be the authoritative single-instance gate
+            # (its socket lives in the sandbox-allowed container tmp).
+            if self._signal_existing():
+                return False
+            logger.warning(
+                "shared-memory lock unavailable (%s); using the local "
+                "socket as the single-instance gate",
+                mem.errorString(),
+            )
+        else:
+            # We hold the shared-memory lock.
+            self._mem = mem
 
-        # We hold the lock. Stand up the listener.
-        self._mem = mem
+        # Stand up the listener.
         QLocalServer.removeServer(self._socket_name)
         self._server = QLocalServer(self)
         self._server.newConnection.connect(self._on_new_connection)

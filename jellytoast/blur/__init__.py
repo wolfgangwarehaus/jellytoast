@@ -145,6 +145,13 @@ def apply(
         # User forced opaque chrome — never request blur (and remove any
         # already-applied blur on this widget).
         enabled = False
+    # macOS: native NSVisualEffectView vibrancy is disabled — it doesn't
+    # composite Qt's content reliably onto the SCREEN after a window resize /
+    # activation-state change (blank or mis-drawn windows — main window, mini
+    # player, dialogs). EVERY surface paints its own faux-frost / near-opaque
+    # body instead (see blur/_macos.py probe()).
+    if enabled and IS_MACOS:
+        enabled = False
     # "Never raises" is part of the contract (blur is progressive enhancement)
     # — theme resolution + the backend call are best-effort, so swallow errors.
     try:
