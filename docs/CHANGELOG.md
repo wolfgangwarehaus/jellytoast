@@ -6,54 +6,48 @@ Format roughly follows [Keep a Changelog](https://keepachangelog.com/).
 The **Unreleased** section gathers everything since the most recent
 tagged version; snip it into a dated version block when cutting a release.
 
+> **Voice — this block becomes the GitHub release post.** Keep it short, plain,
+> and a little casual: like telling a friend what's new, not a press release. Get
+> the **specs right** (what shipped, versions, platforms), but drop the gloss
+> ("first-class", "deep integration", "seamless") and the internals (class / API
+> names, queue mechanics — those live in the code + commits). One line per change
+> where you can.
+
 ---
 
 ## [Unreleased]
 
 ## [0.1.4] — 2026-06-26
 
-jellytoast comes to **macOS** — a native, notarized app with the platform's
-frosted look and deep system integration built in.
+jellytoast runs on **macOS** now — a native app with the Mac niceties built in.
 
 ### Added
 
-- **macOS support.** jellytoast now ships for macOS as a Developer-ID-signed,
-  **notarized `.dmg`** — verified on macOS 26 Tahoe (Gatekeeper-clean, no
-  right-click-to-open dance) — with first-class native integration:
-  - **Media keys + Now Playing.** The hardware media keys, Control Center, and
-    the lock screen drive playback and show the current track + artwork
-    (`MPNowPlayingInfoCenter` + `MPRemoteCommandCenter`).
-  - **Window vibrancy.** The frosted chrome rides a real macOS
-    `NSVisualEffectView` backdrop (the native equivalent of the Linux blur),
-    and honors the **Reduce Transparency** accessibility setting — falling back
-    to a near-opaque body when it's on.
-  - **Native menu bar + Dock menu.** A proper global menu bar (About / Settings
-    / Quit in the application menu) plus a Dock transport menu.
-  - **Integrated titlebar.** A transparent, full-height titlebar so the window
-    chrome flows up under the traffic lights — and the inset drops away in
-    fullscreen.
-  - **Notifications + launch-at-login.** Track-change banners via Notification
-    Center, and optional autostart through a per-user LaunchAgent.
+- **macOS support.** A signed, **notarized `.dmg`** (opens with no Gatekeeper
+  warning; tested on macOS 26 Tahoe), with the native bits you'd want:
+  - **Media keys & Now Playing** — the media keys, Control Center, and lock
+    screen control playback and show the track + artwork.
+  - **Real window blur** — the frosted look uses native macOS vibrancy, and
+    respects the *Reduce Transparency* setting.
+  - **Native menu bar & Dock menu** — About / Settings / Quit up top, plus
+    transport controls in the Dock.
+  - **Integrated titlebar** — the window flows up under the traffic lights, and
+    tidies away in fullscreen.
+  - **Notifications & launch-at-login** — track-change banners, and an optional
+    start-at-login.
 
 ### Changed
 
-- **winget auto-submits on publish.** Publishing a release now automatically
-  submits the updated winget manifest to `microsoft/winget-pkgs`, with a
-  `workflow_dispatch` backfill to (re)submit an already-published tag.
-  *(Release-process plumbing; no user-facing change.)*
+- **winget updates itself on release.** Publishing now pushes the winget update
+  automatically. *(Behind the scenes — nothing changes for you.)*
 
 ### Fixed
 
-- **Interrupted downloads no longer strand.** If the app quits or is killed
-  mid-download, in-flight downloads are now flipped back to *pending* on
-  shutdown (instead of being stuck "downloading" forever) and resume cleanly on
-  the next launch — and any orphaned partial blob files left behind are
-  reconciled against the database, so a cut-off download never wedges the queue
-  or leaks disk space. *(All platforms.)*
-- **(macOS) Mini-player + app naming.** The floating mini-player now reliably
-  appears at the bottom-right — driven through the native window, since Qt
-  won't order a frameless always-on-top window front on macOS — and the app
-  menu reads "jellytoast" instead of "Python" when run from source.
+- **Interrupted downloads don't get stuck.** If the app quits mid-download, it
+  picks back up cleanly on the next launch instead of wedging the queue.
+  *(All platforms.)*
+- **macOS: mini-player & app name.** The mini-player reliably lands bottom-right,
+  and the app menu shows "jellytoast" instead of "Python" when run from source.
 
 ## [0.1.3] — 2026-06-21
 
