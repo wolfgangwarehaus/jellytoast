@@ -1156,6 +1156,46 @@ class FloatingMiniPlayer(QWidget):
         self.toggle_btn.setDown(False)
         self.toggle_btn.setAttribute(Qt.WidgetAttribute.WA_UnderMouse, False)
         self.toggle_btn.update()
+        # macOS: Qt's setFixedSize/move don't reliably reach a frameless,
+        # always-on-top NSWindow, so the window can keep its previous-mode
+        # size and ghost the old content (an un-repainted region after the
+        # mode change). Force the native frame to Qt's intended size once the
+        # resize attempt settles.
+        from jellytoast.platform_compat import IS_MACOS
+
+        if IS_MACOS:
+            QTimer.singleShot(0, self._macos_sync_after_toggle)
+
+    def _macos_sync_after_toggle(self):
+        """Drive the NSWindow to Qt's intended size after a compact↔expanded
+        toggle, anchored at the bottom-right (matching toggle_mode's pivot),
+        and re-flush the views. Without this, Qt's setFixedSize/move don't
+        reliably resize the frameless NSWindow, so it keeps its previous size
+        and ghosts the old mode's content."""
+        try:
+            import objc
+            from AppKit import NSMakeRect
+
+            view = objc.objc_object(c_void_p=int(self.winId()))
+            nswin = view.window()
+            if nswin is None:
+                return
+            old = nswin.frame()
+            new_w, new_h = float(self.width()), float(self.height())
+            if abs(old.size.width - new_w) >= 1 or abs(old.size.height - new_h) >= 1:
+                # Size didn't take — resize natively, keeping the bottom-right
+                # corner fixed (origin.y is the bottom edge in AppKit coords).
+                new_x = old.origin.x + old.size.width - new_w
+                nswin.setFrame_display_(
+                    NSMakeRect(new_x, old.origin.y, new_w, new_h), True
+                )
+            # Re-flush in all cases (also covers a pure repaint ghost).
+            cv = nswin.contentView()
+            if cv is not None:
+                cv.setNeedsDisplay_(True)
+            view.setNeedsDisplay_(True)
+        except Exception:
+            pass
 
     def _save_geometry_now(self):
         """Persist the current size/position + mode to QSettings so the

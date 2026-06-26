@@ -31,7 +31,7 @@ import os
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from jellytoast.platform_compat import IS_WINDOWS
+from jellytoast.platform_compat import IS_MACOS, IS_WINDOWS
 
 if TYPE_CHECKING:
     from PySide6.QtGui import QColor
@@ -613,7 +613,17 @@ def body_color_for(theme: "Theme", status, surface: str = "main") -> tuple:
             # theme that's already lighter than the cap.
             return (base[0], base[1], base[2], min(base[3], _win_glass_alpha()))
         return base
-    return (base[0], base[1], base[2], theme.fallback_body_alpha)
+    # macOS: native vibrancy is off (faux-frost everywhere). The main window and
+    # the mini player BOTH knock their frost base back ×0.85 in their own paint
+    # (app._faux_frost_base / mini_player.paintEvent), so at the SAME
+    # body_color_tuple alpha they already render identical glass — do NOT reduce
+    # "main" here or it double-applies and the main reads more transparent than
+    # the mini. Only push dialogs/popups the OTHER way — near-opaque so the
+    # surface behind them doesn't bleed through. Mini + Linux/Windows unchanged.
+    alpha = theme.fallback_body_alpha
+    if IS_MACOS and surface == "dialog":
+        alpha = min(255, alpha + 14)
+    return (base[0], base[1], base[2], alpha)
 
 
 def ink_alpha(a: float) -> str:

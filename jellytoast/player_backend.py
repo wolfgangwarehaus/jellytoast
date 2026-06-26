@@ -71,6 +71,39 @@ def _foreign_sink_inputs(pactl_text: str, own_pid: int) -> int:
     return count
 
 
+def _open_mpv(kw):
+    """``mpv.MPV(**kw)``, but transparently drop any option this libmpv build
+    does not recognise, then retry. Different libmpv builds expose different
+    options — notably the LGPL/no-Lua Mac App Store libmpv has no ``ytdl`` hook,
+    so ``ytdl=…`` raises "mpv option does not exist". An absent option is already
+    at its default off-state, so dropping it is safe. Uses the module-global
+    ``mpv`` (same handle the tests patch) rather than a local import."""
+    while True:
+        try:
+            return mpv.MPV(**kw)
+        except Exception as exc:
+            args = getattr(exc, "args", ())
+            if (
+                isinstance(args, tuple)
+                and len(args) >= 3
+                and args[0] == "mpv option does not exist"
+                and isinstance(args[2], tuple)
+                and len(args[2]) >= 2
+            ):
+                name = args[2][1]
+                if isinstance(name, (bytes, bytearray)):
+                    name = name.decode("ascii", "replace")
+                key = str(name).replace("-", "_")
+                if key in kw:
+                    logger.info(
+                        "mpv option %r unsupported by this libmpv — dropping it",
+                        name,
+                    )
+                    kw.pop(key, None)
+                    continue
+            raise
+
+
 def _curate_audio_devices(devices: list) -> list:
     """Filter mpv's raw ``[(name, description), …]`` enumeration down to
     entries a user can sensibly pick: ``auto``, ONE backend default, the
@@ -497,6 +530,22 @@ class MpvController(_CastTransportMixin, QObject):
         _out_dev = self.settings.audio_output_device
         if _out_dev and _out_dev != "auto":
             kwargs["audio_device"] = _out_dev
+        # Headless audio monitoring (JT_AUDIO_PCM_FILE) — write decoded PCM to a
+        # file/FIFO instead of a device, so jellytoast's real post-DSP output can
+        # be streamed off a box with no usable audio sink (e.g. a headless cloud
+        # Mac, where BlackHole's loopback is dead). Raw s16 / 48 kHz / stereo;
+        # dev/QA only, never set in a normal run.
+        _pcm_sink = os.environ.get("JT_AUDIO_PCM_FILE")
+        if _pcm_sink:
+            kwargs.pop("audio_device", None)
+            kwargs.pop("audio_exclusive", None)
+            kwargs.update(
+                ao="pcm",
+                ao_pcm_file=_pcm_sink,
+                ao_pcm_waveheader="no",
+                audio_format="s16",
+                audio_samplerate=48000,
+            )
         # Layered open fallback — the constructor must never leave the
         # app without audio:
         #  1. A pinned device can vanish (USB DAC unplugged, stale
@@ -507,7 +556,7 @@ class MpvController(_CastTransportMixin, QObject):
         # the persisted settings are left alone (the device may be back
         # next launch).
         try:
-            return mpv.MPV(**kwargs)
+            return _open_mpv(kwargs)
         except Exception as e:
             if "audio_device" not in kwargs and "audio_exclusive" not in kwargs:
                 raise
@@ -518,7 +567,7 @@ class MpvController(_CastTransportMixin, QObject):
                     e,
                 )
                 try:
-                    return mpv.MPV(**kwargs)
+                    return _open_mpv(kwargs)
                 except Exception as e2:
                     if "audio_exclusive" not in kwargs:
                         raise
@@ -528,7 +577,7 @@ class MpvController(_CastTransportMixin, QObject):
                 e,
             )
             kwargs.pop("audio_exclusive", None)
-            return mpv.MPV(**kwargs)
+            return _open_mpv(kwargs)
 
     def _init_mpv(self):
         self._mpv = self._make_mpv_handle()

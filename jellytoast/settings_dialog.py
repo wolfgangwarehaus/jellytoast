@@ -23,6 +23,7 @@ from PySide6.QtWidgets import (
     QDialog,
     QFormLayout,
     QFrame,
+    QGridLayout,
     QHBoxLayout,
     QKeySequenceEdit,
     QLabel,
@@ -1502,7 +1503,7 @@ class SettingsDialog(QDialog):
         v.addWidget(self._section_header("AUDIO OUTPUT"))
         out_row = QHBoxLayout()
         out_row.setContentsMargins(0, 0, 0, 0)
-        out_row.setSpacing(6)
+        out_row.setSpacing(10)
         self._audio_out_combo = _Selector()
         self._audio_out_combo.addItem("Auto (recommended)", "auto")
         current_out = self.s.audio_output_device
@@ -1553,7 +1554,7 @@ class SettingsDialog(QDialog):
         v.addWidget(self._section_header("BIT-PERFECT"))
         bp_row = QHBoxLayout()
         bp_row.setContentsMargins(0, 0, 0, 0)
-        bp_row.setSpacing(6)
+        bp_row.setSpacing(10)
         self._bit_perfect_check = QCheckBox("Bit-perfect mode")
         self._bit_perfect_check.setChecked(self.s.bit_perfect_mode)
         self._bit_perfect_check.toggled.connect(self._on_bit_perfect_toggled)
@@ -1590,7 +1591,7 @@ class SettingsDialog(QDialog):
         else:
             excl_row = QHBoxLayout()
             excl_row.setContentsMargins(0, 0, 0, 0)  # aligned under Bit-perfect mode
-            excl_row.setSpacing(6)
+            excl_row.setSpacing(10)
             self._audio_exclusive_check = QCheckBox("Exclusive output")
             self._audio_exclusive_check.setChecked(self.s.audio_exclusive)
             self._audio_exclusive_check.toggled.connect(
@@ -1637,7 +1638,7 @@ class SettingsDialog(QDialog):
         if _pws.is_supported():
             pw_row = QHBoxLayout()
             pw_row.setContentsMargins(0, 6, 0, 0)
-            pw_row.setSpacing(6)
+            pw_row.setSpacing(10)
             self._pw_install_btn = QPushButton()
             self._pw_install_btn.clicked.connect(self._on_pipewire_install_clicked)
             pw_row.addWidget(self._pw_install_btn)
@@ -1675,6 +1676,13 @@ class SettingsDialog(QDialog):
         # combo boxes column-align cleanly.
         form = QFormLayout()
         form.setLabelAlignment(Qt.AlignmentFlag.AlignLeft)
+        # Left-justify the whole form. macOS QFormLayout defaults to a CENTERED
+        # Aqua form (Linux/Windows already default left), which floats Quality /
+        # Normalization mid-dialog instead of at the content margin like the
+        # section headers above them.
+        form.setFormAlignment(
+            Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop
+        )
         form.setHorizontalSpacing(16)
         form.setVerticalSpacing(8)
 
@@ -1741,6 +1749,9 @@ class SettingsDialog(QDialog):
         v.addWidget(self._section_header("SHUFFLE"))
         shuffle_form = QFormLayout()
         shuffle_form.setLabelAlignment(Qt.AlignmentFlag.AlignLeft)
+        shuffle_form.setFormAlignment(
+            Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop
+        )
         shuffle_form.setHorizontalSpacing(16)
         shuffle_form.setVerticalSpacing(8)
         sq_label = self._field_label("Queue size:")
@@ -1788,7 +1799,7 @@ class SettingsDialog(QDialog):
         v.addSpacing(4)
         mk_row = QHBoxLayout()
         mk_row.setContentsMargins(0, 0, 0, 0)
-        mk_row.setSpacing(6)
+        mk_row.setSpacing(10)
         self._media_integration_check = QCheckBox("OS media integration")
         self._media_integration_check.setChecked(self.s.media_integration_enabled)
         self._media_integration_check.toggled.connect(
@@ -1827,7 +1838,7 @@ class SettingsDialog(QDialog):
         )
         wv = QVBoxLayout(wrap)
         wv.setContentsMargins(0, 0, 0, 0)
-        wv.setSpacing(6)
+        wv.setSpacing(10)
 
         wv.addWidget(self._section_header("CROSSFADE"))
         # Breathing room under the section header before the toggles —
@@ -2068,7 +2079,7 @@ class SettingsDialog(QDialog):
         # copy-paste allow rule pre-filled with their own LAN subnet.
         dt_row = QHBoxLayout()
         dt_row.setContentsMargins(0, 0, 0, 0)
-        dt_row.setSpacing(6)
+        dt_row.setSpacing(10)
         dt_row.addWidget(self._section_header("Device types"))
         dt_row.addWidget(
             self._info_button(
@@ -2092,34 +2103,49 @@ class SettingsDialog(QDialog):
             ("Sonos", "cast_sonos_enabled"),
             ("Snapcast", "cast_snapcast_enabled"),
         ]
+        # One grid for all five rows: every checkbox sits in column 0 so they
+        # share a single left edge with even row spacing, and the Sonos ⓘ rides
+        # column 1. A grid (rather than per-row addWidget / an HBox just for
+        # Sonos) keeps the column flush — Qt offsets a bare addWidget'd control
+        # ~2px from a layout-nested one, which made Sonos read 2px right of its
+        # neighbours and the rows space unevenly.
+        dt_grid = QGridLayout()
+        dt_grid.setContentsMargins(0, 0, 0, 0)
+        dt_grid.setHorizontalSpacing(10)  # gap before the ⓘ
+        dt_grid.setVerticalSpacing(0)
+        dt_grid.setColumnStretch(2, 1)
         self._cast_type_checks: dict = {}
-        for label, attr in cast_types:
+        for r, (label, attr) in enumerate(cast_types):
             cb = QCheckBox(label)
             cb.setChecked(bool(getattr(self.s, attr)))
             cb.toggled.connect(lambda val, a=attr: setattr(self.s, a, val))
             self._cast_type_checks[attr] = cb
+            # Uniform row height so the ⓘ row doesn't run taller than the rest
+            # (even spacing) while the checkbox stays comfortably un-cramped.
+            dt_grid.setRowMinimumHeight(r, 26)
             if attr == "cast_sonos_enabled":
-                # Sonos carries the transport caveat in an ⓘ right next to it,
-                # rather than as a section-wide note under all the toggles.
-                srow = QHBoxLayout()
-                srow.setContentsMargins(0, 0, 0, 0)
-                srow.setSpacing(6)
-                srow.addWidget(cb)
-                srow.addWidget(
-                    self._info_button(
-                        "Sonos transport",
-                        "Mid-cast play/pause, volume, and seek (including the "
-                        "skip ± buttons, both directions) are implemented for "
-                        "Sonos — but Sonos transport hasn't been tested against "
-                        "real hardware yet.",
-                        tooltip="Sonos transport: implemented, not yet "
-                        "hardware-tested",
-                    )
+                # Sonos carries the transport caveat in an ⓘ right next to it.
+                _sonos_info = self._info_button(
+                    "Sonos transport",
+                    "Mid-cast play/pause, volume, and seek (including the "
+                    "skip ± buttons, both directions) are implemented for "
+                    "Sonos — but Sonos transport hasn't been tested against "
+                    "real hardware yet.",
+                    tooltip="Sonos transport: implemented, not yet "
+                    "hardware-tested",
                 )
-                srow.addStretch(1)
-                v.addLayout(srow)
+                # ⓘ in column 1, tight to "Sonos": every OTHER row spans all
+                # three columns (below) so it doesn't widen column 0 — that keeps
+                # column 0 sized to the short "Sonos" label, so its ⓘ sits right
+                # after it instead of after the widest checkbox. The checkbox is
+                # still an addWidget in column 0, so it holds the column-0 edge.
+                dt_grid.addWidget(cb, r, 0)
+                dt_grid.addWidget(
+                    _sonos_info, r, 1, Qt.AlignmentFlag.AlignVCenter
+                )
             else:
-                v.addWidget(cb)
+                dt_grid.addWidget(cb, r, 0, 1, 3)
+        v.addLayout(dt_grid)
 
         v.addSpacing(8)
 
@@ -2143,8 +2169,17 @@ class SettingsDialog(QDialog):
             self.s.cast_discovery_timing = v_
 
         self._discover_at_startup_radio.toggled.connect(_on_timing_changed)
-        v.addWidget(self._discover_at_startup_radio)
-        v.addWidget(self._discover_on_demand_radio)
+        # Grid (column 0) so the two radios share the device-types column edge
+        # and the same even row spacing.
+        dtim_grid = QGridLayout()
+        dtim_grid.setContentsMargins(0, 0, 0, 0)
+        dtim_grid.setVerticalSpacing(0)
+        dtim_grid.setColumnStretch(1, 1)
+        dtim_grid.addWidget(self._discover_at_startup_radio, 0, 0)
+        dtim_grid.addWidget(self._discover_on_demand_radio, 1, 0)
+        dtim_grid.setRowMinimumHeight(0, 26)
+        dtim_grid.setRowMinimumHeight(1, 26)
+        v.addLayout(dtim_grid)
 
         v.addSpacing(8)
 
@@ -2163,38 +2198,34 @@ class SettingsDialog(QDialog):
         self._cast_routing_radios: dict = {}
         routing_group = QButtonGroup(self)
         current_routing = self.s.cast_stream_routing or "auto"
-        # Fixed radio width for the two hinted rows so their faint
-        # hint suffixes start at the same X position — aligns
-        # "(normal mode)" and "(offline, special case)" in one
-        # vertical column, easier to scan than ragged-right hints
-        # tacked onto whatever each radio label happens to be wide.
-        # 150 ≈ widest radio label + a tab's worth of breathing room.
-        _HINT_RADIO_W = 150
-        for label, hint, key in CAST_ROUTING_MODES:
+        # Grid: radios flush in column 0 (in line under each other + the device /
+        # discovery columns), faint hint suffixes in column 1 so "(normal mode)"
+        # / "(offline, special case)" align in their own column. The grid also
+        # gives even row spacing — the old per-row HBoxes ran the hinted rows
+        # taller, so Route locally sat further from Network than Network from Auto.
+        routing_grid = QGridLayout()
+        routing_grid.setContentsMargins(0, 0, 0, 0)
+        routing_grid.setHorizontalSpacing(16)
+        routing_grid.setVerticalSpacing(0)
+        routing_grid.setColumnStretch(2, 1)
+        for r, (label, hint, key) in enumerate(CAST_ROUTING_MODES):
             rb = QRadioButton(label)
             rb.setChecked(key == current_routing)
             routing_group.addButton(rb)
+            routing_grid.addWidget(rb, r, 0)
+            routing_grid.setRowMinimumHeight(r, 26)  # even rows incl. the hinted ones
             if hint:
-                # Faint hint suffix laid out as its own QLabel so the
-                # parenthetical reads dim grey like Display's
-                # "(needs restart)" suffix — QRadioButton's label
-                # doesn't render rich text, so the suffix has to be a
-                # separate widget to style independently.
-                rb.setMinimumWidth(_HINT_RADIO_W)
-                row = QHBoxLayout()
-                row.setContentsMargins(0, 0, 0, 0)
-                row.setSpacing(6)
-                row.addWidget(rb)
+                # Faint parenthetical as its own QLabel (QRadioButton's label
+                # doesn't render rich text) so it reads dim grey.
                 hint_lbl = QLabel(hint)
                 hint_lbl.setStyleSheet(
                     f"color: {TEXT_FAINT}; {type_qss(TYPE_CAPTION)}"
                 )
-                row.addWidget(hint_lbl)
-                row.addStretch(1)
-                v.addLayout(row)
-            else:
-                v.addWidget(rb)
+                routing_grid.addWidget(
+                    hint_lbl, r, 1, Qt.AlignmentFlag.AlignVCenter
+                )
             self._cast_routing_radios[key] = rb
+        v.addLayout(routing_grid)
         # Keep the group alive on self so it doesn't get GC'd — see
         # the timing_group note above for the same trap.
         self._cast_routing_group = routing_group
@@ -2597,12 +2628,12 @@ class SettingsDialog(QDialog):
                     item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEnabled)
         self._select_combo_by_data(self._theme_combo, self._initial_theme)
         self._theme_combo.currentIndexChanged.connect(self._on_theme_changed)
-        # Width capped to the accent-swatch row's footprint (7 × 28 px
-        # swatches + 6 × 10 px gaps = 256 px) so the Theme combo
-        # ends right where the Red swatch ends below. Without this,
-        # the combo stretched the full page width and read disconnected
-        # from the swatches it pairs with.
-        self._theme_combo.setFixedWidth(256)
+        # Width capped so the Theme combo ends at the green (4th) accent swatch /
+        # the Crossfade checkbox column directly below it — short enough to read
+        # as paired with the swatches rather than stretching the full page width.
+        # (172 left edge → 314 right; 314 is the green swatch's right + the
+        # Crossfade box's left, so 314 − 172 = 142.)
+        self._theme_combo.setFixedWidth(142)
         # Align left in the vbox so the fixed width sits flush with
         # the rest of the page content's left edge rather than
         # centering in the row.
@@ -2647,6 +2678,9 @@ class SettingsDialog(QDialog):
 
         scaling_form = QFormLayout()
         scaling_form.setLabelAlignment(Qt.AlignmentFlag.AlignLeft)
+        scaling_form.setFormAlignment(
+            Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop
+        )
         scaling_form.setHorizontalSpacing(16)
         scaling_form.setVerticalSpacing(10)
         # QFormLayout's field-growth policy is only a STYLE HINT: Windows'
@@ -2678,7 +2712,7 @@ class SettingsDialog(QDialog):
         self._initial_font_scale = self.s.font_scale
         self._select_combo_by_data(self._font_size_combo, self._initial_font_scale)
         self._font_size_combo.currentIndexChanged.connect(self._on_font_scale_changed)
-        self._font_size_combo.setFixedWidth(256)  # match the Theme combo column
+        self._font_size_combo.setFixedWidth(185)  # 281 left → 466 (eyedropper right)
         scaling_form.addRow(
             self._field_label("Font size:"), _left(self._font_size_combo)
         )
@@ -2689,7 +2723,7 @@ class SettingsDialog(QDialog):
             self._lyrics_size_combo.addItem(label, key)
         self._select_combo_by_data(self._lyrics_size_combo, self.s.lyrics_font_size)
         self._lyrics_size_combo.currentIndexChanged.connect(self._on_lyrics_size_changed)
-        self._lyrics_size_combo.setFixedWidth(256)  # match the Theme combo column
+        self._lyrics_size_combo.setFixedWidth(185)  # 281 left → 466 (eyedropper right)
         scaling_form.addRow(
             self._field_label("Lyrics font size:"), _left(self._lyrics_size_combo)
         )
@@ -2741,10 +2775,10 @@ class SettingsDialog(QDialog):
         _np_cols.setSpacing(48)
         _np_left = QVBoxLayout()
         _np_left.setContentsMargins(0, 0, 0, 0)
-        _np_left.setSpacing(6)
+        _np_left.setSpacing(10)
         _np_right = QVBoxLayout()
         _np_right.setContentsMargins(0, 0, 0, 0)
-        _np_right.setSpacing(6)
+        _np_right.setSpacing(10)
         for w in (self._badge_bit_perfect, self._badge_eq, self._badge_replaygain):
             _np_left.addWidget(w)
         for w in (self._badge_crossfade, self._badge_codec, self._badge_bitrate):
@@ -2761,7 +2795,15 @@ class SettingsDialog(QDialog):
         self._tooltips_check = QCheckBox("Show hover tooltips")
         self._tooltips_check.setChecked(self.s.show_tooltips)
         self._tooltips_check.toggled.connect(lambda val: setattr(self.s, "show_tooltips", val))
-        v.addWidget(self._tooltips_check)
+        # Nest in a left-packed HBox so it shares the x of the NOW-PLAYING INFO
+        # checkbox columns above (which are layout-nested → x=172). A bare
+        # addWidget'd checkbox sits at x=170 and reads 2px left of them; AlignLeft
+        # doesn't move it (it only sizes), so the row has to be nested.
+        _tt_row = QHBoxLayout()
+        _tt_row.setContentsMargins(0, 0, 0, 0)
+        _tt_row.addWidget(self._tooltips_check)
+        _tt_row.addStretch(1)
+        v.addLayout(_tt_row)
 
         # Borderless main window — any Linux Wayland session (KDE strips the
         # decoration with a KWin rule; GNOME / wlroots go Qt-frameless / CSD).
@@ -2775,7 +2817,7 @@ class SettingsDialog(QDialog):
         if is_linux_wayland():
             nb_row = QHBoxLayout()
             nb_row.setContentsMargins(0, 0, 0, 0)
-            nb_row.setSpacing(6)
+            nb_row.setSpacing(10)
             self._native_border_check = QCheckBox("Use native window border")
             self._native_border_check.setChecked(self.s.native_window_border)
             self._native_border_check.toggled.connect(
@@ -2797,6 +2839,11 @@ class SettingsDialog(QDialog):
         # diagnostic (streaming-flicker repro); it's intentionally not a
         # user setting.
 
+        # macOS reserves ~4px less in a QCheckBox's sizeHint than it actually
+        # renders, so the page's last control (Show hover tooltips) clips at the
+        # content-widget's bottom edge. A little tail spacing grows the page's
+        # sizeHint past that shortfall; harmless elsewhere (the stretch eats it).
+        v.addSpacing(8)
         v.addStretch(1)
         return page
 
@@ -2835,12 +2882,17 @@ class SettingsDialog(QDialog):
         if hint is None:
             return
         from jellytoast import blur
+        from jellytoast.platform_compat import IS_MACOS
         from jellytoast.theme import THEMES
 
+        # macOS: the faux-frost body is the INTENDED frosted look there (native
+        # vibrancy is disabled by design — see blur/_macos.py), not a
+        # can't-get-blur degradation, so don't nag about it.
         theme = THEMES.get(self._theme_combo.currentData())
         if (
             theme is not None
             and theme.blur
+            and not IS_MACOS
             and blur.status() is not blur.BlurStatus.ACTIVE
         ):
             hint.setText(f"Frosted glass needs compositor blur — {blur.reason()}.")

@@ -180,6 +180,12 @@
       <li><b>AUR</b> (Arch Linux) — coming soon.</li>
     </ul>
 
+    <h3>macOS</h3>
+    <ul>
+      <li><b>Apple Silicon</b> — download the <a id="dl-dmg" href="https://github.com/wolfgangwarehaus/jellytoast/releases/latest">.dmg</a>, a Developer-ID-signed and notarized app that opens with no Gatekeeper warning. Drag jellytoast to Applications. <span style="opacity:.8">(arm64; a universal build with Intel support is planned.)</span></li>
+      <li><b>Mac App Store</b> — coming soon.</li>
+    </ul>
+
     <h3>Windows 10/11</h3>
     <ul>
       <li><b><a href="https://apps.microsoft.com/detail/9PNLTPXGHN79">Microsoft Store</a></b> — one click, auto-updating, no SmartScreen warning.</li>
@@ -201,6 +207,7 @@
 
   <footer>
     <a href="https://github.com/wolfgangwarehaus/jellytoast">Source</a> ·
+    <a href="blog/">Blog</a> ·
     <a href="https://github.com/wolfgangwarehaus/jellytoast/issues">Issues</a> ·
     <a href="https://github.com/wolfgangwarehaus/jellytoast/blob/main/docs/user_guide.md">User guide</a> ·
     <a href="privacy.html">Privacy</a> ·
@@ -262,6 +269,7 @@
       wire(["dl-win2"], /windows-x64-setup\.exe$/);
       wire(["dl-deb2"], /_amd64\.deb$/);
       wire(["dl-appimage"], /\.AppImage$/);
+      wire(["dl-dmg"], /-macos\.dmg$/);
     })
     .catch(() => {});
 </script>

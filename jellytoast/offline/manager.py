@@ -795,7 +795,7 @@ def resume_pending() -> int:
     Returns the count actually re-queued so callers can log it."""
     from jellytoast.player_state import PlayerBus
 
-    from . import db, index
+    from . import db, index, store
 
     clause, params = index._scope_sql()
     rows = db.query(
@@ -810,6 +810,21 @@ def resume_pending() -> int:
     for r in rows:
         item_id = r["item_id"]
         kind = r["kind"]
+        # Self-repair: a crash between commit_blob's os.replace (file
+        # finalised) and its blobs INSERT leaves a complete file on disk with
+        # no DB row and the node stuck 'downloading'. Adopt such a finished
+        # blob instead of re-downloading it.
+        if kind == "track":
+            try:
+                adopted = store.adopt_orphan(item_id)
+            except Exception:  # noqa: BLE001 — repair is best-effort
+                adopted = False
+            if adopted:
+                index.clear_retry(item_id)
+                index.set_state(item_id, DownloadState.COMPLETE)
+                bus.download_progress.emit(item_id, DownloadState.COMPLETE, 1.0)
+                _propagate(item_id)
+                continue
         if r["state"] == DownloadState.DOWNLOADING:
             index.set_state(item_id, DownloadState.PENDING)
         # The bus signal lets the DownloadsView resurrect a row for
@@ -838,6 +853,22 @@ def resume_pending() -> int:
     if requeued:
         _dispatch()
     return requeued
+
+
+def suspend() -> None:
+    """Graceful shutdown: flip any in-flight download back to PENDING so the
+    next launch cleanly re-queues it instead of finding it stranded in
+    DOWNLOADING (the worker thread dies with the process mid-write), and drop
+    the waiting queue so nothing new starts mid-teardown. Called from the
+    app's aboutToQuit cleanup. GUI thread; best-effort (must not raise)."""
+    from . import index
+
+    for tid in list(_active):
+        try:
+            index.set_state(tid, DownloadState.PENDING)
+        except Exception:  # noqa: BLE001 — the shutdown path must never raise
+            pass
+    _queue.clear()
 
 
 def retry_failed(force: bool = False) -> int:

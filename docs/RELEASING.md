@@ -36,7 +36,9 @@ issue** (from `.github/release-checklist-template.md`) — the per-release board
 | **PyPI** | `release: published` | ✅ full | Trusted Publishing (OIDC, no token) |
 | **winget** | `release: published` → `winget.yml` | ✅ when `WINGET_TOKEN` set | else `wingetcreate` one-liner |
 | **AUR** | `release: published` → `aur.yml` | ✅ when key set **and** AUR unfrozen | dormant today |
-| **Microsoft Store / MSIX** | — | ❌ **deliberately manual** | Windows box; `packaging/msix/STORE-SUBMISSION.md` |
+| **macOS `.dmg`** (Developer ID) | `v*` tag → `release.yml` | draft auto; **publish manual** | signed + notarized arm64 `.dmg`, in the GitHub Releases hub |
+| **Mac App Store** (`.pkg`) | `workflow_dispatch` → `build-mas` | semi-auto: builds + signs + **uploads to App Store Connect**; submit-for-review is manual in ASC | arm64 sandboxed `.pkg`; see below |
+| **Microsoft Store / MSIX** | `release: released` → `msstore.yml` | 🟡 CI builds + **attaches the `.msix`**; manual Partner Center upload (Individual acct). Hands-off auto-submit needs a Company acct | `packaging/msix/STORE-AUTOMATION.md` · `COMPANY-ACCOUNT.md` |
 | **Landing page** | download buttons auto-track `/releases/latest` | mostly | version *text* in `site/` is manual |
 
 ### Version single-sourcing (no channel can ship a stale version)
@@ -85,11 +87,39 @@ before the token existed — run the manual path:
 3. Do the one-time initial import by hand (see `packaging/aur/README.md`); after
    that, each published release auto-pushes the bumped PKGBUILD.
 
-### Microsoft Store / MSIX — stays manual
-First submission is a manual Windows-box trip (`packaging/msix/STORE-SUBMISSION.md`).
-Only AFTER the app is live in the Store can it be automated, via
-`microsoft/microsoft-store-apppublisher` + the `msstore` CLI (free-products only —
-jellytoast qualifies). Wire that as a follow-up once a live Store product ID exists.
+### Mac App Store — one dispatch per release (no Mac needed)
+The MAS `.pkg` build is `workflow_dispatch`-only (the from-source LGPL/no-Lua
+libmpv build is slow, so it's deliberately off the auto-tag path). Get in the
+habit of uploading a fresh build to App Store Connect **every release** — it runs
+entirely on the GitHub `macos-14` runner, no Mac of your own required:
+
+```bash
+gh workflow run release.yml --ref vX.Y.Z   # runs build-mas → signs → uploads to ASC
+```
+
+(A `workflow_dispatch` run also rebuilds the other artifacts as throwaway
+workflow artifacts and creates **no** GitHub release — only `build-mas` does
+anything external: it uploads to App Store Connect.) The build number is
+`CFBundleVersion` = the CI **run number** (monotonic, so every upload is
+accepted); the marketing version is the tag. Then finish in App Store Connect:
+attach the build to the version, update any changed metadata, and **submit for
+review** — the one genuinely manual step (Apple has no worthwhile API for the
+final submit). Certs/secrets are already set (`APPLE_DIST_*`,
+`APPLE_INSTALLER_*`, `MAS_PROVISION_PROFILE`); first-time setup is in
+`packaging/macos/mas/`.
+
+### Microsoft Store / MSIX — automated (dormant until secrets)
+The first submission was a manual Windows-box trip
+(`packaging/msix/STORE-SUBMISSION.md`) — and jellytoast **is now live** in the
+Store (product `9PNLTPXGHN79`). That live product is the precondition that
+unlocks automation, which is now wired: **`msstore.yml`** fires on
+`release: released`, packs the `.msix` on a free `windows-latest` runner (the
+Store re-signs, so no cert) and submits it via the `msstore` CLI — **no physical
+Windows box**. It's **dormant** until the one-time Microsoft Entra / Partner
+Center setup is done and the four `AZURE_AD_*` / `SELLER_ID` secrets are set
+(free-products flow, which jellytoast qualifies for). Full setup + caveats
+(runFullTrust ⇒ a manual cert review each update; secret rotation):
+`packaging/msix/STORE-AUTOMATION.md`.
 
 ## Safety properties (preserved)
 

@@ -1,0 +1,75 @@
+/* jellytoast blog — shares the landing page's frosted dark look (site/index.html).
+   Used by every generated page (index + posts); see build_blog.py. */
+:root {
+  --jelly: #7C66D0;
+  --jelly-bright: #9D8AE8;
+  --bg: #141218;
+  --panel: rgba(255,255,255,0.045);
+  --panel-border: rgba(255,255,255,0.09);
+  --text: #ECEAF2;
+  --dim: #A8A3B8;
+}
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  background:
+    radial-gradient(1100px 500px at 70% -10%, rgba(124,102,208,0.22), transparent 60%),
+    radial-gradient(800px 400px at 10% 110%, rgba(224,164,76,0.10), transparent 60%),
+    var(--bg);
+  color: var(--text);
+  font: 16px/1.7 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  min-height: 100vh;
+}
+.wrap { max-width: 720px; margin: 0 auto; padding: 56px 24px; }
+
+header { text-align: center; margin-bottom: 44px; }
+header a { display: inline-block; text-decoration: none; }
+header img { width: 72px; height: 72px; filter: drop-shadow(0 8px 28px rgba(124,102,208,0.35)); }
+header h1 { font-size: 1.9rem; letter-spacing: -0.02em; margin: 14px 0 4px; }
+header .sub { color: var(--dim); font-size: 0.98rem; }
+
+a { color: var(--jelly-bright); }
+a:hover { color: var(--text); }
+
+/* Index — the list of posts */
+.posts { list-style: none; display: flex; flex-direction: column; gap: 14px; }
+.posts li {
+  background: var(--panel); border: 1px solid var(--panel-border);
+  border-radius: 14px; padding: 20px 22px;
+  transition: border-color .15s, transform .15s;
+}
+.posts li:hover { border-color: var(--jelly-bright); transform: translateY(-1px); }
+.posts a.title { font-size: 1.18rem; font-weight: 600; text-decoration: none; color: var(--text); }
+.posts a.title:hover { color: var(--jelly-bright); }
+.posts .date { color: var(--dim); font-size: 0.85rem; margin-top: 4px; }
+.posts .summary { color: var(--dim); font-size: 0.95rem; margin-top: 8px; }
+.empty { color: var(--dim); text-align: center; }
+
+/* A single post */
+.backhome { display: inline-block; margin-bottom: 28px; color: var(--dim); text-decoration: none; font-size: 0.92rem; }
+.backhome:hover { color: var(--text); }
+article .date { color: var(--dim); font-size: 0.9rem; margin-bottom: 8px; }
+article h1 { font-size: 2rem; letter-spacing: -0.02em; margin: 0 0 18px; line-height: 1.2; }
+article h2 { font-size: 1.35rem; margin: 32px 0 10px; letter-spacing: -0.01em; }
+article h3 { font-size: 1.1rem; margin: 24px 0 8px; }
+article p { color: var(--dim); margin: 14px 0; }
+article ul, article ol { color: var(--dim); margin: 14px 0 14px 1.3rem; }
+article li { margin: 6px 0; }
+article a { border-bottom: 1px solid rgba(157,138,232,0.4); text-decoration: none; }
+article a:hover { border-bottom-color: var(--jelly-bright); }
+article img { max-width: 100%; border-radius: 12px; border: 1px solid var(--panel-border); }
+article blockquote { border-left: 3px solid var(--jelly); margin: 16px 0; padding: 4px 0 4px 16px; color: var(--dim); }
+article code {
+  background: rgba(255,255,255,0.07); border-radius: 6px; padding: 2px 7px;
+  font: 0.88em ui-monospace, "Cascadia Code", monospace; color: var(--jelly-bright);
+  overflow-wrap: anywhere;
+}
+article pre {
+  background: rgba(255,255,255,0.05); border: 1px solid var(--panel-border);
+  border-radius: 12px; padding: 16px; overflow-x: auto; margin: 16px 0;
+}
+article pre code { background: none; padding: 0; color: var(--text); }
+article hr { border: 0; border-top: 1px solid var(--panel-border); margin: 28px 0; }
+
+footer { margin-top: 56px; text-align: center; color: var(--dim); font-size: 0.88rem; }
+footer a { color: var(--dim); }
+footer a:hover { color: var(--text); }

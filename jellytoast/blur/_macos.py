@@ -183,13 +183,17 @@ def _remove(key, window) -> bool:
 
 
 def probe():
-    """NSVisualEffectView is a real, verified backdrop on macOS — so frosted
-    bodies ride it at full glass alpha — UNLESS the user asked to Reduce
-    Transparency (HIG), in which case we report no backdrop so the theme falls
-    back to its near-opaque body."""
-    if not is_supported() or _reduce_transparency():
-        return BlurStatus.UNSUPPORTED
-    return BlurStatus.ACTIVE
+    """Report UNSUPPORTED — native vibrancy is DISABLED on macOS.
+
+    The NSVisualEffectView content-view swap that backs it does not reliably
+    composite Qt's content onto the SCREEN after a window resize / activation
+    state change — Qt's internal render is correct but the OS surface shows a
+    blank or mis-drawn window (main window, mini player, dialogs). So jellytoast
+    paints its own faux-frost / near-opaque body everywhere on macOS instead
+    (status UNSUPPORTED → the theme's fallback body). The vibrancy code below is
+    kept for reference / a future robust revival, but apply() is gated off in
+    jellytoast/blur/__init__.py on macOS."""
+    return BlurStatus.UNSUPPORTED
 
 
 def reason(status):

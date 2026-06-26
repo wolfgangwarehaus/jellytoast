@@ -1,0 +1,106 @@
+name: msstore
+
+# Microsoft Store MSIX — built on a free GitHub-hosted windows-latest runner, so
+# you never touch a physical Windows box. Two modes, automatically:
+#
+#   • OPTION B (active now): on every published release this packs the .msix and
+#     ATTACHES it to the release. Download it and upload it to Partner Center in
+#     your browser (~2 min) — the only step that needs a human, because an
+#     Individual Store account can't use the submission API.
+#   • OPTION A (future): if the four AZURE_AD_*/SELLER_ID secrets exist (which
+#     requires a COMPANY Store account — see packaging/msix/STORE-AUTOMATION.md +
+#     packaging/msix/COMPANY-ACCOUNT.md), the same run ALSO auto-submits via the
+#     msstore CLI. No edit needed — adding the secrets flips it on.
+#
+# The Store re-signs the package, so it's uploaded UNSIGNED (no cert/token/HSM).
+
+on:
+  release:
+    types: [released] # a non-prerelease publish (matches winget.yml)
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to build the MSIX for (e.g. v0.1.4) — must be a PUBLISHED release"
+        required: true
+
+permissions:
+  contents: write # upload the .msix as a release asset
+
+jobs:
+  msix:
+    runs-on: windows-latest
+    env:
+      # Option A auto-submit activates only when the Company-account secrets exist.
+      HAVE_CREDS: ${{ secrets.AZURE_AD_TENANT_ID != '' }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # release event → the published tag; manual run → the tag input.
+          ref: ${{ github.event.release.tag_name || inputs.tag }}
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      # --- freeze the app (same recipe as release.yml build-windows) ---
+      - name: Stage pinned libmpv-2.dll
+        run: pwsh packaging/windows/get_libmpv.ps1
+      - name: Build PyInstaller bundle
+        run: |
+          python -m pip install --upgrade pip
+          pip install . pyinstaller
+          pyinstaller packaging/pyinstaller/jellytoast.spec --noconfirm
+
+      # --- pack the Store MSIX (UNSIGNED — the Store re-signs) ---
+      - name: Pack MSIX
+        id: pack
+        shell: pwsh
+        run: |
+          $tag = "${{ github.event.release.tag_name || inputs.tag }}"
+          $mver = $tag.TrimStart('v')            # marketing version, e.g. 0.1.4 (filename only)
+          # Store package version: 4th segment MUST be 0, first non-zero, unique
+          # per submission -> 1.0.<run_number>.0 (monotonic). Not the 0.1.x version.
+          $pkgver = "1.0.${{ github.run_number }}.0"
+          Copy-Item packaging\msix\Assets dist\jellytoast\Assets -Recurse -Force
+          (Get-Content packaging\msix\AppxManifest.xml -Raw) `
+            -replace 'Version="1\.0\.0\.0"', "Version=`"$pkgver`"" `
+            | Set-Content dist\jellytoast\AppxManifest.xml -NoNewline
+          # makeappx ships in the Windows SDK on the runner but isn't on PATH;
+          # resolve the newest one rather than hardcode a Kits version dir.
+          $makeappx = (Get-ChildItem `
+            "C:\Program Files (x86)\Windows Kits\10\bin\*\x64\makeappx.exe" `
+            | Sort-Object FullName -Descending | Select-Object -First 1).FullName
+          if (-not $makeappx) { throw "makeappx.exe not found in the Windows SDK" }
+          $msix = "jellytoast-$mver-store.msix"
+          Write-Host "makeappx: $makeappx ; package version $pkgver ; file $msix"
+          & $makeappx pack /d dist\jellytoast /p $msix /o
+          "msix=$msix" >> $env:GITHUB_OUTPUT
+          "tag=$tag"   >> $env:GITHUB_OUTPUT
+
+      # --- OPTION B: attach the .msix to the release for a manual Partner Center upload ---
+      - name: Attach MSIX to the release
+        run: gh release upload "${{ steps.pack.outputs.tag }}" "${{ steps.pack.outputs.msix }}" --clobber
+
+      # --- OPTION A: auto-submit, only once the Company-account secrets exist ---
+      - name: Configure Microsoft Store CLI
+        if: env.HAVE_CREDS == 'true'
+        uses: microsoft/microsoft-store-apppublisher@v1.1
+      - name: Submit package update to the Store
+        if: env.HAVE_CREDS == 'true'
+        shell: pwsh
+        run: |
+          msstore reconfigure `
+            --tenantId ${{ secrets.AZURE_AD_TENANT_ID }} `
+            --sellerId ${{ secrets.SELLER_ID }} `
+            --clientId ${{ secrets.AZURE_AD_APPLICATION_CLIENT_ID }} `
+            --clientSecret ${{ secrets.AZURE_AD_APPLICATION_SECRET }}
+          msstore publish "${{ steps.pack.outputs.msix }}" -id 9PNLTPXGHN79
+
+      - name: Manual-upload reminder (Individual account)
+        if: env.HAVE_CREDS != 'true'
+        shell: pwsh
+        run: |
+          Write-Host "MSIX attached to release ${{ steps.pack.outputs.tag }}: ${{ steps.pack.outputs.msix }}"
+          Write-Host "Individual Store account -> upload it to Partner Center by hand (browser, ~2 min)."
+          Write-Host "To automate this, move to a Company account + set the AZURE_AD_*/SELLER_ID secrets."
+          Write-Host "See packaging/msix/COMPANY-ACCOUNT.md."
