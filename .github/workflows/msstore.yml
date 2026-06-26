@@ -1,0 +1,110 @@
+name: msstore
+
+# Auto-submit a Microsoft Store (MSIX) UPDATE when a release is PUBLISHED — built
+# and submitted entirely on the GitHub-hosted windows-latest runner, so NO physical
+# Windows box is needed. The Store re-signs MSIX/AppX packages itself, so the
+# package is uploaded UNSIGNED (no cert / token / HSM for the Store channel).
+#
+# Mirrors the freeze recipe of release.yml's build-windows job, then packs the
+# onedir into an .msix with native makeappx and submits it with the Microsoft
+# Store Developer CLI (msstore) via the microsoft/microsoft-store-apppublisher
+# action. Plan + rationale + sources: packaging/msix/STORE-AUTOMATION.md.
+#
+# DORMANT until you do the one-time setup (see STORE-AUTOMATION.md):
+#   1. The app must already be PUBLISHED + live in the Store (✅ 9PNLTPXGHN79) —
+#      the CLI does UPDATES only, never the first submission.
+#   2. Associate a Microsoft Entra tenant with Partner Center, register an Entra
+#      app (assign it the Manager role), and add four repo secrets:
+#        AZURE_AD_TENANT_ID · AZURE_AD_APPLICATION_CLIENT_ID
+#        AZURE_AD_APPLICATION_SECRET · SELLER_ID
+# Until AZURE_AD_TENANT_ID is set, every step is skipped (no-op), exactly like
+# winget.yml/aur.yml. "Free products only" — jellytoast qualifies.
+#
+# CAVEAT: runFullTrust routes EVERY update through a manual Microsoft cert review
+# (~1-5 business days). This automates the SUBMISSION; reaching users still waits
+# on that review. End users then auto-update via the Store.
+
+on:
+  release:
+    types: [released] # a non-prerelease publish only (matches winget.yml)
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to build + submit (e.g. v0.1.4) — must be a PUBLISHED release"
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  store:
+    runs-on: windows-latest
+    env:
+      HAVE_CREDS: ${{ secrets.AZURE_AD_TENANT_ID != '' }}
+    steps:
+      - uses: actions/checkout@v7
+        if: env.HAVE_CREDS == 'true'
+        with:
+          # release event → the published tag; manual run → the tag input.
+          ref: ${{ github.event.release.tag_name || inputs.tag }}
+      - uses: actions/setup-python@v6
+        if: env.HAVE_CREDS == 'true'
+        with:
+          python-version: "3.12"
+
+      # --- freeze the app (same recipe as release.yml build-windows) ---
+      - name: Stage pinned libmpv-2.dll
+        if: env.HAVE_CREDS == 'true'
+        run: pwsh packaging/windows/get_libmpv.ps1
+      - name: Build PyInstaller bundle
+        if: env.HAVE_CREDS == 'true'
+        run: |
+          python -m pip install --upgrade pip
+          pip install . pyinstaller
+          pyinstaller packaging/pyinstaller/jellytoast.spec --noconfirm
+
+      # --- pack the Store MSIX (UNSIGNED — the Store re-signs) ---
+      - name: Pack MSIX
+        if: env.HAVE_CREDS == 'true'
+        shell: pwsh
+        run: |
+          # Store package version: 4th segment MUST be 0, first must be non-zero,
+          # and each submission must be unique -> 1.0.<run_number>.0 (monotonic).
+          # Decoupled from the 0.1.x marketing version, like the Store expects.
+          $ver = "1.0.${{ github.run_number }}.0"
+          Copy-Item packaging\msix\Assets dist\jellytoast\Assets -Recurse -Force
+          (Get-Content packaging\msix\AppxManifest.xml -Raw) `
+            -replace 'Version="1\.0\.0\.0"', "Version=`"$ver`"" `
+            | Set-Content dist\jellytoast\AppxManifest.xml -NoNewline
+          # makeappx ships in the Windows SDK on the runner but isn't on PATH;
+          # resolve the newest one rather than hardcode a Kits version dir.
+          $makeappx = (Get-ChildItem `
+            "C:\Program Files (x86)\Windows Kits\10\bin\*\x64\makeappx.exe" `
+            | Sort-Object FullName -Descending | Select-Object -First 1).FullName
+          if (-not $makeappx) { throw "makeappx.exe not found in the Windows SDK" }
+          Write-Host "makeappx: $makeappx ; version $ver"
+          & $makeappx pack /d dist\jellytoast /p "jellytoast-$ver.msix" /o
+          "MSIX_PATH=jellytoast-$ver.msix" >> $env:GITHUB_ENV
+
+      # --- submit the update to the Store (msstore CLI) ---
+      - name: Configure Microsoft Store CLI
+        if: env.HAVE_CREDS == 'true'
+        uses: microsoft/microsoft-store-apppublisher@v1.1
+      - name: Submit package update to the Store
+        if: env.HAVE_CREDS == 'true'
+        shell: pwsh
+        run: |
+          msstore reconfigure `
+            --tenantId ${{ secrets.AZURE_AD_TENANT_ID }} `
+            --sellerId ${{ secrets.SELLER_ID }} `
+            --clientId ${{ secrets.AZURE_AD_APPLICATION_CLIENT_ID }} `
+            --clientSecret ${{ secrets.AZURE_AD_APPLICATION_SECRET }}
+          msstore publish "$env:MSIX_PATH" -id 9PNLTPXGHN79
+
+      - name: Dormant — Store credentials not set
+        if: env.HAVE_CREDS != 'true'
+        shell: pwsh
+        run: |
+          Write-Host "AZURE_AD_TENANT_ID is not set -> Microsoft Store auto-submit is DORMANT (no-op)."
+          Write-Host "Activate: do the one-time Entra/Partner Center setup + add the 4 secrets."
+          Write-Host "See packaging/msix/STORE-AUTOMATION.md."

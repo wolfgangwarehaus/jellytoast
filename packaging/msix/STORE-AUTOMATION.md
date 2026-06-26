@@ -66,9 +66,13 @@ page resolves and the first submission is believed done — just verify.)
    `AZURE_AD_APPLICATION_SECRET`, `SELLER_ID` (Partner Center "Seller/Publisher
    ID").
 
-## The workflow we'd add (`.github/workflows/msstore.yml`)
+## The workflow (`.github/workflows/msstore.yml` — committed, dormant)
 
-Trigger on **`release: published`** — matching jellytoast's lifecycle
+This is already wired and committed, **dormant until the four secrets above
+exist** (same committed-but-inert pattern as `winget.yml`/`aur.yml`). It mirrors
+`build-windows`'s freeze, packs the MSIX with native `makeappx` (resolved from
+the SDK on the runner), and submits via the `msstore` CLI. Triggers on
+**`release: released`** — matching jellytoast's lifecycle
 (`prepare → cut → build(draft) → publish → fan-out`), the same trigger winget /
 PyPI / AUR already use. Do **not** submit on tag push: that would push to
 Microsoft before you've reviewed/published the draft.

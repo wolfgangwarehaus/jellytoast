@@ -38,7 +38,7 @@ issue** (from `.github/release-checklist-template.md`) — the per-release board
 | **AUR** | `release: published` → `aur.yml` | ✅ when key set **and** AUR unfrozen | dormant today |
 | **macOS `.dmg`** (Developer ID) | `v*` tag → `release.yml` | draft auto; **publish manual** | signed + notarized arm64 `.dmg`, in the GitHub Releases hub |
 | **Mac App Store** (`.pkg`) | `workflow_dispatch` → `build-mas` | semi-auto: builds + signs + **uploads to App Store Connect**; submit-for-review is manual in ASC | arm64 sandboxed `.pkg`; see below |
-| **Microsoft Store / MSIX** | — | ❌ **manual today** (automatable now the Store is live — see below) | Windows tooling; `packaging/msix/STORE-SUBMISSION.md` |
+| **Microsoft Store / MSIX** | `release: released` → `msstore.yml` | ⚪ **wired, DORMANT** (no Windows box; activates once the Entra secrets are set) | `packaging/msix/STORE-AUTOMATION.md` |
 | **Landing page** | download buttons auto-track `/releases/latest` | mostly | version *text* in `site/` is manual |
 
 ### Version single-sourcing (no channel can ship a stale version)
@@ -108,16 +108,18 @@ final submit). Certs/secrets are already set (`APPLE_DIST_*`,
 `APPLE_INSTALLER_*`, `MAS_PROVISION_PROFILE`); first-time setup is in
 `packaging/macos/mas/`.
 
-### Microsoft Store / MSIX — manual today, now automatable
+### Microsoft Store / MSIX — automated (dormant until secrets)
 The first submission was a manual Windows-box trip
 (`packaging/msix/STORE-SUBMISSION.md`) — and jellytoast **is now live** in the
-Store (product `9PNLTPXGHN79`). That live product is exactly the precondition
-that unlocks automation: subsequent version updates can be pushed by the
-`msstore` CLI / the Store submission API from CI (free-products flow, which
-jellytoast qualifies for), with the `.msix` built on a free GitHub-hosted
-`windows-latest` runner — **no physical Windows box**. See
-`packaging/msix/STORE-AUTOMATION.md` for the wiring plan + one-time Entra/Partner
-Center setup.
+Store (product `9PNLTPXGHN79`). That live product is the precondition that
+unlocks automation, which is now wired: **`msstore.yml`** fires on
+`release: released`, packs the `.msix` on a free `windows-latest` runner (the
+Store re-signs, so no cert) and submits it via the `msstore` CLI — **no physical
+Windows box**. It's **dormant** until the one-time Microsoft Entra / Partner
+Center setup is done and the four `AZURE_AD_*` / `SELLER_ID` secrets are set
+(free-products flow, which jellytoast qualifies for). Full setup + caveats
+(runFullTrust ⇒ a manual cert review each update; secret rotation):
+`packaging/msix/STORE-AUTOMATION.md`.
 
 ## Safety properties (preserved)
 
