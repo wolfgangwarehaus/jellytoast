@@ -5,6 +5,9 @@ Little updates, published at **<https://wolfgangwarehaus.com/jellytoast/blog/>**
 Posts are plain Markdown. You write a file; a GitHub Action turns it into a
 styled page and deploys it. You never touch HTML.
 
+**Voice:** short and casual — these are little updates, not announcements. Same
+as the changelog: get the facts right, leave the gloss out, keep it brief.
+
 ## Write a post
 
 1. Create a file in [`posts/`](posts/) named `YYYY-MM-DD-some-slug.md`
