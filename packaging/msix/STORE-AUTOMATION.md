@@ -10,6 +10,25 @@ This supersedes "Microsoft Store stays manual" — the manual Windows trip was o
 ever needed for the **first** submission. (Researched + adversarially verified
 2026-06-26; sources at the bottom.)
 
+> ## ⚠️ Hard prerequisite: a COMPANY Store account
+> The `msstore` submission API authenticates through a Microsoft Entra
+> *application* added to the Partner Center account — and **adding an Entra
+> application (the "Microsoft Entra applications" tab) is a Company-account-only
+> feature. Individual accounts cannot do it**, so this automation is impossible on
+> an individual account no matter how the tenant/app are set up (verified
+> 2026-06-26 against the live Partner Center UI).
+>
+> jellytoast's Store account (`9PNLTPXGHN79`) is currently an **Individual**
+> account, so **everything below requires first moving to a Company account.**
+> Two catches: (1) Individual→Company conversion is **not supported** — you must
+> create a **new** Company account (free since May 2026; needs a D-U-N-S number or
+> business docs + a domain-matching work email + a few days' verification), and
+> (2) the existing live listing does **not** auto-transfer to the new account —
+> you either re-publish (new Store ID) or open a support ticket for a transfer.
+> See the bottom of this doc / the chat research for the full trade-off. The
+> lower-friction alternative (stay Individual, CI builds the `.msix`, you upload
+> it manually in the browser) avoids all of this.
+
 ## Why no Windows machine — and why no code-signing cert
 
 - **The Store re-signs the package.** You upload an **unsigned** MSIX; Microsoft
@@ -49,18 +68,20 @@ certification notes). "Hands-off submit," not "hands-off publish."
 
 ## One-time setup (mostly browser, ~1 day incl. a dry run)
 
-Precondition — **confirm in Partner Center that `9PNLTPXGHN79` has a genuinely
-PUBLISHED submission** (not just a reserved name / live-looking page). The CLI
-only does *updates*; it errors if the app isn't live. (The repo's
-`WINDOWS_SESSION.md` Phase 4 "Submit" box was never ticked, but the public Store
-page resolves and the first submission is believed done — just verify.)
+Precondition 0 — **the Store account must be a COMPANY account** (see the callout
+above). On an Individual account steps 1 & 3 are impossible; the rest is moot.
 
-1. **Associate a Microsoft Entra tenant** with the Partner Center account
-   (Account settings → Tenants). For an *individual* account this association +
-   "add Azure AD application" is the fiddliest step, but it is supported.
+Precondition 1 — **confirm in Partner Center that `9PNLTPXGHN79` has a genuinely
+PUBLISHED submission** (not just a reserved name / live-looking page). The CLI
+only does *updates*; it errors if the app isn't live.
+
+1. **Associate a Microsoft Entra tenant** with the (Company) Partner Center
+   account (Account settings → Tenants) — or onboard the Company account with an
+   Entra/work account, which associates the tenant automatically.
 2. **Register an app** in Entra (App registrations) → create a **client secret**.
 3. In Partner Center → Account settings → User management → **Microsoft Entra
-   applications**, add that app and assign it the **Manager** role.
+   applications** tab (Company accounts only), add that app and assign it the
+   **Manager** role.
 4. Collect four values and add them as repo secrets:
    `AZURE_AD_TENANT_ID`, `AZURE_AD_APPLICATION_CLIENT_ID`,
    `AZURE_AD_APPLICATION_SECRET`, `SELLER_ID` (Partner Center "Seller/Publisher
