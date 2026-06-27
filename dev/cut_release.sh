@@ -112,8 +112,9 @@ assert n == 1, "did not find <releases> to insert into metainfo.xml"
 mi.write_text(text, encoding="utf-8")
 
 # 4. CHANGELOG — snip [Unreleased] into a dated version block, leaving a
-#    fresh empty [Unreleased] at the top (Keep a Changelog flow).
-cl = root / "docs" / "CHANGELOG.md"
+#    fresh empty [Unreleased] at the top (Keep a Changelog flow). This is the
+#    tight, user-facing root CHANGELOG.md; docs/CHANGELOG.md is a frozen archive.
+cl = root / "CHANGELOG.md"
 text = cl.read_text(encoding="utf-8")
 marker = "## [Unreleased]"
 idx = text.find(marker)
@@ -210,7 +211,7 @@ PY
 
 # ── Commit + annotated tag ──────────────────────────────────────────────
 git add pyproject.toml jellytoast/version.py \
-  packaging/io.github.wolfgangwarehaus.jellytoast.metainfo.xml docs/CHANGELOG.md \
+  packaging/io.github.wolfgangwarehaus.jellytoast.metainfo.xml CHANGELOG.md \
   packaging/winget/wolfgangwarehaus.jellytoast.yaml \
   packaging/winget/wolfgangwarehaus.jellytoast.installer.yaml \
   packaging/winget/wolfgangwarehaus.jellytoast.locale.en-US.yaml \
