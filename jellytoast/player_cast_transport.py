@@ -316,7 +316,11 @@ class _CastTransportMixin:
         """
         if self._muted_volume is not None:
             return
-        if (self._monotonic() - self._cast_volume_push_wall) < self._CAST_VOLUME_SYNC_SUPPRESS_S:
+        if (self._monotonic() - self._cast_volume_push_wall) <= self._CAST_VOLUME_SYNC_SUPPRESS_S:
+            # <= not < : at exactly the window edge (a poll tick landing on
+            # 3×500ms) a still-lagging receiver can echo its PRE-push value;
+            # keep suppressing through the boundary so it can't clobber the
+            # slider one tick before the device confirms our write.
             return
         try:
             level = cc.status.volume_level

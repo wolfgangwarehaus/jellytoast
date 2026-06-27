@@ -266,6 +266,33 @@ class TestFallbackWalk:
         assert stub_provider.swaps == ["https://lan.example"]
         assert _conn.is_server_reachable() is True
 
+    def test_failover_aborts_when_server_changes_mid_probe(
+        self,
+        isolated_settings_singleton,
+        bus_signals,
+        stub_provider,
+    ):
+        """TOCTOU guard: a sign-in / server swap (epoch bump) that lands while
+        the alternate is being probed must abort the failover — committing the
+        swap would point the NEW server's session at the OLD alternate host."""
+        isolated_settings_singleton.server_hostnames = [
+            {"label": "LAN", "url": "https://lan.example", "priority": 1},
+        ]
+        _conn._active_host_label = ""  # clean "Primary" start
+
+        def probe(url, kind):
+            # The server changes out from under us mid-probe (concurrent
+            # reset_after_server_change). The alternate still answers True...
+            _conn._server_epoch += 1
+            return True
+
+        with patch.object(_conn, "_probe_host", side_effect=probe):
+            swapped = _conn._try_failover_to_alternate()
+
+        assert swapped is False  # ...but the stale-epoch commit is refused
+        assert stub_provider.swaps == []
+        assert bus_signals["host_switched"] == []
+
     def test_priority_ordering_respected(
         self,
         isolated_settings_singleton,

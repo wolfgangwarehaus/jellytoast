@@ -2059,6 +2059,11 @@ class MpvController(_CastTransportMixin, QObject):
         if self._sleep_timer is not None:
             try:
                 self._sleep_timer.stop()
+                # deleteLater so the QTimer doesn't linger as a child of self
+                # (with a live timeout→_on_sleep_timer_elapsed connection) until
+                # the backend is destroyed. Repeated set→cancel cycles would
+                # otherwise orphan one timer each.
+                self._sleep_timer.deleteLater()
             except Exception:
                 pass
             self._sleep_timer = None
