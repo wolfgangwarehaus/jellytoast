@@ -168,18 +168,17 @@ def cm(monkeypatch):
         raising=False,
     )
 
-    # DLNA / Sonos / Snapcast discovery each kick off a real network sweep
+    # DLNA / Sonos discovery each kick off a real network sweep
     # (SSDP / mDNS) on a background thread that OUTLIVES the test — the
     # DLNA path in particular starts the long-lived ``jellytoast-dlna``
     # asyncio loop thread, which aborts the process when a later test's
     # event loop tears it down under random order. These gating tests only
-    # assert the Chromecast/AirPlay counters, so stub the other three
-    # protocols unavailable: ``discover_dlna``/``_sonos``/``_snapcast``
-    # then no-op before spawning anything.
+    # assert the Chromecast/AirPlay counters, so stub the other two
+    # protocols unavailable: ``discover_dlna``/``_sonos`` then no-op
+    # before spawning anything.
     for _modname, _attr in (
         ("jellytoast.cast.dlna", "is_available"),
         ("jellytoast.cast.sonos", "is_available"),
-        ("jellytoast.cast.snapcast", "_ensure_snapcast"),
     ):
         try:
             _m = __import__(_modname, fromlist=[_attr])
@@ -201,7 +200,6 @@ def _clear_cast_settings():
         "cast/airplay_enabled",
         "cast/dlna_enabled",
         "cast/sonos_enabled",
-        "cast/snapcast_enabled",
         "cast/discovery_timing",
     ):
         qs.remove(k)
@@ -361,7 +359,6 @@ def test_settings_cast_type_defaults_false():
     assert s.cast_airplay_enabled is False
     assert s.cast_dlna_enabled is False
     assert s.cast_sonos_enabled is False
-    assert s.cast_snapcast_enabled is False
     # The aggregate gate the cast button reads is False too.
     assert s.any_cast_type_enabled is False
 

@@ -36,7 +36,6 @@ def test_casttype_values_byte_identical():
     assert CastType.AIRPLAY == "airplay"
     assert CastType.DLNA == "dlna"
     assert CastType.SONOS == "sonos"
-    assert CastType.SNAPCAST == "snapcast"
     # str-backed: a member *is* its string value.
     assert isinstance(CastType.CHROMECAST, str)
     assert {m.value for m in CastType} == {
@@ -44,7 +43,6 @@ def test_casttype_values_byte_identical():
         "airplay",
         "dlna",
         "sonos",
-        "snapcast",
     }
 
 
@@ -284,19 +282,6 @@ def test_start_track_routes_airplay_synchronously(mgr, monkeypatch):
     assert done == [True]  # AirPlay fires on_done inline (no async hop)
 
 
-def test_start_track_snapcast_is_noop(mgr, monkeypatch):
-    # Snapcast is a control surface, never a stream sink — must not fall
-    # through into the AirPlay path.
-    monkeypatch.setattr(
-        mgr, "cast_to_airplay",
-        lambda *a, **k: pytest.fail("snapcast must not reach cast_to_airplay"),
-    )
-    done = []
-    mgr.start_track(
-        _dev(CastType.SNAPCAST), _np(), provider=_Prov(),
-        on_done=lambda ok: done.append(ok),
-    )
-    assert done == []  # no on_done — nothing was pushed
 
 
 def test_start_track_dlna_failure_reports_false(mgr, monkeypatch):

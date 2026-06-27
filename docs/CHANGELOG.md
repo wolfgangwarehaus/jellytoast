@@ -17,6 +17,19 @@ tagged version; snip it into a dated version block when cutting a release.
 
 ## [Unreleased]
 
+### Removed
+
+- **Snapcast support is gone.** It only ever controlled an existing Snapcast
+  server — it couldn't play your library to one — which made it more confusing
+  than useful, so it's out. Chromecast, AirPlay 2, DLNA, and Sonos casting are
+  unchanged.
+
+### Changed
+
+- **Casting is opt-in now.** Nothing scans your network for cast devices until
+  you turn a protocol on in Settings → Casting; the cast button takes you there
+  if nothing's enabled yet.
+
 ## [0.1.4] — 2026-06-26
 
 jellytoast runs on **macOS** now — a native app with the Mac niceties built in.

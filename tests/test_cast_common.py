@@ -161,7 +161,6 @@ def _clean_cast_settings():
         "cast/airplay_enabled",
         "cast/dlna_enabled",
         "cast/sonos_enabled",
-        "cast/snapcast_enabled",
     ):
         qs.remove(k)
     qs.sync()
@@ -171,7 +170,6 @@ def _clean_cast_settings():
         "cast/airplay_enabled",
         "cast/dlna_enabled",
         "cast/sonos_enabled",
-        "cast/snapcast_enabled",
     ):
         qs.remove(k)
     qs.sync()
@@ -184,7 +182,6 @@ def test_type_enabled_default_false_when_unset():
     assert _type_enabled("airplay") is False
     assert _type_enabled("dlna") is False
     assert _type_enabled("sonos") is False
-    assert _type_enabled("snapcast") is False
 
 
 def test_type_enabled_returns_true_when_enabled():
@@ -206,4 +203,3 @@ def test_type_enabled_reads_kind_specific_key():
     assert _type_enabled("chromecast") is False
     assert _type_enabled("airplay") is False
     assert _type_enabled("sonos") is False
-    assert _type_enabled("snapcast") is False

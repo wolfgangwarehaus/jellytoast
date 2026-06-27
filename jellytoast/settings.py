@@ -493,11 +493,9 @@ class Settings:
         )
 
     # ── Cast: per-type discovery toggles + timing ─────────────────────────
-    # Each protocol gate lets a user disable a cast type they don't own,
-    # so discovery skips it entirely (faster scans, less mDNS noise).
-    # DLNA / Sonos / Snapcast keys are defined now even though the
-    # backends ship later (A22-A24) — centralizing the schema means the
-    # settings UI + future backends agree on the storage key from day one.
+    # Each protocol gate lets a user enable a cast type they own, so
+    # discovery only runs for it once turned on (faster scans, less mDNS
+    # noise). All four are opt-in (off by default).
 
     @property
     def cast_discovery_timing(self) -> str:
@@ -557,14 +555,6 @@ class Settings:
         self._s.setValue("cast/sonos_enabled", bool(v))
 
     @property
-    def cast_snapcast_enabled(self) -> bool:
-        return self._s.value("cast/snapcast_enabled", False, type=bool)
-
-    @cast_snapcast_enabled.setter
-    def cast_snapcast_enabled(self, v: bool):
-        self._s.setValue("cast/snapcast_enabled", bool(v))
-
-    @property
     def any_cast_type_enabled(self) -> bool:
         """True iff at least one cast protocol is enabled. Drives the cast
         button: with nothing on, the picker would be permanently empty
@@ -575,7 +565,6 @@ class Settings:
             or self.cast_airplay_enabled
             or self.cast_dlna_enabled
             or self.cast_sonos_enabled
-            or self.cast_snapcast_enabled
         )
 
     @property
@@ -614,6 +603,10 @@ class Settings:
             if isinstance(entry, str):
                 out.append({"uuid": entry, "name": entry, "type": ""})
             elif isinstance(entry, dict) and entry.get("uuid"):
+                # Snapcast was removed (0.1.5) — silently drop any stale
+                # snapcast favorite so it stops showing as a dead entry.
+                if str(entry.get("type") or "") == "snapcast":
+                    continue
                 out.append(
                     {
                         "uuid": str(entry["uuid"]),
@@ -769,47 +762,6 @@ class Settings:
         except (TypeError, ValueError):
             iv = 15
         self._s.setValue("cast/sonos_volume_floor", iv)
-
-    # ── Snapcast (A24, Option B: control surface only) ─────────────────────
-    # Snapcast isn't a "push URL" cast model — see
-    # docs/research/casting_snapcast.md. The settings live under cast/* to
-    # be co-located with the rest of the cast knobs but the wire model is
-    # unrelated to playback/cast_stream_routing.
-
-    @property
-    def snapcast_enabled(self) -> bool:
-        """Master kill-switch for the Snapcast control surface. When
-        False, discovery never runs and the controller refuses to
-        connect. Default False (opt-in). Alias of ``cast_snapcast_enabled``
-        — same ``cast/snapcast_enabled`` key."""
-        return self.cast_snapcast_enabled
-
-    @snapcast_enabled.setter
-    def snapcast_enabled(self, v: bool):
-        self.cast_snapcast_enabled = bool(v)
-
-    @property
-    def snapcast_server_host(self) -> str:
-        """Manual `host[:port]` override for snapserver discovery. Empty
-        (default) means rely on mDNS only. Used by users on
-        mDNS-firewalled networks or when a snapserver lives across a
-        Tailscale / VPN link the local zeroconf browser can't see."""
-        return self._s.value("cast/snapcast_server_host", "", type=str)
-
-    @snapcast_server_host.setter
-    def snapcast_server_host(self, v: str):
-        self._s.setValue("cast/snapcast_server_host", str(v or ""))
-
-    @property
-    def snapcast_default_group(self) -> str:
-        """UUID of the snapcast group the user has paired with. Empty =
-        no preferred group (the controller picks the first available
-        when it connects)."""
-        return self._s.value("cast/snapcast_default_group", "", type=str)
-
-    @snapcast_default_group.setter
-    def snapcast_default_group(self, v: str):
-        self._s.setValue("cast/snapcast_default_group", str(v or ""))
 
     @property
     def prefer_server_when_online(self) -> bool:

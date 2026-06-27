@@ -2109,19 +2109,17 @@ class SettingsDialog(QDialog):
         dt_caption.setStyleSheet(f"color: {TEXT_FAINT}; {type_qss(TYPE_CAPTION)}")
         v.addWidget(dt_caption)
 
-        # Per-protocol toggle rows. All five backends ship: Chromecast,
-        # AirPlay, and DLNA are hardware-verified; Sonos / Snapcast are
-        # implemented (deps bundled) and just await a final hardware verify.
-        # (The old "(coming soon)" gate predated the discovery code landing.)
+        # Per-protocol toggle rows. All four backends ship: Chromecast,
+        # AirPlay, and DLNA are hardware-verified; Sonos is implemented
+        # (deps bundled) and just awaits a final hardware verify.
         # (visible label, attribute name on Settings)
         cast_types = [
             ("Chromecast", "cast_chromecast_enabled"),
             ("AirPlay", "cast_airplay_enabled"),
             ("DLNA / UPnP", "cast_dlna_enabled"),
             ("Sonos", "cast_sonos_enabled"),
-            ("Snapcast", "cast_snapcast_enabled"),
         ]
-        # One grid for all five rows: every checkbox sits in column 0 so they
+        # One grid for all four rows: every checkbox sits in column 0 so they
         # share a single left edge with even row spacing, and the Sonos ⓘ rides
         # column 1. A grid (rather than per-row addWidget / an HBox just for
         # Sonos) keeps the column flush — Qt offsets a bare addWidget'd control

@@ -138,7 +138,7 @@ Homepage: https://github.com/wolfgangwarehaus/jellytoast
 Description: Desktop music player for Jellyfin and Navidrome servers
  jellytoast is a desktop music player for Jellyfin, Navidrome and other
  Subsonic-compatible servers: bit-perfect playback via mpv,
- offline downloads, Chromecast/AirPlay/DLNA/Sonos/Snapcast casting,
+ offline downloads, Chromecast/AirPlay/DLNA/Sonos casting,
  MPRIS media keys, scrobbling, smart playlists, and a frosted-glass UI.
  .
  Self-contained build: bundles Python and Qt under /opt/jellytoast and

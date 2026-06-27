@@ -190,7 +190,7 @@ if _qt_plugin_added:
         _qt_plugin_added,
     )
 
-from PySide6.QtCore import QEvent, QObject, QPoint, Qt, QTimer, Slot
+from PySide6.QtCore import QEvent, QObject, Qt, QTimer, Slot
 from PySide6.QtGui import QColor, QGuiApplication, QIcon, QPainter
 from PySide6.QtWidgets import (
     QAbstractButton,
@@ -1555,31 +1555,6 @@ class JellytoastWindow(_NavMixin, _SessionMixin, _CastDispatcherMixin, _ShuffleP
         center = main_rect.center()
         x = center.x() - size.width() // 2
         y = center.y() - size.height() // 2
-        screen = self.screen() or dlg.screen()
-        if screen is not None:
-            avail = screen.availableGeometry()
-            x = max(avail.left(), min(x, avail.right() - size.width()))
-            y = max(avail.top(), min(y, avail.bottom() - size.height()))
-        dlg.move(x, y)
-
-    def _position_dialog_above_now_playing(self, dlg) -> None:
-        """Anchor ``dlg`` so its right edge tracks the main window's
-        right edge and its bottom sits just above the now-playing bar.
-        Used by the Cast picker — popping up next to the cast button
-        reads as a contextual menu rather than a floating dialog.
-        Falls back to centering if the np_bar isn't mounted yet."""
-        bar = getattr(self, "np_bar", None)
-        if bar is None or not bar.isVisible():
-            self._center_dialog_on_main(dlg)
-            return
-        main_rect = self.frameGeometry()
-        size = dlg.size()
-        if size.width() <= 0 or size.height() <= 0:
-            size = dlg.sizeHint()
-        margin = 8  # breathing room from window edge + bar
-        bar_top_global = bar.mapToGlobal(QPoint(0, 0)).y()
-        x = main_rect.right() - margin - size.width()
-        y = bar_top_global - margin - size.height()
         screen = self.screen() or dlg.screen()
         if screen is not None:
             avail = screen.availableGeometry()

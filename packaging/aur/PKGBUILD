@@ -47,7 +47,6 @@ optdepends=(
   'python-numpy: audio visualizer'
   'python-async-upnp-client: DLNA casting (AUR)'
   'python-soco: Sonos casting (AUR)'
-  'python-snapcast: Snapcast control (AUR)'
 )
 
 makedepends=('python-build' 'python-installer' 'python-wheel' 'python-setuptools')

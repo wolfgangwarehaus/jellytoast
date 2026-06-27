@@ -1,5 +1,5 @@
 """``_OtherProtocolsMixin`` — discovery fan-out + stop routing for the
-three backend-module cast protocols: DLNA, Sonos, Snapcast.
+two backend-module cast protocols: DLNA and Sonos.
 
 Each ``discover_<type>`` gates on the per-type ``cast/<type>_enabled``
 toggle, no-ops gracefully when the backend's optional dependency is
@@ -124,67 +124,6 @@ class _OtherProtocolsMixin:
             on_error=lambda e: logger.warning("Sonos discovery: %s", e),
         )
 
-    # ── Snapcast ─────────────────────────────────────────────────────
-
-    def discover_snapcast(self):
-        """Discover Snapcast servers via mDNS. Gated by
-        ``cast/snapcast_enabled`` and the optional ``snapcast`` package.
-
-        The backend's ``discover_servers`` already owns its own daemon
-        thread (a documented exception to the async_io rule) and fires
-        ``on_result`` once the browse window closes; we adapt that
-        callback directly rather than wrapping it in another
-        ``run_async``. Each server becomes a ``CastDevice``
-        (``device_type="snapcast"``) carrying the ``SnapcastServerInfo``
-        in ``cast_object``."""
-        if not _type_enabled("snapcast"):
-            return
-        from jellytoast import cast_manager as _pkg
-
-        def _prep():
-            # Import + control-library probe on a pool worker (see
-            # discover_chromecasts — cold imports froze the GUI on
-            # Windows). ``discover_servers`` already owns its own
-            # daemon thread, so only this import cost needs moving.
-            try:
-                from jellytoast.cast import snapcast as _snapcast
-            except Exception as e:
-                logger.warning("Snapcast discovery prep failed: %s", e)
-                return None
-            # A discovered server is useless without the control library,
-            # so gate the whole scan on it — mirrors how DLNA/Sonos gate.
-            if not _snapcast._ensure_snapcast():
-                return None
-            return _snapcast
-
-        def _on_result(servers) -> None:
-            self.snapcast_devices = [
-                CastDevice(
-                    name=s.hostname or s.host,
-                    host=s.host,
-                    port=s.port,
-                    device_type=CastType.SNAPCAST,
-                    uuid=f"{s.host}:{s.port}",
-                    cast_object=s,
-                )
-                for s in servers
-            ]
-            self._notify()
-
-        def _start(snapcast_mod) -> None:
-            if snapcast_mod is None:
-                return
-            try:
-                snapcast_mod.discover_servers(_on_result)
-            except Exception as e:
-                logger.warning("Snapcast discovery: %s", e)
-
-        _pkg.run_async(
-            _prep,
-            on_result=_start,
-            on_error=lambda e: logger.warning("Snapcast discovery: %s", e),
-        )
-
     # ── Play routing (URL-push backends) ─────────────────────────────
     #
     # DLNA and Sonos are URL-push protocols: the receiver fetches a
@@ -194,8 +133,7 @@ class _OtherProtocolsMixin:
     # bool, set ``active_cast`` on success — so the two dispatch sites
     # (``_cast_to_device`` and ``MpvController.play``) treat all four
     # the same way. They block on SOAP/UPnP (DLNA up to 30 s), so call
-    # them off the GUI thread. Snapcast is a control surface, not a URL
-    # push, so it has no ``cast_to_*`` here.
+    # them off the GUI thread.
 
     def cast_to_dlna(
         self,
@@ -307,13 +245,6 @@ class _OtherProtocolsMixin:
                 _sonos.stop_sonos(self.active_cast.cast_object)
         except Exception as e:
             logger.warning("Sonos stop: %s", e)
-        self.active_cast = None
-
-    def snapcast_stop(self):
-        """Snapcast has no single 'stop' verb — it's a routing matrix,
-        not a player. Clearing the active-cast pointer is the most we
-        can do generically; the snapcast popup drives group/stream
-        changes through ``SnapcastController`` directly."""
         self.active_cast = None
 
     # ── Transport control (DLNA + Sonos) ─────────────────────────────

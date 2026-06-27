@@ -2,21 +2,17 @@
 
 The cast-button / cast-dialog glue, extracted from ``jellytoast/app.py``: open the
 cast dialog, the cast-button right-click quick menu, disconnect, find a device
-by uuid, cast a favourite, the unified per-protocol ``_cast_to_device`` dispatch
-(Chromecast / DLNA / Sonos / AirPlay / Snapcast), and the Snapcast control
-surface.
+by uuid, cast a favourite, and the unified per-protocol ``_cast_to_device``
+dispatch (Chromecast / DLNA / Sonos / AirPlay).
 
 ``_CastDispatcherMixin`` is mixed into ``JellytoastWindow`` — not standalone.
 Its methods reference window state (``self.cast_manager``, ``self.bus``, the
-lazy ``self._cast_dlg`` / ``self._snapcast_dlg`` dialog singletons) and the
-window-core placement helpers ``self._center_dialog_on_main`` (centers the
-cast-picker dialog over the main window) and
-``self._position_dialog_above_now_playing`` (docks the Snapcast control surface
-above the now-playing bar); all resolve on the combined instance. Heavy / circular-prone deps (``airplay2``,
-``airplay_pairing``, ``snapcast_control``, ``scrobble``, ``icon``,
-``opaque_menu``, ``get_snapcast_controller``) stay as in-method imports exactly
-as before, preserving the lazy-import boot savings and avoiding a
-cast_dialog ↔ host cycle.
+lazy ``self._cast_dlg`` dialog singleton) and the window-core placement helper
+``self._center_dialog_on_main`` (centers the cast-picker dialog over the main
+window); all resolve on the combined instance. Heavy / circular-prone deps
+(``airplay2``, ``airplay_pairing``, ``scrobble``, ``icon``, ``opaque_menu``)
+stay as in-method imports exactly as before, preserving the lazy-import boot
+savings and avoiding a cast_dialog ↔ host cycle.
 """
 
 import logging
@@ -215,15 +211,6 @@ class _CastDispatcherMixin:
         # cast to resume exactly where the user was.
         resume_seconds = (np.position / 1000.0) if playing_now else 0.0
 
-        # Snapcast is a multiroom routing matrix (groups → streams +
-        # per-room volume), not a play-this-track target — picking it must
-        # NOT stop local playback or arm active_cast as a stream sink. Hand
-        # off to its own control surface and return before the stop/cast
-        # flow below (also keeps it out of the AirPlay fall-through).
-        if dev.device_type == CastType.SNAPCAST:
-            self._open_snapcast_control(dev)
-            return
-
         # IMPORTANT: stop the local mpv stream BEFORE we set active_cast.
         # MpvController.stop now routes to chromecast_stop when active_cast
         # is set, so emitting stop_requested afterwards would kill the cast
@@ -380,27 +367,3 @@ class _CastDispatcherMixin:
                 self.cast_manager.active_cast = dev
                 _on_cast_result(True)
             return
-
-    def _open_snapcast_control(self, dev):
-        """Open the Snapcast control surface for the picked server.
-
-        Snapcast is a multiroom routing matrix (groups → streams +
-        per-room volume), not a play-this-track target, so it gets its own
-        control dialog instead of the stop-local-playback + active_cast
-        push flow the URL-push protocols use. ``dev.cast_object`` is the
-        ``SnapcastServerInfo``; the dialog connects via the shared
-        controller singleton and drives it from there."""
-        from jellytoast.cast.snapcast import get_snapcast_controller
-        from jellytoast.snapcast_control import SnapcastControlDialog
-
-        existing = getattr(self, "_snapcast_dlg", None)
-        if existing is not None and existing.isVisible():
-            existing.raise_()
-            existing.activateWindow()
-            return
-        server_info = dev.cast_object if dev.cast_object is not None else dev
-        dlg = SnapcastControlDialog(get_snapcast_controller(), server_info, self)
-        self._snapcast_dlg = dlg
-        dlg.finished.connect(lambda _r: setattr(self, "_snapcast_dlg", None))
-        self._position_dialog_above_now_playing(dlg)
-        dlg.show()

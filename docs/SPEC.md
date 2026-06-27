@@ -1,6 +1,6 @@
 # jellytoast — Capability Spec
 
-Native PySide6 desktop client for **Jellyfin** and **Subsonic / OpenSubsonic / Navidrome**. Music-only. Bit-perfect mpv playback, MPRIS2, system tray, floating mini player, casting (Chromecast / AirPlay 2 / DLNA / Sonos / Snapcast), explicit downloads with offline playback, 10-band EQ, audio visualizer, smart playlists, internet radio, and scrobbling.
+Native PySide6 desktop client for **Jellyfin** and **Subsonic / OpenSubsonic / Navidrome**. Music-only. Bit-perfect mpv playback, MPRIS2, system tray, floating mini player, casting (Chromecast / AirPlay 2 / DLNA / Sonos), explicit downloads with offline playback, 10-band EQ, audio visualizer, smart playlists, internet radio, and scrobbling.
 
 ---
 
@@ -53,10 +53,10 @@ Credentials are dual-stored: OS keyring (KDE Wallet / GNOME Keyring / SecretServ
 
 ## 4. Casting
 
-- **Five protocols, all wired into discovery and the cast dialog:** Chromecast, AirPlay 2, DLNA, Sonos, Snapcast.
+- **Four protocols, all wired into discovery and the cast dialog:** Chromecast, AirPlay 2, DLNA, Sonos.
 - **Chromecast** (pychromecast): video, audio, and group receivers all discovered. Direct play for `mp3 / flac / ogg / opus / wav / m4a / mp4 / aac / webm`; anything else server-transcoded to 320 kbps MP3.
 - **AirPlay 2** via pyatv when installed (preferred); falls back to **AirPlay 1** RTSP-POST against `_airplay._tcp.local.` for legacy receivers. Pairing dialog handles HomeKit-style PIN exchange.
-- **DLNA / Sonos / Snapcast** receivers are discovered alongside the above and appear in the unified cast dialog.
+- **DLNA / Sonos** receivers are discovered alongside the above and appear in the unified cast dialog.
 - **Routing modes** (`playback/cast_stream_routing`):
   - `auto` (default) — direct URL when the server is a private LAN IPv4; relay through this machine's local HTTP proxy otherwise (handles Tailscale / public hostnames / self-signed certs).
   - `proxy` — always relay through the local proxy (port 8943, fixed; falls back to ephemeral if taken).

@@ -2,7 +2,7 @@
 (jellytoast.now_playing_bar._refresh_active_banner).
 
 The banner used to hardcode a Chromecast/AirPlay ternary that mislabelled
-DLNA / Sonos / Snapcast devices as "AirPlay". It now keys the dialog's
+DLNA / Sonos devices as "AirPlay". It now keys the dialog's
 ``SECTION_LABELS`` map on the active device's ``device_type``. The
 label-selection is pure given a ``device_type``, so we test it directly
 against the shared mapping rather than painting the widget.
@@ -32,13 +32,12 @@ def test_each_device_type_maps_to_its_label():
     assert _banner_label("airplay") == "AirPlay"
     assert _banner_label("dlna") == "DLNA"
     assert _banner_label("sonos") == "Sonos"
-    assert _banner_label("snapcast") == "Snapcast"
 
 
 def test_non_airplay_devices_are_not_mislabelled_airplay():
     # Regression: the old hardcoded ternary labelled everything that
     # wasn't a Chromecast as "AirPlay".
-    for t in ("dlna", "sonos", "snapcast"):
+    for t in ("dlna", "sonos"):
         assert _banner_label(t) != "AirPlay"
 
 

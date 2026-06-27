@@ -14,7 +14,7 @@ from typing import Callable, Dict
 
 
 class CastType(str, Enum):
-    """The five cast protocols a ``CastDevice`` can belong to.
+    """The four cast protocols a ``CastDevice`` can belong to.
 
     Mirrors the ``RepeatMode`` / ``QueueKind`` / ``CrossfadeState`` idiom
     (``str``-backed enum, lowercase values). The values are byte-identical
@@ -31,7 +31,6 @@ class CastType(str, Enum):
     AIRPLAY = "airplay"
     DLNA = "dlna"
     SONOS = "sonos"
-    SNAPCAST = "snapcast"
 
 
 @dataclass
@@ -46,7 +45,7 @@ class CastDevice:
     uuid: str = ""
     # The protocol-native handle the matching transport path needs: a
     # pychromecast Chromecast, a pyatv AirPlay2Device, a DlnaDevice, a
-    # SonosZone, or a SnapcastServerInfo.
+    # or a SonosZone.
     cast_object: object = field(default=None, repr=False)
     # pychromecast cast_type: "cast" (video), "audio", or "group" (a
     # multi-room speaker group). "group" unlocks per-member volume in

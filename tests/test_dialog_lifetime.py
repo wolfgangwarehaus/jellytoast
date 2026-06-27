@@ -8,9 +8,7 @@ corpse whose slots keep firing. ``done()`` hides WITHOUT a close event,
 so ``WA_DeleteOnClose`` alone misses the Esc/reject path —
 ``finished→deleteLater`` covers it.
 
-Covers the three sites the original fix missed:
-- ``SnapcastControlDialog``: Esc/reject must run the closeEvent teardown
-  (bus disconnects + JSON-RPC session drop), not just hide.
+Covers the two sites the original fix missed:
 - ``CastDialog``: one deleted dialog per open, not an accumulating
   theme_changed subscriber.
 - ``PairingDialog.run``: the exec()'d dialog is reaped after use.
@@ -27,59 +25,6 @@ def _flush_deferred():
     """Deliver pending deleteLater()s — what the real event loop would do
     on its next pass."""
     QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
-
-
-# ── SnapcastControlDialog ─────────────────────────────────────────────
-
-
-class _FakeSnapController:
-    def __init__(self):
-        self.disconnected = False
-
-    def connect(self, host, port, on_done=None):
-        pass
-
-    def snapshot(self):
-        return {}
-
-    def disconnect(self):
-        self.disconnected = True
-
-
-def _snapcast_dialog(qapp):
-    from jellytoast.cast.snapcast import SnapcastServerInfo
-    from jellytoast.snapcast_control import SnapcastControlDialog
-
-    ctl = _FakeSnapController()
-    info = SnapcastServerInfo(host="10.0.0.2", port=1705, hostname="snap.local")
-    return SnapcastControlDialog(ctl, info, parent=None), ctl
-
-
-def test_snapcast_reject_runs_teardown(qapp):
-    # THE original bug: Esc → reject() → done() hides without a close
-    # event, so the JSON-RPC session stayed live and the bus slots kept
-    # rebuilding a hidden corpse (one per Esc).
-    d, ctl = _snapcast_dialog(qapp)
-    d.reject()
-    assert ctl.disconnected is True
-    assert d._closed is True
-
-
-def test_snapcast_close_still_runs_teardown(qapp):
-    # Window-X path (closeEvent) must keep working alongside the
-    # finished-signal route, and the teardown must stay idempotent.
-    d, ctl = _snapcast_dialog(qapp)
-    d.close()
-    assert ctl.disconnected is True
-    d.close()  # second close: no double-disconnect warning / crash
-
-
-def test_snapcast_dialog_deleted_after_reject(qapp):
-    d, _ctl = _snapcast_dialog(qapp)
-    assert d.testAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
-    d.reject()
-    _flush_deferred()
-    assert not shiboken6.isValid(d)
 
 
 # ── CastDialog ────────────────────────────────────────────────────────

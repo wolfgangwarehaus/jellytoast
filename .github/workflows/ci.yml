@@ -54,10 +54,10 @@ jobs:
           sudo apt-get install -y --no-install-recommends libmpv2 \
             || sudo apt-get install -y --no-install-recommends libmpv1
 
-      # The cast/visualizer deps (numpy, async-upnp-client, soco,
-      # snapcast) are part of the base install — the old per-protocol
-      # extras were folded into [project.dependencies], so [dev] is the
-      # only extra left and CI green == local green by construction.
+      # The cast/visualizer deps (numpy, async-upnp-client, soco) are
+      # part of the base install — the old per-protocol extras were
+      # folded into [project.dependencies], so [dev] is the only extra
+      # left and CI green == local green by construction.
       - name: Install project (with dev tooling)
         run: |
           python -m pip install --upgrade pip

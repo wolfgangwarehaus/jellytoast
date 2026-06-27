@@ -880,7 +880,7 @@ class MpvController(_CastTransportMixin, QObject):
             self._cast_anchor_wall = self._monotonic()
             # Route the new track to the armed cast device. The per-type
             # ladder (chromecast direct-play MIME pick + transcode fallback,
-            # DLNA/Sonos off-thread SOAP push, AirPlay sync, Snapcast no-op)
+            # DLNA/Sonos off-thread SOAP push, AirPlay sync)
             # lives in the unified CastManager.start_track — the same surface
             # the device-pick site (jellytoast.app._cast_to_device) calls. This
             # path is auto-advance, so no resume offset (start_track defaults

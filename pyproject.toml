@@ -111,7 +111,6 @@ dependencies = [
     # (cross-origin cookie leak). Declared directly to pin the floor.
     "aiohttp>=3.14.0",
     "soco>=0.31,<1",  # native Sonos cast backend
-    "snapcast>=2.3.8",  # Snapcast control surface
     # Windows-only WinRT projections for System Media Transport Controls
     # (media flyout + hardware media keys) and now-playing toasts. The
     # per-namespace winrt-* packages are the maintained PyWinRT path;
@@ -140,8 +139,8 @@ dev = [
     # Randomises test order every run (a fresh seed each CI run, printed
     # in the header so a failure reproduces via `pytest
     # --randomly-seed=N`). Guards against the order-dependent state leaks
-    # we've chased: QSettings-singleton divergence, the snapcast SIGSEGV
-    # (Bug 2), the visualizer worker-stop race, async_io shutdown noise,
+    # we've chased: QSettings-singleton divergence, the visualizer
+    # worker-stop race, async_io shutdown noise,
     # the single_instance pump, and the cast/async leak cluster (cast
     # discovery loop threads, the SettingsDialog auto-probe, smart-playlist
     # preview dispatch). All isolated as of 2026-05-30.
@@ -160,7 +159,7 @@ dev = [
     # CVEs in the resolved dependency set.
     "pip-audit>=2.7",
 ]
-# The DLNA / Sonos / Snapcast cast backends + the visualizer FFT dep are now
+# The DLNA / Sonos cast backends + the visualizer FFT dep are now
 # bundled as REQUIRED dependencies (see [project.dependencies]) so every
 # install ships the same backends — they're no longer opt-in extras.
 # Per-platform extras. Windows stays empty (its winrt deps live in

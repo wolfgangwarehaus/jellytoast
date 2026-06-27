@@ -1,7 +1,7 @@
-"""Discovery fan-out across the DLNA / Sonos / Snapcast backends.
+"""Discovery fan-out across the DLNA / Sonos backends.
 
 Covers the wiring added in ``auto/cast-manager-discovery-fanout``:
-``CastManager`` now drives all five protocol discoveries (not just
+``CastManager`` now drives all four protocol discoveries (not just
 Chromecast + AirPlay). Each ``discover_<type>`` must:
 
 * no-op when its ``cast/<type>_enabled`` toggle is off — before any
@@ -12,7 +12,7 @@ Chromecast + AirPlay). Each ``discover_<type>`` must:
 * be invoked by ``discover_all`` (each still gated by its own toggle).
 
 Backends are fully mocked — no real network, no real ``async-upnp-client``
-/ ``soco`` / ``snapcast`` import. The ``run_async`` shim runs workers
+/ ``soco`` import. The ``run_async`` shim runs workers
 inline so side-effects are observable without a Qt event loop.
 """
 
@@ -65,13 +65,6 @@ class _FakeSonosZone:
         self.is_group = is_group
 
 
-class _FakeSnapServer:
-    def __init__(self, host, port=1705, hostname=""):
-        self.host = host
-        self.port = port
-        self.hostname = hostname
-
-
 def _make_dlna_module(available, devices, calls):
     mod = types.ModuleType("jellytoast.cast.dlna")
     controller = _FakeDlnaController(devices)
@@ -109,38 +102,19 @@ def _make_sonos_module(available, zones, calls):
     return mod
 
 
-def _make_snapcast_module(available, servers, calls):
-    mod = types.ModuleType("jellytoast.cast.snapcast")
-
-    def _ensure_snapcast():
-        return available
-
-    def discover_servers(on_result, timeout=3.0):
-        calls["snapcast"] += 1
-        # The real backend fires on_result on a worker thread once the
-        # browse window closes; the fake fires synchronously so the
-        # test sees the side-effect immediately.
-        on_result(list(servers))
-
-    mod._ensure_snapcast = _ensure_snapcast
-    mod._snapcast = object() if available else None
-    mod.discover_servers = discover_servers
-    return mod
-
-
 # ── Fixtures ───────────────────────────────────────────────────────────
 
 
 @pytest.fixture
 def cm(monkeypatch):
-    """A CastManager with the three new backends mocked, and
+    """A CastManager with the two new backends mocked, and
     ``run_async`` patched to run workers inline. Returns ``(manager,
     calls, install)`` — ``install`` lets a test register the backend
     modules with chosen availability / device payloads."""
     import jellytoast.cast_manager as _cm_mod
 
     m = CastManager()
-    calls = {"dlna": 0, "sonos": 0, "snapcast": 0}
+    calls = {"dlna": 0, "sonos": 0}
 
     def _run_async_inline(fn, on_result=None, on_error=None):
         try:
@@ -166,7 +140,7 @@ def cm(monkeypatch):
         monkeypatch.setitem(sys.modules, f"jellytoast.cast.{name}", mod)
         monkeypatch.setattr(cast_pkg, name, mod, raising=False)
 
-    def install(dlna=None, sonos=None, snapcast=None):
+    def install(dlna=None, sonos=None):
         if dlna is not None:
             available, devices = dlna
             mod = _make_dlna_module(available, devices, calls)
@@ -182,9 +156,6 @@ def cm(monkeypatch):
         if sonos is not None:
             available, zones = sonos
             _swap("sonos", _make_sonos_module(available, zones, calls))
-        if snapcast is not None:
-            available, servers = snapcast
-            _swap("snapcast", _make_snapcast_module(available, servers, calls))
 
     return m, calls, install
 
@@ -200,7 +171,6 @@ def _clear():
         "cast/airplay_enabled",
         "cast/dlna_enabled",
         "cast/sonos_enabled",
-        "cast/snapcast_enabled",
         "cast/discovery_timing",
     ):
         qs.remove(k)
@@ -211,11 +181,11 @@ def _clear():
 def _reset_settings():
     _clear()
     # Cast types are off by default (opt-in). This file exercises
-    # discovery *mechanics*, so enable the three protocols it mocks as the
+    # discovery *mechanics*, so enable the two protocols it mocks as the
     # baseline; the gating tests override specific keys back to False.
     # Chromecast/AirPlay stay off — their backends aren't mocked here.
     qs = _qs()
-    for k in ("dlna", "sonos", "snapcast"):
+    for k in ("dlna", "sonos"):
         qs.setValue(f"cast/{k}_enabled", True)
     qs.sync()
     yield
@@ -302,45 +272,6 @@ def test_sonos_discovers_and_adapts(cm):
     assert seen and any(d.device_type == "sonos" for d in seen[-1])
 
 
-# ── Snapcast ───────────────────────────────────────────────────────────
-
-
-def test_snapcast_skipped_when_disabled(cm):
-    m, calls, install = cm
-    install(snapcast=(True, [_FakeSnapServer("192.168.1.20", hostname="snap")]))
-    _qs().setValue("cast/snapcast_enabled", False)
-    _qs().sync()
-    m.discover_snapcast()
-    assert calls["snapcast"] == 0
-    assert m.snapcast_devices == []
-
-
-def test_snapcast_skipped_when_dep_unavailable(cm):
-    m, calls, install = cm
-    install(snapcast=(False, [_FakeSnapServer("192.168.1.20")]))
-    m.discover_snapcast()
-    assert calls["snapcast"] == 0
-    assert m.snapcast_devices == []
-
-
-def test_snapcast_discovers_and_adapts(cm):
-    m, calls, install = cm
-    install(
-        snapcast=(True, [_FakeSnapServer("192.168.1.20", 1705, hostname="snap")])
-    )
-    seen = []
-    m.set_devices_callback(seen.append)
-    m.discover_snapcast()
-    assert calls["snapcast"] == 1
-    assert len(m.snapcast_devices) == 1
-    dev = m.snapcast_devices[0]
-    assert dev.device_type == "snapcast"
-    assert dev.name == "snap"
-    assert dev.host == "192.168.1.20"
-    assert dev.uuid == "192.168.1.20:1705"
-    assert seen and any(d.device_type == "snapcast" for d in seen[-1])
-
-
 # ── discover_all fan-out ───────────────────────────────────────────────
 
 
@@ -348,28 +279,26 @@ def _install_all(install):
     install(
         dlna=(True, [_FakeDlnaDevice("uuid:a", "TV")]),
         sonos=(True, [_FakeSonosZone("rincon:1", "Kitchen")]),
-        snapcast=(True, [_FakeSnapServer("192.168.1.20", hostname="snap")]),
     )
 
 
 def _disable_chromecast_airplay():
     """``discover_all`` also drives Chromecast + AirPlay; those backends
     aren't mocked in this file, so disable them to keep the fan-out
-    tests focused on (and fast for) the three new protocols."""
+    tests focused on (and fast for) the two new protocols."""
     qs = _qs()
     qs.setValue("cast/chromecast_enabled", False)
     qs.setValue("cast/airplay_enabled", False)
     qs.sync()
 
 
-def test_discover_all_invokes_all_three_new_protocols(cm):
+def test_discover_all_invokes_both_new_protocols(cm):
     m, calls, install = cm
     _install_all(install)
     _disable_chromecast_airplay()
     m.discover_all()
     assert calls["dlna"] == 1
     assert calls["sonos"] == 1
-    assert calls["snapcast"] == 1
 
 
 def test_discover_all_honors_per_type_gates(cm):
@@ -379,12 +308,10 @@ def test_discover_all_honors_per_type_gates(cm):
     qs = _qs()
     qs.setValue("cast/dlna_enabled", True)
     qs.setValue("cast/sonos_enabled", False)
-    qs.setValue("cast/snapcast_enabled", False)
     qs.sync()
     m.discover_all()
     assert calls["dlna"] == 1
     assert calls["sonos"] == 0
-    assert calls["snapcast"] == 0
 
 
 def test_get_all_devices_merges_every_protocol(cm):
@@ -392,9 +319,8 @@ def test_get_all_devices_merges_every_protocol(cm):
     _install_all(install)
     m.discover_dlna()
     m.discover_sonos()
-    m.discover_snapcast()
     types_seen = {d.device_type for d in m.get_all_devices()}
-    assert types_seen == {"dlna", "sonos", "snapcast"}
+    assert types_seen == {"dlna", "sonos"}
 
 
 # ── Transport routing ──────────────────────────────────────────────────
@@ -438,9 +364,3 @@ def test_stop_cast_routes_sonos(cm, monkeypatch):
     assert m.active_cast is None
 
 
-def test_stop_cast_routes_snapcast(cm):
-    m, _calls, _install = cm
-    m.active_cast = CastDevice("snap", "h", 1705, "snapcast")
-    m.stop_cast()
-    # Snapcast has no stop verb — stop_cast just clears active_cast.
-    assert m.active_cast is None

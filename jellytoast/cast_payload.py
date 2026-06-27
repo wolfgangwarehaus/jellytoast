@@ -9,8 +9,8 @@ flagged the Chromecast prep as already duplicated between them).
 
 Scope: the URL-push backends that take DIDL-style metadata — **DLNA** and
 **Sonos**. Chromecast keeps its own inline MIME prep (its direct-play story
-differs from DLNA's push-native-then-714-retry), and Snapcast is a control
-surface, not a URL push, so neither routes through here.
+differs from DLNA's push-native-then-714-retry), so it doesn't route
+through here.
 """
 
 from __future__ import annotations
