@@ -267,8 +267,8 @@ jobs:
 
   build-macos:
     # Two NATIVE builds — Apple Silicon (arm64, macos-14) and Intel (x86_64,
-    # macos-13). Each does a native Homebrew-libmpv + PyInstaller build, signs
-    # with Developer ID, notarizes, and ships its own
+    # macos-15-intel). Each does a native Homebrew-libmpv + PyInstaller build,
+    # signs with Developer ID, notarizes, and ships its own
     # jellytoast-<ver>-macos-<arch>.dmg. fail-fast off so one arch failing
     # doesn't kill the other. (A single universal2 .dmg was ruled out: numpy +
     # cffi ship NO universal2 wheels, so PyInstaller's --target-arch universal2
@@ -277,16 +277,21 @@ jobs:
     # `min` = the bundle's REAL macOS floor, dictated by the RUNNER OS: the
     # bundled Homebrew dylibs (libmpv + its FFmpeg/libass/libplacebo closure)
     # are built for the runner's macOS and dyld refuses to load them on anything
-    # older — regardless of the Info.plist's LSMinimumSystemVersion. So build
-    # each arch on the OLDEST runner GitHub offers for it (Intel → macos-13
-    # Ventura; arm64 → macos-14 Sonoma, the oldest free Apple-silicon image),
-    # stamp that floor into the plist (see "Pin the macOS floor"), and the
-    # headless smoke-test below then runs ON that floor so a too-high floor
-    # can't ship silently. (Building Intel on macos-15-intel produced a .dmg
-    # that bounced once and died on Monterey: Sequoia-built dylibs, dyld
-    # refused them, no dialog. If macos-13 is ever retired, raise the Intel
-    # floor to the new oldest Intel image — or build libmpv from source with a
-    # lower MACOSX_DEPLOYMENT_TARGET.)
+    # older — regardless of the Info.plist's LSMinimumSystemVersion. We stamp the
+    # real floor into the plist (see "Pin the macOS floor") and the headless
+    # smoke-test runs ON that floor, so a too-high floor can't ship silently.
+    #
+    # Floor = runner OS: Intel → Sequoia 15 (macos-15-intel), arm64 → Sonoma 14
+    # (macos-14, the oldest free Apple-silicon image). We WANTED a lower Intel
+    # floor (Ventura 13 via macos-13) but GitHub won't allocate macos-13 — jobs
+    # queue indefinitely (hours, never picked up), so macos-15-intel is the only
+    # viable Intel image (and the longer-lived one, ~to Aug 2027). Going below
+    # Sequoia on Intel would mean building libmpv from source with a lower
+    # MACOSX_DEPLOYMENT_TARGET on macos-15-intel (the finicky from-source path —
+    # a follow-up if broader Intel reach is worth it). History: building Intel
+    # here WITHOUT pinning the plist made a .dmg that claimed 12.0 but bounced-
+    # and-died on Monterey (Sequoia dylibs, dyld refused them); the pin makes the
+    # declared floor honest.
     strategy:
       fail-fast: false
       matrix:
@@ -294,9 +299,9 @@ jobs:
           - runner: macos-14
             arch: arm64
             min: "14.0"
-          - runner: macos-13
+          - runner: macos-15-intel
             arch: x86_64
-            min: "13.0"
+            min: "15.0"
     runs-on: ${{ matrix.runner }}
     # Signing + notarization activate only once the secrets exist (see
     # packaging/macos/MACOS_SESSION.md). Until then SIGN/NOTARIZE are 'false'
