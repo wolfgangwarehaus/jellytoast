@@ -14,7 +14,7 @@ from typing import Callable, Dict
 
 
 class CastType(str, Enum):
-    """The five cast protocols a ``CastDevice`` can belong to.
+    """The four cast protocols a ``CastDevice`` can belong to.
 
     Mirrors the ``RepeatMode`` / ``QueueKind`` / ``CrossfadeState`` idiom
     (``str``-backed enum, lowercase values). The values are byte-identical
@@ -31,7 +31,6 @@ class CastType(str, Enum):
     AIRPLAY = "airplay"
     DLNA = "dlna"
     SONOS = "sonos"
-    SNAPCAST = "snapcast"
 
 
 @dataclass
@@ -46,7 +45,7 @@ class CastDevice:
     uuid: str = ""
     # The protocol-native handle the matching transport path needs: a
     # pychromecast Chromecast, a pyatv AirPlay2Device, a DlnaDevice, a
-    # SonosZone, or a SnapcastServerInfo.
+    # or a SonosZone.
     cast_object: object = field(default=None, repr=False)
     # pychromecast cast_type: "cast" (video), "audio", or "group" (a
     # multi-room speaker group). "group" unlocks per-member volume in
@@ -82,12 +81,13 @@ class _AirPlayListener:
 
 
 def _type_enabled(kind: str) -> bool:
-    """Per-protocol gate: a user can disable a cast type they don't
-    own so discovery skips it entirely. Reads the QSettings directly
-    rather than importing jellytoast.settings so this module stays
-    light at import time (settings.py runs the legacy-org migration
-    on first construction)."""
+    """Per-protocol gate: discovery for a cast type runs only once the
+    user enables it (OFF by default — opt-in). Reads the QSettings
+    directly rather than importing jellytoast.settings so this module
+    stays light at import time (settings.py runs the legacy-org migration
+    on first construction). Mirrors the False default in
+    jellytoast.settings.Settings.cast_<kind>_enabled — keep in sync."""
     from PySide6.QtCore import QSettings
 
     qs = QSettings("jellytoast", "jellytoast")
-    return bool(qs.value(f"cast/{kind}_enabled", True, type=bool))
+    return bool(qs.value(f"cast/{kind}_enabled", False, type=bool))

@@ -46,7 +46,6 @@ class CastManager(_ChromecastMixin, _AirplayMixin, _OtherProtocolsMixin):
         self.airplay_devices: List[CastDevice] = []
         self.dlna_devices: List[CastDevice] = []
         self.sonos_devices: List[CastDevice] = []
-        self.snapcast_devices: List[CastDevice] = []
         self.active_cast: Optional[CastDevice] = None
         self._zc = None  # AirPlay v1 mDNS ServiceBrowser's zeroconf
         self._browser = None
@@ -101,7 +100,7 @@ class CastManager(_ChromecastMixin, _AirplayMixin, _OtherProtocolsMixin):
     # ── Common ──────────────────────────────────────────────────────────────
 
     def discover_all(self):
-        """Fan discovery across all five protocols. Each ``discover_*``
+        """Fan discovery across all four protocols. Each ``discover_*``
         is independently gated by its own ``cast/<type>_enabled`` toggle
         (and its optional-dep probe), so calling them all unconditionally
         here is safe — a disabled or unavailable protocol no-ops."""
@@ -109,7 +108,6 @@ class CastManager(_ChromecastMixin, _AirplayMixin, _OtherProtocolsMixin):
         self.discover_airplay()
         self.discover_dlna()
         self.discover_sonos()
-        self.discover_snapcast()
 
     def discover_all_at_boot(self):
         """Boot-time pre-warm path. Honors ``cast/discovery_timing``:
@@ -131,7 +129,6 @@ class CastManager(_ChromecastMixin, _AirplayMixin, _OtherProtocolsMixin):
             + self.airplay_devices
             + self.dlna_devices
             + self.sonos_devices
-            + self.snapcast_devices
         )
 
     def stop_cast(self):
@@ -148,8 +145,6 @@ class CastManager(_ChromecastMixin, _AirplayMixin, _OtherProtocolsMixin):
             self.dlna_stop()
         elif kind == CastType.SONOS:
             self.sonos_stop()
-        elif kind == CastType.SNAPCAST:
-            self.snapcast_stop()
         else:
             self.airplay_stop()
         # Expire the proxy's stream tokens now the session is over so a
@@ -199,7 +194,7 @@ class CastManager(_ChromecastMixin, _AirplayMixin, _OtherProtocolsMixin):
         elif kind == CastType.SONOS:
             fn = self._sonos_resume if paused else self._sonos_pause
         else:
-            return  # AirPlay v1 / Snapcast: no transport here
+            return  # AirPlay v1: no transport here
         # Drive _cast_paused from the off-thread transport RESULT, not
         # optimistically: a failed SOAP pause/resume must NOT flip the tracked
         # flag, or the next toggle sends the wrong command (a dropped pause
@@ -266,7 +261,7 @@ class CastManager(_ChromecastMixin, _AirplayMixin, _OtherProtocolsMixin):
             applied = self._sonos_initial_volume(percent)
             self._run_off_thread(lambda: self._sonos_set_volume(applied))
             return applied
-        return percent  # AirPlay v1 / Snapcast: no volume surface
+        return percent  # AirPlay v1: no volume surface
 
     def _snapshot_device_volume(self, kind) -> None:
         """Capture the device's pre-cast volume so ``stop_cast`` can
@@ -355,8 +350,6 @@ class CastManager(_ChromecastMixin, _AirplayMixin, _OtherProtocolsMixin):
     #     ``run_async`` around ``cast_to_dlna`` / ``cast_to_sonos``.
     #   • AirPlay v1 — synchronous ``cast_to_airplay``; ``on_done`` fires
     #     inline (no async hop), exactly as both sites did before.
-    #   • Snapcast — a control surface, never a stream sink, so it no-ops
-    #     here (both call sites already divert it before reaching this).
     # Site-specific behaviour that is NOT shared stays at the call sites:
     # the connect-without-media path, AirPlay 2 pairing, the local-mpv stop,
     # and the differing ``on_done`` bookkeeping. ``resume_seconds`` lets the
@@ -443,10 +436,6 @@ class CastManager(_ChromecastMixin, _AirplayMixin, _OtherProtocolsMixin):
                 _done,
             )
             return
-        if kind == CastType.SNAPCAST:
-            # Control surface, not a stream sink — nothing to push. Defensive
-            # guard against misrouting into the AirPlay fall-through below.
-            return
         # AirPlay v1 stays synchronous; report inline.
         ok = self.cast_to_airplay(dev, np.stream_url, np.title)
         _done(ok)
@@ -509,18 +498,5 @@ class CastManager(_ChromecastMixin, _AirplayMixin, _OtherProtocolsMixin):
             from jellytoast.cast_proxy import get_cast_proxy
 
             get_cast_proxy().stop()
-        except Exception:
-            pass
-        # Tear down the Snapcast controller's asyncio loop thread if one
-        # was ever created (the control dialog lazily connects). Like the
-        # DLNA backend it hosts a long-lived loop thread; leaving it
-        # running races interpreter teardown. Read the module global
-        # directly so cleanup doesn't *create* a controller just to stop
-        # it. Best-effort + soft import.
-        try:
-            from jellytoast.cast import snapcast as _snap
-
-            if _snap._CONTROLLER is not None:
-                _snap._CONTROLLER.shutdown()
         except Exception:
             pass

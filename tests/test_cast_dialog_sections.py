@@ -105,8 +105,8 @@ def test_explicit_setting_wins_over_nonempty_default(tmp_path):
     s = _fresh_settings(tmp_path)
     # User expanded an empty section (curious about what's there) —
     # we keep it open even though the default would collapse it.
-    write_collapsed(s, "snapcast", False)
-    state = resolve_state(s, "snapcast", has_devices=False)
+    write_collapsed(s, "sonos", False)
+    state = resolve_state(s, "sonos", has_devices=False)
     assert state.collapsed is False
 
 
@@ -136,10 +136,10 @@ def test_state_survives_settings_reload(tmp_path):
 
 
 def test_all_required_sections_declared():
-    # Spec calls for these five sections by name. If a future refactor
+    # Spec calls for these four sections by name. If a future refactor
     # drops one, this test catches it before the dialog goes missing a
     # header at runtime.
-    assert set(SECTION_TYPES) == {"chromecast", "airplay", "dlna", "sonos", "snapcast"}
+    assert set(SECTION_TYPES) == {"chromecast", "airplay", "dlna", "sonos"}
     for t in SECTION_TYPES:
         assert t in SECTION_LABELS
         assert SECTION_LABELS[t]  # non-empty label
@@ -160,7 +160,6 @@ def test_group_devices_by_type_partitions_correctly():
     assert len(buckets["airplay"]) == 2
     assert buckets["dlna"] == []
     assert buckets["sonos"] == []
-    assert buckets["snapcast"] == []
 
 
 def test_group_devices_by_type_ignores_unknown_types():

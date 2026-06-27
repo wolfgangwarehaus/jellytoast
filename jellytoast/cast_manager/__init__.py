@@ -3,7 +3,7 @@ Chromecast + AirPlay (legacy v1 mDNS + modern pyatv AirPlay 2) cast
 manager. AirPlay 2 receivers route through ``jellytoast/airplay2.py``
 (pyatv) when the library is installed; the v1 mDNS discovery path
 remains as a fallback for older receivers. Newer cast backends
-(DLNA, Sonos, Snapcast) live under ``jellytoast/cast/``; this package is
+(DLNA, Sonos) live under ``jellytoast/cast/``; this package is
 Chromecast + AirPlay only.
 
 Package layout (split from the former 794-line ``cast_manager.py``):

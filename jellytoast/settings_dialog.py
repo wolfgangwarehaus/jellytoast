@@ -895,6 +895,17 @@ class SettingsDialog(QDialog):
         # _on_nav_changed / _rebuild_pages_for_theme.
         self._page_builders.append((builder, expand, v))
 
+    def show_page(self, title: str) -> bool:
+        """Select the nav page whose title matches ``title`` (lazy-builds
+        it via the row-change handler). Returns False if no such page —
+        used to deep-link into Settings (e.g. the cast button → Casting).
+        """
+        for i in range(self.nav.count()):
+            if self.nav.item(i).text() == title:
+                self.nav.setCurrentRow(i)
+                return True
+        return False
+
     def _on_nav_changed(self, idx: int):
         """Build the page's content on first visit, then show it."""
         if 0 <= idx < len(self._page_builders) and idx not in self._built_pages:
@@ -2061,11 +2072,10 @@ class SettingsDialog(QDialog):
         # Dedicated page (moved out of Playback 2026-05-16). Covers:
         # per-protocol discovery toggles, when discovery runs, and the
         # stream-routing escape hatch a cast device behind a private
-        # network needs to reach the server. DLNA / Sonos / Snapcast
-        # toggle rows are present even though their backends ship in
-        # follow-up tasks — having the row visible from day one means
-        # a user who doesn't own those device types can pre-disable
-        # them and never hear the protocols mentioned again.
+        # network needs to reach the server. Cast protocols are OFF by
+        # default (opt-in) — nothing scans the network until the user
+        # turns a type on here; the cast button routes to this page when
+        # none are enabled.
         page = QWidget()
         page.setStyleSheet("background: transparent;")
         v = QVBoxLayout(page)
@@ -2091,19 +2101,25 @@ class SettingsDialog(QDialog):
         dt_row.addStretch(1)
         v.addLayout(dt_row)
 
-        # Per-protocol toggle rows. All five backends ship: Chromecast,
-        # AirPlay, and DLNA are hardware-verified; Sonos / Snapcast are
-        # implemented (deps bundled) and just await a final hardware verify.
-        # (The old "(coming soon)" gate predated the discovery code landing.)
+        dt_caption = QLabel(
+            "Casting is off until you turn it on — nothing scans your "
+            "network until you enable a protocol below."
+        )
+        dt_caption.setWordWrap(True)
+        dt_caption.setStyleSheet(f"color: {TEXT_FAINT}; {type_qss(TYPE_CAPTION)}")
+        v.addWidget(dt_caption)
+
+        # Per-protocol toggle rows. All four backends ship: Chromecast,
+        # AirPlay, and DLNA are hardware-verified; Sonos is implemented
+        # (deps bundled) and just awaits a final hardware verify.
         # (visible label, attribute name on Settings)
         cast_types = [
             ("Chromecast", "cast_chromecast_enabled"),
             ("AirPlay", "cast_airplay_enabled"),
             ("DLNA / UPnP", "cast_dlna_enabled"),
             ("Sonos", "cast_sonos_enabled"),
-            ("Snapcast", "cast_snapcast_enabled"),
         ]
-        # One grid for all five rows: every checkbox sits in column 0 so they
+        # One grid for all four rows: every checkbox sits in column 0 so they
         # share a single left edge with even row spacing, and the Sonos ⓘ rides
         # column 1. A grid (rather than per-row addWidget / an HBox just for
         # Sonos) keeps the column flush — Qt offsets a bare addWidget'd control

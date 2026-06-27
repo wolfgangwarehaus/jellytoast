@@ -1,14 +1,14 @@
 """Pure-function helpers for the Cast dialog's collapsible-section state.
 
 The Cast dialog (``jellytoast.cast_dialog.CastDialog``) groups discovered
-devices into one section per cast type — Chromecast, AirPlay, DLNA, Sonos,
-Snapcast — with a clickable header that toggles between expanded and
+devices into one section per cast type — Chromecast, AirPlay, DLNA, Sonos
+— with a clickable header that toggles between expanded and
 collapsed. Section state persists across dialog opens via QSettings.
 
 Design intent (memory ``feedback_cast_menu_unified_collapsible``):
 
 - One menu, sections by type.
-- Empty sections collapse by default (so users don't see five empty
+- Empty sections collapse by default (so users don't see four empty
   rows when only Chromecast is online).
 - Sections with discovered devices expand by default (the common path).
 - An explicit user toggle always wins over the defaults.
@@ -25,15 +25,14 @@ from typing import Optional
 from PySide6.QtCore import QSettings
 
 # Canonical type identifiers, one per cast protocol the manager
-# discovers. All five — Chromecast, AirPlay, and the DLNA / Sonos /
-# Snapcast backends (CastManager ``_OtherProtocolsMixin``) — emit
+# discovers. All four — Chromecast, AirPlay, and the DLNA / Sonos
+# backends (CastManager ``_OtherProtocolsMixin``) — emit
 # ``CastDevice`` entries whose ``device_type`` matches a value here.
 SECTION_TYPES: tuple[str, ...] = (
     "chromecast",
     "airplay",
     "dlna",
     "sonos",
-    "snapcast",
 )
 
 
@@ -43,7 +42,6 @@ SECTION_LABELS: dict[str, str] = {
     "airplay": "AirPlay",
     "dlna": "DLNA",
     "sonos": "Sonos",
-    "snapcast": "Snapcast",
 }
 
 

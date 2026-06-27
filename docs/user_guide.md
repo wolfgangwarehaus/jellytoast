@@ -41,7 +41,6 @@ Per-protocol toggles + on-demand discovery in Settings → Casting:
 - **AirPlay 2** — pyatv-based, supports modern Apple TVs and AirPlay 2 speakers (Linux/macOS; broken upstream on Windows).
 - **DLNA / UPnP-AV** — SSDP discovery + AVTransport push, 714/701 transcode-retry decision tree, mandatory upnp:class for spec-finicky renderers. Off by default.
 - **Sonos** — native SoCo-based zone discovery + group transport. Off by default.
-- **Snapcast** — control surface (groups, clients, stream switching, volume) — not a "push URL" cast model. Off by default.
 
 The **cast proxy** (`jellytoast/cast_proxy.py`) relays streams to receivers that
 can't reach the server directly — Tailscale, remote, self-signed certs — and
@@ -159,7 +158,7 @@ MPRIS2 is the integration point on Linux:
 | Chromecast not found | Open UDP 5353 (mDNS); same VLAN as the Chromecast |
 | AirPlay / DLNA not found but Chromecast works | A host firewall is blocking discovery replies — Settings → Casting has a ⓘ with a copy-paste allow rule for your subnet |
 | AirPlay receiver not found | Check Settings → Casting has AirPlay enabled; some older LG webOS / shairport-sync 5.x receivers are broken in pyatv |
-| DLNA / Sonos / Snapcast not listed in cast menu | The backends ship in the standard install — enable the protocol in Settings → Casting |
+| DLNA / Sonos not listed in cast menu | The backends ship in the standard install — enable the protocol in Settings → Casting |
 | Frosted theme looks flat, not glassy | Compositor blur isn't active here — Frosted falls back to a near-opaque panel (never see-through). On KDE enable Desktop Effects → Blur + install `kwindowsystem`; GNOME/Cinnamon/XFCE have no app-controllable blur. See **Themes & blur** |
 | Wayland: video shows in wrong spot | Set `QT_QPA_PLATFORM=xcb` in the environment to force XWayland |
 | Login devolves to LoginView across launches | Keyring (kwalletd6) is unresponsive at boot — the encrypted file fallback should kick in. Sign in once; subsequent launches auto-sign-in via the file. |

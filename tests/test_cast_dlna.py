@@ -1181,16 +1181,17 @@ class TestPolling:
 
 
 class TestSettingsReads:
-    def test_enabled_default_true_on_settings_failure(self, monkeypatch):
-        # Simulate get_settings raising — module should still return True
-        # so first-run / test paths don't accidentally disable DLNA.
+    def test_enabled_default_false_on_settings_failure(self, monkeypatch):
+        # Simulate get_settings raising — cast is opt-in, so the error
+        # path returns False (don't scan the network when we can't confirm
+        # the user enabled DLNA), aligned with the first-run default.
         import jellytoast.settings as s
 
         def _boom():
             raise RuntimeError("no settings here")
 
         monkeypatch.setattr(s, "get_settings", _boom)
-        assert _dlna._settings_enabled() is True
+        assert _dlna._settings_enabled() is False
 
     def test_ua_overrides_empty_on_settings_failure(self, monkeypatch):
         import jellytoast.settings as s

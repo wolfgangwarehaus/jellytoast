@@ -161,7 +161,6 @@ def _clean_cast_settings():
         "cast/airplay_enabled",
         "cast/dlna_enabled",
         "cast/sonos_enabled",
-        "cast/snapcast_enabled",
     ):
         qs.remove(k)
     qs.sync()
@@ -171,39 +170,36 @@ def _clean_cast_settings():
         "cast/airplay_enabled",
         "cast/dlna_enabled",
         "cast/sonos_enabled",
-        "cast/snapcast_enabled",
     ):
         qs.remove(k)
     qs.sync()
 
 
-def test_type_enabled_default_true_when_unset():
-    """Default is True (opt-in disable model — every cast type is on
-    until the user toggles it off in Settings)."""
-    assert _type_enabled("chromecast") is True
-    assert _type_enabled("airplay") is True
-    assert _type_enabled("dlna") is True
-    assert _type_enabled("sonos") is True
-    assert _type_enabled("snapcast") is True
-
-
-def test_type_enabled_returns_false_when_disabled():
-    qs = QSettings("jellytoast", "jellytoast")
-    qs.setValue("cast/chromecast_enabled", False)
-    qs.sync()
+def test_type_enabled_default_false_when_unset():
+    """Default is False (opt-in model — every cast type is off until the
+    user enables it in Settings → Casting)."""
     assert _type_enabled("chromecast") is False
-    # Other types remain default-True (per-kind keys are independent).
-    assert _type_enabled("airplay") is True
+    assert _type_enabled("airplay") is False
+    assert _type_enabled("dlna") is False
+    assert _type_enabled("sonos") is False
+
+
+def test_type_enabled_returns_true_when_enabled():
+    qs = QSettings("jellytoast", "jellytoast")
+    qs.setValue("cast/chromecast_enabled", True)
+    qs.sync()
+    assert _type_enabled("chromecast") is True
+    # Other types remain default-False (per-kind keys are independent).
+    assert _type_enabled("airplay") is False
 
 
 def test_type_enabled_reads_kind_specific_key():
-    """Each kind gates on its own ``cast/<kind>_enabled`` key — a
-    disable on one type must not leak to siblings."""
+    """Each kind gates on its own ``cast/<kind>_enabled`` key — enabling
+    one type must not leak to siblings."""
     qs = QSettings("jellytoast", "jellytoast")
-    qs.setValue("cast/dlna_enabled", False)
+    qs.setValue("cast/dlna_enabled", True)
     qs.sync()
-    assert _type_enabled("dlna") is False
-    assert _type_enabled("chromecast") is True
-    assert _type_enabled("airplay") is True
-    assert _type_enabled("sonos") is True
-    assert _type_enabled("snapcast") is True
+    assert _type_enabled("dlna") is True
+    assert _type_enabled("chromecast") is False
+    assert _type_enabled("airplay") is False
+    assert _type_enabled("sonos") is False

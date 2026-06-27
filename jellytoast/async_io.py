@@ -257,7 +257,7 @@ class _GuiInvoker(QObject):
 def call_on_gui(fn: Callable[[], Any]) -> None:
     """Invoke ``fn()`` on the GUI thread, callable from any thread.
 
-    Use when a callback fires on a non-GUI thread (e.g. snapcast's
+    Use when a callback fires on a non-GUI thread (e.g. a DLNA backend's
     asyncio loop via ``concurrent.futures.Future.add_done_callback``)
     but needs to touch widgets — which must only happen on the GUI
     thread. With no QApplication (headless unit tests) there is no GUI

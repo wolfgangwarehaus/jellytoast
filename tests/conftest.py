@@ -147,8 +147,8 @@ def _drain_async_and_stop_cast_singletons():
        step 2 tears down the asyncio loop those workers are still using
        (stopping the loop mid ``submit_blocking`` segfaults the worker).
 
-    2. **Cast loop/server threads** — the DLNA and snapcast asyncio loop
-       threads and the cast-proxy HTTP server. A live loop/server thread
+    2. **Cast loop/server threads** — the DLNA asyncio loop thread and
+       the cast-proxy HTTP server. A live loop/server thread
        torn down (or whose owned objects get GC'd) while an unrelated
        LATER test pumps a Qt event loop aborts the process. Cast tests
        build these singletons but never call ``CastManager.cleanup()``
@@ -221,7 +221,6 @@ def _drain_async_and_stop_cast_singletons():
         # 2. Stop the long-lived cast loop / server threads.
         for modname, attr, method in (
             ("jellytoast.cast.dlna.controller", "_CONTROLLER", "stop"),
-            ("jellytoast.cast.snapcast", "_CONTROLLER", "shutdown"),
             ("jellytoast.cast_proxy", "_PROXY", "stop"),
         ):
             mod = sys.modules.get(modname)

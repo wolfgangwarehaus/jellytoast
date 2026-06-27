@@ -7,7 +7,7 @@ had zero coverage: connecting a pre-armed session, loading media
 (``cast_to_chromecast`` + its async wrapper), the transport controls
 (pause/seek/set_volume/stop), and the pure container→MIME classmethod.
 
-Strategy (mirrors ``test_cast_snapcast.py`` + ``test_cast_gating.py``):
+Strategy (mirrors ``test_cast_gating.py``):
 
 - A ``_FakeCast`` stands in for a pychromecast Chromecast handle. It
   records ``wait`` / ``set_volume`` / ``quit_app`` calls and owns a
