@@ -1,5 +1,5 @@
 """Cast device-picker dialog — the unified, collapsible cast menu
-(Chromecast / AirPlay / DLNA / Sonos / Snapcast sections, per-device rows,
+(Chromecast / AirPlay / DLNA / Sonos sections, per-device rows,
 the cast-proxy + forget-credentials affordances).
 
 Extracted from ``now_playing_bar.py`` (2026-06-02): the three cast classes
@@ -95,8 +95,8 @@ class _CastDeviceRow(QWidget):
         from jellytoast.cast_dialog_sections import SECTION_LABELS
 
         # Label + glyph per actual protocol. The old code split binary
-        # chromecast-vs-"AirPlay", which mislabelled every DLNA / Sonos /
-        # Snapcast device as "AirPlay" (those sections were added after
+        # chromecast-vs-"AirPlay", which mislabelled every DLNA / Sonos
+        # device as "AirPlay" (those sections were added after
         # this row was first written) — e.g. a DLNA renderer read
         # "192.168.x.x · AirPlay". Found during the 2026-05-28 GUI cast walk.
         kind = SECTION_LABELS.get(dev.device_type, (dev.device_type or "Cast").title())
@@ -194,7 +194,7 @@ class _CastSection(QWidget):
 
     Sections are keyed by ``section_type`` (matches ``CastDevice
     .device_type`` for live types, plus the placeholder keys for the
-    yet-unmerged DLNA/Sonos/Snapcast backends). The header click toggles
+    yet-unmerged DLNA/Sonos backends). The header click toggles
     collapsed state and emits ``toggled``; the body's ``QListWidget``
     selection forwards as ``selection_changed`` and ``item_activated``
     so the parent dialog can drive a single ``selected_device`` across
@@ -520,7 +520,7 @@ class CastDialog(QDialog):
 
         v.addWidget(self._section_header("Available devices"))
 
-        sub = QLabel("Pick a Chromecast, AirPlay, DLNA, Sonos, or Snapcast receiver.")
+        sub = QLabel("Pick a Chromecast, AirPlay, DLNA, or Sonos receiver.")
         sub.setStyleSheet(f"color: {TEXT_DIM}; {type_qss(TYPE_CAPTION)}")
         sub.setWordWrap(True)
         v.addWidget(sub)
@@ -938,7 +938,7 @@ class CastDialog(QDialog):
             self._active_banner.hide()
             return
         # Label by the device's actual protocol — the old hardcoded
-        # Chromecast/AirPlay ternary mislabelled DLNA / Sonos / Snapcast
+        # Chromecast/AirPlay ternary mislabelled DLNA / Sonos
         # devices as "AirPlay". Reuse the dialog's SECTION_LABELS map
         # (same default-casing as the row-label helper at _row_kind).
         # device_type is a CastType (str-backed), so the string-keyed

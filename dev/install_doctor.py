@@ -160,7 +160,6 @@ def main() -> int:
         ("numpy", "audio visualizer", "visualizer", False),
         ("async_upnp_client", "DLNA casting", "dlna", False),
         ("soco", "Sonos casting", "sonos", False),
-        ("snapcast", "Snapcast control", "snapcast", False),
         ("dbus_next", "MPRIS / media keys", None, not (is_win or is_mac)),
         ("pyatv", "AirPlay 2 casting", None, not is_win),
         ("Xlib", "media-key hotkeys", None, not (is_win or is_mac)),

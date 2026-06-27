@@ -21,20 +21,21 @@ from ._constants import USER_AGENT_TEMPLATE
 
 
 def _settings_enabled() -> bool:
-    """Honor ``cast/dlna_enabled`` (default True).
+    """Honor ``cast/dlna_enabled`` (default False — opt-in).
 
-    Returning ``True`` when settings can't be read keeps the test path
-    (no QSettings, no Qt) and the first-run path (key never written)
-    aligned: DLNA on unless explicitly disabled."""
+    DLNA discovery runs only once the user enables it in Settings →
+    Casting. Returning ``False`` when settings can't be read keeps the
+    error path aligned with the first-run path (key never written): no
+    network scan until the user explicitly opts in."""
     try:
         from jellytoast.settings import get_settings
 
         s = get_settings()
     except Exception:
-        return True
+        return False
     # QSettings stores ints; fall back to a defensive bool() so any
     # legacy string write still does the right thing.
-    raw = s._s.value("cast/dlna_enabled", True)
+    raw = s._s.value("cast/dlna_enabled", False)
     if isinstance(raw, str):
         return raw.lower() not in ("0", "false", "no", "off", "")
     return bool(raw)

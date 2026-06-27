@@ -229,9 +229,8 @@ class TestInitialVolume:
         assert mgr.cast_set_initial_volume(30) == 30
         assert calls == []
 
-    def test_airplay_and_snapcast_have_no_volume_push(self, mgr, monkeypatch):
+    def test_airplay_has_no_volume_push(self, mgr, monkeypatch):
         calls = self._patch_setters(mgr, monkeypatch)
-        for kind in ("airplay", "snapcast"):
-            mgr.active_cast = _dev(kind)
-            assert mgr.cast_set_initial_volume(30) == 30
+        mgr.active_cast = _dev("airplay")
+        assert mgr.cast_set_initial_volume(30) == 30
         assert calls == []

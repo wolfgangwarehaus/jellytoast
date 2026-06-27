@@ -4,8 +4,8 @@
 The cast backends (CastManager / cast_dialog / cast_proxy / the per-protocol
 controllers) are covered by the test_cast_* suite; the host-level dispatch
 (`_cast_to_device`) was untested. This pins the extraction shape and adds a
-host-level routing test for the cleanest, most consequential dispatch decision:
-Snapcast must NOT enter the stop/cast flow — it hands off to the control surface.
+host-level routing tests for the most consequential dispatch decisions (e.g.
+a failed/abandoned cast must resume local playback).
 """
 
 from __future__ import annotations
@@ -23,7 +23,6 @@ MOVED = [
     "_find_cast_device",
     "_cast_to_favorite",
     "_cast_to_device",
-    "_open_snapcast_control",
 ]
 
 
@@ -42,17 +41,6 @@ def test_moved_methods_live_on_the_mixin():
     for name in MOVED:
         assert name in _CastDispatcherMixin.__dict__, f"{name} should be on the mixin"
         assert callable(getattr(JellytoastWindow, name))
-
-
-def test_cast_to_device_routes_snapcast_to_control_surface(qapp):
-    # Snapcast is a routing matrix, not a play target: _cast_to_device must
-    # hand off to _open_snapcast_control and return BEFORE the stop/cast flow
-    # (no stop_requested, no active_cast). Drive it unbound with a minimal stub.
-    captured = []
-    stub = SimpleNamespace(_open_snapcast_control=lambda dev: captured.append(dev))
-    dev = SimpleNamespace(device_type=CastType.SNAPCAST, name="Living Room")
-    _CastDispatcherMixin._cast_to_device(stub, dev)
-    assert captured == [dev]
 
 
 # ── Failed/abandoned cast must resume LOCAL playback (review P0-2) ───────────
@@ -134,3 +122,59 @@ def test_successful_cast_does_not_resume_local(qapp, monkeypatch):
     assert len(stub.bus.cast_started.calls) == 1
     assert stub.bus.play_requested.calls == [], "success must not start local audio"
     assert len(stub.bus.playback_started.calls) == 1, "success re-renders the bar"
+
+
+# ── Cast button gate: opt-in protocols → Settings ───────────────────────────
+# Cast types are OFF by default. Clicking Cast with none enabled would open a
+# permanently-empty picker (nothing discovers), so _open_cast_dialog routes to
+# Settings → Casting instead. With any type on, it takes the normal picker path.
+
+
+def test_cast_button_opens_settings_when_no_type_enabled(qapp, monkeypatch):
+    import jellytoast.cast_dispatcher as cd
+
+    monkeypatch.setattr(
+        cd, "get_settings", lambda: SimpleNamespace(any_cast_type_enabled=False)
+    )
+    pages = []
+    stub = SimpleNamespace(_open_settings=lambda page=None: pages.append(page))
+    _CastDispatcherMixin._open_cast_dialog(stub)
+    assert pages == ["Casting"], "empty-protocol Cast click must deep-link to Casting"
+
+
+def test_cast_button_opens_picker_when_a_type_enabled(qapp, monkeypatch):
+    import jellytoast.cast_dispatcher as cd
+
+    monkeypatch.setattr(
+        cd, "get_settings", lambda: SimpleNamespace(any_cast_type_enabled=True)
+    )
+    pages = []
+    raised = []
+    # A visible singleton dialog short-circuits the picker path before the real
+    # CastDialog build, so we can assert the path without constructing it.
+    existing = SimpleNamespace(
+        isVisible=lambda: True,
+        raise_=lambda: raised.append("raise"),
+        activateWindow=lambda: raised.append("activate"),
+    )
+    stub = SimpleNamespace(
+        _open_settings=lambda page=None: pages.append(page),
+        _cast_dlg=existing,
+    )
+    _CastDispatcherMixin._open_cast_dialog(stub)
+    assert pages == [], "an enabled protocol must NOT route to settings"
+    assert raised == ["raise", "activate"], "took the picker path"
+
+
+def test_settings_dialog_show_page_deep_links(qapp):
+    from jellytoast.settings_dialog import SettingsDialog
+
+    dlg = SettingsDialog()
+    try:
+        assert dlg.show_page("Casting") is True
+        row = dlg.nav.currentRow()
+        assert dlg.nav.item(row).text() == "Casting"
+        # Unknown title is a no-op that reports failure.
+        assert dlg.show_page("Nonexistent") is False
+    finally:
+        dlg.deleteLater()

@@ -19,7 +19,7 @@
       <li>Browse albums, artists, songs, playlists, genres, and internet radio</li>
       <li>Native search across both providers with offline-aware filtering</li>
       <li>Bit-perfect mpv playback with optional server-side transcode tiers and ReplayGain (track / album)</li>
-      <li>Casting: Chromecast, AirPlay 2, DLNA, Sonos, and Snapcast — each toggleable per-protocol</li>
+      <li>Casting: Chromecast, AirPlay 2, DLNA, and Sonos — each toggleable per-protocol</li>
       <li>Local cast relay for remote / Tailscale / self-signed servers (devices that can't reach the source)</li>
       <li>Explicit downloads with full offline playback (cascade by album / artist / playlist) and offline indicator</li>
       <li>Synced and plain lyrics, with a dedicated now-playing page</li>
@@ -69,7 +69,7 @@
     </screenshot>
     <screenshot>
       <image type="source" width="1600" height="900">https://raw.githubusercontent.com/wolfgangwarehaus/jellytoast/main/docs/screenshots/cast.png</image>
-      <caption>Cast to Chromecast, AirPlay, DLNA, Sonos or Snapcast</caption>
+      <caption>Cast to Chromecast, AirPlay, DLNA, or Sonos</caption>
     </screenshot>
     <screenshot>
       <image type="source" width="1600" height="900">https://raw.githubusercontent.com/wolfgangwarehaus/jellytoast/main/docs/screenshots/smart-playlists.png</image>

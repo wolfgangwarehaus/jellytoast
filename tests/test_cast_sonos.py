@@ -976,8 +976,9 @@ def test_settings_defaults_for_sonos_keys():
     from jellytoast.settings import Settings
 
     s = Settings()
-    # Defaults per the research doc + the autonomous-task spec.
-    assert s.sonos_enabled is True
+    # Defaults per the research doc + the autonomous-task spec. Cast types
+    # are opt-in, so sonos_enabled (alias of cast_sonos_enabled) is off.
+    assert s.sonos_enabled is False
     assert s.sonos_preferred_zone == ""
     assert s.sonos_group_with_master is False
     assert s.sonos_event_port == 0

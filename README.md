@@ -18,7 +18,7 @@
 
 - **Desktop app for your self-hosted music** — supports Jellyfin and Navidrome, with multiple libraries.
 - **Bit-perfect audio** — FLAC / ALAC / OPUS / DSD playback via [mpv](https://mpv.io/).
-- **Cast anywhere** — send music to Chromecast, AirPlay 2, Sonos, DLNA, or Snapcast. A built-in local relay can forward the stream for trickier setups, like Tailscale connections or fully offline playback.
+- **Cast anywhere** — send music to Chromecast, AirPlay 2, Sonos, or DLNA. A built-in local relay can forward the stream for trickier setups, like Tailscale connections or fully offline playback.
 - **Offline mode** — cache albums, playlists, or your whole library for offline playback.
 - **Floating mini player** — compact and album-art views.
 - **Desktop features** — media keys, a tray icon, optional notifications, and a start-at-login option.

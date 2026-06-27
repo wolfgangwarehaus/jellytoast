@@ -1,6 +1,6 @@
 """DLNA + Sonos cast PLAY-dispatch wiring.
 
-The 2026-05-28 audit found the DLNA / Sonos / Snapcast backends were
+The 2026-05-28 audit found the DLNA / Sonos backends were
 built + unit-tested but their *play* path was never wired into the cast
 dispatch — a pick silently misrouted into the AirPlay ``POST /play``.
 This covers the DLNA + Sonos half of the fix (the URL-push backends):
@@ -250,7 +250,6 @@ def test_cast_to_sonos_failure_no_active_cast(monkeypatch, sonos_dev):
         ("airplay", "AirPlay"),
         ("dlna", "DLNA"),
         ("sonos", "Sonos"),
-        ("snapcast", "Snapcast"),
     ],
 )
 def test_cast_device_row_labels_per_protocol(qapp, dtype, expected):
