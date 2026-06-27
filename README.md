@@ -68,7 +68,7 @@ dev setup, the architecture, and the conventions this codebase follows.
 | [`CONTRIBUTING.md`](.github/CONTRIBUTING.md) | Dev setup, architecture & the conventions this codebase follows |
 | [`docs/SPEC.md`](docs/SPEC.md) | What the app actually does today |
 | [`SECURITY.md`](.github/SECURITY.md) | How to report a vulnerability |
-| [`CHANGELOG.md`](docs/CHANGELOG.md) | Dated history of what shipped |
+| [`CHANGELOG.md`](CHANGELOG.md) | What changed in each release (the detailed dev log is in [`docs/CHANGELOG.md`](docs/CHANGELOG.md)) |
 
 ## License
 

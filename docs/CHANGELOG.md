@@ -1,34 +1,14 @@
-# Changelog
+# Changelog (detailed archive — frozen)
 
-All notable user-facing and developer-facing changes for jellytoast.
+> **The maintained changelog is now [`/CHANGELOG.md`](../CHANGELOG.md)** at the repo
+> root — tight, user-facing, the source `cut_release.sh` stamps and the GitHub
+> release notes come from. **This file is frozen:** it stays as the historical
+> record (dated version entries + the pre-release dev log below) and is no longer
+> updated. New release notes go in the root changelog.
+
 Format roughly follows [Keep a Changelog](https://keepachangelog.com/).
 
-The **Unreleased** section gathers everything since the most recent
-tagged version; snip it into a dated version block when cutting a release.
-
-> **Voice — this block becomes the GitHub release post.** Keep it short, plain,
-> and a little casual: like telling a friend what's new, not a press release. Get
-> the **specs right** (what shipped, versions, platforms), but drop the gloss
-> ("first-class", "deep integration", "seamless") and the internals (class / API
-> names, queue mechanics — those live in the code + commits). One line per change
-> where you can.
-
 ---
-
-## [Unreleased]
-
-### Removed
-
-- **Snapcast support is gone.** It only ever controlled an existing Snapcast
-  server — it couldn't play your library to one — which made it more confusing
-  than useful, so it's out. Chromecast, AirPlay 2, DLNA, and Sonos casting are
-  unchanged.
-
-### Changed
-
-- **Casting is opt-in now.** Nothing scans your network for cast devices until
-  you turn a protocol on in Settings → Casting; the cast button takes you there
-  if nothing's enabled yet.
 
 ## [0.1.4] — 2026-06-26
 
