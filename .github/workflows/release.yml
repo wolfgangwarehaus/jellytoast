@@ -388,7 +388,7 @@ jobs:
     # MAS isn't part of the auto-release yet. Dispatch this to build+scan the
     # unsigned recipe today, and to sign+validate once the MAS secrets land.
     # Everything past the symbol scan activates only when those secrets exist.
-    # Setup: packaging/macos/mas/MAS_SPIKE.md.
+    # Setup: jellytoast-ops → packaging/macos/mas/MAS_SPIKE.md (private runbook).
     if: github.event_name == 'workflow_dispatch'
     runs-on: macos-14
     timeout-minutes: 50  # productbuild can hang on a keychain prompt — fail fast, never burn the 6h default
