@@ -35,7 +35,7 @@
 
 ### macOS
 
-- **[Download the `.dmg`](https://github.com/wolfgangwarehaus/jellytoast/releases/latest)** (Apple Silicon) — signed and notarized; open it and drag jellytoast to Applications.
+- **Download the `.dmg`** — signed and notarized; open it and drag jellytoast to Applications. Pick your chip: [Apple Silicon](https://github.com/wolfgangwarehaus/jellytoast/releases/latest) (`-macos-arm64.dmg`) or [Intel](https://github.com/wolfgangwarehaus/jellytoast/releases/latest) (`-macos-x86_64.dmg`).
 - **Mac App Store** — coming soon.
 
 ### Windows 10/11

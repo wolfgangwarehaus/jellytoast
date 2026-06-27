@@ -5,8 +5,10 @@
 #                                        + .zsync for AppImageUpdate delta updates)
 #   • jellytoast-<ver>-windows-x64-setup.exe   (Inno Setup installer, libmpv bundled)
 #   • jellytoast-<ver>-windows-x64-portable.zip
-#   • jellytoast-<ver>-macos.dmg        (arm64 .app, libmpv bundled; signed +
-#                                        notarized once the Apple secrets exist)
+#   • jellytoast-<ver>-macos-arm64.dmg  (Apple Silicon) + -macos-x86_64.dmg
+#                                        (Intel) — native per-arch .app, libmpv
+#                                        bundled; signed + notarized once the
+#                                        Apple secrets exist
 #   • sdist + wheel (PyPI-shaped, also attached)
 #
 # The release is created as a DRAFT — publishing (and the AUR/winget
@@ -264,12 +266,23 @@ jobs:
             dist/*-portable.zip
 
   build-macos:
-    # Apple-Silicon (arm64) runner — free + unlimited for public repos. Builds
-    # an arm64 .app, wraps it in a .dmg, and (once the Apple secrets exist)
-    # signs with Developer ID + notarizes. NB: this is an arm64-only build for
-    # now; a universal2 (arm64 + x86_64) build is a follow-up — see
-    # packaging/macos/MACOS_SESSION.md.
-    runs-on: macos-14
+    # Two NATIVE builds — Apple Silicon (arm64, macos-14) and Intel (x86_64,
+    # macos-15-intel, the last Intel image GitHub offers, ~until Aug 2027). Each
+    # does a native Homebrew-libmpv + PyInstaller build, signs with Developer ID,
+    # notarizes, and ships its own jellytoast-<ver>-macos-<arch>.dmg. fail-fast
+    # off so one arch failing doesn't kill the other. (A single universal2 .dmg
+    # was ruled out: numpy + cffi ship NO universal2 wheels, so PyInstaller's
+    # --target-arch universal2 aborts on the thin binaries — two native .dmgs
+    # are the reliable path.)
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-14
+            arch: arm64
+          - runner: macos-15-intel
+            arch: x86_64
+    runs-on: ${{ matrix.runner }}
     # Signing + notarization activate only once the secrets exist (see
     # packaging/macos/MACOS_SESSION.md). Until then SIGN/NOTARIZE are 'false'
     # and those steps are skipped, so releases keep building an UNSIGNED .dmg
@@ -347,7 +360,7 @@ jobs:
           fi
           echo "version=$V" >> "$GITHUB_OUTPUT"
       - name: Build the .dmg
-        run: bash packaging/macos/build_dmg.sh "${{ steps.ver.outputs.version }}" dist/jellytoast.app
+        run: bash packaging/macos/build_dmg.sh "${{ steps.ver.outputs.version }}" dist/jellytoast.app "${{ matrix.arch }}"
       # Notarize + staple the .dmg so Gatekeeper accepts it offline on first
       # launch. Skipped until the Apple API-key secrets are set.
       - name: Notarize + staple the .dmg
@@ -361,17 +374,17 @@ jobs:
           echo "$APPLE_API_KEY_B64" | base64 --decode > "$KEY"
           export APPLE_API_KEY_PATH="$KEY"
           bash packaging/macos/notarize.sh \
-            "dist/jellytoast-${{ steps.ver.outputs.version }}-macos.dmg"
+            "dist/jellytoast-${{ steps.ver.outputs.version }}-macos-${{ matrix.arch }}.dmg"
           rm -f "$KEY"
       - uses: actions/upload-artifact@v7
         with:
-          name: macos
-          path: dist/*-macos.dmg
+          name: macos-${{ matrix.arch }}
+          path: dist/*-macos-${{ matrix.arch }}.dmg
       - name: Attest macOS artifact provenance
         if: github.event_name == 'push'
         uses: actions/attest-build-provenance@v4
         with:
-          subject-path: dist/*-macos.dmg
+          subject-path: dist/*-macos-${{ matrix.arch }}.dmg
 
   build-mas:
     # Mac App Store (sandboxed .pkg) build. Mirrors build-macos but with the

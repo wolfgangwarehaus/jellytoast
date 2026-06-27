@@ -10,6 +10,8 @@ developer-facing history lives in [`docs/CHANGELOG.md`](docs/CHANGELOG.md).
      This block becomes the GitHub release notes; cut_release.sh stamps it into a
      dated version on release. One line per change where you can. -->
 
+- **Intel Mac support.** A native Intel (x86_64) `.dmg` now ships alongside the
+  Apple Silicon one — grab the build for your chip. Both are signed + notarized.
 - **Snapcast removed.** It only ever *controlled* an existing Snapcast server — it
   couldn't play your library to one — so it's gone. Chromecast, AirPlay 2, DLNA,
   and Sonos are unchanged.
