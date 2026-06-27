@@ -2271,12 +2271,17 @@ class MpvController(_CastTransportMixin, QObject):
         # chunk — and reset the anchor on backwards jumps (seek) so the
         # next forward step still gates correctly. Persist resume
         # position on the same gate so disk writes stay 5s-paced.
-        if (
-            self._last_reported_position_ms < 0
-            or abs(ms - self._last_reported_position_ms) >= self.PROGRESS_REPORT_DELTA_MS
-        ):
+        prev = self._last_reported_position_ms
+        if prev < 0 or abs(ms - prev) >= self.PROGRESS_REPORT_DELTA_MS:
             self._last_reported_position_ms = ms
-            self._report_progress()
+            # A backward jump is a SEEK, not playback progress: it still resets
+            # the gate anchor (so the next forward step gates correctly) and the
+            # local resume anchor tracks the current head — but we do NOT report
+            # a rewind to the server as progress, which would corrupt its
+            # play-position / scrobble tracking. Report on first hit + forward
+            # moves only.
+            if prev < 0 or (ms - prev) >= self.PROGRESS_REPORT_DELTA_MS:
+                self._report_progress()
             if np.item_id:
                 self.settings.saved_position_ms = ms
                 self.settings.saved_position_item_id = np.item_id

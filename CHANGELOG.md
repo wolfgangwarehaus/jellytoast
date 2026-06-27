@@ -15,6 +15,9 @@ developer-facing history lives in [`docs/CHANGELOG.md`](docs/CHANGELOG.md).
   and Sonos are unchanged.
 - **Casting is opt-in.** Nothing scans your network until you turn a protocol on in
   Settings → Casting; the cast button takes you there if nothing's enabled yet.
+- **Fixes.** The year no longer shows "None" for tracks without one; shuffle,
+  repeat, and window position now stick when you quit from the tray; rewinding a
+  track no longer skews your scrobbles; plus casting + reconnection robustness.
 
 ## [0.1.4] — 2026-06-26
 

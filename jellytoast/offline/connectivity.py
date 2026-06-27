@@ -172,8 +172,10 @@ def is_server_reachable() -> bool:
 
 def active_host_label() -> str:
     """Label of the currently active host. Empty when the primary URL
-    is active. Useful for status chips / toasts."""
-    return _active_host_label
+    is active. Useful for status chips / toasts. Read under the lock so it
+    can't observe a half-applied failover/reset from a worker thread."""
+    with _state_lock:
+        return _active_host_label
 
 
 def note_success() -> None:
@@ -625,10 +627,11 @@ def _set_active_host(label: str) -> None:
     has a stable string to display."""
     global _active_host_label
     new_label = label or "Primary"
-    if new_label == "Primary":
-        _active_host_label = ""
-    else:
-        _active_host_label = new_label
+    # Serialize the write with the other _state_lock holders (note_success,
+    # reset_after_server_change, the getter) — this is called from probe worker
+    # threads. Emit OUTSIDE the lock so a bus subscriber can't re-enter it.
+    with _state_lock:
+        _active_host_label = "" if new_label == "Primary" else new_label
     _emit_host_switched(new_label)
 
 
