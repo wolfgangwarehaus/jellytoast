@@ -15,6 +15,9 @@ developer-facing history lives in [`docs/CHANGELOG.md`](docs/CHANGELOG.md).
   and Sonos are unchanged.
 - **Casting is opt-in.** Nothing scans your network until you turn a protocol on in
   Settings → Casting; the cast button takes you there if nothing's enabled yet.
+- **Lighter on big libraries.** The album grid no longer keeps every cover you've
+  scrolled past in memory — it caps them and reloads from disk as needed, so a huge
+  library won't balloon RAM.
 - **Fixes.** The year no longer shows "None" for tracks without one; shuffle,
   repeat, and window position now stick when you quit from the tray; rewinding a
   track no longer skews your scrobbles; plus casting + reconnection robustness.
