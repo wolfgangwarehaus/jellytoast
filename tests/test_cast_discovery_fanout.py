@@ -210,6 +210,14 @@ def _clear():
 @pytest.fixture(autouse=True)
 def _reset_settings():
     _clear()
+    # Cast types are off by default (opt-in). This file exercises
+    # discovery *mechanics*, so enable the three protocols it mocks as the
+    # baseline; the gating tests override specific keys back to False.
+    # Chromecast/AirPlay stay off — their backends aren't mocked here.
+    qs = _qs()
+    for k in ("dlna", "sonos", "snapcast"):
+        qs.setValue(f"cast/{k}_enabled", True)
+    qs.sync()
     yield
     _clear()
 

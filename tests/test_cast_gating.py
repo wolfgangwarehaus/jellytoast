@@ -208,6 +208,15 @@ def _clear_cast_settings():
     qs.sync()
 
 
+def _enable(*kinds):
+    """Turn on the given cast types — they are OFF by default (opt-in), so
+    tests that exercise discovery must enable the protocol first."""
+    qs = _qs()
+    for k in kinds:
+        qs.setValue(f"cast/{k}_enabled", True)
+    qs.sync()
+
+
 @pytest.fixture(autouse=True)
 def _reset_settings():
     _clear_cast_settings()
@@ -218,10 +227,18 @@ def _reset_settings():
 # ── Per-protocol gates ─────────────────────────────────────────────────
 
 
-def test_chromecast_enabled_by_default(cm):
+def test_chromecast_runs_when_enabled(cm):
     m, calls = cm
+    _enable("chromecast")
     m.discover_chromecasts()
     assert calls["chromecast"] == 1
+
+
+def test_chromecast_skipped_by_default(cm):
+    # Opt-in: a cleared key means the type is off, so discovery skips.
+    m, calls = cm
+    m.discover_chromecasts()
+    assert calls["chromecast"] == 0
 
 
 def test_chromecast_skipped_when_disabled(cm):
@@ -232,8 +249,9 @@ def test_chromecast_skipped_when_disabled(cm):
     assert calls["chromecast"] == 0
 
 
-def test_airplay_enabled_by_default_runs_zeroconf_fallback(cm):
+def test_airplay_runs_zeroconf_fallback_when_enabled(cm):
     m, calls = cm
+    _enable("airplay")
     m.discover_airplay()
     assert calls["airplay_zc"] == 1
 
@@ -273,8 +291,10 @@ def test_discover_all_runs_only_enabled_protocol(cm):
 
 
 def test_boot_scan_skipped_by_default(cm):
-    # Default is ``on_demand``: the boot pre-warm must NOT scan.
+    # Default is ``on_demand``: the boot pre-warm must NOT scan. Enable the
+    # types so the timing gate is the *only* thing that can hold the scan.
     m, calls = cm
+    _enable("chromecast", "airplay")
     m.discover_all_at_boot()
     assert calls["chromecast"] == 0
     assert calls["airplay_zc"] == 0
@@ -282,6 +302,7 @@ def test_boot_scan_skipped_by_default(cm):
 
 def test_boot_scan_skipped_when_on_demand(cm):
     m, calls = cm
+    _enable("chromecast", "airplay")
     _qs().setValue("cast/discovery_timing", "on_demand")
     _qs().sync()
     m.discover_all_at_boot()
@@ -291,6 +312,7 @@ def test_boot_scan_skipped_when_on_demand(cm):
 
 def test_boot_scan_runs_when_startup(cm):
     m, calls = cm
+    _enable("chromecast", "airplay")
     _qs().setValue("cast/discovery_timing", "startup")
     _qs().sync()
     m.discover_all_at_boot()
@@ -302,6 +324,7 @@ def test_boot_scan_runs_when_startup_but_honors_type_gates(cm):
     # Timing says scan, but the user has Chromecast disabled — the
     # boot scan must still skip Chromecast while running AirPlay.
     m, calls = cm
+    _enable("airplay")
     qs = _qs()
     qs.setValue("cast/discovery_timing", "startup")
     qs.setValue("cast/chromecast_enabled", False)
@@ -315,6 +338,7 @@ def test_unknown_timing_value_defaults_to_on_demand(cm):
     # Defensive: a typo'd value in the conf file shouldn't accidentally
     # opt the user into boot scans.
     m, calls = cm
+    _enable("chromecast", "airplay")
     _qs().setValue("cast/discovery_timing", "whenever")
     _qs().sync()
     m.discover_all_at_boot()
@@ -328,15 +352,18 @@ def test_unknown_timing_value_defaults_to_on_demand(cm):
 # the property accessors.
 
 
-def test_settings_cast_type_defaults_true():
+def test_settings_cast_type_defaults_false():
+    # Opt-in: every cast type is off until the user enables it.
     from jellytoast.settings import Settings
 
     s = Settings()
-    assert s.cast_chromecast_enabled is True
-    assert s.cast_airplay_enabled is True
-    assert s.cast_dlna_enabled is True
-    assert s.cast_sonos_enabled is True
-    assert s.cast_snapcast_enabled is True
+    assert s.cast_chromecast_enabled is False
+    assert s.cast_airplay_enabled is False
+    assert s.cast_dlna_enabled is False
+    assert s.cast_sonos_enabled is False
+    assert s.cast_snapcast_enabled is False
+    # The aggregate gate the cast button reads is False too.
+    assert s.any_cast_type_enabled is False
 
 
 def test_settings_cast_timing_default_on_demand():
@@ -362,12 +389,14 @@ def test_settings_cast_toggle_round_trip():
     from jellytoast.settings import Settings
 
     s = Settings()
-    s.cast_chromecast_enabled = False
-    s.cast_sonos_enabled = False
-    assert s.cast_chromecast_enabled is False
-    assert s.cast_sonos_enabled is False
-    # Untouched flags stay at their default
-    assert s.cast_airplay_enabled is True
+    s.cast_chromecast_enabled = True
+    s.cast_sonos_enabled = True
+    assert s.cast_chromecast_enabled is True
+    assert s.cast_sonos_enabled is True
+    # Untouched flags stay at their (off) default
+    assert s.cast_airplay_enabled is False
+    # Enabling any one type flips the aggregate gate on.
+    assert s.any_cast_type_enabled is True
 
 
 # ── CastBrowser migration ─────────────────────────────────────────────
@@ -437,6 +466,7 @@ def test_chromecast_discovery_materialises_devices_via_host(monkeypatch):
     monkeypatch.setattr(_cm_mod, "_make_discovery_zeroconf", lambda: None, raising=False)
     monkeypatch.setattr(_cm_mod, "run_async", _run_async_inline)
 
+    _enable("chromecast")
     m = CastManager()
     m.discover_chromecasts()
 
@@ -523,6 +553,7 @@ def test_chromecast_discovery_tolerates_materialise_failure(monkeypatch):
     monkeypatch.setattr(_cm_mod, "_make_discovery_zeroconf", lambda: None, raising=False)
     monkeypatch.setattr(_cm_mod, "run_async", _run_async_inline)
 
+    _enable("chromecast")
     m = CastManager()
     m.discover_chromecasts()
 
@@ -698,6 +729,7 @@ def test_discover_passes_lan_zeroconf_to_browser_and_closes_it(monkeypatch):
     monkeypatch.setattr(_cm_mod, "_make_discovery_zeroconf", lambda: fake_zc, raising=False)
     monkeypatch.setattr(_cm_mod, "run_async", _run_async_inline)
 
+    _enable("chromecast")
     CastManager().discover_chromecasts()
     assert events["passed_zc"] is fake_zc  # handed to CastBrowser
     assert events["closed"] is True  # closed after the sweep

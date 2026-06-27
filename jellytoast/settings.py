@@ -518,9 +518,15 @@ class Settings:
             v if v in ("startup", "on_demand") else "on_demand",
         )
 
+    # Per-protocol cast toggles — OFF by default (opt-in). Nothing
+    # discovers or scans the network for a cast type until the user
+    # enables it in Settings → Casting; the cast button routes there when
+    # none are on. The discovery side reads the same keys with the same
+    # False default (cast_manager._common._type_enabled,
+    # cast.dlna._settings._settings_enabled) — keep them in sync.
     @property
     def cast_chromecast_enabled(self) -> bool:
-        return self._s.value("cast/chromecast_enabled", True, type=bool)
+        return self._s.value("cast/chromecast_enabled", False, type=bool)
 
     @cast_chromecast_enabled.setter
     def cast_chromecast_enabled(self, v: bool):
@@ -528,7 +534,7 @@ class Settings:
 
     @property
     def cast_airplay_enabled(self) -> bool:
-        return self._s.value("cast/airplay_enabled", True, type=bool)
+        return self._s.value("cast/airplay_enabled", False, type=bool)
 
     @cast_airplay_enabled.setter
     def cast_airplay_enabled(self, v: bool):
@@ -536,7 +542,7 @@ class Settings:
 
     @property
     def cast_dlna_enabled(self) -> bool:
-        return self._s.value("cast/dlna_enabled", True, type=bool)
+        return self._s.value("cast/dlna_enabled", False, type=bool)
 
     @cast_dlna_enabled.setter
     def cast_dlna_enabled(self, v: bool):
@@ -544,7 +550,7 @@ class Settings:
 
     @property
     def cast_sonos_enabled(self) -> bool:
-        return self._s.value("cast/sonos_enabled", True, type=bool)
+        return self._s.value("cast/sonos_enabled", False, type=bool)
 
     @cast_sonos_enabled.setter
     def cast_sonos_enabled(self, v: bool):
@@ -552,11 +558,25 @@ class Settings:
 
     @property
     def cast_snapcast_enabled(self) -> bool:
-        return self._s.value("cast/snapcast_enabled", True, type=bool)
+        return self._s.value("cast/snapcast_enabled", False, type=bool)
 
     @cast_snapcast_enabled.setter
     def cast_snapcast_enabled(self, v: bool):
         self._s.setValue("cast/snapcast_enabled", bool(v))
+
+    @property
+    def any_cast_type_enabled(self) -> bool:
+        """True iff at least one cast protocol is enabled. Drives the cast
+        button: with nothing on, the picker would be permanently empty
+        (nothing discovers), so the button opens Settings → Casting
+        instead."""
+        return (
+            self.cast_chromecast_enabled
+            or self.cast_airplay_enabled
+            or self.cast_dlna_enabled
+            or self.cast_sonos_enabled
+            or self.cast_snapcast_enabled
+        )
 
     @property
     def media_integration_enabled(self) -> bool:
@@ -760,8 +780,8 @@ class Settings:
     def snapcast_enabled(self) -> bool:
         """Master kill-switch for the Snapcast control surface. When
         False, discovery never runs and the controller refuses to
-        connect. Default True. Alias of ``cast_snapcast_enabled`` — same
-        ``cast/snapcast_enabled`` key."""
+        connect. Default False (opt-in). Alias of ``cast_snapcast_enabled``
+        — same ``cast/snapcast_enabled`` key."""
         return self.cast_snapcast_enabled
 
     @snapcast_enabled.setter

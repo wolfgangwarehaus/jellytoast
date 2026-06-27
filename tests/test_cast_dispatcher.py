@@ -134,3 +134,59 @@ def test_successful_cast_does_not_resume_local(qapp, monkeypatch):
     assert len(stub.bus.cast_started.calls) == 1
     assert stub.bus.play_requested.calls == [], "success must not start local audio"
     assert len(stub.bus.playback_started.calls) == 1, "success re-renders the bar"
+
+
+# ── Cast button gate: opt-in protocols → Settings ───────────────────────────
+# Cast types are OFF by default. Clicking Cast with none enabled would open a
+# permanently-empty picker (nothing discovers), so _open_cast_dialog routes to
+# Settings → Casting instead. With any type on, it takes the normal picker path.
+
+
+def test_cast_button_opens_settings_when_no_type_enabled(qapp, monkeypatch):
+    import jellytoast.cast_dispatcher as cd
+
+    monkeypatch.setattr(
+        cd, "get_settings", lambda: SimpleNamespace(any_cast_type_enabled=False)
+    )
+    pages = []
+    stub = SimpleNamespace(_open_settings=lambda page=None: pages.append(page))
+    _CastDispatcherMixin._open_cast_dialog(stub)
+    assert pages == ["Casting"], "empty-protocol Cast click must deep-link to Casting"
+
+
+def test_cast_button_opens_picker_when_a_type_enabled(qapp, monkeypatch):
+    import jellytoast.cast_dispatcher as cd
+
+    monkeypatch.setattr(
+        cd, "get_settings", lambda: SimpleNamespace(any_cast_type_enabled=True)
+    )
+    pages = []
+    raised = []
+    # A visible singleton dialog short-circuits the picker path before the real
+    # CastDialog build, so we can assert the path without constructing it.
+    existing = SimpleNamespace(
+        isVisible=lambda: True,
+        raise_=lambda: raised.append("raise"),
+        activateWindow=lambda: raised.append("activate"),
+    )
+    stub = SimpleNamespace(
+        _open_settings=lambda page=None: pages.append(page),
+        _cast_dlg=existing,
+    )
+    _CastDispatcherMixin._open_cast_dialog(stub)
+    assert pages == [], "an enabled protocol must NOT route to settings"
+    assert raised == ["raise", "activate"], "took the picker path"
+
+
+def test_settings_dialog_show_page_deep_links(qapp):
+    from jellytoast.settings_dialog import SettingsDialog
+
+    dlg = SettingsDialog()
+    try:
+        assert dlg.show_page("Casting") is True
+        row = dlg.nav.currentRow()
+        assert dlg.nav.item(row).text() == "Casting"
+        # Unknown title is a no-op that reports failure.
+        assert dlg.show_page("Nonexistent") is False
+    finally:
+        dlg.deleteLater()

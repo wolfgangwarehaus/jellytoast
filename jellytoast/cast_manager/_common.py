@@ -82,12 +82,13 @@ class _AirPlayListener:
 
 
 def _type_enabled(kind: str) -> bool:
-    """Per-protocol gate: a user can disable a cast type they don't
-    own so discovery skips it entirely. Reads the QSettings directly
-    rather than importing jellytoast.settings so this module stays
-    light at import time (settings.py runs the legacy-org migration
-    on first construction)."""
+    """Per-protocol gate: discovery for a cast type runs only once the
+    user enables it (OFF by default — opt-in). Reads the QSettings
+    directly rather than importing jellytoast.settings so this module
+    stays light at import time (settings.py runs the legacy-org migration
+    on first construction). Mirrors the False default in
+    jellytoast.settings.Settings.cast_<kind>_enabled — keep in sync."""
     from PySide6.QtCore import QSettings
 
     qs = QSettings("jellytoast", "jellytoast")
-    return bool(qs.value(f"cast/{kind}_enabled", True, type=bool))
+    return bool(qs.value(f"cast/{kind}_enabled", False, type=bool))

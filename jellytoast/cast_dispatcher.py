@@ -47,6 +47,13 @@ class _CastDispatcherMixin:
     (single Qt base on the window)."""
 
     def _open_cast_dialog(self):
+        # Cast protocols are opt-in (all off by default). With none
+        # enabled, discovery never runs, so the picker would be a
+        # permanently-empty box — route the user to Settings → Casting to
+        # turn on the protocols they want instead.
+        if not get_settings().any_cast_type_enabled:
+            self._open_settings(page="Casting")
+            return
         # Open without gating — picking a device when nothing is playing
         # pre-arms it as the cast target. The next track the user starts
         # will route to that device automatically (MpvController.play
