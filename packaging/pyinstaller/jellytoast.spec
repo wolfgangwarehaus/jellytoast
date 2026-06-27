@@ -279,10 +279,14 @@ if sys.platform == "darwin":
             "CFBundleVersion": _build,
             "CFBundleShortVersionString": _version,
             "NSHighResolutionCapable": True,
-            # Audio stack relies on modern Qt6/PySide6 + Apple Silicon. 12.0+ is
-            # ALSO required by App Store validation for an arm64-only bundle (the
-            # only alternative is a universal x86_64+arm64 build; we ship arm64).
-            "LSMinimumSystemVersion": "12.0",
+            # Default floor for a local / MAS build. The Developer-ID .dmg legs
+            # OVERWRITE this per-arch in CI (release.yml "Pin the macOS floor")
+            # to each bundle's real minimum, which the runner OS dictates: the
+            # bundled Homebrew libmpv/FFmpeg dylibs won't load on a macOS older
+            # than the one they were built on, whatever this key claims. The
+            # .dmgs ship Intel on Ventura 13+, Apple Silicon on Sonoma 14+;
+            # 13.0 also satisfies App Store validation's minimum-version check.
+            "LSMinimumSystemVersion": "13.0",
             "LSApplicationCategoryType": "public.app-category.music",
             # Export compliance: jellytoast uses only EXEMPT encryption (HTTPS +
             # standard AES for the local credential blob), i.e. no non-exempt

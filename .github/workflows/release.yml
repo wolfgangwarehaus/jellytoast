@@ -267,21 +267,36 @@ jobs:
 
   build-macos:
     # Two NATIVE builds — Apple Silicon (arm64, macos-14) and Intel (x86_64,
-    # macos-15-intel, the last Intel image GitHub offers, ~until Aug 2027). Each
-    # does a native Homebrew-libmpv + PyInstaller build, signs with Developer ID,
-    # notarizes, and ships its own jellytoast-<ver>-macos-<arch>.dmg. fail-fast
-    # off so one arch failing doesn't kill the other. (A single universal2 .dmg
-    # was ruled out: numpy + cffi ship NO universal2 wheels, so PyInstaller's
-    # --target-arch universal2 aborts on the thin binaries — two native .dmgs
-    # are the reliable path.)
+    # macos-13). Each does a native Homebrew-libmpv + PyInstaller build, signs
+    # with Developer ID, notarizes, and ships its own
+    # jellytoast-<ver>-macos-<arch>.dmg. fail-fast off so one arch failing
+    # doesn't kill the other. (A single universal2 .dmg was ruled out: numpy +
+    # cffi ship NO universal2 wheels, so PyInstaller's --target-arch universal2
+    # aborts on the thin binaries — two native .dmgs are the reliable path.)
+    #
+    # `min` = the bundle's REAL macOS floor, dictated by the RUNNER OS: the
+    # bundled Homebrew dylibs (libmpv + its FFmpeg/libass/libplacebo closure)
+    # are built for the runner's macOS and dyld refuses to load them on anything
+    # older — regardless of the Info.plist's LSMinimumSystemVersion. So build
+    # each arch on the OLDEST runner GitHub offers for it (Intel → macos-13
+    # Ventura; arm64 → macos-14 Sonoma, the oldest free Apple-silicon image),
+    # stamp that floor into the plist (see "Pin the macOS floor"), and the
+    # headless smoke-test below then runs ON that floor so a too-high floor
+    # can't ship silently. (Building Intel on macos-15-intel produced a .dmg
+    # that bounced once and died on Monterey: Sequoia-built dylibs, dyld
+    # refused them, no dialog. If macos-13 is ever retired, raise the Intel
+    # floor to the new oldest Intel image — or build libmpv from source with a
+    # lower MACOSX_DEPLOYMENT_TARGET.)
     strategy:
       fail-fast: false
       matrix:
         include:
           - runner: macos-14
             arch: arm64
-          - runner: macos-15-intel
+            min: "14.0"
+          - runner: macos-13
             arch: x86_64
+            min: "13.0"
     runs-on: ${{ matrix.runner }}
     # Signing + notarization activate only once the secrets exist (see
     # packaging/macos/MACOS_SESSION.md). Until then SIGN/NOTARIZE are 'false'
@@ -302,10 +317,24 @@ jobs:
       - name: Stage libmpv (Homebrew) for the bundle
         run: bash packaging/macos/get_libmpv.sh
       - name: Build PyInstaller .app bundle
+        # Match the C-extension deployment target to the runner's floor so any
+        # source-built wheel agrees with the Homebrew dylibs' minimum.
+        env:
+          MACOSX_DEPLOYMENT_TARGET: ${{ matrix.min }}
         run: |
           python -m pip install --upgrade pip
           pip install . pyinstaller
           pyinstaller packaging/pyinstaller/jellytoast.spec --noconfirm
+      - name: Pin the macOS floor in the bundle's Info.plist
+        # The spec ships a default LSMinimumSystemVersion; overwrite it with this
+        # leg's REAL floor (the runner OS) so LaunchServices shows an honest
+        # "needs macOS X" instead of a silent dock-bounce on older systems.
+        run: |
+          /usr/libexec/PlistBuddy -c \
+            "Set :LSMinimumSystemVersion ${{ matrix.min }}" \
+            dist/jellytoast.app/Contents/Info.plist
+          echo "LSMinimumSystemVersion now: $(/usr/libexec/PlistBuddy -c \
+            'Print :LSMinimumSystemVersion' dist/jellytoast.app/Contents/Info.plist)"
       # Import the Developer ID cert into a temporary keychain so codesign can
       # use it non-interactively. Skipped until the Apple secrets are set.
       - name: Import Developer ID certificate
