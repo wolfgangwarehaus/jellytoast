@@ -28,7 +28,6 @@ from typing import Any, Dict, List
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
-    QDialog,
     QFrame,
     QHBoxLayout,
     QLabel,
@@ -39,6 +38,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from jellytoast.frosted_dialog import FrostedDialog
 from jellytoast.player_state import PlayerBus
 from jellytoast.selector import Selector
 
@@ -72,39 +72,45 @@ def snapshot_to_rows(snapshot: Dict[str, Any]) -> Dict[str, Any]:
     return {"streams": streams, "groups": rows}
 
 
-class SnapcastControlDialog(QDialog):
+class SnapcastControlDialog(FrostedDialog):
     """Connect to one snapserver and drive its groups / streams / volumes.
 
     Non-modal (``show()``), like the cast dialog. Connects on open,
     rebuilds on every ``snapcast_state_changed``, and disconnects on
     close so a closed dialog doesn't hold a live JSON-RPC session.
+
+    Built on :class:`FrostedDialog` so it matches the app chrome (frosted
+    body, titlebar ✕, Esc-to-dismiss) instead of a bare native box.
     """
 
     def __init__(self, controller, server_info, parent=None):
-        super().__init__(parent)
+        name = getattr(server_info, "hostname", "") or getattr(server_info, "host", "") or "Snapcast"
+        super().__init__(parent, title=f"Snapcast — {name}", min_width=420)
+        # The dispatcher opens this with show() (non-modal, like the cast
+        # dialog); FrostedDialog defaults to modal, so opt back out.
+        self.setModal(False)
         self._ctl = controller
         self._info = server_info
         self._bus = PlayerBus.get()
         self._building = False
         self._closed = False
 
-        name = getattr(server_info, "hostname", "") or getattr(server_info, "host", "") or "Snapcast"
-        self.setWindowTitle(f"Snapcast — {name}")
-        self.setMinimumWidth(420)
-
-        root = QVBoxLayout(self)
         self._status = QLabel("Connecting…")
         self._status.setWordWrap(True)
-        root.addWidget(self._status)
+        self.content_layout.addWidget(self._status)
 
         self._scroll = QScrollArea()
         self._scroll.setWidgetResizable(True)
         self._scroll.setFrameShape(QScrollArea.Shape.NoFrame)
+        # Transparent scroll chrome so the frosted body shows through (the
+        # app-wide idiom — see smart_playlists_view).
+        self._scroll.viewport().setStyleSheet("background: transparent;")
         self._body = QWidget()
+        self._body.setStyleSheet("background: transparent;")
         self._body_layout = QVBoxLayout(self._body)
         self._body_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
         self._scroll.setWidget(self._body)
-        root.addWidget(self._scroll, 1)
+        self.content_layout.addWidget(self._scroll, 1)
 
         close_row = QHBoxLayout()
         close_row.addStretch(1)
@@ -112,7 +118,7 @@ class SnapcastControlDialog(QDialog):
         close_btn.setAutoDefault(False)
         close_btn.clicked.connect(self.close)
         close_row.addWidget(close_btn)
-        root.addLayout(close_row)
+        self.content_layout.addLayout(close_row)
 
         # State + lifecycle signals. snapcast_* are deliberately separate
         # from the cast_* bus (design doc §10).

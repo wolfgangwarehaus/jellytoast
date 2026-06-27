@@ -3483,33 +3483,35 @@ class SettingsDialog(QDialog):
 
     def _lf_open_auth_modal(self, token: str):
         from jellytoast.async_io import run_async
+        from jellytoast.frosted_dialog import FrostedDialog
         from jellytoast.scrobble import lastfm as _lf
 
-        dlg = QDialog(self)
-        dlg.setWindowTitle("Connect to Last.fm")
+        # FrostedDialog so the connect modal matches the app chrome (frosted
+        # body + titlebar ✕ + Esc) instead of a bare native box; it defaults
+        # to modal, which is what this exec()-driven flow wants.
+        dlg = FrostedDialog(self, title="Connect to Last.fm", min_width=380)
         dlg.setFixedWidth(380)
-        dlg.setModal(True)
-        v = QVBoxLayout(dlg)
-        v.setContentsMargins(20, 20, 20, 20)
-        v.setSpacing(10)
         msg = QLabel(
             'We\'ve opened Last.fm in your browser. Click "Allow" '
             "there, then come back — jellytoast will detect the "
             "approval automatically."
         )
         msg.setWordWrap(True)
-        msg.setStyleSheet(f"color: {TEXT}; {type_qss(TYPE_BODY)}")
-        v.addWidget(msg)
+        msg.setStyleSheet(f"color: {TEXT}; background: transparent; {type_qss(TYPE_BODY)}")
+        dlg.content_layout.addWidget(msg)
         status = QLabel("Waiting for authorization…")
-        status.setStyleSheet(f"color: {TEXT_FAINT}; {type_qss(TYPE_CAPTION)}")
-        v.addWidget(status)
+        status.setStyleSheet(
+            f"color: {TEXT_FAINT}; background: transparent; {type_qss(TYPE_CAPTION)}"
+        )
+        dlg.content_layout.addWidget(status)
         btn_row = QHBoxLayout()
         btn_row.addStretch(1)
         cancel_btn = QPushButton("Cancel")
         cancel_btn.setObjectName("ghost")
+        cancel_btn.setAutoDefault(False)
         cancel_btn.clicked.connect(dlg.reject)
         btn_row.addWidget(cancel_btn)
-        v.addLayout(btn_row)
+        dlg.content_layout.addLayout(btn_row)
 
         # Poll auth.getSession every 3 seconds. Each tick spawns a
         # run_async; the dialog timer is what gets cancelled when the
