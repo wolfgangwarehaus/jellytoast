@@ -537,7 +537,7 @@ jobs:
     permissions:
       contents: write  # only this job mints the release
     steps:
-      # Checkout so we can lift the curated notes out of docs/CHANGELOG.md.
+      # Checkout so we can lift the curated notes out of CHANGELOG.md.
       - uses: actions/checkout@v7
       - uses: actions/download-artifact@v8
         with:
@@ -564,7 +564,7 @@ jobs:
             grab && /^## \[/ { grab = 0 }
             grab && /<!-- release-notes-end -->/ { grab = 0 }
             grab { print }
-          ' docs/CHANGELOG.md > RELEASE_NOTES.md
+          ' CHANGELOG.md > RELEASE_NOTES.md
           # Backstop: GitHub rejects release bodies over 125000 chars. If a
           # section is still huge (no sentinel), truncate well under the cap
           # and point at the full changelog so the release never fails to mint.
@@ -577,7 +577,7 @@ jobs:
           fi
           if grep -q '[^[:space:]]' RELEASE_NOTES.md; then
             echo "have_notes=true" >> "$GITHUB_OUTPUT"
-            echo "Using curated notes from docs/CHANGELOG.md:"; cat RELEASE_NOTES.md
+            echo "Using curated notes from CHANGELOG.md:"; cat RELEASE_NOTES.md
           else
             echo "have_notes=false" >> "$GITHUB_OUTPUT"
             echo "No CHANGELOG section for $VERSION — falling back to --generate-notes."
