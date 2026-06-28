@@ -709,3 +709,15 @@ class TestNullJellyfinFieldsDoNotCrash:
         s.saved_position_ms = 5000
         qm2 = QueueManager()  # must not raise
         assert qm2.current_item["Id"] == "jf-restore"
+
+    def test_null_production_year_renders_empty_not_literal_none(self, qm):
+        # Subsonic returns ProductionYear: None (key present, value null) for
+        # items with no year. str(item.get("ProductionYear", "")) yields the
+        # literal "None" — the "" default only fires on a MISSING key, not a
+        # null value — so both the year field and the (non-audio) subtitle must
+        # come out empty. A "Movie"-type item hits both sites (subtitle + year).
+        np = qm._build_now_playing(
+            {"Id": "no-year", "Name": "Item", "Type": "Movie", "ProductionYear": None}
+        )
+        assert np.year == ""
+        assert np.subtitle == ""

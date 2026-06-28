@@ -2520,6 +2520,15 @@ def main():
                 _overlay.stop()
             except Exception:
                 pass
+        # Persist any pending QSettings writes (window geometry, shuffle /
+        # repeat mode, last-played, …) before the process exits. A hard
+        # tray-Quit reaches here via app.quit() → aboutToQuit, but skips
+        # QSettings' own destructor flush — so without this the most recent
+        # toggles are silently lost on the next launch.
+        try:
+            settings.flush()
+        except Exception:
+            pass
         _shutdown_log("cleanup: done")
 
     app.aboutToQuit.connect(_cleanup)

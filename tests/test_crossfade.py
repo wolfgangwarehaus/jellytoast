@@ -692,3 +692,55 @@ def test_no_dead_duration_ms_attribute():
 
     src = inspect.getsource(cf).replace("crossfade_duration_ms", "")
     assert "_duration_ms" not in src, "dead Crossfader._duration_ms reintroduced"
+
+
+class TestBackwardSeekNotReportedAsProgress:
+    """A backward seek (rewind) past the report-delta must reset the gate anchor
+    + local resume, but NOT be reported to the server as playback progress —
+    reporting a rewind corrupts the server's play-position / scrobble tracking.
+    Forward jumps still report. Regression for the abs()-gate bug."""
+
+    def _ctrl(self, monkeypatch, np):
+        from unittest.mock import MagicMock
+
+        import jellytoast.player_backend as pb
+        from jellytoast.player_backend import MpvController
+
+        monkeypatch.setattr(pb, "get_now_playing", lambda: np)
+        ctrl = MpvController.__new__(MpvController)
+        ctrl.bus = _Bus()
+        ctrl._current_duration_ms = int(np.duration)
+        ctrl._sleep_pending_eot = False
+        ctrl._arm_sleep_eot_fade_if_due = lambda ms, n: None
+        ctrl._ensure_crossfader = lambda: MagicMock()
+        ctrl._report_progress = MagicMock()
+        return ctrl
+
+    def test_backward_seek_does_not_report_progress(self, qapp, monkeypatch):
+        from unittest.mock import MagicMock
+
+        np = MagicMock()
+        np.duration = 300_000
+        np.item_id = ""  # skip the settings resume-write branch
+        ctrl = self._ctrl(monkeypatch, np)
+        ctrl._last_reported_position_ms = 100_000
+
+        ctrl._on_position(30_000)  # rewind 70s — a seek, not progress
+
+        ctrl._report_progress.assert_not_called()
+        # ...but the gate anchor DID reset so the next forward step still gates.
+        assert ctrl._last_reported_position_ms == 30_000
+
+    def test_forward_jump_still_reports_progress(self, qapp, monkeypatch):
+        from unittest.mock import MagicMock
+
+        np = MagicMock()
+        np.duration = 300_000
+        np.item_id = ""
+        ctrl = self._ctrl(monkeypatch, np)
+        ctrl._last_reported_position_ms = 30_000
+
+        ctrl._on_position(100_000)  # forward 70s — real progress
+
+        ctrl._report_progress.assert_called_once()
+        assert ctrl._last_reported_position_ms == 100_000

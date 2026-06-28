@@ -24,12 +24,9 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         if: env.HAVE_KEY == 'true'
-      - name: Stamp PKGBUILD pkgver from the tag
-        if: env.HAVE_KEY == 'true'
-        run: |
-          V="${{ github.event.release.tag_name }}"
-          V="${V#v}"
-          sed -i -E "s/^pkgver=.*/pkgver=${V}/; s/^pkgrel=.*/pkgrel=1/" packaging/aur/PKGBUILD
+      # NB: no pkgver stamp here — cut_release.sh already stamps PKGBUILD
+      # pkgver/pkgrel at release-cut time and test_version_consistency.py gates
+      # it in CI, so the committed PKGBUILD is the single source of truth.
       - name: Publish to the AUR
         if: env.HAVE_KEY == 'true'
         uses: KSXGitHub/github-actions-deploy-aur@v4.1.3

@@ -108,6 +108,14 @@ _auth_failed_emitted: bool = False
 # note_success — only the periodic primary-probe drives the climb back.
 _active_host_label: str = ""
 
+# Monotonic server-identity epoch. Bumped on every reset_after_server_change
+# (sign-in / server swap). A failover / climb-back worker captures it before its
+# slow blocking probe and re-checks it before committing a URL swap — so a server
+# change that lands mid-probe can't route the NEW server's session at an OLD
+# host. Read lock-free is fine (single int load under the GIL); the capture +
+# the pre-commit re-check both happen under _state_lock for a consistent pair.
+_server_epoch: int = 0
+
 # Probe timeout for an alternate URL — kept short so a failover walk
 # over three or four URLs doesn't compound into a multi-second stall.
 _PROBE_TIMEOUT_S = 3.0
@@ -172,8 +180,10 @@ def is_server_reachable() -> bool:
 
 def active_host_label() -> str:
     """Label of the currently active host. Empty when the primary URL
-    is active. Useful for status chips / toasts."""
-    return _active_host_label
+    is active. Useful for status chips / toasts. Read under the lock so it
+    can't observe a half-applied failover/reset from a worker thread."""
+    with _state_lock:
+        return _active_host_label
 
 
 def note_success() -> None:
@@ -390,11 +400,18 @@ def _try_failover_to_alternate() -> bool:
     if not hosts:
         return False
     kind = _current_provider_kind()
-    current_label = _active_host_label or "Primary"
+    with _state_lock:
+        epoch = _server_epoch
+        current_label = _active_host_label or "Primary"
     for label, url, _prio in hosts:
         if label == current_label:
             continue
         if _probe_host(url, kind):
+            # A server swap during the (slow) probe invalidates this failover —
+            # committing now would point the NEW server's session at an OLD host.
+            with _state_lock:
+                if _server_epoch != epoch:
+                    return False
             if _swap_active_provider_url(url):
                 _set_active_host(label)
                 return True
@@ -489,6 +506,7 @@ def reset_after_server_change() -> None:
     offline mode is left intact (their explicit choice wins)."""
     global _server_reachable, _consecutive_failures, _first_failure_ts
     global _consecutive_auth_failures, _active_host_label, _auth_failed_emitted
+    global _server_epoch
     with _state_lock:
         _server_reachable = True
         _consecutive_failures = 0
@@ -496,6 +514,9 @@ def reset_after_server_change() -> None:
         _consecutive_auth_failures = 0
         _auth_failed_emitted = False
         _active_host_label = ""
+        # Invalidate any in-flight failover / climb-back probe so it can't
+        # commit a stale-host swap onto the just-changed server.
+        _server_epoch += 1
     _stop_auto_probe()
     if _offline_mode and _offline_source == "auto":
         _set_offline_mode_internal(False, source=None)
@@ -611,9 +632,14 @@ def _try_climb_back_to_primary() -> None:
         if now - _last_climb_attempt_ts < _CLIMB_BACK_COOLDOWN_S:
             return
         _last_climb_attempt_ts = now
+        epoch = _server_epoch
     kind = _current_provider_kind()
     if not _probe_host(primary, kind):
         return
+    # Server swap mid-probe invalidates the climb-back (see _try_failover).
+    with _state_lock:
+        if _server_epoch != epoch:
+            return
     if _swap_active_provider_url(primary):
         _set_active_host("Primary")
 
@@ -625,10 +651,11 @@ def _set_active_host(label: str) -> None:
     has a stable string to display."""
     global _active_host_label
     new_label = label or "Primary"
-    if new_label == "Primary":
-        _active_host_label = ""
-    else:
-        _active_host_label = new_label
+    # Serialize the write with the other _state_lock holders (note_success,
+    # reset_after_server_change, the getter) — this is called from probe worker
+    # threads. Emit OUTSIDE the lock so a bus subscriber can't re-enter it.
+    with _state_lock:
+        _active_host_label = "" if new_label == "Primary" else new_label
     _emit_host_switched(new_label)
 
 
