@@ -175,9 +175,17 @@ class TrayController(QObject):
         elif reason == QSystemTrayIcon.ActivationReason.Context:
             # KDE Plasma 6's StatusNotifierItem can intercept the standard
             # context menu and substitute a stripped-down media widget that
-            # drops most of our items. Popup the QMenu manually at the
-            # cursor so Qt renders it directly.
-            self.menu.popup(QCursor.pos())
+            # drops most of our items. On Linux we popup the QMenu manually at
+            # the cursor so Qt renders our full menu directly.
+            #
+            # macOS / Windows: setContextMenu() ALREADY shows the menu natively
+            # on right-click, so popping up again here stacks a SECOND menu (the
+            # macOS double-menu on right-click — left-click goes through the
+            # native path only, hence single). Skip the manual popup there.
+            from jellytoast.platform_compat import IS_LINUX
+
+            if IS_LINUX:
+                self.menu.popup(QCursor.pos())
 
     @Slot(object)
     def _on_started(self, np: NowPlaying):
