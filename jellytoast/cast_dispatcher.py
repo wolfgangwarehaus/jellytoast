@@ -290,7 +290,7 @@ class _CastDispatcherMixin:
                     resume_seconds=resume_seconds, on_done=_on_cast_result,
                 )
             else:
-                self.cast_manager.active_cast = dev
+                self.cast_manager._arm_active_cast(dev)
                 _on_cast_result(True)
             return
         elif dev.device_type == CastType.SONOS:
@@ -303,7 +303,7 @@ class _CastDispatcherMixin:
                     resume_seconds=resume_seconds, on_done=_on_cast_result,
                 )
             else:
-                self.cast_manager.active_cast = dev
+                self.cast_manager._arm_active_cast(dev)
                 _on_cast_result(True)
             return
         else:
@@ -364,6 +364,6 @@ class _CastDispatcherMixin:
                 )
                 return
             else:
-                self.cast_manager.active_cast = dev
+                self.cast_manager._arm_active_cast(dev)
                 _on_cast_result(True)
             return

@@ -153,3 +153,23 @@ def test_winget_installer_url_points_at_pyproject_version():
 
 def test_aur_pkgver_matches_pyproject():
     assert _aur_pkgver() == _pyproject_version()
+
+
+def test_workflow_referenced_packaging_scripts_exist():
+    """Every packaging/ script a workflow invokes must exist in the repo.
+
+    Regression guard: #189 ("slim the public repo") deleted the
+    packaging/macos/mas/ build scripts but left release.yml's build-mas job
+    calling them, so the MAS build failed `exit 127 (No such file)` on every
+    run — silently, for a month. A workflow that references a deleted script
+    must fail HERE (in seconds, locally) rather than only in a CI build no one
+    watches. Catches the whole class, every workflow, both .sh and .ps1.
+    """
+    wf_dir = REPO_ROOT / ".github" / "workflows"
+    ref_re = re.compile(r"packaging/[A-Za-z0-9_./-]+\.(?:sh|ps1)")
+    missing = []
+    for wf in sorted(wf_dir.glob("*.yml")):
+        for ref in sorted(set(ref_re.findall(wf.read_text()))):
+            if not (REPO_ROOT / ref).is_file():
+                missing.append(f"{wf.name} → {ref}")
+    assert not missing, "workflow(s) reference missing packaging scripts:\n" + "\n".join(missing)

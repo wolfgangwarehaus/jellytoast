@@ -664,7 +664,7 @@ class QueueManager(QObject):
         elif item_type == "Episode":
             subtitle = item.get("SeriesName", "")
         else:
-            subtitle = str(item.get("ProductionYear", ""))
+            subtitle = str(item.get("ProductionYear") or "")
 
         return NowPlaying(
             item_id=item_id,
@@ -672,7 +672,7 @@ class QueueManager(QObject):
             title=item.get("Name", "Unknown"),
             subtitle=subtitle,
             album=item.get("Album", ""),
-            year=str(item.get("ProductionYear", "")),
+            year=str(item.get("ProductionYear") or ""),
             duration=(item.get("RunTimeTicks", 0) or 0) // 10_000,
             stream_url=stream_url,
             thumb_url=thumb_url,
