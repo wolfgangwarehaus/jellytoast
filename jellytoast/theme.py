@@ -68,18 +68,19 @@ def _win_glass_alpha() -> int:
 
 # macOS NSVisualEffectView vibrancy veils heavier than KWin's blur, so the
 # shared ~67% glass body (172) reads noticeably more opaque on macOS than on
-# Linux — same number, denser backdrop. Cap the macOS body alpha a touch lower
-# so the vibrancy reads through and the window matches the KWin glass feel.
-# Tune live with JT_MAC_GLASS_ALPHA, then bake the value you like.
-_MAC_BODY_DEFAULT_ALPHA = 150
+# Linux — same number, denser backdrop. Cap the macOS body alpha lower so the
+# vibrancy reads through and the window matches the KWin glass feel; 110 (~43%)
+# was tuned by eye against KDE Plasma's blur. Tune live with JT_MAC_GLASS_ALPHA.
+_MAC_BODY_DEFAULT_ALPHA = 110
 
 
 def _mac_glass_alpha() -> int:
     """macOS-only frosted body alpha when native vibrancy is active. Defaults
-    to ``_MAC_BODY_DEFAULT_ALPHA`` (a pinch lighter than the shared glass so the
-    vibrancy shows through) and is clamped to ``[_WIN_BODY_FLOOR_ALPHA, 255]``
-    (the same hit-testable floor). Env-tunable both directions:
-    ``JT_MAC_GLASS_ALPHA=120`` (lighter) … ``=172`` (heavier / shared)."""
+    to ``_MAC_BODY_DEFAULT_ALPHA`` (lighter than the shared glass so the vibrancy
+    shows through, matched by eye to KDE Plasma) and is clamped to
+    ``[_WIN_BODY_FLOOR_ALPHA, 255]`` (the same hit-testable floor). Env-tunable
+    both directions: ``JT_MAC_GLASS_ALPHA=90`` (lighter) … ``=172`` (heavier /
+    shared)."""
     try:
         v = int(os.environ.get("JT_MAC_GLASS_ALPHA", str(_MAC_BODY_DEFAULT_ALPHA)))
     except ValueError:
