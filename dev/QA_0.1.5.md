@@ -20,7 +20,7 @@ converge here; fixes land on `main`; then `dev/cut_release.sh 0.1.5 --push`.
 ## Status (as of 2026-06-28)
 | Platform | Box | State | Findings |
 |---|---|---|---|
-| macOS (Intel Sequoia) | august's MBP | **testing live** — native blur verified working; pass in progress | pending `/tmp/jt_mac_findings.md` |
+| macOS (Intel Sequoia) | august's MBP | **DONE** — blur verified on real pixels; P2s + P3s fixed on `feat/macos-native-blur` | #195 / #196 / #197 (all resolved) |
 | KDE Plasma (Wayland) | CachyOS primary | rig ready; **next up** | — |
 | Windows 11 | laptop | rig ready; brief + PR to delegate | — |
 | Ubuntu (.deb/X11) | Ubuntu box | rig ready; brief + PR to delegate | — |
@@ -33,8 +33,17 @@ converge here; fixes land on `main`; then `dev/cut_release.sh 0.1.5 --push`.
 
 ## Findings — fill in per platform (P1 blocker / P2 should-fix / P3 polish)
 
-### macOS
-_(from the Mac session — paste/triage here)_
+### macOS — pass complete (real Intel Sequoia 15.7.7, Subsonic/Navidrome)
+**Verified GOOD:** native frost reads as glass over the desktop in dark AND light
+(24/25 surfaces); the #1 historical blank/mis-draw on resize·maximize·fullscreen·
+activation is **dead**; mini matches main; tray single menu; single-instance;
+clean quit; playback + Control Center metadata; smoke all-pass (incl. smart-shuffle
+on live data). Full report + evidence in PR #196 (`dev/MAC_TEST_FINDINGS.md`).
+- **P2** see-through on a live *Reduce Transparency* toggle → fixed (#195, `87465f3`).
+- **P2** tray left-click double-action on macOS → fixed (#195, `87465f3`).
+- **P3 ×8** (corner-radius reset, destroyed-leak, orphan rollback, CGColor log spam,
+  subview-warning note, tray QSS no-op note, theme docstring nits, A–Z rail contrast)
+  → fixed (#197, `c282b32`). Issue closed.
 
 ### KDE Plasma
 _(pending)_
@@ -46,7 +55,16 @@ _(pending)_
 _(pending)_
 
 ## 0.1.5 fix list (cross-platform, triaged)
-_(populated as findings land; one line per fix → PR/commit)_
+- [x] macOS native blur (sibling-below) + 110 body + tray fix — `feat/macos-native-blur`.
+- [x] macOS P2s: live Reduce-Transparency see-through; tray left-click — #195.
+- [x] macOS P3s ×8 incl. A–Z rail contrast (cross-platform) — #197 / `c282b32`.
+- [ ] **A–Z rail contrast** also wants a Plasma/Windows/Ubuntu eyeball (the bump
+      is cross-platform; confirm it reads right on each).
+- [ ] **Now-playing bar: long album subtitle truncates/overlaps** without a clean
+      ellipsis (cross-platform, cosmetic; from macOS pass F4). Needs eyes.
+- [ ] **`disk_cache` write failure for the songs view** (`view_cache/songs.json.tmp
+      -> songs.json [Errno 2]`) — cache not persisting; real, cross-platform
+      (from macOS pass F7). Investigate the atomic-rename / missing dir.
 
 ## Release gate
 - [ ] All four platforms' P1s fixed + re-verified on hardware.
