@@ -20,6 +20,7 @@ capture). A native tile's play button calls bus.queue_play_now
 directly with the right QueueContext — no round-trip, no inference.
 """
 
+from collections import OrderedDict
 from typing import Dict, List
 
 from PySide6.QtCore import (
@@ -190,10 +191,19 @@ class _LibraryItemsModel(QAbstractListModel):
     # always-visible determinate progress ring.
     DownloadFractionRole = Qt.ItemDataRole.UserRole + 5
 
+    # Decoded-cover LRU bound. _covers holds a full-res QPixmap per album row
+    # (~0.13 MB at 1× DPR, ~0.5 MB at 2×); left unbounded it grew to GBs on a
+    # large library scrolled end-to-end. Cap it LRU-by-paint-access (see
+    # data() / set_cover): a painted tile is bumped to the most-recently-used
+    # end, so eviction only ever drops an OFF-screen cover — never a visible
+    # one. 512 keeps many screens of scroll-back instant; a re-scroll past that
+    # reloads from the persistent disk cache (~30 ms), not the network.
+    _COVER_CACHE_MAX = 512
+
     def __init__(self, parent=None):
         super().__init__(parent)
         self._items: List[Dict] = []
-        self._covers: Dict[int, QPixmap] = {}
+        self._covers: "OrderedDict[int, QPixmap]" = OrderedDict()
         # Item ids whose download is in state ``complete``. Seeded from
         # offline.downloaded_item_ids() on set/append and patched off
         # the bus's download_progress signal so badges flip live without
@@ -233,7 +243,13 @@ class _LibraryItemsModel(QAbstractListModel):
         if role == self.ItemRole:
             return self._items[row]
         if role == self.CoverRole:
-            return self._covers.get(row)
+            pix = self._covers.get(row)
+            if pix is not None:
+                # LRU touch: a painted (visible) cover becomes most-recently
+                # used, so set_cover's eviction below can never drop a tile
+                # that's currently on screen.
+                self._covers.move_to_end(row)
+            return pix
         if role == self.DownloadedRole:
             item_id = self._items[row].get("Id") or ""
             return bool(item_id) and item_id in self._downloaded
@@ -253,7 +269,7 @@ class _LibraryItemsModel(QAbstractListModel):
     def set_items(self, items: List[Dict]):
         self.beginResetModel()
         self._items = list(items)
-        self._covers = {}
+        self._covers = OrderedDict()
         self._reseed_downloaded()
         self.endResetModel()
 
@@ -366,13 +382,20 @@ class _LibraryItemsModel(QAbstractListModel):
         if pix is None or pix.isNull():
             return
         self._covers[row] = pix
+        self._covers.move_to_end(row)  # newest / just-updated → MRU end
+        # Evict the least-recently-painted cover(s) over the cap. Because data()
+        # bumps every visible tile to the MRU end, the LRU front is always an
+        # off-screen row — so this never drops a cover that's currently showing,
+        # and it scrolls back in from the disk cache if revisited.
+        while len(self._covers) > self._COVER_CACHE_MAX:
+            self._covers.popitem(last=False)
         idx = self.index(row, 0)
         self.dataChanged.emit(idx, idx, [self.CoverRole])
 
     def clear_covers(self):
         if not self._covers:
             return
-        self._covers = {}
+        self._covers = OrderedDict()
         if self._items:
             top = self.index(0, 0)
             bot = self.index(len(self._items) - 1, 0)

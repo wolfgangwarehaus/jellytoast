@@ -220,11 +220,17 @@ class _AirplayMixin:
             result["err"] = e
             loop.quit()
 
+        prev_active = self.active_cast
         _pkg.run_async(_go, on_result=_on_result, on_error=_on_error)
-        loop.exec()  # blocks until worker completes
+        loop.exec()  # blocks until worker completes; GUI events run meanwhile
         if result["ok"]:
             logger.debug("_cast_to_airplay2: success for %r", dev.name)
-            self.active_cast = dev
+            # The nested event loop above can let the user pick ANOTHER device
+            # mid-negotiation, which sets active_cast. Only claim active_cast if
+            # nothing newer took it while we were blocked — otherwise we'd
+            # clobber the user's later choice with this (now-stale) device.
+            if self.active_cast is prev_active:
+                self.active_cast = dev
             return True
         err = result["err"]
         if isinstance(err, _ap2.PairingRequired):

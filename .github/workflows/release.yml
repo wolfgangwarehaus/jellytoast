@@ -45,6 +45,7 @@ jobs:
       - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
+          cache: pip
       - name: System libraries (PySide6 headless + libmpv for analysis)
         run: |
           sudo apt-get update
@@ -124,6 +125,7 @@ jobs:
       - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
+          cache: pip
       - name: System libraries to vendor (libmpv + FFmpeg + the Qt xcb closure)
         # build_appimage.sh vendors the ldd-closure of libmpv + the Qt xcb plugin
         # into the AppImage, so every lib it needs must be PRESENT here for ldd to
@@ -190,6 +192,7 @@ jobs:
       - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
+          cache: pip
       - name: Stage pinned libmpv-2.dll
         run: pwsh packaging/windows/get_libmpv.ps1
       - name: Build PyInstaller bundle
@@ -286,6 +289,7 @@ jobs:
       - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
+          cache: pip
       - name: Stage libmpv (Homebrew) for the bundle
         run: bash packaging/macos/get_libmpv.sh
       - name: Build PyInstaller .app bundle
@@ -384,7 +388,7 @@ jobs:
     # MAS isn't part of the auto-release yet. Dispatch this to build+scan the
     # unsigned recipe today, and to sign+validate once the MAS secrets land.
     # Everything past the symbol scan activates only when those secrets exist.
-    # Setup: packaging/macos/mas/MAS_SPIKE.md.
+    # Setup: jellytoast-ops → packaging/macos/mas/MAS_SPIKE.md (private runbook).
     if: github.event_name == 'workflow_dispatch'
     runs-on: macos-14
     timeout-minutes: 50  # productbuild can hang on a keychain prompt — fail fast, never burn the 6h default
@@ -397,6 +401,7 @@ jobs:
       - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
+          cache: pip
       - name: Build LGPL/no-Lua libmpv from source
         run: JT_LOG_STDOUT=1 LGPL_PREFIX=/tmp/lgpl bash packaging/macos/mas/build_libmpv_lgpl.sh
       - name: Build the sandboxed MAS .app (LGPL libmpv + itms-services patch)
@@ -517,6 +522,7 @@ jobs:
       - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
+          cache: pip
       - run: |
           python -m pip install --upgrade pip build
           python -m build

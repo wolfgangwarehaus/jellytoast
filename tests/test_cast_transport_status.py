@@ -389,6 +389,20 @@ class TestSyncReceiverVolume:
         assert s._cast_volume == 40
         bus.volume_state.emit.assert_not_called()
 
+    def test_no_sync_at_exact_suppression_boundary(self):
+        # Regression: a poll tick landing EXACTLY on the window edge (elapsed
+        # == 3×500ms) must still suppress. The check was `< SUPPRESS_S`, so at
+        # exactly 1.5s suppression lifted and a still-lagging receiver's
+        # pre-push echo (0.3) clobbered the slider. `<=` keeps it suppressed.
+        s, cc, bus = _vol_stub(
+            cast_volume=40,
+            push_wall=1000.0 - _CastTransportMixin._CAST_VOLUME_SYNC_SUPPRESS_S,
+            level=0.3,
+        )
+        _sync_receiver_volume(s, cc)
+        assert s._cast_volume == 40
+        bus.volume_state.emit.assert_not_called()
+
     def test_echo_of_our_own_value_is_noop(self):
         # Steady state: device reports exactly what we set → no emit.
         s, cc, bus = _vol_stub(cast_volume=30, level=0.30)
