@@ -1280,6 +1280,33 @@ class JellytoastWindow(_NavMixin, _SessionMixin, _CastDispatcherMixin, _ShuffleP
             # Happy path — diagnostic only, don't clutter a normal boot.
             logger.debug("Compositor blur: %s", blur.reason())
 
+        # macOS: re-probe + re-stamp when "Reduce transparency" is toggled at
+        # runtime, else apply() strips the vibrancy while the body keeps
+        # painting at its glass alpha (a see-through window). Installed once,
+        # post-show, only where it matters.
+        from jellytoast.platform_compat import IS_MACOS
+
+        if IS_MACOS:
+            from jellytoast.blur import _macos as _mac_blur
+
+            _mac_blur.install_accessibility_observer(self._on_accessibility_changed)
+
+    def _on_accessibility_changed(self):
+        """macOS *Reduce transparency* (or another accessibility-display option)
+        changed at runtime. The verified blur ``status()`` is cached for the
+        session, so re-probe it and re-stamp the whole app: the frosted body
+        switches to its near-opaque fallback when transparency is reduced (and
+        back to glass when restored), and the vibrancy is removed/installed to
+        match. Runs on the GUI thread (delivered on the main queue)."""
+        from jellytoast import blur
+
+        blur.status(force=True)  # drop the per-session cache; re-probe live
+        # theme_changed re-stamps the whole app: it's wired to
+        # _refresh_body_color (re-picks the body alpha from the fresh status)
+        # and _apply_blur (re-installs / removes the vibrancy), and the mini
+        # player + dialogs re-stamp off the same signal.
+        self.bus.theme_changed.emit()
+
     def _apply_blur(self):
         """Shape the compositor blur to the body's rounded rect when the
         active theme is frosted, so no square blur halo pokes past the 4

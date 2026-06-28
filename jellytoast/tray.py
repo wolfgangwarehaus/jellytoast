@@ -166,6 +166,18 @@ class TrayController(QObject):
             self.mini_action.setText("🪟  Hide Mini Player")
 
     def _on_activated(self, reason):
+        from jellytoast.platform_compat import IS_LINUX, IS_MACOS
+
+        # macOS: the tray icon is backed by setContextMenu(), so the native
+        # status-item menu opens on BOTH left- and right-click. Qt can ALSO
+        # emit Trigger on the left-click, which would toggle the mini player
+        # underneath the just-opened menu (a double-action). The menu's own
+        # "Show/Hide Mini Player" item is the supported way to toggle it on
+        # macOS, so ignore raw click activations here entirely — the native
+        # menu is the single, correct response to any tray click. (Harmless
+        # no-op if Qt doesn't emit them; the guard makes the contract explicit.)
+        if IS_MACOS:
+            return
         if reason == QSystemTrayIcon.ActivationReason.Trigger:
             self._toggle_mini()
         elif reason == QSystemTrayIcon.ActivationReason.DoubleClick:
@@ -176,14 +188,8 @@ class TrayController(QObject):
             # KDE Plasma 6's StatusNotifierItem can intercept the standard
             # context menu and substitute a stripped-down media widget that
             # drops most of our items. On Linux we popup the QMenu manually at
-            # the cursor so Qt renders our full menu directly.
-            #
-            # macOS / Windows: setContextMenu() ALREADY shows the menu natively
-            # on right-click, so popping up again here stacks a SECOND menu (the
-            # macOS double-menu on right-click — left-click goes through the
-            # native path only, hence single). Skip the manual popup there.
-            from jellytoast.platform_compat import IS_LINUX
-
+            # the cursor so Qt renders our full menu directly. (Windows shows
+            # the native context menu on right-click, so no manual popup there.)
             if IS_LINUX:
                 self.menu.popup(QCursor.pos())
 
