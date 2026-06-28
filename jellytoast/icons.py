@@ -73,6 +73,16 @@ _SVG = {
         '<path d="M4 21 a 8 8 0 0 1 16 0" stroke="currentColor" stroke-width="2" '
         'fill="none" stroke-linecap="round"/></svg>'
     ),
+    # Centered fallback glyph for a tile/row with no artwork (library_grid
+    # placeholder) — a two-note music mark.
+    "music_note": (
+        '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">'
+        '<path d="M9 17 V4 l10 -2 v13" stroke="currentColor" stroke-width="2" '
+        'fill="none" stroke-linecap="round" stroke-linejoin="round"/>'
+        '<circle cx="6.5" cy="17" r="2.5" stroke="currentColor" stroke-width="2" fill="none"/>'
+        '<circle cx="16.5" cy="15" r="2.5" stroke="currentColor" stroke-width="2" fill="none"/>'
+        "</svg>"
+    ),
     "chevron_down": (
         '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">'
         '<path d="M6 9 L12 15 L18 9" stroke="currentColor" stroke-width="2" '

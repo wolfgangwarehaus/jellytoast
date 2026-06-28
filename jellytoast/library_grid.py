@@ -543,6 +543,36 @@ def _paint_corner_button(
     painter.drawPixmap(gx, gy, pix)
 
 
+def _paint_cover_placeholder(painter, rect, radius, kind):
+    """Fill the cover slot for a tile/row whose artwork is missing or not yet
+    loaded: a faint rounded wash PLUS a centered fallback glyph (a person for
+    artists, a music note otherwise) so art-less items read as an intentional
+    placeholder instead of a blank dark square — consistent across the grids,
+    the home shelves (same delegate), and the song rows. The glyph rides the
+    live theme ink at a low alpha, so it stays subtle and flips dark/light."""
+    from jellytoast.icons import _svg_pix
+
+    path = QPainterPath()
+    path.addRoundedRect(QRectF(rect), radius, radius)
+    painter.fillPath(path, QColor(*ink_rgb(), 10))
+    gsize = max(14, int(min(rect.width(), rect.height()) * 0.32))
+    r, g, b = ink_rgb()
+    # Solid hex for the glyph — Qt's QSvgRenderer doesn't parse rgba(); the faint
+    # placeholder look comes from the painter opacity below.
+    pix = _svg_pix(
+        "user" if kind == "artist" else "music_note",
+        f"#{r:02x}{g:02x}{b:02x}",
+        gsize,
+    )
+    if pix is not None and not pix.isNull():
+        gx = rect.x() + (rect.width() - gsize) // 2
+        gy = rect.y() + (rect.height() - gsize) // 2
+        painter.save()
+        painter.setOpacity(0.34)
+        painter.drawPixmap(int(gx), int(gy), pix)
+        painter.restore()
+
+
 class _TileDelegate(QStyledItemDelegate):
     """Paints one library item in IconMode: cover + title + (year for
     albums) + subtitle. All draw operations — no child widgets, no per-
@@ -654,9 +684,9 @@ class _TileDelegate(QStyledItemDelegate):
             painter.drawPixmap(content_x, rect.y(), scaled)
             painter.restore()
         else:
-            path = QPainterPath()
-            path.addRoundedRect(QRectF(cover_rect), self.COVER_RADIUS, self.COVER_RADIUS)
-            painter.fillPath(path, QColor(*ink_rgb(), 10))
+            _paint_cover_placeholder(
+                painter, cover_rect, self.COVER_RADIUS, self._kind
+            )
 
         # Keyboard-focus ring — accent-colored 2 px stroke around the
         # cover. Painted ONLY when the owning view's _keyboard_mode
@@ -1037,9 +1067,9 @@ class _RowDelegate(QStyledItemDelegate):
             painter.drawPixmap(thumb_rect, scaled)
             painter.restore()
         else:
-            path = QPainterPath()
-            path.addRoundedRect(QRectF(thumb_rect), self.THUMB_RADIUS, self.THUMB_RADIUS)
-            painter.fillPath(path, QColor(*ink_rgb(), 10))
+            _paint_cover_placeholder(
+                painter, thumb_rect, self.THUMB_RADIUS, self._kind
+            )
 
         # Text columns — title + subtitle stacked, year right-aligned.
         year_text = _year_text(item) if self._kind == "album" else ""
