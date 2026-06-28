@@ -43,6 +43,11 @@ logger = logging.getLogger(__name__)
 # cleared on the widget's destroyed signal so we never touch a freed NSWindow.
 _active: dict = {}
 
+# Retains the NSWorkspace notification token for the live accessibility-display
+# observer (see install_accessibility_observer). Module-global so the
+# observation outlives the call and stays alive for the app's lifetime.
+_ax_observer = None
+
 
 def _ns_view(widget):
     """The widget's backing NSView (Qt's winId IS the NSView on macOS)."""
@@ -245,3 +250,51 @@ def reason(status):
     if _reduce_transparency():
         return "Reduce Transparency is on — using a near-opaque body"
     return "macOS vibrancy unavailable — using a near-opaque body"
+
+
+def install_accessibility_observer(on_change) -> bool:
+    """Install a one-time observer for live macOS accessibility-display changes
+    (notably *Reduce transparency*), invoking ``on_change`` on the GUI thread
+    whenever it flips.
+
+    The verified blur ``status()`` is cached for the whole session, but
+    ``apply()`` reads *Reduce transparency* LIVE and removes the vibrancy when
+    it's on. So a runtime toggle otherwise strips the backdrop while the frosted
+    body keeps painting at its glass alpha — a see-through window. ``on_change``
+    should re-probe (``status(force=True)``) and re-stamp the app so the body
+    falls back to its near-opaque alpha (and back). Idempotent; returns True
+    once installed. Never raises."""
+    global _ax_observer
+    if _ax_observer is not None:
+        return True
+    try:
+        import AppKit
+        from AppKit import NSWorkspace
+        from Foundation import NSOperationQueue
+
+        # The constant exists in AppKit but isn't always bound as a Python
+        # symbol — fall back to the documented notification name string.
+        name = getattr(
+            AppKit,
+            "NSWorkspaceAccessibilityDisplayOptionsDidChangeNotification",
+            "NSWorkspaceAccessibilityDisplayOptionsDidChangeNotification",
+        )
+
+        def _handler(_note):
+            try:
+                on_change()
+            except Exception as e:  # pragma: no cover — macOS-only
+                logger.debug("accessibility on_change failed: %s", e)
+
+        nc = NSWorkspace.sharedWorkspace().notificationCenter()
+        # Deliver on the main queue → the GUI thread, so on_change can touch Qt
+        # objects + emit signals safely. The returned token must be retained
+        # (stored module-global) to keep the observation alive.
+        _ax_observer = nc.addObserverForName_object_queue_usingBlock_(
+            name, None, NSOperationQueue.mainQueue(), _handler
+        )
+        logger.debug("installed accessibility-display observer")
+        return True
+    except Exception as e:  # pragma: no cover — macOS-only
+        logger.debug("accessibility observer install failed: %s", e)
+        return False
