@@ -2117,7 +2117,13 @@ def main():
     # mid-run and effectively disable the check.
     from jellytoast.single_instance import SingleInstance
 
-    app._single_instance = SingleInstance("jellytoast", app)
+    # JT_INSTANCE_KEY namespaces the single-instance lock so a dev/QA instance
+    # (e.g. JT_INSTANCE_KEY=jt-qa, launched with JT_TEST_BRIDGE=1) can run
+    # ALONGSIDE a normal instance instead of being bounced by the single-instance
+    # gate. Same JT_* debug-switch family as JT_TEST_BRIDGE / JT_OPAQUE. Defaults
+    # to the shared "jellytoast" key so normal launches still collapse to one.
+    _instance_key = os.environ.get("JT_INSTANCE_KEY", "jellytoast")
+    app._single_instance = SingleInstance(_instance_key, app)
     if not app._single_instance.acquire():
         # Another instance was already running — signal it to surface
         # and exit cleanly. Print a small breadcrumb so a CLI launcher
