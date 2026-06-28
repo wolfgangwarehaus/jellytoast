@@ -13,6 +13,9 @@ developer-facing history lives in [`docs/CHANGELOG.md`](docs/CHANGELOG.md).
 - **Intel Mac support.** A native Intel (x86_64) `.dmg` now ships alongside the
   Apple Silicon one — grab the build for your chip. Both are signed + notarized.
   Needs macOS Sequoia (15) or newer on Intel, Sonoma (14) or newer on Apple Silicon.
+- **Real frosted-glass blur on macOS.** The window now uses genuine native
+  vibrancy — where it used to fall back to a near-opaque panel — and it stays put
+  through resize, fullscreen, and focus changes.
 - **Snapcast removed.** It only ever *controlled* an existing Snapcast server — it
   couldn't play your library to one — so it's gone. Chromecast, AirPlay 2, DLNA,
   and Sonos are unchanged.
@@ -21,6 +24,11 @@ developer-facing history lives in [`docs/CHANGELOG.md`](docs/CHANGELOG.md).
 - **Lighter on big libraries.** The album grid no longer keeps every cover you've
   scrolled past in memory — it caps them and reloads from disk as needed, so a huge
   library won't balloon RAM.
+- **The Songs view loads instantly again.** It re-renders from its saved cache
+  instead of re-fetching the whole track list every time you open it.
+- **Small polish.** Long titles that overflow now scroll with a soft fade instead
+  of a hard cut, and a tile with no artwork shows a subtle placeholder glyph in
+  place of a blank square.
 - **Fixes.** The year no longer shows "None" for tracks without one; shuffle,
   repeat, and window position now stick when you quit from the tray; rewinding a
   track no longer skews your scrobbles; plus casting + reconnection robustness.
