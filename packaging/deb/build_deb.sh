@@ -35,6 +35,13 @@
 #     libmpv2→libegl1, but that's an incidental chain through the media player's
 #     subtitle renderer — declared explicitly so Qt's closure stands on its own
 #     (same principle as libgl1).
+#   libglib2.0-0 / libdbus-1-3 — Qt's glib event-loop integration + D-Bus
+#     (DT_NEEDED of the bundled libQt6XcbQpa.so.6). PyInstaller bundles
+#     libgthread-2.0 but NOT libglib-2.0 itself, so glib comes from the system.
+#     Both are reachable transitively today ONLY via the libmpv2 Depends (which
+#     pulls libglib2.0-0t64 + libdbus-1-3) — the exact "happens to be pulled by
+#     libmpv today" chain this list exists to not rely on. Declared explicitly so
+#     Qt's xcb closure stands on its own. (Ubuntu 0.1.5 QA pass.)
 #
 # Usage (CI: .github/workflows/release.yml):
 #   pyinstaller packaging/pyinstaller/jellytoast.spec --noconfirm
@@ -130,7 +137,7 @@ Version: $VERSION
 Architecture: amd64
 Maintainer: wolfgangwarehaus <augustvontrips@gmail.com>
 Installed-Size: $INSTALLED_SIZE
-Depends: libmpv2 | libmpv1, libx11-6, libx11-xcb1, libxcb1, libxcb-cursor0, libxcb-icccm4, libxcb-image0, libxcb-keysyms1, libxcb-randr0, libxcb-render0, libxcb-render-util0, libxcb-shape0, libxcb-shm0, libxcb-sync1, libxcb-util1, libxcb-xfixes0, libxcb-xkb1, libxkbcommon0, libxkbcommon-x11-0, libfontconfig1, libfreetype6, libegl1, libgl1
+Depends: libmpv2 | libmpv1, libx11-6, libx11-xcb1, libxcb1, libxcb-cursor0, libxcb-icccm4, libxcb-image0, libxcb-keysyms1, libxcb-randr0, libxcb-render0, libxcb-render-util0, libxcb-shape0, libxcb-shm0, libxcb-sync1, libxcb-util1, libxcb-xfixes0, libxcb-xkb1, libxkbcommon0, libxkbcommon-x11-0, libfontconfig1, libfreetype6, libegl1, libgl1, libglib2.0-0, libdbus-1-3
 Recommends: ffmpeg, libnotify-bin
 Section: sound
 Priority: optional
