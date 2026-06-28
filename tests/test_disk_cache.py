@@ -97,7 +97,42 @@ class TestAtomicWrite:
     def test_no_tmp_file_left_after_save(self, cache, tmp_path):
         cache.save("songs", {}, ["a"])
         assert (tmp_path / "songs.json").exists()
-        assert not (tmp_path / "songs.json.tmp").exists()
+        # No leftover temp of any name (the temp is uniquely named per write).
+        assert list(tmp_path.glob("*.tmp")) == []
+
+    def test_save_recreates_a_deleted_cache_dir(self, cache, tmp_path):
+        # A sign-out wipe / manual delete can remove the memoised dir; save()
+        # must re-create it instead of failing with a misleading ENOENT.
+        import shutil
+
+        shutil.rmtree(tmp_path)
+        cache.save("songs", {"sort": "name"}, ["a"])
+        assert cache.load("songs", {"sort": "name"}) == ["a"]
+
+    def test_concurrent_saves_of_same_name_dont_race(self, cache, tmp_path):
+        # The regression: a fixed `songs.json.tmp` meant two overlapping saves
+        # clobbered each other's temp and the loser's rename hit ENOENT. With a
+        # unique temp per write, N concurrent saves of the same name all land
+        # cleanly — exactly one `songs.json`, no temp leftovers, valid JSON.
+        import logging
+        from concurrent.futures import ThreadPoolExecutor
+
+        records = []
+        handler = logging.Handler()
+        handler.emit = records.append
+        disk_logger = logging.getLogger("jellytoast.disk_cache")
+        disk_logger.addHandler(handler)
+        try:
+            big = [{"Id": str(i), "Name": "x" * 200} for i in range(2000)]
+            with ThreadPoolExecutor(max_workers=8) as ex:
+                list(ex.map(lambda _: cache.save("songs", {"s": 1}, big), range(50)))
+        finally:
+            disk_logger.removeHandler(handler)
+
+        assert [r for r in records if "cache write failed" in r.getMessage()] == []
+        assert list(tmp_path.glob("*.tmp")) == []
+        assert (tmp_path / "songs.json").exists()
+        assert cache.load("songs", {"s": 1}) == big
 
 
 class TestClear:
