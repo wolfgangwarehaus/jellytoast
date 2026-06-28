@@ -34,6 +34,11 @@ class TrayController(QObject):
         self.menu = opaque_menu()
         self.menu.setStyleSheet(self._menu_qss())
         self._build_menu_actions()
+        # NOTE: on macOS, setContextMenu() realizes this QMenu as a native
+        # NSMenu, so the frost QSS + the theme_changed re-stamp below are no-ops
+        # there — the menu rides the system menu vibrancy instead (#197). Kept
+        # unconditional because it IS the styling source on Linux/Windows and is
+        # harmless (ignored) on macOS.
         # Live-apply: re-stamp the menu on theme_changed so the color
         # editor's edits to TEXT / TEXT_FAINT / BORDER_ACCENT / accent
         # tint flow through to the system-tray context menu without a

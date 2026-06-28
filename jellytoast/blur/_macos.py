@@ -48,6 +48,15 @@ _active: dict = {}
 # observation outlives the call and stays alive for the app's lifetime.
 _ax_observer = None
 
+# id(widget)s that already have the destroyed-signal cleanup hook, so apply()
+# connects it at most once per widget instead of stacking a fresh lambda on
+# every off->on blur cycle (theme switch / dialog force-refresh) — issue #197.
+_hooked: set = set()
+
+# Cached clear CGColor for _set_layer_clear: wrapping a fresh CGColor pointer on
+# every call emits a repeated ObjCPointerWarning that floods the log (#197).
+_clear_cgcolor = None
+
 
 def _ns_view(widget):
     """The widget's backing NSView (Qt's winId IS the NSView on macOS)."""
@@ -85,13 +94,18 @@ def _set_layer_clear(qt_view):
     """Force Qt's backing layer transparent so the behind-window vibrancy shows
     through instead of an opaque fill painting over it. QNSView is layer-backed
     under Qt6 RHI, so the layer is present; best-effort either way."""
+    global _clear_cgcolor
     try:
         from AppKit import NSColor
 
         layer = qt_view.layer()
         if layer is not None:
             layer.setOpaque_(False)
-            layer.setBackgroundColor_(NSColor.clearColor().CGColor())
+            # Create the clear CGColor once and reuse it — a fresh wrapper per
+            # call spams ObjCPointerWarning, flooding the log (#197).
+            if _clear_cgcolor is None:
+                _clear_cgcolor = NSColor.clearColor().CGColor()
+            layer.setBackgroundColor_(_clear_cgcolor)
     except Exception as e:  # pragma: no cover — macOS-only
         logger.debug("vibrancy clear-layer failed: %s", e)
 
@@ -152,20 +166,33 @@ def apply(widget, enabled, corner_radius=0, dark=True, elevated=False) -> bool:
             # material out whenever the window isn't key (an activation symptom).
             effect.setState_(NSVisualEffectStateActive)
             # Insert STRICTLY below Qt's content view (never a bare addSubview,
-            # which orders it on top and hides Qt's content).
+            # which orders it on top and hides Qt's content). Inserting into the
+            # private NSThemeFrame logs a benign one-time "NSWindow warning:
+            # adding an unknown subview: NSVisualEffectView" — expected here, not
+            # a bug (#197).
             host.addSubview_positioned_relativeTo_(effect, NSWindowBelow, qt_view)
+            # Register the tracking entry BEFORE the window mutations below, so a
+            # throw mid-install is rolled back by the outer except (via _remove)
+            # instead of orphaning the already-inserted effect view (#197).
+            _active[key] = (window, effect, qt_view, orig_opaque, orig_bg)
             # The vibrancy only shows through if the window + Qt's layer are
             # genuinely clear; Qt paints Frosted chrome translucent, so force
             # the window + backing layer transparent.
             window.setOpaque_(False)
             window.setBackgroundColor_(NSColor.clearColor())
             _set_layer_clear(qt_view)
-            _active[key] = (window, effect, qt_view, orig_opaque, orig_bg)
             # Forget this widget when it dies so we never touch a freed window.
-            try:
-                widget.destroyed.connect(lambda *_: _active.pop(key, None))
-            except Exception:
-                pass
+            # Connect ONCE per widget — apply() re-runs on every off->on cycle
+            # (theme switch, dialog force-refresh); an unguarded connect would
+            # stack a fresh lambda each time (#197).
+            if key not in _hooked:
+                _hooked.add(key)
+                try:
+                    widget.destroyed.connect(
+                        lambda *_: (_active.pop(key, None), _hooked.discard(key))
+                    )
+                except Exception:
+                    _hooked.discard(key)
         else:
             _window, effect, _qt, _o, _b = state
             # Re-assert the below-Qt order on every re-apply (mini-player resize,
@@ -185,9 +212,25 @@ def apply(widget, enabled, corner_radius=0, dark=True, elevated=False) -> bool:
             if layer is not None:
                 layer.setCornerRadius_(float(corner_radius))
                 layer.setMasksToBounds_(True)
+        else:
+            # Reset any previous rounding when the window goes edge-flush /
+            # fullscreen (corner_radius=0). Otherwise the effect layer keeps its
+            # 8px rounded mask and the 4 screen corners clip where a desktop
+            # shows behind it (#197).
+            layer = effect.layer()
+            if layer is not None:
+                layer.setCornerRadius_(0.0)
+                layer.setMasksToBounds_(False)
         return True
     except Exception as e:  # pragma: no cover — macOS-only
         logger.debug("vibrancy apply failed: %s", e)
+        # Roll back a half-installed effect view (registered above before the
+        # window mutations) so a later apply() doesn't orphan a second one.
+        if key in _active:
+            try:
+                _remove(key, window)
+            except Exception:
+                pass
         return False
 
 

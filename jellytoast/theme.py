@@ -77,10 +77,11 @@ _MAC_BODY_DEFAULT_ALPHA = 110
 def _mac_glass_alpha() -> int:
     """macOS-only frosted body alpha when native vibrancy is active. Defaults
     to ``_MAC_BODY_DEFAULT_ALPHA`` (lighter than the shared glass so the vibrancy
-    shows through, matched by eye to KDE Plasma) and is clamped to
-    ``[_WIN_BODY_FLOOR_ALPHA, 255]`` (the same hit-testable floor). Env-tunable
-    both directions: ``JT_MAC_GLASS_ALPHA=90`` (lighter) … ``=172`` (heavier /
-    shared)."""
+    shows through, matched by eye to KDE Plasma), with a small floor so the body
+    never goes fully transparent. Applied as ``min(theme glass alpha, this)`` in
+    body_color_for, so it only ever LIGHTENS the body — the effective ceiling is
+    the theme's own alpha (172 dark / 140 light), never 255. Env-tunable:
+    ``JT_MAC_GLASS_ALPHA=90`` (lighter) … toward the theme base (heavier)."""
     try:
         v = int(os.environ.get("JT_MAC_GLASS_ALPHA", str(_MAC_BODY_DEFAULT_ALPHA)))
     except ValueError:
