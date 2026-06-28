@@ -21,7 +21,7 @@ converge here; fixes land on `main`; then `dev/cut_release.sh 0.1.5 --push`.
 | Platform | Box | State | Findings |
 |---|---|---|---|
 | macOS (Intel Sequoia) | august's MBP | **DONE** — blur verified on real pixels; P2s + P3s fixed on `feat/macos-native-blur` | #195 / #196 / #197 (all resolved) |
-| KDE Plasma (Wayland) | CachyOS primary | rig ready; **next up** | — |
+| KDE Plasma (Wayland) | CachyOS primary | **DONE** — 25/25 surfaces glass, no P1/P2; clean | A–Z rail faint (P3, already fixed on blur branch) |
 | Windows 11 | laptop | rig ready; brief + PR to delegate | — |
 | Ubuntu (.deb/X11) | Ubuntu box | rig ready; brief + PR to delegate | — |
 
@@ -45,8 +45,25 @@ on live data). Full report + evidence in PR #196 (`dev/MAC_TEST_FINDINGS.md`).
   subview-warning note, tray QSS no-op note, theme docstring nits, A–Z rail contrast)
   → fixed (#197, `c282b32`). Issue closed.
 
-### KDE Plasma
-_(pending)_
+### KDE Plasma — pass complete (CachyOS/Arch, KWin Wayland; autonomous, 2026-06-28)
+Driven via an isolated bridge instance (`JT_INSTANCE_KEY=jt-qa`) alongside the
+running app — no disruption to the live instance.
+**Verified GOOD (25/25 shots `glass_good`, all legible, all corners intact):**
+KWin blur confirmed ACTIVE (`status()=active`, body `(18,18,18,172)` = 67% glass);
+every surface (albums/artists/songs/genres/suggestions/radio/downloads/smart-
+playlists/search/now-playing) reads as proper translucent frosted glass in **dark
+AND light** (light faithful — the F6 harness fix landed); maximized + fullscreen
+fill edge-to-edge with no blank margins; mini player + Settings dialog frosted with
+rounded corners; **smoke all-pass** (provider auth, 219 genres, smart-shuffle
+anti-clustering `0.001 vs 0.016` on live data, FLAC 206 stream, cover serve).
+No opaque / see-through / blank / mis-draw anywhere.
+- **P3** A–Z fast-scroll rail letters read **faint** (this branch is at the old
+  `0.30` ink) — **independently confirms the macOS finding**; the `0.45` bump is
+  already committed on `feat/macos-native-blur` (`library_grid.py`, cross-platform)
+  and reaches main when that branch merges.
+- Note: mini player opened centered-over-main rather than bottom-right (its persisted
+  position) — placement, not a render bug. Two instances share QSettings, so the
+  theme sweep briefly flipped the live instance's theme too; restored to `auto`.
 
 ### Windows
 _(pending)_
@@ -58,8 +75,8 @@ _(pending)_
 - [x] macOS native blur (sibling-below) + 110 body + tray fix — `feat/macos-native-blur`.
 - [x] macOS P2s: live Reduce-Transparency see-through; tray left-click — #195.
 - [x] macOS P3s ×8 incl. A–Z rail contrast (cross-platform) — #197 / `c282b32`.
-- [ ] **A–Z rail contrast** also wants a Plasma/Windows/Ubuntu eyeball (the bump
-      is cross-platform; confirm it reads right on each).
+- [x] **A–Z rail contrast** — Plasma CONFIRMS faint at 0.30; the 0.45 bump rides
+      the blur branch to main. Still wants a Windows/Ubuntu eyeball after merge.
 - [ ] **Now-playing bar: long album subtitle truncates/overlaps** without a clean
       ellipsis (cross-platform, cosmetic; from macOS pass F4). Needs eyes.
 - [ ] **`disk_cache` write failure for the songs view** (`view_cache/songs.json.tmp
