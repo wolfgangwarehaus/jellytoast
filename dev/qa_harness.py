@@ -142,9 +142,14 @@ def raise_window(b: Bridge) -> None:
 
 
 def set_theme(b: Bridge, mode: str) -> None:
+    # Emit theme_changed too — refresh_theme() updates the palette tokens but the
+    # per-surface QSS re-stamp + the blur/vibrancy re-apply only fire on
+    # theme_changed (the live-apply contract). Without it the light-theme
+    # captures show stale frost (surfaced by the macOS test pass, issue #197/F6).
     b.x(
         f"get_settings().theme_mode = {mode!r}; "
-        "from jellytoast import ui_helpers as _u; _u.refresh_theme()"
+        "from jellytoast import ui_helpers as _u; _u.refresh_theme(); "
+        "bus.theme_changed.emit()"
     )
 
 
