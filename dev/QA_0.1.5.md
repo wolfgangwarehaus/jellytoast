@@ -22,7 +22,7 @@ converge here; fixes land on `main`; then `dev/cut_release.sh 0.1.5 --push`.
 |---|---|---|---|
 | macOS (Intel Sequoia) | august's MBP | **DONE** — blur verified on real pixels; P2s + P3s fixed on `feat/macos-native-blur` | #195 / #196 / #197 (all resolved) |
 | KDE Plasma (Wayland) | CachyOS primary | **DONE** — 25/25 surfaces glass, no P1/P2; clean | A–Z rail faint (P3, already fixed on blur branch) |
-| Windows 11 | laptop | rig ready; brief + PR to delegate | — |
+| Windows 11 | laptop | **DONE** — 25/25 surfaces glass (dark+light), all native paths verified, frozen install OK, smoke all-pass; no app P1/P2 | clean (3 harness artifacts, 2 fixed; minor P3s) |
 | Ubuntu (.deb/X11) | Ubuntu box | rig ready; brief + PR to delegate | — |
 
 ## macOS — already fixed on `feat/macos-native-blur` (queued for 0.1.5)
@@ -65,8 +65,12 @@ No opaque / see-through / blank / mis-draw anywhere.
   position) — placement, not a render bug. Two instances share QSettings, so the
   theme sweep briefly flipped the live instance's theme too; restored to `auto`.
 
-### Windows
-_(pending)_
+### Windows — pass complete (Win11 build 26200, 125% single display, live Subsonic/Navidrome; autonomous, 2026-06-28)
+Driven via an isolated bridge instance (`JT_INSTANCE_KEY=jt-qa`); full report + evidence in `dev/WINDOWS_TEST_FINDINGS.md`.
+**Verified GOOD:** Acrylic blur ACTIVE (`is_supported()`=True, build 26200, transparency on); **25/25 surfaces read as translucent frosted glass in dark AND light** (wallpaper bleed everywhere, dark heavier `0xBE` vs light `0x99`, all legible, corners intact, no opaque/see-through/blank/mis-draw); mini player + Settings dialog frosted (dark+light); maximized/fullscreen fill the work area edge-to-edge. Native: **SMTC registered** (hwnd), boundary-greying unit-tested; **taskbar badge** COM path exercised (play/pause HICONs, no NULL caching); **AUMID + Start-menu stamp OK** at runtime; **autostart** HKCU Run toggle writes the no-console launcher; **sleep inhibit** succeeds (system-only, screen free); **frozen PyInstaller onedir** boots (libmpv bundled in `_internal`), **no console** (PE Subsystem=2), **single-instance** correct (2nd exits 0, 1st survives). **Smoke all-pass** on live data (provider auth, 219 genres, smart-shuffle anti-clustering `0.000 vs 0.013`, FLAC 206 stream, cover serve). All §D historical bugs re-verified fixed.
+- **No app P1/P2.** Three gallery scares were **harness artifacts, not app bugs**: (1) light-theme toolbar icons looked invisible — harness `set_theme()` omitted `icons.refresh_theme()` before the emit (off-by-one icon-tint lag; real app calls it) → **FIXED in `dev/qa_harness.py`**; (2) smoke "crashed" on Windows cp1252 (`─` UnicodeEncodeError) → **FIXED** (UTF-8) ; (3) stale "Albums" title on non-album views — harness navigates via internal `_show_*` which bypass `set_active_tab` (real dropdown nav is correct). The now-playing "blob" = the intended `VisualizerWidget` clipped by the window bottom.
+- **P3** (cosmetic, want a human eyeball): missing-cover tiles on the Suggestions shelf show no fallback glyph (Artists grid uses a star); Songs album column reads a touch dim; verify the Smart-playlists "+ New" empty-state affordance.
+- Couldn't test on this box: multi-monitor maximize + 150/175% badge crispness (single 125% display), taskbar-badge on-button visual (taskbar auto-hidden), MSIX/WACK (non-admin; tested the onedir frozen shape instead), live track-change toast visual.
 
 ### Ubuntu
 _(pending)_
