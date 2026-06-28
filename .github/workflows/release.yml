@@ -23,6 +23,14 @@ on:
   push:
     tags: ["v*"]
   workflow_dispatch:
+    inputs:
+      mas_action:
+        description: "MAS build: validate only, or also upload to App Store Connect"
+        type: choice
+        options:
+          - validate
+          - upload
+        default: validate
 
 # Least-privilege default: only the draft-release job needs write (it
 # mints the release); the build jobs run read-only so a compromised build
@@ -527,7 +535,7 @@ jobs:
             "dist/jellytoast-${V}-mas-unsigned.pkg" "dist/jellytoast-${V}-mas.pkg"
           rm -f /tmp/installer.p12
           pkgutil --check-signature "dist/jellytoast-${V}-mas.pkg"
-      - name: Validate + upload the build to App Store Connect
+      - name: Validate the MAS .pkg (+ upload to App Store Connect if requested)
         if: env.MAS_SIGN == 'true'
         env:
           APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
@@ -538,14 +546,22 @@ jobs:
           echo "$APPLE_API_KEY_B64" | base64 --decode \
             > ~/".appstoreconnect/private_keys/AuthKey_${APPLE_API_KEY_ID}.p8"
           PKG="dist/jellytoast-${{ steps.ver.outputs.version }}-mas.pkg"
-          # Validate first as a fast gate, then upload to App Store Connect.
-          # NOTE: the build number is CFBundleVersion (= the pyproject version), so
-          # App Store Connect rejects a re-upload of an already-seen build number —
-          # a repeat upload of the same version needs a CFBundleVersion bump.
+          # ALWAYS validate (a fast CI gate). Upload to App Store Connect ONLY
+          # when the dispatch explicitly asks (mas_action=upload) — so a routine
+          # build-mas run is a check, not a surprise ASC upload. Fail-safe: any
+          # value other than 'upload' (incl. the default) validates only.
+          # NOTE: the build number is CFBundleVersion (= the pyproject version),
+          # so ASC rejects re-uploading an already-seen build number — a repeat
+          # upload of the same version needs a CFBundleVersion bump.
           xcrun altool --validate-app -t macos -f "$PKG" \
             --apiKey "$APPLE_API_KEY_ID" --apiIssuer "$APPLE_API_ISSUER"
-          xcrun altool --upload-app -t macos -f "$PKG" \
-            --apiKey "$APPLE_API_KEY_ID" --apiIssuer "$APPLE_API_ISSUER"
+          if [ "${{ github.event.inputs.mas_action }}" = "upload" ]; then
+            echo "mas_action=upload → uploading to App Store Connect"
+            xcrun altool --upload-app -t macos -f "$PKG" \
+              --apiKey "$APPLE_API_KEY_ID" --apiIssuer "$APPLE_API_ISSUER"
+          else
+            echo "mas_action='${{ github.event.inputs.mas_action }}' (not 'upload') → validate-only, skipping ASC upload"
+          fi
           rm -f ~/".appstoreconnect/private_keys/AuthKey_${APPLE_API_KEY_ID}.p8"
       - uses: actions/upload-artifact@v7
         if: env.MAS_SIGN == 'true'
