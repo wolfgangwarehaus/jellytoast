@@ -451,15 +451,16 @@ class TestReason:
         assert isinstance(_unsupported.reason(blur.BlurStatus.UNSUPPORTED), str)
 
 
-# ── macOS backend (_macos) — deferred stub ────────────────────────────
+# ── macOS backend (_macos) — sibling-below vibrancy ───────────────────
 
 
 class TestMacosBackend:
-    """macOS vibrancy is design-only until there's Mac hardware (no
-    untestable Apple code), so the backend must safely degrade: UNSUPPORTED
-    → near-opaque body, never see-through."""
+    """The macOS vibrancy backend is live on real macOS, but off-platform
+    (this CI runs on Linux) AppKit is absent, so it must safely degrade:
+    is_supported() False → probe() UNSUPPORTED → near-opaque body, never
+    see-through, and apply() never raises."""
 
-    def test_stub_reports_unsupported_and_never_raises(self):
+    def test_degrades_to_unsupported_off_platform_and_never_raises(self):
         from jellytoast.blur import _macos
 
         assert _macos.is_supported() is False
