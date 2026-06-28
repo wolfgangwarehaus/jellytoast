@@ -146,9 +146,18 @@ def set_theme(b: Bridge, mode: str) -> None:
     # per-surface QSS re-stamp + the blur/vibrancy re-apply only fire on
     # theme_changed (the live-apply contract). Without it the light-theme
     # captures show stale frost (surfaced by the macOS test pass, issue #197/F6).
+    # icons.refresh_theme() MUST run between refresh_theme() and the
+    # theme_changed emit — the real app does exactly this (settings_dialog
+    # _on_theme_changed / app._on_os_scheme_changed) so the icon-tint globals
+    # (ICON_DIM / ICON_BRIGHT) are fresh before subscribers like the top bar
+    # re-issue their glyphs on theme_changed. Omitting it left the captured
+    # light-theme toolbar glyphs one switch behind (stale dark tint → invisible
+    # on the light frost) — a capture artifact, not an app bug (Windows pass,
+    # 2026-06-28).
     b.x(
         f"get_settings().theme_mode = {mode!r}; "
-        "from jellytoast import ui_helpers as _u; _u.refresh_theme(); "
+        "from jellytoast import ui_helpers as _u, icons as _ic; "
+        "_u.refresh_theme(); _ic.refresh_theme(); "
         "bus.theme_changed.emit()"
     )
 
@@ -325,10 +334,17 @@ def main() -> int:
         os.makedirs(out, exist_ok=True)
         smoke_path = os.path.join(out, "smoke.txt")
         try:
-            with open(smoke_path, "w") as f:
+            # UTF-8 both on the file AND the child's stdout: smoke_test.py
+            # prints box-drawing glyphs (─) that crash on Windows' default
+            # cp1252 stream (UnicodeEncodeError) before any check runs. Force
+            # UTF-8 so the smoke output is captured on every platform (Windows
+            # pass, 2026-06-28).
+            smoke_env = {**os.environ, "PYTHONUTF8": "1", "PYTHONIOENCODING": "utf-8"}
+            with open(smoke_path, "w", encoding="utf-8", errors="replace") as f:
                 subprocess.run(
                     [sys.executable, os.path.join(_ROOT, "dev", "smoke_test.py")],
                     cwd=_ROOT, stdout=f, stderr=subprocess.STDOUT, timeout=240,
+                    env=smoke_env,
                 )
             print(f"  smoke output -> {smoke_path}")
         except Exception as e:
