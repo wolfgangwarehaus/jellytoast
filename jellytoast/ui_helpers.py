@@ -25,6 +25,7 @@ from PySide6.QtGui import (
     QFont,
     QGuiApplication,
     QImage,
+    QLinearGradient,
     QPainter,
     QPainterPath,
     QPalette,
@@ -1501,6 +1502,7 @@ class MarqueeLabel(QLabel):
     GAP_PX = 48
     PAUSE_TICKS = 90  # ~3s at 33ms tick — longer dwell on the start
     TICK_MS = 33
+    FADE_PX = 16  # soft edge so overflow dissolves instead of hard-clipping
 
     def __init__(self, text: str = "", parent=None):
         super().__init__(parent)
@@ -1559,15 +1561,48 @@ class MarqueeLabel(QLabel):
         if not self._needs_scroll():
             super().paintEvent(e)
             return
-        p = QPainter(self)
-        p.setPen(self.palette().color(self.foregroundRole()))
-        p.setFont(self.font())
-        fm = p.fontMetrics()
-        baseline = (self.height() + fm.ascent() - fm.descent()) // 2
+        w, h = self.width(), self.height()
+        if w <= 0 or h <= 0:
+            return
+        # Render the scrolling text into a transparent layer, then dissolve its
+        # edges with an alpha mask. A hard right clip (drawText into the widget)
+        # looks like a broken mid-word elide in a still frame — and the ~3s
+        # start-pause shows that clip live after every track change. The mask is
+        # applied to the ISOLATED layer (DestinationIn), so it only touches the
+        # text and never punches a hole in the frosted bar painted behind us.
+        dpr = self.devicePixelRatioF()
+        buf = QPixmap(max(1, round(w * dpr)), max(1, round(h * dpr)))
+        buf.setDevicePixelRatio(dpr)
+        buf.fill(Qt.GlobalColor.transparent)
+        bp = QPainter(buf)
+        bp.setPen(self.palette().color(self.foregroundRole()))
+        bp.setFont(self.font())
+        fm = bp.fontMetrics()
+        baseline = (h + fm.ascent() - fm.descent()) // 2
         text_w = fm.horizontalAdvance(self._marquee_text)
         x = -self._marquee_offset
-        p.drawText(x, baseline, self._marquee_text)
-        p.drawText(x + text_w + self.GAP_PX, baseline, self._marquee_text)
+        bp.drawText(x, baseline, self._marquee_text)
+        bp.drawText(x + text_w + self.GAP_PX, baseline, self._marquee_text)
+        fade = min(self.FADE_PX, w // 2)
+        if fade > 0:
+            bp.setCompositionMode(
+                QPainter.CompositionMode.CompositionMode_DestinationIn
+            )
+            rg = QLinearGradient(w - fade, 0, w, 0)
+            rg.setColorAt(0.0, QColor(0, 0, 0, 255))
+            rg.setColorAt(1.0, QColor(0, 0, 0, 0))
+            bp.fillRect(QRectF(w - fade, 0, fade, h), rg)
+            # Fade the left edge too, but only once scrolled past the start, so
+            # the head isn't faded during the opening dwell (when it sits next
+            # to the cover art).
+            if self._marquee_offset > 0:
+                lg = QLinearGradient(0, 0, fade, 0)
+                lg.setColorAt(0.0, QColor(0, 0, 0, 0))
+                lg.setColorAt(1.0, QColor(0, 0, 0, 255))
+                bp.fillRect(QRectF(0, 0, fade, h), lg)
+        bp.end()
+        p = QPainter(self)
+        p.drawPixmap(0, 0, buf)
 
 
 # ── Cover-overlay button ─────────────────────────────────────────────────
