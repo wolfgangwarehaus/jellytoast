@@ -1,23 +1,33 @@
 """macOS blur backend — NSVisualEffectView vibrancy (the frosted backdrop).
 
-Replaces the deferred stub with the real vibrancy path. Behind a translucent
-Qt window we install an ``NSVisualEffectView`` (blending mode "behind window")
-as the window's *content view* and re-parent Qt's own view on top of it. Qt
-already paints Frosted-mode chrome with ``WA_TranslucentBackground``, so the
-system vibrancy shows through the transparent body — the macOS-native
-equivalent of KWin's blur-behind on Linux. ``probe()`` therefore reports
-``ACTIVE`` (a real, verified backdrop) so frosted surfaces ride it at full
-glass alpha instead of the near-opaque fallback.
+Behind a translucent Qt window we install an ``NSVisualEffectView`` (blending
+mode "behind window") as a SIBLING of Qt's content view, ordered strictly
+*below* it. Qt already paints Frosted-mode chrome with
+``WA_TranslucentBackground``, so the system vibrancy shows through the
+transparent body — the macOS-native equivalent of KWin's blur-behind on Linux.
+``probe()`` therefore reports ``ACTIVE`` (a real, verified backdrop) so frosted
+surfaces ride it at full glass alpha instead of the near-opaque fallback.
 
-Reversible: ``apply(widget, False)`` restores Qt's view as the content view and
-drops the effect view. ``corner_radius`` rounds the effect layer to match a
-frameless rounded window (the mini player) so the frost doesn't square off the
-corners. ``elevated`` popups get the lighter ``.popover`` material.
+Why sibling-below and not a content-view swap: the earlier implementation made
+the effect view the window's *content view* and re-parented Qt's view on top of
+it. That demotes ``QNSView`` from the content-view slot, and macOS then stops
+auto-sizing it (blank margins on resize) while ``QCocoaWindow`` keeps re-asserting
+``QNSView`` as the content view on recreate/state changes (QTBUG-69302) — ripping
+the effect view back out and blanking the window on activation. Keeping QNSView as
+the content view and inserting the effect view into its superview (the private
+theme frame) via ``addSubview:positioned:NSWindowBelow relativeTo:`` sidesteps
+both: Qt never loses content-view ownership, so resize, hit-testing, cursors and
+recreate all keep working. This is Electron's vibrancy pattern, hoisted one level
+because in Qt the QNSView itself is the content view.
 
-NOTE: this re-parents the NSWindow content view under Qt. The structural path
-(insert / refresh / remove, no crash) is exercised headlessly, but the VISUAL
-result and window-resize behaviour must be judged on a real display — a remote
-framebuffer (VNC) misrepresents vibrancy. See docs/research/portable_blur.md §6.
+Reversible: ``apply(widget, False)`` drops the effect view and restores the
+window's original opacity/background. ``corner_radius`` rounds the effect layer to
+match a frameless rounded window (the mini player) so the frost doesn't square off
+the corners. ``elevated`` popups get the lighter ``.popover`` material.
+
+NOTE: the structural path (insert / refresh / remove, no crash) is exercised
+headlessly, but the VISUAL result and window-resize/activation behaviour must be
+judged on a real display — a remote framebuffer (VNC) misrepresents vibrancy.
 """
 
 from __future__ import annotations
@@ -28,10 +38,24 @@ from jellytoast.blur import BlurStatus
 
 logger = logging.getLogger(__name__)
 
-# id(widget) -> (window, effect_view, qt_view). Lets apply(enabled=False)
-# reverse the content-view swap, and is cleared on the widget's destroyed
-# signal so we never touch a freed NSWindow.
+# id(widget) -> (window, effect_view, qt_view, orig_opaque, orig_bg). Lets
+# apply(enabled=False) drop the effect view and restore the window, and is
+# cleared on the widget's destroyed signal so we never touch a freed NSWindow.
 _active: dict = {}
+
+# Retains the NSWorkspace notification token for the live accessibility-display
+# observer (see install_accessibility_observer). Module-global so the
+# observation outlives the call and stays alive for the app's lifetime.
+_ax_observer = None
+
+# id(widget)s that already have the destroyed-signal cleanup hook, so apply()
+# connects it at most once per widget instead of stacking a fresh lambda on
+# every off->on blur cycle (theme switch / dialog force-refresh) — issue #197.
+_hooked: set = set()
+
+# Cached clear CGColor for _set_layer_clear: wrapping a fresh CGColor pointer on
+# every call emits a repeated ObjCPointerWarning that floods the log (#197).
+_clear_cgcolor = None
 
 
 def _ns_view(widget):
@@ -66,6 +90,26 @@ def _reduce_transparency() -> bool:
         return False
 
 
+def _set_layer_clear(qt_view):
+    """Force Qt's backing layer transparent so the behind-window vibrancy shows
+    through instead of an opaque fill painting over it. QNSView is layer-backed
+    under Qt6 RHI, so the layer is present; best-effort either way."""
+    global _clear_cgcolor
+    try:
+        from AppKit import NSColor
+
+        layer = qt_view.layer()
+        if layer is not None:
+            layer.setOpaque_(False)
+            # Create the clear CGColor once and reuse it — a fresh wrapper per
+            # call spams ObjCPointerWarning, flooding the log (#197).
+            if _clear_cgcolor is None:
+                _clear_cgcolor = NSColor.clearColor().CGColor()
+            layer.setBackgroundColor_(_clear_cgcolor)
+    except Exception as e:  # pragma: no cover — macOS-only
+        logger.debug("vibrancy clear-layer failed: %s", e)
+
+
 def apply(widget, enabled, corner_radius=0, dark=True, elevated=False) -> bool:
     """Install (``enabled=True``) or remove vibrancy behind ``widget``'s
     window. The QWindow must already exist (call after ``show()``). Returns
@@ -80,6 +124,7 @@ def apply(widget, enabled, corner_radius=0, dark=True, elevated=False) -> bool:
             NSVisualEffectMaterialUnderWindowBackground,
             NSVisualEffectStateActive,
             NSVisualEffectView,
+            NSWindowBelow,
         )
     except Exception as e:  # pragma: no cover — macOS-only
         logger.debug("AppKit vibrancy import failed: %s", e)
@@ -87,10 +132,10 @@ def apply(widget, enabled, corner_radius=0, dark=True, elevated=False) -> bool:
 
     key = id(widget)
     try:
-        view = _ns_view(widget)
-        if view is None:
+        qt_view = _ns_view(widget)
+        if qt_view is None:
             return False
-        window = view.window()
+        window = qt_view.window()
         if window is None:
             return False
 
@@ -99,32 +144,61 @@ def apply(widget, enabled, corner_radius=0, dark=True, elevated=False) -> bool:
         if not enabled or _reduce_transparency():
             return _remove(key, window)
 
+        # The view that hosts the content view (the private theme frame). We
+        # insert the effect view here, ordered BELOW Qt's view, so Qt keeps
+        # ownership of the content-view slot. superview() is None until the
+        # window is realized.
+        host = qt_view.superview()
+        if host is None:
+            return False
+
         state = _active.get(key)
         if state is None:
-            qt_view = window.contentView()
             # Capture the window's pre-vibrancy opacity/background so removal
             # restores EXACTLY that — a frosted Qt window is already
             # non-opaque/clear, so we must not force it back to opaque.
             orig_opaque = bool(window.isOpaque())
             orig_bg = window.backgroundColor()
-            effect = NSVisualEffectView.alloc().initWithFrame_(qt_view.frame())
+            effect = NSVisualEffectView.alloc().initWithFrame_(host.bounds())
             effect.setAutoresizingMask_(NSViewWidthSizable | NSViewHeightSizable)
             effect.setBlendingMode_(NSVisualEffectBlendingModeBehindWindow)
+            # Constant blur — the default (FollowsWindowActiveState) washes the
+            # material out whenever the window isn't key (an activation symptom).
             effect.setState_(NSVisualEffectStateActive)
-            # Swap: effect becomes the content view, Qt's translucent view
-            # rides on top so the vibrancy shows through the body.
-            window.setContentView_(effect)
-            effect.addSubview_(qt_view)
+            # Insert STRICTLY below Qt's content view (never a bare addSubview,
+            # which orders it on top and hides Qt's content). Inserting into the
+            # private NSThemeFrame logs a benign one-time "NSWindow warning:
+            # adding an unknown subview: NSVisualEffectView" — expected here, not
+            # a bug (#197).
+            host.addSubview_positioned_relativeTo_(effect, NSWindowBelow, qt_view)
+            # Register the tracking entry BEFORE the window mutations below, so a
+            # throw mid-install is rolled back by the outer except (via _remove)
+            # instead of orphaning the already-inserted effect view (#197).
+            _active[key] = (window, effect, qt_view, orig_opaque, orig_bg)
+            # The vibrancy only shows through if the window + Qt's layer are
+            # genuinely clear; Qt paints Frosted chrome translucent, so force
+            # the window + backing layer transparent.
             window.setOpaque_(False)
             window.setBackgroundColor_(NSColor.clearColor())
-            _active[key] = (window, effect, qt_view, orig_opaque, orig_bg)
+            _set_layer_clear(qt_view)
             # Forget this widget when it dies so we never touch a freed window.
-            try:
-                widget.destroyed.connect(lambda *_: _active.pop(key, None))
-            except Exception:
-                pass
+            # Connect ONCE per widget — apply() re-runs on every off->on cycle
+            # (theme switch, dialog force-refresh); an unguarded connect would
+            # stack a fresh lambda each time (#197).
+            if key not in _hooked:
+                _hooked.add(key)
+                try:
+                    widget.destroyed.connect(
+                        lambda *_: (_active.pop(key, None), _hooked.discard(key))
+                    )
+                except Exception:
+                    _hooked.discard(key)
         else:
             _window, effect, _qt, _o, _b = state
+            # Re-assert the below-Qt order on every re-apply (mini-player resize,
+            # theme switch) — cheap insurance against AppKit reordering the
+            # foreign subview on a state change.
+            host.addSubview_positioned_relativeTo_(effect, NSWindowBelow, qt_view)
 
         effect.setMaterial_(
             NSVisualEffectMaterialPopover
@@ -138,9 +212,25 @@ def apply(widget, enabled, corner_radius=0, dark=True, elevated=False) -> bool:
             if layer is not None:
                 layer.setCornerRadius_(float(corner_radius))
                 layer.setMasksToBounds_(True)
+        else:
+            # Reset any previous rounding when the window goes edge-flush /
+            # fullscreen (corner_radius=0). Otherwise the effect layer keeps its
+            # 8px rounded mask and the 4 screen corners clip where a desktop
+            # shows behind it (#197).
+            layer = effect.layer()
+            if layer is not None:
+                layer.setCornerRadius_(0.0)
+                layer.setMasksToBounds_(False)
         return True
     except Exception as e:  # pragma: no cover — macOS-only
         logger.debug("vibrancy apply failed: %s", e)
+        # Roll back a half-installed effect view (registered above before the
+        # window mutations) so a later apply() doesn't orphan a second one.
+        if key in _active:
+            try:
+                _remove(key, window)
+            except Exception:
+                pass
         return False
 
 
@@ -168,9 +258,9 @@ def _remove(key, window) -> bool:
     if state is None:
         return False
     try:
-        _win, effect, qt_view, orig_opaque, orig_bg = state
-        # Restore Qt's view as the content view; the effect view drops out.
-        window.setContentView_(qt_view)
+        _win, effect, _qt_view, orig_opaque, orig_bg = state
+        # The effect view is a sibling — just drop it out; Qt's content view was
+        # never touched, so there is nothing to restore there.
         effect.removeFromSuperview()
         # Restore the window's pre-vibrancy opacity/background exactly.
         window.setOpaque_(orig_opaque)
@@ -183,17 +273,18 @@ def _remove(key, window) -> bool:
 
 
 def probe():
-    """Report UNSUPPORTED — native vibrancy is DISABLED on macOS.
+    """Report ACTIVE — a real NSVisualEffectView backdrop sits behind the
+    window (sibling-below the Qt content view), so frosted surfaces ride it at
+    full glass alpha.
 
-    The NSVisualEffectView content-view swap that backs it does not reliably
-    composite Qt's content onto the SCREEN after a window resize / activation
-    state change — Qt's internal render is correct but the OS surface shows a
-    blank or mis-drawn window (main window, mini player, dialogs). So jellytoast
-    paints its own faux-frost / near-opaque body everywhere on macOS instead
-    (status UNSUPPORTED → the theme's fallback body). The vibrancy code below is
-    kept for reference / a future robust revival, but apply() is gated off in
-    jellytoast/blur/__init__.py on macOS."""
-    return BlurStatus.UNSUPPORTED
+    UNSUPPORTED when AppKit is absent (non-macOS / headless CI) or the user has
+    turned on the *Reduce Transparency* accessibility setting — both fall back
+    to the theme's near-opaque body."""
+    if not is_supported():
+        return BlurStatus.UNSUPPORTED
+    if _reduce_transparency():
+        return BlurStatus.UNSUPPORTED
+    return BlurStatus.ACTIVE
 
 
 def reason(status):
@@ -202,3 +293,51 @@ def reason(status):
     if _reduce_transparency():
         return "Reduce Transparency is on — using a near-opaque body"
     return "macOS vibrancy unavailable — using a near-opaque body"
+
+
+def install_accessibility_observer(on_change) -> bool:
+    """Install a one-time observer for live macOS accessibility-display changes
+    (notably *Reduce transparency*), invoking ``on_change`` on the GUI thread
+    whenever it flips.
+
+    The verified blur ``status()`` is cached for the whole session, but
+    ``apply()`` reads *Reduce transparency* LIVE and removes the vibrancy when
+    it's on. So a runtime toggle otherwise strips the backdrop while the frosted
+    body keeps painting at its glass alpha — a see-through window. ``on_change``
+    should re-probe (``status(force=True)``) and re-stamp the app so the body
+    falls back to its near-opaque alpha (and back). Idempotent; returns True
+    once installed. Never raises."""
+    global _ax_observer
+    if _ax_observer is not None:
+        return True
+    try:
+        import AppKit
+        from AppKit import NSWorkspace
+        from Foundation import NSOperationQueue
+
+        # The constant exists in AppKit but isn't always bound as a Python
+        # symbol — fall back to the documented notification name string.
+        name = getattr(
+            AppKit,
+            "NSWorkspaceAccessibilityDisplayOptionsDidChangeNotification",
+            "NSWorkspaceAccessibilityDisplayOptionsDidChangeNotification",
+        )
+
+        def _handler(_note):
+            try:
+                on_change()
+            except Exception as e:  # pragma: no cover — macOS-only
+                logger.debug("accessibility on_change failed: %s", e)
+
+        nc = NSWorkspace.sharedWorkspace().notificationCenter()
+        # Deliver on the main queue → the GUI thread, so on_change can touch Qt
+        # objects + emit signals safely. The returned token must be retained
+        # (stored module-global) to keep the observation alive.
+        _ax_observer = nc.addObserverForName_object_queue_usingBlock_(
+            name, None, NSOperationQueue.mainQueue(), _handler
+        )
+        logger.debug("installed accessibility-display observer")
+        return True
+    except Exception as e:  # pragma: no cover — macOS-only
+        logger.debug("accessibility observer install failed: %s", e)
+        return False

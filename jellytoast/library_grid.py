@@ -146,7 +146,10 @@ class _AlphabetIndex(QWidget):
                 f"QPushButton:hover {{ color: {_u.TEXT}; }}"
             )
         return (
-            f"QPushButton {{ background: transparent; color: {_u.ink_alpha(0.30)}; "
+            # 0.45 (was 0.30): the muted-gray inactive letters read as
+            # low-contrast over the frosted body — bumped for legibility while
+            # the active letter (full TEXT) still stands clearly above (#197).
+            f"QPushButton {{ background: transparent; color: {_u.ink_alpha(0.45)}; "
             f"border: none; padding: 0; font-size: 9px; }}"
             f"QPushButton:hover {{ color: {_u.TEXT}; }}"
         )

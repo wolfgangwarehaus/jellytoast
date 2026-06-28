@@ -66,6 +66,29 @@ def _win_glass_alpha() -> int:
     return max(_WIN_BODY_FLOOR_ALPHA, min(255, v))
 
 
+# macOS NSVisualEffectView vibrancy veils heavier than KWin's blur, so the
+# shared ~67% glass body (172) reads noticeably more opaque on macOS than on
+# Linux — same number, denser backdrop. Cap the macOS body alpha lower so the
+# vibrancy reads through and the window matches the KWin glass feel; 110 (~43%)
+# was tuned by eye against KDE Plasma's blur. Tune live with JT_MAC_GLASS_ALPHA.
+_MAC_BODY_DEFAULT_ALPHA = 110
+
+
+def _mac_glass_alpha() -> int:
+    """macOS-only frosted body alpha when native vibrancy is active. Defaults
+    to ``_MAC_BODY_DEFAULT_ALPHA`` (lighter than the shared glass so the vibrancy
+    shows through, matched by eye to KDE Plasma), with a small floor so the body
+    never goes fully transparent. Applied as ``min(theme glass alpha, this)`` in
+    body_color_for, so it only ever LIGHTENS the body — the effective ceiling is
+    the theme's own alpha (172 dark / 140 light), never 255. Env-tunable:
+    ``JT_MAC_GLASS_ALPHA=90`` (lighter) … toward the theme base (heavier)."""
+    try:
+        v = int(os.environ.get("JT_MAC_GLASS_ALPHA", str(_MAC_BODY_DEFAULT_ALPHA)))
+    except ValueError:
+        v = _MAC_BODY_DEFAULT_ALPHA
+    return max(_WIN_BODY_FLOOR_ALPHA, min(255, v))
+
+
 @dataclass(frozen=True)
 class Theme:
     name: str  # canonical key persisted to QSettings
@@ -612,14 +635,20 @@ def body_color_for(theme: "Theme", status, surface: str = "main") -> tuple:
             # lower so it reads through (see _win_glass_alpha). min() keeps a
             # theme that's already lighter than the cap.
             return (base[0], base[1], base[2], min(base[3], _win_glass_alpha()))
+        if IS_MACOS:
+            # macOS vibrancy veils heavier than KWin — cap the body alpha
+            # lower so it reads through (see _mac_glass_alpha). min() keeps a
+            # theme that's already lighter than the cap.
+            return (base[0], base[1], base[2], min(base[3], _mac_glass_alpha()))
         return base
-    # macOS: native vibrancy is off (faux-frost everywhere). The main window and
-    # the mini player BOTH knock their frost base back ×0.85 in their own paint
-    # (app._faux_frost_base / mini_player.paintEvent), so at the SAME
-    # body_color_tuple alpha they already render identical glass — do NOT reduce
-    # "main" here or it double-applies and the main reads more transparent than
-    # the mini. Only push dialogs/popups the OTHER way — near-opaque so the
-    # surface behind them doesn't bleed through. Mini + Linux/Windows unchanged.
+    # macOS, no vibrancy (Reduce Transparency on, or AppKit absent): faux-frost
+    # fallback. The main window and the mini player BOTH knock their frost base
+    # back ×0.85 in their own paint (app._faux_frost_base / mini_player.paintEvent),
+    # so at the SAME body_color_tuple alpha they already render identical glass —
+    # do NOT reduce "main" here or it double-applies and the main reads more
+    # transparent than the mini. Only push dialogs/popups the OTHER way —
+    # near-opaque so the surface behind them doesn't bleed through. Mini +
+    # Linux/Windows unchanged.
     alpha = theme.fallback_body_alpha
     if IS_MACOS and surface == "dialog":
         alpha = min(255, alpha + 14)
