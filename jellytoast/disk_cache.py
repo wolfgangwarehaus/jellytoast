@@ -21,6 +21,8 @@ much easier across this codebase.
 
 import json
 import logging
+import os
+import tempfile
 from pathlib import Path
 from typing import Any, Optional
 
@@ -86,14 +88,46 @@ def save(name: str, scope: dict, payload: Any):
     """Persist `payload` under `name` keyed by `scope`. Best-effort —
     a write failure is logged but not raised, since the in-memory
     state is still valid and the next successful save will overwrite."""
-    path = _cache_dir() / f"{name}.json"
-    tmp = path.with_suffix(".json.tmp")
+    cache_dir = _cache_dir()
+    path = cache_dir / f"{name}.json"
+    # _cache_dir() memoises + mkdir's only on first construction, so a sign-out
+    # wipe / manual delete can leave it pointing at a vanished dir — re-create
+    # defensively or the write below fails with a misleading ENOENT.
     try:
-        with open(tmp, "w", encoding="utf-8") as f:
-            json.dump({"scope": _full_scope(scope), "payload": payload}, f)
-        tmp.replace(path)
+        cache_dir.mkdir(parents=True, exist_ok=True)
+    except OSError as e:
+        logger.warning("cache dir create failed for %s: %s", name, e)
+        return
+    # Unique tmp in the SAME dir as the target. Same dir keeps os.replace atomic
+    # (one filesystem); a unique name stops two concurrent saves of the same
+    # `name` from clobbering each other's tmp. The songs view writes this cache
+    # after EVERY page off the shared worker pool with a tens-of-MB payload, so
+    # saves overlap — a fixed `songs.json.tmp` meant whichever save renamed
+    # first moved the tmp away and the other's replace hit
+    # "[Errno 2] … songs.json.tmp -> songs.json". Mirrors image_cache's
+    # per-write unique tmp.
+    try:
+        fd, tmp_name = tempfile.mkstemp(prefix=f"{name}.", suffix=".json.tmp", dir=cache_dir)
     except OSError as e:
         logger.warning("cache write failed for %s: %s", name, e)
+        return
+    tmp = Path(tmp_name)
+    ok = False
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            json.dump({"scope": _full_scope(scope), "payload": payload}, f)
+        os.replace(tmp, path)
+        ok = True
+    except OSError as e:
+        logger.warning("cache write failed for %s: %s", name, e)
+    finally:
+        # Clean the orphan tmp on any failure (incl. a non-OSError serialization
+        # error, which still propagates so the real cause surfaces).
+        if not ok:
+            try:
+                tmp.unlink(missing_ok=True)
+            except OSError:
+                pass
 
 
 def clear(name: str):
