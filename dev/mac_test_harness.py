@@ -96,9 +96,17 @@ def raise_window(b: Bridge) -> None:
 
 
 def set_theme(b: Bridge, mode: str) -> None:
+    # Emit theme_changed too — NOT just refresh_theme(). On macOS the native
+    # vibrancy appearance (VibrantDark/VibrantLight) is only re-applied on the
+    # PlayerBus.theme_changed signal (wired to app._apply_blur); refresh_theme()
+    # alone updates only the Qt palette. Without the emit, the light-theme
+    # captures show a light body over a STALE DARK vibrancy backdrop — a
+    # misleading frost. This mirrors the real Settings path, which emits
+    # theme_changed after setting theme_mode.
     b.x(
         f"get_settings().theme_mode = {mode!r}; "
-        "from jellytoast import ui_helpers as _u; _u.refresh_theme()"
+        "from jellytoast import ui_helpers as _u; _u.refresh_theme(); "
+        "from jellytoast.player_state import PlayerBus as _B; _B.get().theme_changed.emit()"
     )
 
 
