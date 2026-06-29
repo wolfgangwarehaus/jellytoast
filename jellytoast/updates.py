@@ -134,13 +134,18 @@ def maybe_check(force: bool = False) -> None:
     Must be called after the QApplication exists (uses the shared QNAM)."""
     from jellytoast.settings import get_settings
 
+    # The channel gate ALWAYS applies — a self-updating build (Store / MAS / AUR)
+    # is never checked, even on a manual "Check now".
+    if is_auto_update_channel():
+        return
     s = get_settings()
-    if not force and not should_check():
-        return
-    now = int(time.time())
-    if not force and (now - s.update_last_check_time) < _CHECK_INTERVAL_S:
-        return
-    s.update_last_check_time = now
+    if not force:
+        # Automatic check: also respect the user toggle + the daily throttle.
+        if not s.check_for_updates_enabled:
+            return
+        if (int(time.time()) - s.update_last_check_time) < _CHECK_INTERVAL_S:
+            return
+    s.update_last_check_time = int(time.time())
     try:
         req = QNetworkRequest(QUrl(_RELEASES_API))
         # GitHub's API rejects requests with no User-Agent (HTTP 403).
