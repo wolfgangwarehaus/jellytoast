@@ -31,7 +31,7 @@ Latest builds are on [**Releases**][rel].
 
 - **Linux** — [`.deb`][rel] · [AppImage][rel] · AUR *(soon)*
 - **macOS** — [Apple Silicon][rel] · [Intel][rel] · App Store *(soon)*
-- **Windows** — [**Microsoft Store**][store] · [installer][rel] · `winget install wolfgangwarehaus.jellytoast`
+- **Windows** — [**Microsoft Store**][store] · [installer][rel] · `winget install jellytoast`
 - **Any OS** — `pipx install jellytoast`
 
 **From source** (Python 3.11+, Qt 6, libmpv):
