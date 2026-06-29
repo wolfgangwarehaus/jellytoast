@@ -23,7 +23,7 @@
 - **Floating mini player** — compact and album-art views.
 - **Desktop features** — media keys, a tray icon, optional notifications, and a start-at-login option.
 - **Frosted glass** — background blur on KDE, macOS, and Windows. Light and dark themes with a choice of accent color.
-- **And more** — synced lyrics, an audio visualizer, smart playlists, smart shuffle, a sleep timer, ListenBrainz scrobbling, tag editing (Jellyfin), and encrypted login storage.
+- **And more** — synced lyrics, an audio visualizer, smart playlists, smart shuffle, a sleep timer, ListenBrainz scrobbling, and tag editing (Jellyfin).
 
 ## Install
 
