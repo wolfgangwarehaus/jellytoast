@@ -3,14 +3,15 @@ name: msstore
 # Microsoft Store MSIX — built on a free GitHub-hosted windows-latest runner, so
 # you never touch a physical Windows box. Two modes, automatically:
 #
-#   • OPTION B (active now): on every published release this packs the .msix and
-#     ATTACHES it to the release. Download it and upload it to Partner Center in
-#     your browser (~2 min) — the only step that needs a human, because an
-#     Individual Store account can't use the submission API.
-#   • OPTION A (future): if the four AZURE_AD_*/SELLER_ID secrets exist (which
-#     requires a COMPANY Store account — see packaging/msix/STORE-AUTOMATION.md +
-#     packaging/msix/COMPANY-ACCOUNT.md), the same run ALSO auto-submits via the
-#     msstore CLI. No edit needed — adding the secrets flips it on.
+#   • OPTION A (active): with the four AZURE_AD_*/SELLER_ID secrets set, the run
+#     AUTO-SUBMITS via the msstore CLI — no human step. This works on an INDIVIDUAL
+#     Store account (verified 2026-06-29 submitting v0.1.5). The old "company-only"
+#     belief was a missing Microsoft Entra *tenant association*, NOT an account-type
+#     wall: once the tenant is associated, the "Microsoft Entra applications" tab
+#     and the submission API work on an Individual account.
+#   • OPTION B (fallback): if those secrets are absent, packs the .msix and ATTACHES
+#     it to the release for a manual Partner Center upload (~2 min). No edit to flip
+#     between modes — the presence of the secrets decides.
 #
 # The Store re-signs the package, so it's uploaded UNSIGNED (no cert/token/HSM).
 
@@ -30,7 +31,8 @@ jobs:
   msix:
     runs-on: windows-latest
     env:
-      # Option A auto-submit activates only when the Company-account secrets exist.
+      # Option A auto-submit activates once the four Entra-app secrets exist (any
+      # account type — Individual works; see the header note).
       HAVE_CREDS: ${{ secrets.AZURE_AD_TENANT_ID != '' }}
       GH_TOKEN: ${{ github.token }}
     steps:
@@ -96,11 +98,10 @@ jobs:
             --clientSecret ${{ secrets.AZURE_AD_APPLICATION_SECRET }}
           msstore publish "${{ steps.pack.outputs.msix }}" -id 9PNLTPXGHN79
 
-      - name: Manual-upload reminder (Individual account)
+      - name: Manual-upload reminder (no submission secrets)
         if: env.HAVE_CREDS != 'true'
         shell: pwsh
         run: |
           Write-Host "MSIX attached to release ${{ steps.pack.outputs.tag }}: ${{ steps.pack.outputs.msix }}"
-          Write-Host "Individual Store account -> upload it to Partner Center by hand (browser, ~2 min)."
-          Write-Host "To automate this, move to a Company account + set the AZURE_AD_*/SELLER_ID secrets."
-          Write-Host "See packaging/msix/COMPANY-ACCOUNT.md."
+          Write-Host "No submission secrets set -> upload it to Partner Center by hand (browser, ~2 min)."
+          Write-Host "To automate: set the four AZURE_AD_*/SELLER_ID secrets (works on an Individual account)."
