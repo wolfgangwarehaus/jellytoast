@@ -5,6 +5,8 @@ developer-facing history lives in [`docs/CHANGELOG.md`](docs/CHANGELOG.md).
 
 ## [Unreleased]
 
+## [0.1.5] — 2026-06-29
+
 <!-- Voice: short, plain, a little casual — what's new for a *user*, not a press
      release. Specs right (versions/platforms); drop the gloss + the internals.
      This block becomes the GitHub release notes; cut_release.sh stamps it into a
