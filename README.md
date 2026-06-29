@@ -31,7 +31,7 @@ Latest builds are on [**Releases**][rel].
 
 - **Linux** — [`.deb`][rel] · [AppImage][rel] · AUR *(soon)*
 - **macOS** — [Apple Silicon][rel] · [Intel][rel] · App Store *(soon)*
-- **Windows** — [**Microsoft Store**][store] · [installer][rel] · `winget install wolfgangwarehaus.jellytoast`
+- **Windows** — [**Microsoft Store**][store] · [installer][rel] · `winget install jellytoast`
 - **Any OS** — `pipx install jellytoast`
 
 **From source** (Python 3.11+, Qt 6, libmpv):
@@ -39,7 +39,7 @@ Latest builds are on [**Releases**][rel].
 ```bash
 git clone https://github.com/wolfgangwarehaus/jellytoast.git
 cd jellytoast && pip install -e .
-jellytoast            # or: python3 -m jellytoast
+jellytoast
 ```
 
 Want to contribute? [`CONTRIBUTING.md`](.github/CONTRIBUTING.md) has the dev setup, the architecture, and the conventions this codebase follows.
@@ -49,13 +49,11 @@ Want to contribute? [`CONTRIBUTING.md`](.github/CONTRIBUTING.md) has the dev set
 
 ## Documentation
 
-| Doc | What it is |
-| --- | --- |
-| [`docs/user_guide.md`](docs/user_guide.md) | Shortcuts, mini player, tray, casting, settings, themes & blur, troubleshooting |
-| [`CONTRIBUTING.md`](.github/CONTRIBUTING.md) | Dev setup, architecture & the conventions this codebase follows |
-| [`docs/SPEC.md`](docs/SPEC.md) | What the app actually does today |
-| [`SECURITY.md`](.github/SECURITY.md) | How to report a vulnerability |
-| [`CHANGELOG.md`](CHANGELOG.md) | What changed in each release (the detailed dev log is in [`docs/CHANGELOG.md`](docs/CHANGELOG.md)) |
+- [`docs/user_guide.md`](docs/user_guide.md) — shortcuts, mini player, tray, casting, settings, themes & blur, troubleshooting
+- [`CONTRIBUTING.md`](.github/CONTRIBUTING.md) — dev setup, architecture & conventions
+- [`docs/SPEC.md`](docs/SPEC.md) — what the app actually does today
+- [`SECURITY.md`](.github/SECURITY.md) — how to report a vulnerability
+- [`CHANGELOG.md`](CHANGELOG.md) — what changed in each release
 
 ## License
 
