@@ -439,12 +439,14 @@ jobs:
     # ID), the MAS provisioning profile, inside-out SANDBOX signing,
     # productbuild -> .pkg, and `altool --validate-app` — the real go/no-go.
     #
-    # MANUAL ONLY (workflow_dispatch): the from-source libmpv build is slow and
-    # MAS isn't part of the auto-release yet. Dispatch this to build+scan the
-    # unsigned recipe today, and to sign+validate once the MAS secrets land.
-    # Everything past the symbol scan activates only when those secrets exist.
-    # Setup: jellytoast-ops → packaging/macos/mas/MAS_SPIKE.md (private runbook).
-    if: github.event_name == 'workflow_dispatch'
+    # Runs on every release tag (auto-uploads the signed .pkg to App Store Connect
+    # so a build is always staged for submission) AND on workflow_dispatch
+    # (validate-only by default; mas_action=upload to also upload). The slow
+    # from-source libmpv build runs in parallel and does NOT gate the GitHub
+    # release — draft-release doesn't `need` this job, so a MAS hiccup never blocks
+    # the release. Everything past the symbol scan activates only when the MAS
+    # secrets exist (they do). Setup: jellytoast-ops → packaging/macos/mas/MAS_SPIKE.md.
+    if: github.event_name == 'workflow_dispatch' || github.event_name == 'push'
     runs-on: macos-14
     timeout-minutes: 50  # productbuild can hang on a keychain prompt — fail fast, never burn the 6h default
     env:
@@ -551,21 +553,21 @@ jobs:
           echo "$APPLE_API_KEY_B64" | base64 --decode \
             > ~/".appstoreconnect/private_keys/AuthKey_${APPLE_API_KEY_ID}.p8"
           PKG="dist/jellytoast-${{ steps.ver.outputs.version }}-mas.pkg"
-          # ALWAYS validate (a fast CI gate). Upload to App Store Connect ONLY
-          # when the dispatch explicitly asks (mas_action=upload) — so a routine
-          # build-mas run is a check, not a surprise ASC upload. Fail-safe: any
-          # value other than 'upload' (incl. the default) validates only.
-          # NOTE: the build number is CFBundleVersion (= the pyproject version),
-          # so ASC rejects re-uploading an already-seen build number — a repeat
-          # upload of the same version needs a CFBundleVersion bump.
+          # ALWAYS validate (a fast CI gate). Upload to App Store Connect on a
+          # release tag push (every release auto-stages a build for submission) or
+          # when a manual dispatch asks (mas_action=upload); a plain dispatch stays
+          # validate-only — a check, not a surprise upload.
+          # NOTE: the build number is CFBundleVersion (= the pyproject version), so
+          # ASC rejects re-uploading an already-seen build number — re-running the
+          # SAME release tag would need a CFBundleVersion bump.
           xcrun altool --validate-app -t macos -f "$PKG" \
             --apiKey "$APPLE_API_KEY_ID" --apiIssuer "$APPLE_API_ISSUER"
-          if [ "${{ github.event.inputs.mas_action }}" = "upload" ]; then
-            echo "mas_action=upload → uploading to App Store Connect"
+          if [ "${{ github.event_name }}" = "push" ] || [ "${{ github.event.inputs.mas_action }}" = "upload" ]; then
+            echo "release tag (or mas_action=upload) → uploading to App Store Connect"
             xcrun altool --upload-app -t macos -f "$PKG" \
               --apiKey "$APPLE_API_KEY_ID" --apiIssuer "$APPLE_API_ISSUER"
           else
-            echo "mas_action='${{ github.event.inputs.mas_action }}' (not 'upload') → validate-only, skipping ASC upload"
+            echo "manual validate-only run (mas_action='${{ github.event.inputs.mas_action }}') → skipping ASC upload"
           fi
           rm -f ~/".appstoreconnect/private_keys/AuthKey_${APPLE_API_KEY_ID}.p8"
       - uses: actions/upload-artifact@v7
