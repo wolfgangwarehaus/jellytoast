@@ -18,20 +18,20 @@
 
 - **Desktop app for your self-hosted music** — supports Jellyfin and Navidrome, with multiple libraries.
 - **Bit-perfect audio** — FLAC / ALAC / OPUS / DSD playback via [mpv](https://mpv.io/).
-- **Cast anywhere** — send music to Chromecast, AirPlay 2, Sonos, or DLNA. A built-in local relay can forward the stream for trickier setups, like Tailscale connections or fully offline playback.
+- **Cast anywhere** — send music to Chromecast, AirPlay 2, Sonos, or DLNA. Local relay for offline or Tailscale casting.
 - **Offline mode** — cache albums, playlists, or your whole library for offline playback.
 - **Floating mini player** — compact and album-art views.
 - **Desktop features** — media keys, a tray icon, optional notifications, and a start-at-login option.
-- **Frosted-glass look** — real background blur on KDE and Windows, light and dark themes, and your own accent color.
-- **And more** — synced lyrics, an audio visualizer, smart playlists, smart shuffle, a sleep timer, ListenBrainz scrobbling, tag editing (Jellyfin), and encrypted login storage.
+- **Frosted glass** — background blur on KDE, macOS, and Windows. Light and dark themes with a choice of accent color.
+- **And more** — synced lyrics, an audio visualizer, smart playlists, smart shuffle, a sleep timer, ListenBrainz scrobbling, and tag editing (Jellyfin).
 
 ## Install
 
 Latest builds are on [**Releases**][rel].
 
-- **Linux** — [`.deb`][rel] · [AppImage][rel] · AUR *(soon)*
+- **Linux** — [.deb][rel] · [AppImage][rel] · AUR *(soon)*
 - **macOS** — [Apple Silicon][rel] · [Intel][rel] · App Store *(soon)*
-- **Windows** — [**Microsoft Store**][store] · [installer][rel] · `winget install jellytoast`
+- **Windows** — [Microsoft Store][store] · [.exe][rel] · `winget install jellytoast`
 - **Any OS** — `pipx install jellytoast`
 
 **From source** (Python 3.11+, Qt 6, libmpv):
@@ -49,9 +49,9 @@ Want to contribute? [`CONTRIBUTING.md`](.github/CONTRIBUTING.md) has the dev set
 
 ## Documentation
 
-- [`docs/user_guide.md`](docs/user_guide.md) — shortcuts, mini player, tray, casting, settings, themes & blur, troubleshooting
+- [`user_guide.md`](docs/user_guide.md) — how to use every feature
 - [`CONTRIBUTING.md`](.github/CONTRIBUTING.md) — dev setup, architecture & conventions
-- [`docs/SPEC.md`](docs/SPEC.md) — what the app actually does today
+- [`SPEC.md`](docs/SPEC.md) — what the app actually does today
 - [`SECURITY.md`](.github/SECURITY.md) — how to report a vulnerability
 - [`CHANGELOG.md`](CHANGELOG.md) — what changed in each release
 
