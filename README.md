@@ -27,14 +27,12 @@
 
 ## Install
 
-Latest builds are on [**Releases**][rel]. Pick your platform:
+Latest builds are on [**Releases**][rel].
 
-| Platform | Recommended | Also available |
-| --- | --- | --- |
-| **Linux** | [`.deb`][rel] — Ubuntu / Debian / Mint (22.04+ / 12+)<br>`sudo apt install ./jellytoast_*_amd64.deb` | [AppImage][rel] (any distro, no install) · AUR *(soon)* |
-| **macOS** | [`.dmg`][rel], signed + notarized — drag to Applications<br>[Apple Silicon][rel] (Sonoma 14+) · [Intel][rel] (Sequoia 15+) | Mac App Store *(soon)* |
-| **Windows 10 / 11** | [**Microsoft Store**][store] — one click, auto-updating, no warnings | `winget install wolfgangwarehaus.jellytoast` · [installer / portable zip][rel] *(unsigned — SmartScreen warns; `SHA256SUMS`)* |
-| **Any OS** | `pipx install jellytoast` (PyPI) | Build from source — see below |
+- **Linux** — [`.deb`][rel] · [AppImage][rel] · AUR *(soon)*
+- **macOS** — [Apple Silicon][rel] · [Intel][rel] · App Store *(soon)*
+- **Windows** — [**Microsoft Store**][store] · [installer][rel] · `winget install wolfgangwarehaus.jellytoast`
+- **Any OS** — `pipx install jellytoast`
 
 **From source** (Python 3.11+, Qt 6, libmpv):
 
