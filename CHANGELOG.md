@@ -16,6 +16,11 @@ developer-facing history lives in [`docs/CHANGELOG.md`](docs/CHANGELOG.md).
 - **Real frosted-glass blur on macOS.** The window now uses genuine native
   vibrancy — where it used to fall back to a near-opaque panel — and it stays put
   through resize, fullscreen, and focus changes.
+- **Update notifications.** On manual installs (`.dmg` / `.deb` / AppImage /
+  installer), jellytoast now quietly checks for a newer release and shows an
+  "Update available" chip in the top bar — no more unknowingly running an old
+  version. The Microsoft Store / Mac App Store builds update themselves and are
+  left alone. You can turn the check off in Settings → General.
 - **Snapcast removed.** It only ever *controlled* an existing Snapcast server — it
   couldn't play your library to one — so it's gone. Chromecast, AirPlay 2, DLNA,
   and Sonos are unchanged.

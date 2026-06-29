@@ -2342,6 +2342,17 @@ def main():
 
         NowPlayingNotifier(win).start()
 
+        # In-app update check — once/day, background, and only on MANUAL install
+        # channels (.dmg/.deb/AppImage/installer/source); the Store / Mac App
+        # Store / AUR builds suppress it. Fires PlayerBus.update_available, which
+        # the top bar's update chip surfaces. Best-effort; never blocks launch.
+        try:
+            from jellytoast import updates
+
+            updates.maybe_check()
+        except Exception:
+            pass
+
         # Windows taskbar overlay badge (play/pause state at a glance).
         # No-op elsewhere; pinned on `win` so _cleanup can stop() it
         # (detaches the native event filter + releases the badge HICONs).
