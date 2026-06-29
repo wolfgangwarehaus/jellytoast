@@ -329,6 +329,9 @@ class PlayerBus(QObject):
     # mode + font_scale are still restart-required (they bake into
     # too many surfaces); only accent changes flow live today.
     theme_changed = Signal()
+    # In-app update check (jellytoast/updates.py) found a newer published
+    # release on a manual install channel. (version, download_url, notes_url)
+    update_available = Signal(str, str, str)
     # Fired by Settings → Hotkeys whenever a binding is changed or
     # reset. The main window re-installs its QShortcuts in response so
     # a rebind takes effect immediately, no restart.

@@ -1779,6 +1779,38 @@ class Settings:
     def theme_mode(self, v: str):
         self._s.setValue("ui/theme_mode", v)
 
+    # ── Update check (jellytoast/updates.py) ──────────────────────────
+    @property
+    def check_for_updates_enabled(self) -> bool:
+        """Whether the in-app update check runs. Default on; it only ever
+        nags MANUAL install channels (the auto-updating Store / Mac App
+        Store / AUR builds suppress it regardless). See updates.should_check."""
+        return self._s.value("updates/check_enabled", True, type=bool)
+
+    @check_for_updates_enabled.setter
+    def check_for_updates_enabled(self, v: bool):
+        self._s.setValue("updates/check_enabled", bool(v))
+
+    @property
+    def update_last_check_time(self) -> int:
+        """Unix timestamp of the last update check (0 = never). Throttles the
+        check to once per day."""
+        return self._s.value("updates/last_check_time", 0, type=int)
+
+    @update_last_check_time.setter
+    def update_last_check_time(self, v: int):
+        self._s.setValue("updates/last_check_time", int(v))
+
+    @property
+    def update_dismissed_version(self) -> str:
+        """The release version the user dismissed (e.g. "0.1.6"), so the update
+        chip doesn't re-nag for it. An even newer release clears the nag."""
+        return self._s.value("updates/dismissed_version", "", type=str)
+
+    @update_dismissed_version.setter
+    def update_dismissed_version(self, v: str):
+        self._s.setValue("updates/dismissed_version", str(v))
+
     @property
     def accent_color(self) -> str:
         """Hex string (``#rrggbb``) overriding the active theme's accent.
