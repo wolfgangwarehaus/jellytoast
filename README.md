@@ -29,7 +29,7 @@
 
 Latest builds are on [**Releases**][rel].
 
-- **Linux** — [`.deb`][rel] · [AppImage][rel] · AUR *(soon)*
+- **Linux** — [.deb][rel] · [AppImage][rel] · AUR *(soon)*
 - **macOS** — [Apple Silicon][rel] · [Intel][rel] · App Store *(soon)*
 - **Windows** — [**Microsoft Store**][store] · [installer][rel] · `winget install jellytoast`
 - **Any OS** — `pipx install jellytoast`
