@@ -317,6 +317,15 @@ class JtTopBar(QWidget):
         # of the column.
         right_layout.addStretch(1)
 
+        # Update-available chip — shown only when a newer release is out on a
+        # manual install channel (updates.py). Subscribes to PlayerBus directly,
+        # same as the offline chip; hidden otherwise.
+        from jellytoast.update_banner import UpdateChip
+
+        self.update_chip = UpdateChip(self)
+        right_layout.addWidget(self.update_chip)
+        right_layout.addSpacing(6)
+
         # Offline-mode chip — small status pill nested in the right
         # column to the left of the search button. Hidden unless the
         # user is in offline mode or the server is unreachable. The

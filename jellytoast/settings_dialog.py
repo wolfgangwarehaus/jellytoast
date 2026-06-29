@@ -1332,6 +1332,41 @@ class SettingsDialog(QDialog):
         home_row.addStretch(1)
         v.addLayout(home_row)
 
+        # ── Updates ───────────────────────────────────────────────────
+        # In-app update check (updates.py). Shown only on MANUAL install
+        # channels — the Store / Mac App Store / AUR builds update themselves,
+        # so the section is hidden there (nothing to configure).
+        from jellytoast import updates as _updates
+
+        if not _updates.is_auto_update_channel():
+            v.addSpacing(8)
+            v.addWidget(self._section_header("UPDATES"))
+            v.addSpacing(4)
+            up_row = QHBoxLayout()
+            up_row.setContentsMargins(0, 0, 0, 0)
+            up_row.setSpacing(10)
+            self._update_check = QCheckBox("Check for updates")
+            self._update_check.setChecked(self.s.check_for_updates_enabled)
+            self._update_check.toggled.connect(
+                lambda val: setattr(self.s, "check_for_updates_enabled", val)
+            )
+            up_row.addWidget(self._update_check)
+            up_row.addWidget(
+                self._info_button(
+                    "Check for updates",
+                    "Once a day, jellytoast quietly checks GitHub for a newer "
+                    "release and shows a small chip in the top bar if one's out. "
+                    "Manual installs only — the Microsoft Store / Mac App Store "
+                    "builds update themselves. Uses GitHub's public API; no "
+                    "account or personal data.",
+                )
+            )
+            up_row.addStretch(1)
+            self._update_check_now = QPushButton("Check now")
+            self._update_check_now.clicked.connect(self._on_check_updates_now)
+            up_row.addWidget(self._update_check_now)
+            v.addLayout(up_row)
+
         v.addStretch(1)
         return page
 
@@ -1483,6 +1518,17 @@ class SettingsDialog(QDialog):
         # mpv applies it on the next audio-output (re)open (next track).
         PlayerBus.get().audio_output_device_changed.emit(dev)
         self._refresh_bp_path_hint()
+
+    def _on_check_updates_now(self):
+        """Manual "Check now" — force a check past the daily throttle + any
+        dismissed version (the channel gate still applies, so it's a no-op on a
+        self-updating build). An available update surfaces as the top-bar chip."""
+        try:
+            from jellytoast import updates
+
+            updates.maybe_check(force=True)
+        except Exception:
+            pass
 
     # ── Page: Playback ─────────────────────────────────────────────────
     def _build_playback(self) -> QWidget:
