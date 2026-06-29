@@ -49,9 +49,9 @@ Want to contribute? [`CONTRIBUTING.md`](.github/CONTRIBUTING.md) has the dev set
 
 ## Documentation
 
-- [`docs/user_guide.md`](docs/user_guide.md) — shortcuts, mini player, tray, casting, settings, themes & blur, troubleshooting
+- [`user_guide.md`](docs/user_guide.md) — how to use every feature
 - [`CONTRIBUTING.md`](.github/CONTRIBUTING.md) — dev setup, architecture & conventions
-- [`docs/SPEC.md`](docs/SPEC.md) — what the app actually does today
+- [`SPEC.md`](docs/SPEC.md) — what the app actually does today
 - [`SECURITY.md`](.github/SECURITY.md) — how to report a vulnerability
 - [`CHANGELOG.md`](CHANGELOG.md) — what changed in each release
 
