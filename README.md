@@ -27,38 +27,27 @@
 
 ## Install
 
-### Linux
+Latest builds are on [**Releases**][rel]. Pick your platform:
 
-- **Ubuntu / Debian / Mint** (22.04+ / 12+) — download the `.deb` from [Releases](https://github.com/wolfgangwarehaus/jellytoast/releases/latest), then `sudo apt install ./jellytoast_*_amd64.deb`
-- **AppImage** (any distro, nothing to install) — download the `.AppImage` from [Releases](https://github.com/wolfgangwarehaus/jellytoast/releases/latest), `chmod +x` it, and run.
-- **AUR** (Arch Linux) — coming soon.
-
-### macOS
-
-- **Download the `.dmg`** — signed and notarized; open it and drag jellytoast to Applications. Pick your chip: [Apple Silicon](https://github.com/wolfgangwarehaus/jellytoast/releases/latest) (`-macos-arm64.dmg`, macOS Sonoma 14+) or [Intel](https://github.com/wolfgangwarehaus/jellytoast/releases/latest) (`-macos-x86_64.dmg`, macOS Sequoia 15+).
-- **Mac App Store** — coming soon.
-
-### Windows 10/11
-
-- **[Microsoft Store](https://apps.microsoft.com/detail/9PNLTPXGHN79)** — one click, auto-updating, no SmartScreen warning.
-- **winget** — `winget install wolfgangwarehaus.jellytoast`
-- **Installer or portable zip** from [Releases](https://github.com/wolfgangwarehaus/jellytoast/releases/latest) — the direct download is unsigned, so SmartScreen warns on first run; click **More info → Run anyway** (verify the SHA256 against `SHA256SUMS`).
-
-### Any OS
-
-- **PyPI:** `pipx install jellytoast`
+| Platform | Recommended | Also available |
+| --- | --- | --- |
+| **Linux** | [`.deb`][rel] — Ubuntu / Debian / Mint (22.04+ / 12+)<br>`sudo apt install ./jellytoast_*_amd64.deb` | [AppImage][rel] (any distro, no install) · AUR *(soon)* |
+| **macOS** | [`.dmg`][rel], signed + notarized — drag to Applications<br>[Apple Silicon][rel] (Sonoma 14+) · [Intel][rel] (Sequoia 15+) | Mac App Store *(soon)* |
+| **Windows 10 / 11** | [**Microsoft Store**][store] — one click, auto-updating, no warnings | `winget install wolfgangwarehaus.jellytoast` · [installer / portable zip][rel] *(unsigned — SmartScreen warns; `SHA256SUMS`)* |
+| **Any OS** | `pipx install jellytoast` (PyPI) | Build from source — see below |
 
 **From source** (Python 3.11+, Qt 6, libmpv):
 
 ```bash
 git clone https://github.com/wolfgangwarehaus/jellytoast.git
-cd jellytoast
-pip install -e .
+cd jellytoast && pip install -e .
 jellytoast            # or: python3 -m jellytoast
 ```
 
-Want to contribute? [`CONTRIBUTING.md`](.github/CONTRIBUTING.md) has the
-dev setup, the architecture, and the conventions this codebase follows.
+Want to contribute? [`CONTRIBUTING.md`](.github/CONTRIBUTING.md) has the dev setup, the architecture, and the conventions this codebase follows.
+
+[rel]: https://github.com/wolfgangwarehaus/jellytoast/releases/latest
+[store]: https://apps.microsoft.com/detail/9PNLTPXGHN79
 
 ## Documentation
 
