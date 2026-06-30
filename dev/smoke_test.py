@@ -33,6 +33,16 @@ _ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 os.chdir(_ROOT)
 sys.path.insert(0, _ROOT)
 
+# Force UTF-8 stdout/stderr so the section headers' box-drawing glyphs (─)
+# don't crash on Windows' default cp1252 console/redirect (UnicodeEncodeError
+# before the first check runs). Best-effort: no-op on streams that can't be
+# reconfigured.
+for _stream in (sys.stdout, sys.stderr):
+    try:
+        _stream.reconfigure(encoding="utf-8", errors="replace")
+    except (AttributeError, ValueError):
+        pass
+
 _TTY = sys.stdout.isatty()
 
 
