@@ -86,7 +86,7 @@ jobs:
       # --- OPTION A: auto-submit, only once the Company-account secrets exist ---
       - name: Configure Microsoft Store CLI
         if: env.HAVE_CREDS == 'true'
-        uses: microsoft/microsoft-store-apppublisher@v1.1
+        uses: microsoft/microsoft-store-apppublisher@v1.3
       - name: Submit package update to the Store
         if: env.HAVE_CREDS == 'true'
         shell: pwsh
