@@ -446,8 +446,19 @@ class JtTopBar(QWidget):
         vb_w = self.view_btn.sizeHint().width() if self.view_btn.isVisible() else 0
         # Dropdown centre → bar centre (controls hang off to the right).
         x = bar_w // 2 - vb_w // 2
-        # Clamp into the gap between the side clusters.
-        left_edge = left.geometry().right() + self._CLUSTER_GAP
+        # Clamp into the gap between the side clusters. Use the ACTUAL rendered
+        # right edge of the visible left-side text (title / library button)
+        # mapped into the bar — not just `left.geometry().right()`. In a large /
+        # wide font the title can be allocated more width than its column
+        # (`_left_col`) reports, so clamping on the column box alone lets the
+        # centred dropdown slide UNDER the title text ("Music Library" over
+        # "Albums"). Taking the max of the column edge and each visible text
+        # widget's mapped right edge keeps the dropdown clear of it.
+        left_edge = left.geometry().right()
+        for w in (self.title_label, self.library_btn):
+            if w is not None and w.isVisible():
+                left_edge = max(left_edge, w.mapTo(self, w.rect().topRight()).x())
+        left_edge += self._CLUSTER_GAP
         right_edge = right.geometry().left() - cw - self._CLUSTER_GAP
         if right_edge >= left_edge:
             x = max(left_edge, min(x, right_edge))
@@ -463,6 +474,22 @@ class JtTopBar(QWidget):
     def showEvent(self, event):
         super().showEvent(event)
         self._position_center_cluster()
+
+    def changeEvent(self, event):
+        super().changeEvent(event)
+        from PySide6.QtCore import QEvent, QTimer
+
+        # A font change (app.setFont at boot, or a live font-family/size swap)
+        # re-flows the title / view-button widths but does NOT fire a resize, so
+        # without this the centre dropdown keeps its OLD position and a wider
+        # font leaves the title overlapping it ("Music Library" over "Albums").
+        # Deferred so the layout re-runs with the new metrics before we re-read
+        # geometry to re-clamp the dropdown.
+        if event.type() in (
+            QEvent.Type.FontChange,
+            QEvent.Type.ApplicationFontChange,
+        ):
+            QTimer.singleShot(0, self._position_center_cluster)
 
     def set_library_controls_visible(self, visible: bool):
         """Show/hide the Shuffle + View toggle + Sort cluster. The host
