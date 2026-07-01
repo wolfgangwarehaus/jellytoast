@@ -31,25 +31,58 @@ def test_apply_font_settings_live_sets_app_font(qapp):
         ui_helpers.apply_font_settings_live()
 
 
-def test_revert_dialog_keep_does_not_revert(qapp):
+def _revert_dlg(qapp, seconds=5):
     reverts = {"n": 0}
-    d = AppearanceRevertDialog(None, on_revert=lambda: reverts.__setitem__("n", reverts["n"] + 1), seconds=5)
+    d = AppearanceRevertDialog(
+        None, on_revert=lambda: reverts.__setitem__("n", reverts["n"] + 1), seconds=seconds
+    )
+    # SHOW it: QDialog.closeEvent only calls reject() when the dialog is visible,
+    # which is exactly the path that used to recurse (close↔closeEvent↔reject)
+    # and freeze the prompt. An unshown dialog never hit it, so these tests must
+    # show the dialog to guard the real bug.
+    d.show()
+    qapp.processEvents()
+    return d, reverts
+
+
+def test_revert_dialog_keep_does_not_revert(qapp):
+    # _finish() hides synchronously, so check before processing events — the
+    # deferred deleteLater would otherwise delete the wrapper we assert on.
+    d, reverts = _revert_dlg(qapp)
     d._do_keep()  # explicit Keep
     assert reverts["n"] == 0
+    assert not d.isVisible()  # Keep must actually dismiss the prompt (regression)
+
+
+def test_revert_dialog_revert_button_reverts_and_closes(qapp):
+    d, reverts = _revert_dlg(qapp)
+    d.reject()  # Revert now / ✕ / Esc all route here
+    assert reverts["n"] == 1
+    assert not d.isVisible()
 
 
 def test_revert_dialog_close_reverts(qapp):
-    reverts = {"n": 0}
-    d = AppearanceRevertDialog(None, on_revert=lambda: reverts.__setitem__("n", reverts["n"] + 1), seconds=5)
-    d.close()  # any dismissal that isn't Keep
+    d, reverts = _revert_dlg(qapp)
+    d.close()  # a stray WM / programmatic close is still a (non-Keep) dismissal
     assert reverts["n"] == 1
+    assert not d.isVisible()
 
 
 def test_revert_dialog_timeout_reverts(qapp):
-    reverts = {"n": 0}
-    d = AppearanceRevertDialog(None, on_revert=lambda: reverts.__setitem__("n", reverts["n"] + 1), seconds=1)
-    d._tick()  # 1 → 0 → close → revert
+    d, reverts = _revert_dlg(qapp, seconds=1)
+    d._tick()  # 1 → 0 → finish → revert
     assert reverts["n"] == 1
+    assert not d.isVisible()
+
+
+def test_revert_dialog_keep_is_idempotent(qapp):
+    # After Keep, a further dismissal (the timer tick, a stray close) must not
+    # re-fire — the old freeze left every control re-entrant.
+    d, reverts = _revert_dlg(qapp)
+    d._do_keep()
+    d.close()
+    d._tick()
+    assert reverts["n"] == 0  # still kept, never reverted
 
 
 def test_font_scale_change_applies_live_and_reverts(qapp, monkeypatch):
