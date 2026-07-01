@@ -23,7 +23,7 @@ from PySide6.QtWidgets import (
 )
 
 import jellytoast.ui_helpers as _tokens
-from jellytoast.design_tokens import TYPE_CAPTION, type_qss
+from jellytoast.design_tokens import TYPE_CAPTION, rad, type_qss
 
 
 class _Toast(QFrame):
@@ -50,7 +50,7 @@ class _Toast(QFrame):
             QFrame#jtToast {{
                 background: {_tokens.BG_PANEL};
                 border: 1px solid {_tokens.BORDER};
-                border-radius: 8px;
+                border-radius: {rad(8)}px;
             }}
             """
         )

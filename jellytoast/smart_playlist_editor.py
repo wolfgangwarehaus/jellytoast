@@ -53,6 +53,7 @@ from jellytoast.design_tokens import (
     TYPE_SUBHEAD,
     TYPE_TINY,
     button_qss,
+    rad,
     type_qss,
 )
 from jellytoast.frosted_dialog import frosted_warning
@@ -180,7 +181,7 @@ class _RuleChip(QFrame):
             QFrame#ruleChip {{
                 background: {_ink_alpha(0.04)};
                 border: 1px solid {_ink_alpha(0.06)};
-                border-radius: 6px;
+                border-radius: {rad(6)}px;
             }}
             """
         )
@@ -908,7 +909,7 @@ class SmartPlaylistEditorDialog(QDialog):
         close_btn.setStyleSheet(f"""
             QPushButton {{
                 background: transparent; color: {_TEXT_DIM_TB};
-                border: none; border-radius: 6px; {type_qss(TYPE_CAPTION)}
+                border: none; border-radius: {rad(6)}px; {type_qss(TYPE_CAPTION)}
             }}
             QPushButton:hover {{ background: {_WASH_HOVER_TB}; color: {_TEXT_TB}; }}
         """)

@@ -1747,6 +1747,19 @@ class Settings:
     def native_window_border(self, v: bool):
         self._s.setValue("ui/native_window_border", v)
 
+    @property
+    def square_corners(self) -> bool:
+        # When True every rounded corner in the UI — windows, album art,
+        # tiles, dialogs, players, buttons, popups — is squared off; genuinely
+        # circular controls (round icon buttons, the slider handle) stay round.
+        # Baked into design_tokens at module import, so it takes effect on the
+        # next launch (the Display page shows the restart notice).
+        return self._s.value("ui/square_corners", False, type=bool)
+
+    @square_corners.setter
+    def square_corners(self, v: bool):
+        self._s.setValue("ui/square_corners", v)
+
     # NB: no ``opaque_mode`` setting. The "Opaque background" toggle was removed
     # — a frosted theme that can't get blur already falls back to a near-opaque
     # body automatically, and the toggle broke the window's rounded corners by
@@ -1978,6 +1991,18 @@ class Settings:
     @font_scale.setter
     def font_scale(self, v: str):
         self._s.setValue("ui/font_scale", v)
+
+    @property
+    def font_family(self) -> str:
+        # User-chosen UI text font family. "" means the built-in Inter stack.
+        # Applied app-wide via the global QSS font-family rule + app.setFont;
+        # icons are SVG so they're never affected. LIVE-applied (no restart) via
+        # ui_helpers.apply_font_settings_live, and also read at boot.
+        return self._s.value("ui/font_family", "", type=str)
+
+    @font_family.setter
+    def font_family(self, v: str):
+        self._s.setValue("ui/font_family", (v or "").strip())
 
     # ── Queue persistence ───────────────────────────────────────────────────
     def save_queue(self, queue: "Queue"):

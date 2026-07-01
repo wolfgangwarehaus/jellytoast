@@ -39,6 +39,7 @@ from jellytoast.design_tokens import (
     TYPE_MICRO,
     TYPE_SUBHEAD,
     apply_type,
+    rad,
     type_qss,
 )
 from jellytoast.providers import get_provider
@@ -436,7 +437,7 @@ class SearchView(QWidget):
                 background: {_u.ink_alpha(0.06)};
                 color: {_u.TEXT};
                 border: 1px solid {_u.BORDER};
-                border-radius: 8px;
+                border-radius: {rad(8)}px;
                 padding: 10px 14px;
                 {type_qss(TYPE_BODY)}
                 selection-background-color: rgba({ar},{ag},{ab},0.35);
@@ -459,7 +460,7 @@ class SearchView(QWidget):
                 background: transparent;
                 color: {_u.TEXT_DIM};
                 border: none;
-                border-radius: 8px;
+                border-radius: {rad(8)}px;
                 {type_qss(TYPE_SUBHEAD)}
             }}
             QPushButton:hover {{

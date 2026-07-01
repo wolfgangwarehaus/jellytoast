@@ -54,6 +54,7 @@ from PySide6.QtWidgets import (
 from jellytoast import disk_cache
 from jellytoast.async_io import run_async
 from jellytoast.design_tokens import (
+    RADIUS_LG,
     SPACE_LG,
     SPACE_MD,
     SPACE_XL,
@@ -120,7 +121,7 @@ class _GenreDelegate(QStyledItemDelegate):
     TILE_HEIGHT = 88
     CELL_W = TILE_WIDTH + SPACE_LG
     CELL_H = TILE_HEIGHT + SPACE_LG
-    RADIUS = 8
+    RADIUS = RADIUS_LG
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -190,7 +191,8 @@ class _GenreDelegate(QStyledItemDelegate):
             # text and reads clearly). Inset 2px so it sits inside the tile.
             ring_rect = tile.adjusted(3, 3, -3, -3)
             ring_path = QPainterPath()
-            ring_path.addRoundedRect(QRectF(ring_rect), self.RADIUS - 1, self.RADIUS - 1)
+            _rr = max(0, self.RADIUS - 1)
+            ring_path.addRoundedRect(QRectF(ring_rect), _rr, _rr)
             ring = QColor("white")
             pen = QPen(ring)
             pen.setWidth(2)

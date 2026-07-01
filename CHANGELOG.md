@@ -5,6 +5,17 @@ developer-facing history lives in [`docs/CHANGELOG.md`](docs/CHANGELOG.md).
 
 ## [Unreleased]
 
+- **Font and size change live.** **Settings → Display → Font** lets you set the
+  app's text to any font installed on your system (each previewed in itself;
+  icons are unaffected), and both the **font** and the **font size** now apply
+  **instantly** — no restart. Each change shows a 10-second "Keep or revert"
+  prompt so a choice that doesn't work for you undoes itself, and that prompt
+  always stays readable even if the font you picked isn't.
+- **Square corners, if that's your thing.** A new **Settings → Display → Square
+  corners** switch squares off every rounded corner in the app — windows, album
+  art, players, dialogs, buttons, menus, the lot — for a sharper, boxier look.
+  Genuinely round controls (the play button, sliders) stay round. Takes effect
+  after a restart.
 - **Big libraries load their album art reliably now.** On a large library
   (thousands of albums, especially on Subsonic / Navidrome) the cover grid could
   load a handful of covers and then stall, or all the art could blink out at once

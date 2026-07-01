@@ -30,6 +30,7 @@ from jellytoast.design_tokens import (
     RADIUS_WINDOW,
     TYPE_BODY,
     TYPE_CAPTION,
+    rad,
     type_qss,
 )
 from jellytoast.icon_button import IconButton
@@ -201,7 +202,7 @@ class _VolumeSliderPopup(QFrame):
             QFrame#jtVolumePopup {
                 background: transparent;
                 border: none;
-                border-radius: 8px;
+                border-radius: {rad(8)}px;
             }
         """
 
@@ -275,11 +276,11 @@ class _VolumeSliderPopup(QFrame):
             }}
             QSlider::sub-page:vertical {{
                 background: {ink_alpha(0.25)};
-                border-radius: 2px;
+                border-radius: {rad(2)}px;
             }}
             QSlider::add-page:vertical {{
                 background: {add_page_bg};
-                border-radius: 2px;
+                border-radius: {rad(2)}px;
             }}
             QSlider::handle:vertical {{
                 width: 12px; height: 12px; margin: 0 -4px;
@@ -320,7 +321,7 @@ class _VolumeSliderPopup(QFrame):
         rect = QRectF(self.rect())
         path = QPainterPath()
         if not self._right_edge_mode:
-            path.addRoundedRect(rect, 8, 8)
+            path.addRoundedRect(rect, rad(8), rad(8))
             return path
         w, h = rect.width(), rect.height()
         tr = float(self._right_edge_top_radius)
@@ -534,11 +535,11 @@ def _vert_speaker_slider_qss() -> str:
         }}
         QSlider::sub-page:vertical {{
             background: {ink_alpha(0.20)};
-            border-radius: 2px;
+            border-radius: {rad(2)}px;
         }}
         QSlider::add-page:vertical {{
             background: rgba({ar},{ag},{ab},0.75);
-            border-radius: 2px;
+            border-radius: {rad(2)}px;
         }}
         QSlider::handle:vertical {{
             width: 10px; height: 10px; margin: 0 -4px;
@@ -710,11 +711,11 @@ class _GroupVolumePopup(QFrame):
             }}
             QSlider::sub-page:vertical {{
                 background: {ink_alpha(0.25)};
-                border-radius: 2px;
+                border-radius: {rad(2)}px;
             }}
             QSlider::add-page:vertical {{
                 background: {ACCENT};
-                border-radius: 2px;
+                border-radius: {rad(2)}px;
             }}
             QSlider::handle:vertical {{
                 width: 12px; height: 12px; margin: 0 -4px;
@@ -734,7 +735,7 @@ class _GroupVolumePopup(QFrame):
             QFrame#jtGroupVolumePopup {
                 background: transparent;
                 border: none;
-                border-radius: 8px;
+                border-radius: {rad(8)}px;
             }
             QFrame#jtGroupVolumePopup QLabel { background: transparent; }
         """
@@ -1093,7 +1094,7 @@ class _GroupVolumePopup(QFrame):
         p.setPen(Qt.PenStyle.NoPen)
         p.setBrush(_u.popup_paint_qcolor())
         path = QPainterPath()
-        path.addRoundedRect(QRectF(self.rect()), 8, 8)
+        path.addRoundedRect(QRectF(self.rect()), rad(8), rad(8))
         p.drawPath(path)
         p.end()
 

@@ -98,7 +98,19 @@ class SmoothScrollFilter(QObject):
             anim.stop()
 
     def _find_scrollable_bar(self, widget, vertical: bool):
+        # The event target's own top-level window. A popup (QMenu / Qt.Popup
+        # dropdown) is its OWN top-level, so as we walk up the parent chain we
+        # must stop at that boundary: otherwise a wheel over an open popup
+        # crosses into the window BEHIND it and scrolls THAT (e.g. the settings
+        # page behind the font dropdown), consuming the wheel the popup itself
+        # needs. Stopping at the boundary lets Qt route the wheel to the popup
+        # natively (a QMenu scrolls itself; a QListView popup is found first
+        # since it shares the popup window).
+        origin = widget.window() if hasattr(widget, "window") else None
         while widget is not None:
+            w_win = widget.window() if hasattr(widget, "window") else None
+            if origin is not None and w_win is not None and w_win is not origin:
+                return None
             if isinstance(widget, QAbstractScrollArea):
                 # Honor ScrollBarAlwaysOff as a declared "this axis
                 # doesn't scroll here" hint — even if the bar reports

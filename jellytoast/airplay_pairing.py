@@ -56,6 +56,7 @@ from jellytoast.design_tokens import (
     TYPE_CAPTION,
     TYPE_DISPLAY,
     TYPE_TITLE,
+    rad,
     type_qss,
 )
 from jellytoast.ui_helpers import (
@@ -240,7 +241,7 @@ class PairingDialog(QDialog):
                 background: {ink_alpha(0.06)};
                 color: {TEXT};
                 border: 1px solid {BORDER};
-                border-radius: 6px;
+                border-radius: {rad(6)}px;
                 padding: 10px 12px;
                 font-size: {TYPE_DISPLAY.size_px}px;
                 font-weight: 600;
@@ -284,7 +285,7 @@ class PairingDialog(QDialog):
         msg.setStyleSheet(
             f"color: {TEXT}; {type_qss(TYPE_BODY)} "
             f"background: rgba(239,68,68,0.10); "
-            f"border-radius: 6px; padding: 10px 14px;"
+            f"border-radius: {rad(6)}px; padding: 10px 14px;"
         )
         self._body_layout.addWidget(msg)
         self._body_layout.addStretch(1)
@@ -447,7 +448,7 @@ class PairingDialog(QDialog):
                 background: {ink_alpha(0.04)};
                 color: {TEXT};
                 border: 1px solid {BORDER};
-                border-radius: 6px;
+                border-radius: {rad(6)}px;
                 padding: 6px 14px;
                 {type_qss(TYPE_BODY)}
             }}
@@ -472,7 +473,7 @@ class PairingDialog(QDialog):
                 background: rgba({r},{g},{b},0.18);
                 color: {TEXT};
                 border: 1px solid rgba({r},{g},{b},0.65);
-                border-radius: 6px;
+                border-radius: {rad(6)}px;
                 padding: 6px 14px;
                 {type_qss(TYPE_BODY)}
             }}

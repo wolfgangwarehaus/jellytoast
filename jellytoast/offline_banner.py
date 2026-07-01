@@ -25,7 +25,7 @@ from PySide6.QtCore import Qt, QTimer
 from PySide6.QtWidgets import QPushButton
 
 from jellytoast import offline
-from jellytoast.design_tokens import TYPE_CAPTION, type_qss
+from jellytoast.design_tokens import TYPE_CAPTION, rad, type_qss
 from jellytoast.player_state import PlayerBus
 from jellytoast.ui_helpers import ACCENT, TEXT_DIM
 
@@ -75,7 +75,7 @@ class OfflineChip(QPushButton):
             f"QPushButton#jtOfflineChip {{ "
             f"background: rgba({r},{g},{b},0.12); color: {TEXT_DIM}; "
             f"border: 1px solid rgba({r},{g},{b},0.32); "
-            f"border-radius: 6px; padding: 0 10px; "
+            f"border-radius: {rad(6)}px; padding: 0 10px; "
             f"{type_qss(TYPE_CAPTION)} }}"
             f"QPushButton#jtOfflineChip:hover {{ "
             f"background: rgba({r},{g},{b},0.20); "

@@ -207,7 +207,7 @@ from PySide6.QtWidgets import (
 
 from jellytoast.cast_dispatcher import _CastDispatcherMixin
 from jellytoast.cast_manager import CastManager
-from jellytoast.design_tokens import RADIUS_WINDOW
+from jellytoast.design_tokens import RADIUS_WINDOW, rad
 from jellytoast.jellyfin_api import get_api
 from jellytoast.library_selection_controller import _LibrarySelectionMixin
 from jellytoast.media_controls import MediaControlsService
@@ -1695,7 +1695,7 @@ class JellytoastWindow(_NavMixin, _SessionMixin, _CastDispatcherMixin, _ShuffleP
                 width: 16px;
                 height: 16px;
                 border: 1px solid {_BORDER};
-                border-radius: 3px;
+                border-radius: {rad(3)}px;
                 background: {ink_alpha(0.04)};
             }}
             QCheckBox::indicator:hover {{
@@ -2062,6 +2062,27 @@ def main():
     app.setDesktopFileName("jellytoast")
     app.setWindowIcon(QIcon(make_app_icon(64)))
     app.setQuitOnLastWindowClosed(False)
+
+    # Apply the user-chosen UI font family (Settings → Display → Font) as the
+    # application font so painter-drawn delegate text — which uses a bare
+    # QFont() and inherits the app font — adopts it too, not just QSS-styled
+    # widgets (the global stylesheet's font-family rule covers those). Empty
+    # string = the built-in Inter stack. Icons are SVG and never affected.
+    # Read at boot, so a change takes effect next launch (like font_scale).
+    try:
+        from jellytoast import ui_helpers as _uih_boot
+        from jellytoast.settings import get_settings as _get_settings
+
+        # Snapshot the platform default font BEFORE installing a custom family,
+        # so a live switch back to "System default" can restore it.
+        _uih_boot.set_boot_default_font(app.font())
+        _fam = (_get_settings().font_family or "").strip()
+        if _fam:
+            from PySide6.QtGui import QFont
+
+            app.setFont(QFont(_fam))
+    except Exception:
+        pass
 
     # Diagnostic (JT_POPUP_DEBUG=1): log every top-level widget as it's shown,
     # to catch the parentless-QWidget flash on track change. A parentless

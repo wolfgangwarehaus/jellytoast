@@ -21,7 +21,7 @@ from PySide6.QtWidgets import (
 )
 
 from jellytoast.async_io import run_async
-from jellytoast.design_tokens import RADIUS_WINDOW, TYPE_CAPTION, TYPE_TINY, type_qss
+from jellytoast.design_tokens import RADIUS_WINDOW, TYPE_CAPTION, TYPE_TINY, rad, type_qss
 from jellytoast.icon_button import IconButton
 from jellytoast.icons import accent_icon, icon
 from jellytoast.player_state import NowPlaying, PlayerBus, get_now_playing
@@ -115,7 +115,7 @@ def _icon_btn_qss() -> str:
     live theme switch (see `_apply_panel_theme`)."""
     return f"""
         QPushButton {{
-            background: transparent; border: none; border-radius: 8px;
+            background: transparent; border: none; border-radius: {rad(8)}px;
         }}
         QPushButton:hover {{ background: {WASH_HOVER}; }}
         QPushButton:pressed {{ background: {WASH_PRESSED}; }}

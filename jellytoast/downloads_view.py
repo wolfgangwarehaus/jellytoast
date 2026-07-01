@@ -36,12 +36,14 @@ from PySide6.QtWidgets import (
 from jellytoast import offline
 from jellytoast.design_tokens import (
     RADIUS_LG,
+    RADIUS_SM,
     SPACE_MD,
     SPACE_SM,
     TYPE_BODY,
     TYPE_CAPTION,
     TYPE_MICRO,
     font,
+    rad,
     type_qss,
 )
 from jellytoast.player_state import PlayerBus
@@ -110,7 +112,7 @@ class _DownloadRow(QFrame):
     resync_requested = Signal(str)  # item_id
 
     THUMB_SIZE = 36
-    THUMB_RADIUS = 4
+    THUMB_RADIUS = RADIUS_SM
     # Fixed, DPR-independent source size for the cover fetch (mirrors
     # library_grid._COVER_SOURCE_PX). The L2 raw cache is keyed by the
     # semantic image id, so a fixed source size means a thumbnail fetched
@@ -368,11 +370,11 @@ class _QueueAggregateBlock(QWidget):
         self._bar_track = QFrame()
         self._bar_track.setFixedHeight(4)
         self._bar_track.setStyleSheet(
-            f"background: {BG_CARD}; border: none; border-radius: 2px;"
+            f"background: {BG_CARD}; border: none; border-radius: {rad(2)}px;"
         )
         self._bar_fill = QFrame(self._bar_track)
         self._bar_fill.setStyleSheet(
-            f"background: {ACCENT}; border: none; border-radius: 2px;"
+            f"background: {ACCENT}; border: none; border-radius: {rad(2)}px;"
         )
         self._bar_fill.setGeometry(0, 0, 0, 4)
         outer.addWidget(self._bar_track)
@@ -469,10 +471,10 @@ class _QueueAggregateBlock(QWidget):
 
         color = _ui.TEXT_DIM if dim else _ui.ACCENT
         self._bar_fill.setStyleSheet(
-            f"background: {color}; border: none; border-radius: 2px;"
+            f"background: {color}; border: none; border-radius: {rad(2)}px;"
         )
         self._bar_track.setStyleSheet(
-            f"background: {_ui.BG_CARD}; border: none; border-radius: 2px;"
+            f"background: {_ui.BG_CARD}; border: none; border-radius: {rad(2)}px;"
         )
         width = int(self._bar_track.width() * fraction)
         self._bar_fill.setGeometry(0, 0, width, 4)

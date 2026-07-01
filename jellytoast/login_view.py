@@ -32,6 +32,7 @@ from jellytoast.design_tokens import (
     TYPE_BODY,
     TYPE_CAPTION,
     TYPE_DISPLAY,
+    rad,
     type_qss,
 )
 from jellytoast.providers import get_provider, reset_provider
@@ -113,7 +114,7 @@ def _dialog_field_qss() -> str:
             background: {ink_alpha(0.06)};
             color: {_u.TEXT};
             border: 1px solid {_u.BORDER};
-            border-radius: 6px;
+            border-radius: {rad(6)}px;
             padding: 7px 10px;
             {type_qss(TYPE_CAPTION)}
         }}
@@ -480,7 +481,7 @@ class LoginView(QWidget):
                 background: {_ACCENT};
                 color: white;
                 border: none;
-                border-radius: 8px;
+                border-radius: {rad(8)}px;
                 {type_qss(TYPE_BODY)}
                 font-weight: 600;
             }}
@@ -543,7 +544,7 @@ class LoginView(QWidget):
                 background: {ink_alpha(0.06)};
                 color: {TEXT};
                 border: 1px solid {BORDER};
-                border-radius: 8px;
+                border-radius: {rad(8)}px;
                 padding: 10px 14px;
                 {type_qss(TYPE_BODY)}
                 selection-background-color: {ink_alpha(0.20)};

@@ -31,6 +31,7 @@ from PySide6.QtCore import QEvent, QObject, Qt, QTimer
 from PySide6.QtGui import QColor
 from PySide6.QtWidgets import QHBoxLayout, QLabel, QWidget
 
+from jellytoast.design_tokens import RADIUS_MD
 from jellytoast.settings import get_settings
 
 
@@ -46,7 +47,7 @@ class ToolTipPopup(QWidget):
     """Top-level frosted tooltip widget — see module docstring."""
 
     _instance: "ToolTipPopup | None" = None
-    _RADIUS = 6
+    _RADIUS = RADIUS_MD
     _GAP = 4  # vertical gap between target widget bottom and tooltip top
     _DURATION_MS = 10000  # Qt's native tooltip lifetime is ~10s; mirror it.
 

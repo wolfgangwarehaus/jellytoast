@@ -6,6 +6,7 @@ from PySide6.QtCore import QObject, Slot
 from PySide6.QtGui import QAction, QCursor, QIcon
 from PySide6.QtWidgets import QApplication, QSystemTrayIcon
 
+from jellytoast.design_tokens import rad
 from jellytoast.player_state import NowPlaying, PlayerBus
 from jellytoast.ui_helpers import make_app_icon, opaque_menu
 
@@ -108,10 +109,10 @@ class TrayController(QObject):
             QMenu {{
                 background: {_u.POPUP_OPAQUE_FILL}; color: {_u.TEXT};
                 border: 1px solid rgba({ar},{ag},{ab},0.4);
-                border-radius: 8px;
+                border-radius: {rad(8)}px;
                 padding: 4px;
             }}
-            QMenu::item {{ padding: 7px 22px 7px 14px; border-radius: 4px; }}
+            QMenu::item {{ padding: 7px 22px 7px 14px; border-radius: {rad(4)}px; }}
             QMenu::item:selected {{ background: rgba({ar},{ag},{ab},0.25); }}
             QMenu::item:disabled {{ color: {_u.TEXT_FAINT}; }}
             QMenu::separator {{ height: 1px; background: {_u.BORDER}; margin: 4px 8px; }}

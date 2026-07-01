@@ -49,7 +49,7 @@ from PySide6.QtWidgets import (
 )
 
 from jellytoast.async_io import run_async
-from jellytoast.design_tokens import SPACE_LG, SPACE_SM, TYPE_CAPTION, type_qss
+from jellytoast.design_tokens import SPACE_LG, SPACE_SM, TYPE_CAPTION, rad, type_qss
 from jellytoast.providers import get_provider
 
 COVER_PREVIEW_PX = 120
@@ -177,7 +177,7 @@ class TagEditorDialog(QDialog):
         self.setStyleSheet(
             f"QDialog {{ background: {_ui.BG}; }} "
             f"QLineEdit, QSpinBox {{ background: {_ui.ink_alpha(0.06)}; "
-            f"color: {_ui.TEXT}; border: 1px solid {_ui.BORDER}; border-radius: 6px; "
+            f"color: {_ui.TEXT}; border: 1px solid {_ui.BORDER}; border-radius: {rad(6)}px; "
             f"padding: 6px 9px; }} "
             f"QLineEdit:focus, QSpinBox:focus {{ border-color: {_ui.ink_alpha(0.32)}; }}"
         )
@@ -197,7 +197,7 @@ class TagEditorDialog(QDialog):
         try:
             self._cover_label.setStyleSheet(
                 f"background: {_ui.ink_alpha(0.06)}; "
-                f"border: 1px solid {_ui.BORDER}; border-radius: 6px;"
+                f"border: 1px solid {_ui.BORDER}; border-radius: {rad(6)}px;"
             )
             pm = self._cover_label.pixmap()
             if pm is None or pm.isNull():
@@ -220,7 +220,7 @@ class TagEditorDialog(QDialog):
         self._cover_label.setFrameShape(QFrame.Shape.NoFrame)
         self._cover_label.setStyleSheet(
             f"background: {_ink_alpha(0.06)}; "
-            f"border: 1px solid {_BORDER}; border-radius: 6px;"
+            f"border: 1px solid {_BORDER}; border-radius: {rad(6)}px;"
         )
         # The fallback chip until the network reply lands (or forever,
         # if the album has no cover and the user is uploading a fresh
