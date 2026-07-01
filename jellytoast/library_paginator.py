@@ -245,6 +245,23 @@ class _PaginatorMixin:
             # leave tiles permanently blank. Cheap when nothing was
             # deferred; re-issues the visible-window fetches otherwise.
             self._rearm_failed_covers()
+        else:
+            # An AUTO offline flip must NOT blow away an already-populated
+            # server-backed grid. On a large/slow library the cold-load
+            # request burst can momentarily look like an outage; re-rendering
+            # to downloads-only would blank every loaded cover, and as the
+            # recovery probe flaps us back online then offline it would
+            # reload + re-blank repeatedly — the user's "loads covers for a
+            # bit then they all disappear". Keep what's on screen: the image
+            # gate already stops new network fetches while offline, and
+            # _rearm_failed_covers refills the instant we recover. A
+            # deliberate USER toggle still renders the downloads-only view
+            # (their explicit choice); an empty grid (nothing loaded yet)
+            # falls through to render whatever downloads exist.
+            from jellytoast import offline as _offline
+
+            if _offline.offline_source() == "auto" and self._model.rowCount() > 0:
+                return
         if not self.isVisible():
             self._refresh_after_offline_toggle = True
             return

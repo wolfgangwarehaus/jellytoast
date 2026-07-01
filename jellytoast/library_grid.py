@@ -395,6 +395,15 @@ class _LibraryItemsModel(QAbstractListModel):
         idx = self.index(row, 0)
         self.dataChanged.emit(idx, idx, [self.CoverRole])
 
+    def has_cover(self, row: int) -> bool:
+        """True if a decoded pixmap is currently resident for ``row``.
+        A plain membership check — it does NOT bump LRU order (that's
+        reserved for an actual paint via data()). The grid uses this to
+        notice a cover that was loaded but later EVICTED from the LRU, so
+        a visible pass can re-arm and reload it instead of leaving a
+        permanent placeholder."""
+        return row in self._covers
+
     def clear_covers(self):
         if not self._covers:
             return
@@ -1859,6 +1868,15 @@ class LibraryGrid(_PaginatorMixin, QWidget):
     # surface on a default-size window.
     _INITIAL_PRELOAD_ROWS = 16
 
+    # How far PAST the visible window the idle prefetch prewarms covers.
+    # The prefetch used to walk the ENTIRE library, which on a large one
+    # (~5,200 albums, first external user) kept the server saturated
+    # generating thumbnails and churned the bounded cover caches. Bounding
+    # it to a viewport-following window (re-anchored on scroll) keeps
+    # scroll-ahead instant while never requesting/holding more than a few
+    # hundred covers at once. A library smaller than this prewarms fully.
+    _PREFETCH_AHEAD = 240
+
     # Covers are fetched from the server at one fixed physical size,
     # independent of the current display DPR. The cache identity in
     # load_image_async's L2 raw tier is keyed by semantic id (the
@@ -2148,6 +2166,15 @@ class LibraryGrid(_PaginatorMixin, QWidget):
         self._update_alphabet_highlight()
         self._maybe_load_more(bar.value())
         self._load_visible_covers()
+        # Re-anchor the bounded prefetch to the new viewport so it prewarms
+        # the window around where the user now is (an A-Z rail jump can land
+        # far from where prefetch left off) and restart it if it had stopped
+        # at a previous window's ceiling. The tick skips already-loaded rows.
+        if self._model.rowCount() > 0:
+            first, _ = self._visible_row_range()
+            self._prefetch_idx = max(0, first)
+            if not self._prefetch_timer.isActive():
+                self._prefetch_timer.start()
 
     def _on_dpr_changed(self):
         if self._model.rowCount() == 0:
@@ -2357,8 +2384,20 @@ class LibraryGrid(_PaginatorMixin, QWidget):
             return
         self._visible_retry_tries = 0
         for row in range(first, last):
-            if row in self._covers_loaded:
+            # Skip a row only if it's loaded AND its pixmap is still resident.
+            # A row marked loaded whose cover the model LRU later EVICTED (or
+            # that was abandoned after online retries) would otherwise sit as a
+            # permanent placeholder; re-arm it here so a visible tile always
+            # reloads (from the disk cache, usually). Art-less / retry-exhausted
+            # rows carry _cover_retries >= cap and are left alone; offline-
+            # deferred rows (_cover_failed) wait for the reconnect re-arm.
+            if row in self._covers_loaded and self._model.has_cover(row):
                 continue
+            if row in self._cover_failed:
+                continue
+            if self._cover_retries.get(row, 0) >= self.COVER_RETRY_LIMIT:
+                continue
+            self._covers_loaded.discard(row)
             self._fire_cover_load(row)
 
     def _fire_cover_load(self, row: int, priority: str = "normal"):
@@ -2368,7 +2407,10 @@ class LibraryGrid(_PaginatorMixin, QWidget):
         item = items[row]
         cover_id = item.get("Id", "")
         if not cover_id:
+            # No art id at all — mark exhausted so the visible re-arm pass
+            # (which retries rows missing a cover) doesn't spin on it.
             self._covers_loaded.add(row)
+            self._cover_retries[row] = self.COVER_RETRY_LIMIT
             return
         dpr = screen_dpr(self)
         target = max(
@@ -2389,11 +2431,16 @@ class LibraryGrid(_PaginatorMixin, QWidget):
         )
         if not cover_url:
             self._covers_loaded.add(row)
+            self._cover_retries[row] = self.COVER_RETRY_LIMIT
             return
         self._covers_loaded.add(row)
 
         def _on_pix(pix, r=row):
             self._model.set_cover(r, pix)
+            # Loaded cleanly — clear any retry tally so that if this cover
+            # is later EVICTED from the model LRU and re-armed on scroll-back,
+            # it gets a fresh retry budget instead of inheriting old failures.
+            self._cover_retries.pop(r, None)
 
         def _on_err(r=row):
             # A cover load failed. Distinguish two cases:
@@ -2442,9 +2489,15 @@ class LibraryGrid(_PaginatorMixin, QWidget):
         if rc == 0:
             self._prefetch_timer.stop()
             return
-        while self._prefetch_idx < rc and self._prefetch_idx in self._covers_loaded:
+        # Only prewarm a bounded window ahead of the viewport — see
+        # _PREFETCH_AHEAD. On a small library the ceiling is the whole list
+        # so it fully prewarms; on a huge one it stops at the window edge and
+        # _on_scroll_coalesced re-anchors + restarts it as the user moves.
+        _, vis_last = self._visible_row_range()
+        ceiling = min(rc, max(vis_last, self._INITIAL_PRELOAD_ROWS) + self._PREFETCH_AHEAD)
+        while self._prefetch_idx < ceiling and self._prefetch_idx in self._covers_loaded:
             self._prefetch_idx += 1
-        if self._prefetch_idx >= rc:
+        if self._prefetch_idx >= ceiling:
             self._prefetch_timer.stop()
             return
         i = self._prefetch_idx

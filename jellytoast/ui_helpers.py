@@ -876,15 +876,26 @@ _pending_replies: dict = {}
 # parallel GETs for one image.
 _inflight_subscribers: dict = {}
 
-# Low-priority gate: caps how many low-priority loads (off-screen
-# tile prefetches) can be in flight at once so the user-action
-# requests (now-playing bar cover, hover prewarm) never queue behind
-# a flood of background prefetches. QNAM enforces ~6 connections
-# per host, so leaving 2 slots for non-low-priority requests means
-# high/normal priority always finds an open socket.
-_LOW_PRIO_MAX_INFLIGHT = 4
-_low_prio_in_flight = 0
-_low_prio_deferred: list = []  # list of zero-arg callables.
+# Concurrency gate for grid-style cover loads. QNAM enforces ~6
+# connections per host, but it ACCEPTS unlimited requests and queues the
+# overflow internally WITH each request's transfer-timeout timer already
+# running. So on a big/slow library a viewport burst (50+ tiles) hands
+# QNAM far more than it can dispatch, and the tail of that queue trips its
+# transfer timeout before a socket ever opens — then gets retried and
+# abandoned. That is the "loads a few covers then stops" report from the
+# first external user (a ~5,200-album Navidrome).
+#
+# Fix: cap how many NORMAL/LOW loads we hand QNAM at once, so nothing sits
+# in its internal queue with a live timer; the overflow waits HERE (no
+# timer) and is dispatched as replies complete. HIGH priority (now-playing
+# bar cover, hover prewarm — rare and user-facing) bypasses the gate so it
+# never waits behind a grid sweep. 5 leaves one of QNAM's ~6 sockets free
+# for a high-priority burst. Two FIFOs keep NORMAL (visible tiles) ahead of
+# LOW (off-screen prefetch) when a slot frees.
+_GATED_MAX_INFLIGHT = 5
+_gated_in_flight = 0
+_deferred_normal: list = []  # zero-arg callables — visible tiles
+_deferred_low: list = []  # zero-arg callables — off-screen prefetch
 
 # L2 "raw decoded source" cache. Keyed by the SEMANTIC key (the part of
 # the caller's `key` before the first `|`, typically an item id /
@@ -1133,15 +1144,16 @@ def _after_disk_miss(
         return
     _inflight_subscribers[cache_key] = [(callback, on_error)]
 
-    # Low-priority gate: defer if too many low-prio loads are already
-    # in flight, so a viewport-prefetch burst doesn't choke a real
-    # user-action request firing on the next click. High and normal
-    # priority bypass the gate entirely.
-    is_low_prio = priority == "low"
-    if is_low_prio:
-        global _low_prio_in_flight
-        if _low_prio_in_flight >= _LOW_PRIO_MAX_INFLIGHT:
-            _low_prio_deferred.append(
+    # Concurrency gate: HIGH fires immediately. NORMAL/LOW go through the
+    # shared in-flight cap (see _GATED_MAX_INFLIGHT) so a grid sweep can't
+    # flood QNAM's internal queue and trip transfer timeouts on requests
+    # that never got a socket. A deferred load waits HERE with no live
+    # timer and is promoted as replies finish — NORMAL ahead of LOW.
+    if priority != "high":
+        global _gated_in_flight
+        if _gated_in_flight >= _GATED_MAX_INFLIGHT:
+            queue = _deferred_low if priority == "low" else _deferred_normal
+            queue.append(
                 lambda: _fire_image_request(
                     cache_key,
                     sem_key,
@@ -1153,7 +1165,7 @@ def _after_disk_miss(
                 )
             )
             return
-        _low_prio_in_flight += 1
+        _gated_in_flight += 1
 
     _fire_image_request(
         cache_key,
@@ -1179,12 +1191,13 @@ def _fire_image_request(
     low-priority gate can defer-then-fire without duplicating the
     QNetworkRequest setup."""
     req = QNetworkRequest(QUrl(url))
-    # 8s was too aggressive: under a viewport-burst load (30+ tiles
-    # entering view at once) QNAM serializes through ~6 per-host
-    # connections and the tail of the queue trips the timer before
-    # bytes arrive. 20s gives the queue room to drain on a busy
-    # server without holding stale replies forever.
-    req.setTransferTimeout(20000)
+    # The app-level gate (_GATED_MAX_INFLIGHT) now means a request only
+    # reaches QNAM when a socket is actually free, so this timeout covers
+    # the live transfer alone — not in-queue wait. 30s tolerates a cold
+    # Navidrome reading + resizing embedded art from a large library on
+    # first touch (it caches the thumbnail after), without holding a truly
+    # stuck reply forever.
+    req.setTransferTimeout(30000)
     if priority == "high":
         req.setPriority(QNetworkRequest.Priority.HighPriority)
     elif priority == "low":
@@ -1208,17 +1221,26 @@ def _on_image_reply_finished(reply: QNetworkReply):
         return
     cache_key, sem_key, target_w, target_h, radius, priority = ctx
     waiters = _inflight_subscribers.pop(cache_key, [])
-    if priority == "low":
-        global _low_prio_in_flight
-        _low_prio_in_flight -= 1
-        # Promote one deferred low-prio request now that a slot
-        # opened. We don't fire all deferred at once — that would
-        # defeat the gate; one at a time keeps the queue draining at
-        # the same rate as completions.
-        if _low_prio_deferred:
-            next_fn = _low_prio_deferred.pop(0)
-            _low_prio_in_flight += 1
-            next_fn()
+    # Release the gate slot for a gated (normal/low) load and promote the
+    # next waiter — NORMAL before LOW so a visible tile beats a prefetch.
+    # One at a time keeps the queue draining at the completion rate.
+    if priority != "high":
+        global _gated_in_flight
+        _gated_in_flight -= 1
+        next_fn = None
+        if _deferred_normal:
+            next_fn = _deferred_normal.pop(0)
+        elif _deferred_low:
+            next_fn = _deferred_low.pop(0)
+        if next_fn is not None:
+            _gated_in_flight += 1
+            try:
+                next_fn()
+            except Exception:
+                # The promoted load failed to even start (QNAM teardown,
+                # bad URL). Release the slot we just claimed so the gate
+                # can't ratchet permanently shut over a long session.
+                _gated_in_flight -= 1
     try:
         success = False
         src: Optional[QImage] = None

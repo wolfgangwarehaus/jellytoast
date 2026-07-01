@@ -395,6 +395,13 @@ def is_offline_mode() -> bool:
     return _connectivity.is_offline_mode()
 
 
+def offline_source() -> Optional[str]:
+    """``"user"`` / ``"auto"`` / ``None`` — who set the current offline
+    state. Lets callers preserve a populated grid on an AUTO trip (a
+    transient slow-server flap) instead of blanking it."""
+    return _connectivity.offline_source()
+
+
 def set_wifi_only(value: bool) -> None:
     """Toggle the "Only download on Wi-Fi" gate. Persists across
     restart and emits ``downloads_wifi_only_changed`` on the bus.
@@ -545,6 +552,7 @@ __all__ = [
     "repair",
     "set_offline_mode",
     "is_offline_mode",
+    "offline_source",
     "set_wifi_only",
     "is_wifi_only",
     "mark_metered",

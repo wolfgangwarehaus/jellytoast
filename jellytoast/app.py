@@ -1921,25 +1921,81 @@ def _shutdown_log(msg: str) -> None:
     logger.info("%s", msg)
 
 
+# Held for process lifetime so faulthandler's file sink isn't garbage-
+# collected/closed out from under it on GUI-subsystem builds.
+_CRASH_LOG_FH = None
+
+
+def _diag_log_dir():
+    """Best-effort writable dir for crash/diagnostic logs, resolved WITHOUT
+    a QApplication (this runs before one exists). Windows → ``%LOCALAPPDATA%
+    \\jellytoast``; otherwise ``$XDG_CACHE_HOME`` (or ``~/.cache``)
+    ``/jellytoast``. Returns None if nothing is writable."""
+    import os as _os
+
+    try:
+        if _os.name == "nt":
+            base = _os.environ.get("LOCALAPPDATA") or _os.path.expanduser("~")
+        else:
+            base = _os.environ.get("XDG_CACHE_HOME") or _os.path.join(
+                _os.path.expanduser("~"), ".cache"
+            )
+        d = _os.path.join(base, "jellytoast")
+        _os.makedirs(d, exist_ok=True)
+        return d
+    except Exception:
+        return None
+
+
 def _enable_faulthandler() -> None:
     """Convert a hard native crash (embedded libmpv, or a cross-thread
     ~QObject — jellytoast's documented SIGSEGV class) into an
-    attributable Python+C stack on stderr instead of silent process
-    death. Cheap, no behavioural change — EXCEPT under a GUI-subsystem
-    interpreter (the pipx `jellytoast.exe` gui-script on Windows /
-    pythonw), where ``sys.stderr`` is ``None`` and ``enable()`` raises
-    ``RuntimeError``, killing the app before ``app.exec()`` (the silent
-    no-window launch failure, 2026-06-10 Windows round). No stderr →
-    nowhere to write a crash stack anyway, so skip it there."""
-    if sys.stderr is None:
-        return
+    attributable Python+C stack instead of silent process death.
+
+    On a normal interpreter this writes to stderr. Under a GUI-subsystem
+    interpreter (the pipx ``jellytoast.exe`` gui-script on Windows /
+    pythonw) ``sys.stderr`` is ``None`` and a bare ``enable()`` raises
+    ``RuntimeError`` — the 2026-06-10 silent no-window launch failure. The
+    old code just skipped it there, which is exactly why the first external
+    user's Windows 'crash' left ZERO trace and was undiagnosable. Now we
+    instead point faulthandler at a crash-log FILE and attach a file log so
+    a windowed-build user can hand back ``crash.log`` / ``jellytoast.log``
+    (the connectivity + offline-mode transitions log at INFO)."""
     import faulthandler
 
+    if sys.stderr is not None:
+        try:
+            faulthandler.enable()
+        except Exception:
+            # e.g. a stderr replaced by a fileno-less stream (test capture,
+            # embedded hosts) — losing the crash hook must never be fatal.
+            pass
+        return
+
+    # stderr is None (GUI-subsystem build) — route to files instead.
+    d = _diag_log_dir()
+    if not d:
+        return
+    import os as _os
+
+    global _CRASH_LOG_FH
     try:
-        faulthandler.enable()
+        _CRASH_LOG_FH = open(_os.path.join(d, "crash.log"), "a", buffering=1)
+        faulthandler.enable(file=_CRASH_LOG_FH, all_threads=True)
     except Exception:
-        # e.g. a stderr replaced by a fileno-less stream (test capture,
-        # embedded hosts) — losing the crash hook must never be fatal.
+        pass
+    try:
+        import logging as _logging
+
+        level = (_os.environ.get("JT_LOG_LEVEL") or "INFO").upper()
+        fh = _logging.FileHandler(_os.path.join(d, "jellytoast.log"))
+        fh.setFormatter(
+            _logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s")
+        )
+        root = _logging.getLogger()
+        root.addHandler(fh)
+        root.setLevel(getattr(_logging, level, _logging.INFO))
+    except Exception:
         pass
 
 
