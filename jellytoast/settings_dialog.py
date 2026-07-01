@@ -779,12 +779,14 @@ class SettingsDialog(QDialog):
         # theme switch must tear these down + rebuild (see
         # _rebuild_pages_for_theme); unbuilt pages stay lazy.
         self._built_pages: set[int] = set()
-        # General is ``expand=True`` so it doesn't get wrapped in a
-        # QScrollArea. Its content is sized to fit the 820×540 dialog
-        # exactly — without this it overflowed by ~10 px and rendered
-        # a hair-trigger scrollbar that the user could nudge a few
-        # pixels each way, which read as the page jiggling.
-        self._add_page("General", self._build_general, expand=True)
+        # General is scrollable like the other content pages. It used to be
+        # expand=True (unscrolled) to dodge a hair-trigger scrollbar that
+        # "jiggled" at the old fixed 820×540 size — but with the adaptive size
+        # + live fonts, a wide/large font makes it overflow and CLIP the bottom
+        # (the Updates row + "Check now" got cut off). The scroll wrapper now
+        # uses an autofade scrollbar (hidden when idle), so it scrolls cleanly
+        # on overflow with no persistent-scrollbar jiggle.
+        self._add_page("General", self._build_general)
         self._add_page("Playback", self._build_playback)
         self._add_page("Casting", self._build_casting)
         self._add_page("Downloads", self._build_downloads, expand=True)
@@ -1395,7 +1397,10 @@ class SettingsDialog(QDialog):
         from jellytoast import updates as _updates
 
         if not _updates.is_auto_update_channel():
-            v.addSpacing(8)
+            # A touch more than the 12px section rhythm elsewhere — this header
+            # follows the Home-page combo BOX, which needs more air beneath it
+            # than the plain checkboxes the other headers follow.
+            v.addSpacing(16)
             v.addWidget(self._section_header("UPDATES"))
             v.addSpacing(4)
             up_row = QHBoxLayout()
