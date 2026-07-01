@@ -972,10 +972,11 @@ def test_ensure_soco_handles_import_error(monkeypatch):
 # ── Settings integration ────────────────────────────────────────────────
 
 
-def test_settings_defaults_for_sonos_keys():
-    from jellytoast.settings import Settings
-
-    s = Settings()
+def test_settings_defaults_for_sonos_keys(isolated_settings):
+    # isolated_settings clears the shared QSettings on setup, so this reads the
+    # TRUE defaults — immune to another test leaving sonos_enabled set under a
+    # random ordering (the -n auto / pytest-randomly flake this used to hit).
+    s = isolated_settings
     # Defaults per the research doc + the autonomous-task spec. Cast types
     # are opt-in, so sonos_enabled (alias of cast_sonos_enabled) is off.
     assert s.sonos_enabled is False
@@ -1000,8 +1001,11 @@ def test_settings_round_trip_sonos_keys():
     assert s2.sonos_group_with_master is True
     assert s2.sonos_event_port == 8945
     assert s2.sonos_volume_floor == 30
-    # Cleanup so cross-test ordering is stable.
-    s2.sonos_enabled = True
+    # Cleanup: restore every key to its DEFAULT so this doesn't leak state into
+    # another test under a random ordering. sonos_enabled defaults to False
+    # (opt-in) — the old cleanup restored True here, which is exactly what
+    # leaked into test_settings_defaults_for_sonos_keys and made it flaky.
+    s2.sonos_enabled = False
     s2.sonos_preferred_zone = ""
     s2.sonos_group_with_master = False
     s2.sonos_event_port = 0
