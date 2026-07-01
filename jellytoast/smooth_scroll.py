@@ -112,6 +112,11 @@ class SmoothScrollFilter(QObject):
             if origin is not None and w_win is not None and w_win is not origin:
                 return None
             if isinstance(widget, QAbstractScrollArea):
+                # Per-widget opt-out: a compact surface (e.g. a dropdown list)
+                # can ask to scroll NATIVELY — no momentum glide, precise
+                # per-notch control — by setting property("jt_native_scroll").
+                if widget.property("jt_native_scroll"):
+                    return None
                 # Honor ScrollBarAlwaysOff as a declared "this axis
                 # doesn't scroll here" hint — even if the bar reports
                 # a few pixels of range from layout rounding, the

@@ -741,11 +741,12 @@ class SettingsDialog(QDialog):
         body_h.setSpacing(12)
 
         self.nav = QListWidget()
-        # 170→128 over two passes: trims negative space after the
-        # longest label ("Scrobbling") to a snug-but-not-cramped
-        # column. ~12 px of breathing room past "Scrobbling" — any
-        # tighter and the right-padded item chip starts grazing the
-        # text.
+        # Never show a horizontal scrollbar on the sidebar — if a wide/large
+        # font needs more room we widen the column instead (see
+        # _size_nav_to_content, re-run on live font changes), which reads far
+        # better than a scrollbar under the nav labels.
+        self.nav.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        # Initial width; _size_nav_to_content overrides it once the rows exist.
         self.nav.setFixedWidth(128)
         # Keyboard-navigable sidebar: Tab reaches it, Up/Down switch pages
         # (currentRowChanged rebuilds+shows). It was NoFocus, which made the
@@ -869,8 +870,10 @@ class SettingsDialog(QDialog):
             (fm.horizontalAdvance(self.nav.item(i).text()) for i in range(self.nav.count())),
             default=96,
         )
-        # item padding (14+14) + list padding (4+4) + a little breathing room.
-        self.nav.setFixedWidth(int(text_w) + 28 + 8 + 8)
+        # item h-padding (14+14) + list padding (4+4) + generous breathing so a
+        # font whose rendered advance slightly exceeds fontMetrics still fits
+        # (the horizontal scrollbar is off, so the column must be wide enough).
+        self.nav.setFixedWidth(int(text_w) + 28 + 8 + 16)
 
     def _nav_qss(self) -> str:
         """Sidebar nav QSS — bakes TEXT / TEXT_DIM / ink_alpha(), so
@@ -1018,8 +1021,10 @@ class SettingsDialog(QDialog):
                     w.setParent(None)
                     w.deleteLater()
         self._built_pages.clear()
-        # The sidebar nav isn't a page — re-stamp its QSS directly.
+        # The sidebar nav isn't a page — re-stamp its QSS directly, then
+        # re-widen it to the labels in the (possibly rescaled) active font.
         self.nav.setStyleSheet(self._nav_qss())
+        self._size_nav_to_content()
         # The titlebar is built once and never rebuilt — re-stamp the
         # "Settings" heading and re-issue the cog glyph in the new tint.
         self._title_label.setStyleSheet(f"color: {TEXT}; {type_qss(TYPE_SUBHEAD)}")
@@ -3046,17 +3051,24 @@ class SettingsDialog(QDialog):
         old = self._active_font_family
         if new == old:
             return
+        from PySide6.QtCore import QTimer
+
         from jellytoast.appearance_confirm import show_appearance_revert
         from jellytoast.ui_helpers import apply_font_settings_live
 
         self.s.font_family = new
         apply_font_settings_live()  # reads settings.font_family live
         self._active_font_family = new
+        # A new family changes the sidebar labels' width — re-widen the column
+        # to fit (deferred so fontMetrics reflect the propagated family) rather
+        # than letting a wider font clip against the fixed 128px start.
+        QTimer.singleShot(0, self._size_nav_to_content)
 
         def _revert(old=old):
             self.s.font_family = old
             apply_font_settings_live()
             self._active_font_family = old
+            QTimer.singleShot(0, self._size_nav_to_content)
             # Reset the combo without re-firing this handler.
             self._font_family_combo.blockSignals(True)
             self._select_combo_by_data(self._font_family_combo, old)
