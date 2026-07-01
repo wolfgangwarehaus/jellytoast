@@ -1271,13 +1271,13 @@ class SettingsDialog(QDialog):
         self._change_btn = QPushButton("Change server URL…")
         self._change_btn.setObjectName("ghost")
         self._change_btn.setFixedHeight(_CTRL_H)
-        self._change_btn.setFixedWidth(_CHANGE_BTN_W)
+        self._change_btn.setMinimumWidth(_CHANGE_BTN_W)
         self._change_btn.clicked.connect(self._on_change_server_clicked)
         btn_row.addWidget(self._change_btn)
         signout_btn = QPushButton("Sign out")
         signout_btn.setObjectName("ghost")
         signout_btn.setFixedHeight(_CTRL_H)
-        signout_btn.setFixedWidth(_SIGNOUT_BTN_W)
+        signout_btn.setMinimumWidth(_SIGNOUT_BTN_W)
         signout_btn.clicked.connect(self.sign_out_requested.emit)
         btn_row.addWidget(signout_btn)
         btn_row.addStretch(1)
@@ -1383,7 +1383,7 @@ class SettingsDialog(QDialog):
         # Match the Change-server-URL button width exactly so the two
         # outlined chips read as a balanced visual pair across the
         # General page.
-        self._home_combo.setFixedWidth(self._general_change_btn_w)
+        self._home_combo.setMinimumWidth(self._general_change_btn_w)
         home_row = QHBoxLayout()
         home_row.setContentsMargins(0, 6, 0, 0)
         home_row.addWidget(self._home_combo)
@@ -1803,6 +1803,12 @@ class SettingsDialog(QDialog):
         )
         form.setHorizontalSpacing(16)
         form.setVerticalSpacing(8)
+        # Keep the combos at their size hint (grow with the font, don't stretch
+        # to fill the field column) — same as the Display page's scaling_form.
+        # Their setMinimumWidth floor then holds the tuned default-font width.
+        form.setFieldGrowthPolicy(
+            QFormLayout.FieldGrowthPolicy.FieldsStayAtSizeHint
+        )
 
         # Fixed combo width — both AUDIO combos match each other AND
         # the EQ Preset combo's fixed 180-px width below, so the three
@@ -1830,7 +1836,7 @@ class SettingsDialog(QDialog):
             # before the codec arrives on the next track.
             PlayerBus.get().audio_quality_changed.emit(new_q)
         self._quality_combo.currentIndexChanged.connect(lambda _: _on_quality_changed())
-        self._quality_combo.setFixedWidth(_AUDIO_COMBO_W)
+        self._quality_combo.setMinimumWidth(_AUDIO_COMBO_W)
         form.addRow(q_label, self._quality_combo)
 
         # ReplayGain is the canonical tag spec, but the user-facing
@@ -1843,7 +1849,7 @@ class SettingsDialog(QDialog):
             self._rg_combo.addItem(label, key)
         self._select_combo_by_data(self._rg_combo, self.s.replaygain)
         self._rg_combo.currentIndexChanged.connect(self._on_replaygain_changed)
-        self._rg_combo.setFixedWidth(_AUDIO_COMBO_W)
+        self._rg_combo.setMinimumWidth(_AUDIO_COMBO_W)
         # Short labels lose context; tooltips spell out the longer
         # description we used to bake into the label.
         self._rg_combo.setToolTip(
@@ -1872,6 +1878,9 @@ class SettingsDialog(QDialog):
         )
         shuffle_form.setHorizontalSpacing(16)
         shuffle_form.setVerticalSpacing(8)
+        shuffle_form.setFieldGrowthPolicy(
+            QFormLayout.FieldGrowthPolicy.FieldsStayAtSizeHint
+        )
         sq_label = self._field_label("Queue size:")
         sq_label.setMinimumWidth(self._playback_label_w)
         self._shuffle_size_combo = _Selector()
@@ -1894,7 +1903,7 @@ class SettingsDialog(QDialog):
                 int(self._shuffle_size_combo.currentData() or 100),
             )
         )
-        self._shuffle_size_combo.setFixedWidth(120)
+        self._shuffle_size_combo.setMinimumWidth(120)
         shuffle_form.addRow(sq_label, self._shuffle_size_combo)
         v.addLayout(shuffle_form)
 
@@ -2756,7 +2765,7 @@ class SettingsDialog(QDialog):
         # as paired with the swatches rather than stretching the full page width.
         # (172 left edge → 314 right; 314 is the green swatch's right + the
         # Crossfade box's left, so 314 − 172 = 142.)
-        self._theme_combo.setFixedWidth(142)
+        self._theme_combo.setMinimumWidth(142)
         # Align left in the vbox so the fixed width sits flush with
         # the rest of the page content's left edge rather than
         # centering in the row.
@@ -2837,7 +2846,7 @@ class SettingsDialog(QDialog):
         self._active_font_scale = self._initial_font_scale
         self._select_combo_by_data(self._font_size_combo, self._initial_font_scale)
         self._font_size_combo.currentIndexChanged.connect(self._on_font_scale_changed)
-        self._font_size_combo.setFixedWidth(185)  # 281 left → 466 (eyedropper right)
+        self._font_size_combo.setMinimumWidth(185)  # 281 left → 466 (eyedropper right)
         scaling_form.addRow(
             self._field_label("Font size:"), _left(self._font_size_combo)
         )
@@ -2866,7 +2875,7 @@ class SettingsDialog(QDialog):
         self._active_font_family = self._initial_font_family
         self._select_combo_by_data(self._font_family_combo, self._initial_font_family)
         self._font_family_combo.currentIndexChanged.connect(self._on_font_family_changed)
-        self._font_family_combo.setFixedWidth(185)
+        self._font_family_combo.setMinimumWidth(185)
         scaling_form.addRow(self._field_label("Font:"), _left(self._font_family_combo))
 
         # Lyrics font size — wires live to PlayerBus, no restart needed.
@@ -2875,7 +2884,7 @@ class SettingsDialog(QDialog):
             self._lyrics_size_combo.addItem(label, key)
         self._select_combo_by_data(self._lyrics_size_combo, self.s.lyrics_font_size)
         self._lyrics_size_combo.currentIndexChanged.connect(self._on_lyrics_size_changed)
-        self._lyrics_size_combo.setFixedWidth(185)  # 281 left → 466 (eyedropper right)
+        self._lyrics_size_combo.setMinimumWidth(185)  # 281 left → 466 (eyedropper right)
         scaling_form.addRow(
             self._field_label("Lyrics font size:"), _left(self._lyrics_size_combo)
         )
