@@ -50,7 +50,7 @@ class AppearanceRevertDialog(FrostedDialog):
         self.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
         self._on_revert = on_revert
         self._kept = False
-        self._reverted = False
+        self._finished = False
         self._remaining = int(seconds)
 
         from jellytoast.design_tokens import BTN_PRIMARY, button_qss
@@ -78,7 +78,7 @@ class AppearanceRevertDialog(FrostedDialog):
         revert.setFont(_safe_qfont())
         revert.setStyleSheet(f"QPushButton {{ font-family: {_SAFE_STACK}; font-size: 14px; }}")
         revert.setCursor(Qt.CursorShape.PointingHandCursor)
-        revert.clicked.connect(self.close)  # not kept → closeEvent reverts
+        revert.clicked.connect(self.reject)  # not kept → _finish reverts
         row.addWidget(revert)
 
         keep = QPushButton("Keep")
@@ -107,28 +107,45 @@ class AppearanceRevertDialog(FrostedDialog):
     def _tick(self) -> None:
         self._remaining -= 1
         if self._remaining <= 0:
-            self.close()  # not kept → closeEvent reverts
+            self._finish()  # not kept → reverts
             return
         self._count.setText(self._count_text())
 
     def _do_keep(self) -> None:
         self._kept = True
-        self.close()
+        self._finish()
 
-    def reject(self) -> None:  # Esc / ✕ (FrostedDialog wires both to reject)
-        self.close()
+    def reject(self) -> None:  # Esc / ✕ / Revert-now (FrostedDialog wires Esc+✕)
+        self._finish()
 
-    def closeEvent(self, e) -> None:  # noqa: N802 — Qt naming
-        # Single revert chokepoint: any dismissal that isn't an explicit Keep
-        # (Revert button, Esc, ✕, timeout, WM close) reverts.
+    def _finish(self) -> None:
+        """The single, idempotent teardown chokepoint. Keep / Revert / Esc / ✕ /
+        timeout all route here: revert unless Keep was pressed, then tear down
+        with hide() + deleteLater().
+
+        Critically it does NOT call self.close(). ``QDialog.closeEvent`` calls
+        ``reject()``, and our ``reject()`` routes here — if teardown went through
+        close() that would re-enter closeEvent → reject() → close() … a mutual
+        recursion that RecursionError'd and FROZE the prompt (Keep did nothing,
+        every button dead). hide() + deleteLater() sidesteps closeEvent."""
+        if self._finished:
+            return
+        self._finished = True
         self._timer.stop()
-        if not self._kept and not self._reverted:
-            self._reverted = True
+        if not self._kept:
             try:
                 self._on_revert()
             except Exception:
                 pass
-        super().closeEvent(e)
+        self.hide()
+        self.deleteLater()
+
+    def closeEvent(self, e) -> None:  # noqa: N802 — WM / programmatic close()
+        # Route a stray close() through the same chokepoint, but do NOT chain to
+        # QDialog.closeEvent (which calls reject() → would recurse). _finish is
+        # idempotent, so if Keep/Revert already ran, this is a no-op.
+        self._finish()
+        e.accept()
 
 
 # Module-level ref keeps the dialog alive even if it ends up parentless (tests);
