@@ -31,6 +31,7 @@ from jellytoast.design_tokens import (
     SPACE_SM,
     TYPE_CAPTION,
     TYPE_TITLE,
+    rad,
     type_qss,
 )
 from jellytoast.player_state import PlayerBus
@@ -121,7 +122,7 @@ class _SmartPlaylistRow(QFrame):
             QFrame#smartPlaylistRow {{
                 background: {ink_alpha(0.03)};
                 border: 1px solid {ink_alpha(0.06)};
-                border-radius: 8px;
+                border-radius: {rad(8)}px;
             }}
             QFrame#smartPlaylistRow:hover {{
                 background: {ink_alpha(0.06)};

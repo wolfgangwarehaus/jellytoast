@@ -84,33 +84,38 @@ class TypeTier:
     uppercase: bool = False
 
 
-TYPE_DISPLAY = TypeTier("display", size_px=_fs(22), weight=700)
-TYPE_TITLE = TypeTier("title", size_px=_fs(18), weight=600)
-TYPE_HEADING = TypeTier("heading", size_px=_fs(16), weight=600)
-TYPE_SUBHEAD = TypeTier("subhead", size_px=_fs(14), weight=600)
-TYPE_BODY = TypeTier("body", size_px=_fs(13), weight=400)
-TYPE_CAPTION = TypeTier("caption", size_px=_fs(12), weight=400)
-# TINY: 11px non-uppercase tertiary text. Distinct from MICRO, which is
-# 11px ALL-CAPS for kicker / eyebrow labels. Used for time codes,
-# mini-player subtitles, and bar metadata in split mode — anywhere a
-# label needs to read as "smaller than caption" without taking on the
-# kicker treatment.
-TYPE_TINY = TypeTier("tiny", size_px=_fs(11), weight=400)
-TYPE_MICRO = TypeTier("micro", size_px=_fs(11), weight=700, letter_spacing_em=0.12, uppercase=True)
-
-TYPE: dict[str, TypeTier] = {
-    t.name: t
-    for t in (
-        TYPE_DISPLAY,
-        TYPE_TITLE,
-        TYPE_HEADING,
-        TYPE_SUBHEAD,
-        TYPE_BODY,
-        TYPE_CAPTION,
-        TYPE_TINY,
-        TYPE_MICRO,
+def _make_type_tokens() -> "tuple[TypeTier, ...]":
+    """Build the typography tiers from their raw base sizes through ``_fs()``,
+    so a font-scale change can rebuild them at runtime (see ``refresh_fonts``).
+    Order matches the unpacking below. TINY is 11px non-uppercase tertiary text
+    (time codes, mini-player subtitles); MICRO is 11px ALL-CAPS kicker labels."""
+    return (
+        TypeTier("display", size_px=_fs(22), weight=700),
+        TypeTier("title", size_px=_fs(18), weight=600),
+        TypeTier("heading", size_px=_fs(16), weight=600),
+        TypeTier("subhead", size_px=_fs(14), weight=600),
+        TypeTier("body", size_px=_fs(13), weight=400),
+        TypeTier("caption", size_px=_fs(12), weight=400),
+        TypeTier("tiny", size_px=_fs(11), weight=400),
+        TypeTier("micro", size_px=_fs(11), weight=700, letter_spacing_em=0.12, uppercase=True),
     )
-}
+
+
+# Built from one tuple so ``TYPE[...]`` holds the SAME tier objects as the
+# module-level ``TYPE_*`` names (a live rebuild must keep them in lockstep).
+_type_tokens = _make_type_tokens()
+(
+    TYPE_DISPLAY,
+    TYPE_TITLE,
+    TYPE_HEADING,
+    TYPE_SUBHEAD,
+    TYPE_BODY,
+    TYPE_CAPTION,
+    TYPE_TINY,
+    TYPE_MICRO,
+) = _type_tokens
+
+TYPE: dict[str, TypeTier] = {t.name: t for t in _type_tokens}
 
 
 def font(tier: TypeTier) -> QFont:
@@ -179,10 +184,57 @@ SPACE_XXL = 32
 
 # ── Radii ───────────────────────────────────────────────────────────────────
 
-RADIUS_SM = 4
-RADIUS_MD = 6
-RADIUS_LG = 8
-RADIUS_XL = 12
+
+def _load_square_corners() -> bool:
+    """Read ``ui/square_corners`` from QSettings without requiring a
+    QApplication — same standalone handle as ``_load_font_scale``. Baked
+    into the radius tokens below at import, so (like font_scale) the
+    "Square corners" setting takes effect on the next launch."""
+    try:
+        from PySide6.QtCore import QSettings
+
+        return bool(
+            QSettings("jellytoast", "jellytoast").value(
+                "ui/square_corners", False, type=bool
+            )
+        )
+    except Exception:
+        return False
+
+
+_SQUARE_CORNERS: bool = _load_square_corners()
+
+
+def rad(px: int) -> int:
+    """Resolve a corner radius honoring the "Square corners" setting: 0 when
+    square is on, else ``px`` unchanged. The pill/circle sentinel (>= 1000,
+    e.g. ``RADIUS_PILL``) passes through untouched, so genuinely circular or
+    pill controls — round icon buttons, the slider handle, avatars — never
+    collapse to a sharp square. The ``RADIUS_*`` tokens are pre-resolved
+    through this; call ``rad()`` directly only for literal radii at sites
+    that don't go through a token."""
+    if _SQUARE_CORNERS and px < 1000:
+        return 0
+    return px
+
+
+def set_square_corners(on: bool) -> None:
+    """Flip the in-memory square-corners flag. The radius tokens are baked at
+    import, so this alone does NOT re-square already-built surfaces — the
+    Settings setter persists the QSetting and the change takes full effect on
+    the next launch (the Settings UI shows the restart notice). Exposed mainly
+    for tests."""
+    global _SQUARE_CORNERS
+    _SQUARE_CORNERS = bool(on)
+
+
+# Every finite radius flows through rad() so "Square corners" zeros them all
+# from one place. RADIUS_PILL is the circular/pill sentinel — left as-is, and
+# rad() passes anything >= 1000 through, so round controls stay round.
+RADIUS_SM = rad(4)
+RADIUS_MD = rad(6)
+RADIUS_LG = rad(8)
+RADIUS_XL = rad(12)
 RADIUS_PILL = 9999
 
 # Host-OS window-corner radius. jellytoast's frameless surfaces (mini
@@ -190,8 +242,10 @@ RADIUS_PILL = 9999
 # decoration, so the app paints its own corners. Matching this to the
 # native window-corner radius keeps them uniform with the rest of the
 # desktop. KDE Breeze ≈ 8px (measured 2026-05-21). Per-OS values slot
-# in here when the Windows / macOS backends arrive.
-RADIUS_WINDOW = 8
+# in here when the Windows / macOS backends arrive. Flows through rad() so
+# square corners squares the window chrome AND the blur shape (both derive
+# from this one token) together.
+RADIUS_WINDOW = rad(8)
 
 
 # ── Buttons ─────────────────────────────────────────────────────────────────
@@ -210,47 +264,57 @@ class ButtonTier:
 # Button geometry scales with the font multiplier so text-anchored
 # buttons grow/shrink with their labels. Radii stay token-fixed —
 # corner curvature is a constant of the design system.
-BTN_PRIMARY = ButtonTier(
-    "primary", height_px=_fs(36), pad_x=_fs(14), pad_y=_fs(8), radius=RADIUS_LG, type_tier=TYPE_BODY
-)
-BTN_SECONDARY = ButtonTier(
-    "secondary",
-    height_px=_fs(36),
-    pad_x=_fs(14),
-    pad_y=_fs(8),
-    radius=RADIUS_LG,
-    type_tier=TYPE_BODY,
-)
-BTN_GHOST = ButtonTier(
-    "ghost", height_px=_fs(32), pad_x=_fs(12), pad_y=_fs(6), radius=RADIUS_MD, type_tier=TYPE_BODY
-)
-BTN_ICON = ButtonTier(
-    "icon",
-    height_px=_fs(32),
-    pad_x=_fs(8),
-    pad_y=_fs(8),
-    radius=RADIUS_PILL,
-    type_tier=TYPE_CAPTION,
-)
-BTN_DESTRUCTIVE = ButtonTier(
-    "destructive",
-    height_px=_fs(36),
-    pad_x=_fs(14),
-    pad_y=_fs(8),
-    radius=RADIUS_LG,
-    type_tier=TYPE_BODY,
-)
-
-BUTTON: dict[str, ButtonTier] = {
-    b.name: b
-    for b in (
-        BTN_PRIMARY,
-        BTN_SECONDARY,
-        BTN_GHOST,
-        BTN_ICON,
-        BTN_DESTRUCTIVE,
+def _make_button_tokens(body: TypeTier, caption: TypeTier) -> "tuple[ButtonTier, ...]":
+    """Build the button tiers from raw base geometry through ``_fs()`` (so they
+    rebuild on a font-scale change) against the CURRENT type + radius tokens."""
+    return (
+        ButtonTier("primary", height_px=_fs(36), pad_x=_fs(14), pad_y=_fs(8),
+                   radius=RADIUS_LG, type_tier=body),
+        ButtonTier("secondary", height_px=_fs(36), pad_x=_fs(14), pad_y=_fs(8),
+                   radius=RADIUS_LG, type_tier=body),
+        ButtonTier("ghost", height_px=_fs(32), pad_x=_fs(12), pad_y=_fs(6),
+                   radius=RADIUS_MD, type_tier=body),
+        ButtonTier("icon", height_px=_fs(32), pad_x=_fs(8), pad_y=_fs(8),
+                   radius=RADIUS_PILL, type_tier=caption),
+        ButtonTier("destructive", height_px=_fs(36), pad_x=_fs(14), pad_y=_fs(8),
+                   radius=RADIUS_LG, type_tier=body),
     )
-}
+
+
+_btn_tokens = _make_button_tokens(TYPE_BODY, TYPE_CAPTION)
+(BTN_PRIMARY, BTN_SECONDARY, BTN_GHOST, BTN_ICON, BTN_DESTRUCTIVE) = _btn_tokens
+
+BUTTON: dict[str, ButtonTier] = {b.name: b for b in _btn_tokens}
+
+
+def refresh_fonts() -> None:
+    """Recompute ``FONT_SCALE`` from settings and REBUILD every size-derived
+    token (``TYPE_*`` + the ``TYPE`` dict, ``BTN_*`` + ``BUTTON``) so a
+    font-scale change applies WITHOUT a restart. The tiers are frozen
+    dataclasses, so this reassigns the module globals; pair it with
+    ``ui_helpers._propagate_font_constants()`` to reach the modules that
+    imported these names by value, then emit ``theme_changed`` so each surface
+    re-runs ``type_qss`` / ``_build_fonts`` and picks up the new sizes."""
+    global FONT_SCALE
+    global TYPE_DISPLAY, TYPE_TITLE, TYPE_HEADING, TYPE_SUBHEAD
+    global TYPE_BODY, TYPE_CAPTION, TYPE_TINY, TYPE_MICRO, TYPE
+    global BTN_PRIMARY, BTN_SECONDARY, BTN_GHOST, BTN_ICON, BTN_DESTRUCTIVE, BUTTON
+    FONT_SCALE = _load_font_scale()
+    tt = _make_type_tokens()
+    (
+        TYPE_DISPLAY,
+        TYPE_TITLE,
+        TYPE_HEADING,
+        TYPE_SUBHEAD,
+        TYPE_BODY,
+        TYPE_CAPTION,
+        TYPE_TINY,
+        TYPE_MICRO,
+    ) = tt
+    TYPE = {t.name: t for t in tt}
+    bt = _make_button_tokens(TYPE_BODY, TYPE_CAPTION)
+    (BTN_PRIMARY, BTN_SECONDARY, BTN_GHOST, BTN_ICON, BTN_DESTRUCTIVE) = bt
+    BUTTON = {b.name: b for b in bt}
 
 
 # Destructive red — kept here rather than `theme.py` because it should

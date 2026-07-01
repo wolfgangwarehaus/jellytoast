@@ -32,7 +32,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from jellytoast.design_tokens import RADIUS_WINDOW
+from jellytoast.design_tokens import RADIUS_WINDOW, rad
 
 
 class FrostedDialog(QDialog):
@@ -120,7 +120,7 @@ class FrostedDialog(QDialog):
         close_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         close_btn.setStyleSheet(
             f"QPushButton {{ background: transparent; color: {TEXT_DIM}; "
-            f"border: none; border-radius: 6px; {type_qss(TYPE_CAPTION)} }}"
+            f"border: none; border-radius: {rad(6)}px; {type_qss(TYPE_CAPTION)} }}"
             f"QPushButton:hover {{ background: {WASH_HOVER}; color: {TEXT}; }}"
         )
         close_btn.clicked.connect(self.reject)

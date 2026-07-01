@@ -55,6 +55,7 @@ from jellytoast.design_tokens import (
     TYPE_CAPTION,
     TYPE_MICRO,
     TYPE_TINY,
+    rad,
 )
 from jellytoast.player_state import (
     PlayerBus,
@@ -630,7 +631,7 @@ class _TrackDelegate(QStyledItemDelegate):
         if is_pressed:
             inset = rect.adjusted(self.LEFT_PAD - 4, 2, -(self.LEFT_PAD - 4), -2)
             path = QPainterPath()
-            path.addRoundedRect(QRectF(inset), 6, 6)
+            path.addRoundedRect(QRectF(inset), rad(6), rad(6))
             painter.fillPath(path, QColor(*ink, 28))
         elif is_kb_cursor and not suppress_hover:
             # Keyboard-arrow cursor — between hover and press in
@@ -638,12 +639,12 @@ class _TrackDelegate(QStyledItemDelegate):
             # without it looking like they're already clicking.
             inset = rect.adjusted(self.LEFT_PAD - 4, 2, -(self.LEFT_PAD - 4), -2)
             path = QPainterPath()
-            path.addRoundedRect(QRectF(inset), 6, 6)
+            path.addRoundedRect(QRectF(inset), rad(6), rad(6))
             painter.fillPath(path, QColor(*ink, 18))
         elif not suppress_hover and option.state & QStyle.StateFlag.State_MouseOver:
             inset = rect.adjusted(self.LEFT_PAD - 4, 2, -(self.LEFT_PAD - 4), -2)
             path = QPainterPath()
-            path.addRoundedRect(QRectF(inset), 6, 6)
+            path.addRoundedRect(QRectF(inset), rad(6), rad(6))
             painter.fillPath(path, QColor(*ink, 10))
 
         # Index column — IndexNumber when present else play-position.
@@ -1493,7 +1494,7 @@ class _TracksListView(QListView):
             # painted outside becomes transparent, so the rest of the
             # pixmap (margins) doesn't render as a hard square.
             path = QPainterPath()
-            path.addRoundedRect(inner, 6.0, 6.0)
+            path.addRoundedRect(inner, float(rad(6)), float(rad(6)))
             p.setClipPath(path)
             # Opaque-ish dark base so rows beneath don't bleed through.
             p.fillRect(inner, QColor(28, 30, 36, 235))

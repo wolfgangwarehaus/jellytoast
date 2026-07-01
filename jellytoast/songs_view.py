@@ -52,11 +52,13 @@ from PySide6.QtWidgets import (
 from jellytoast import disk_cache
 from jellytoast.async_io import run_async
 from jellytoast.design_tokens import (
+    RADIUS_SM,
     SPACE_LG,
     SPACE_MD,
     SPACE_SM,
     TYPE_BODY,
     TYPE_CAPTION,
+    rad,
 )
 from jellytoast.keyboard_focus import (
     focus_first_item_on,
@@ -188,7 +190,7 @@ class _SongRowDelegate(QStyledItemDelegate):
     RIGHT_PAD = SPACE_MD
     COL_GAP = SPACE_MD
     DURATION_W = 56
-    THUMB_RADIUS = 4
+    THUMB_RADIUS = RADIUS_SM
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -246,7 +248,7 @@ class _SongRowDelegate(QStyledItemDelegate):
 
             inset = rect.adjusted(SPACE_SM, 2, -SPACE_SM, -2)
             path = QPainterPath()
-            path.addRoundedRect(QRectF(inset), 6, 6)
+            path.addRoundedRect(QRectF(inset), rad(6), rad(6))
             fill = QColor(ACCENT)
             fill.setAlpha(46)
             painter.fillPath(path, fill)
@@ -262,7 +264,7 @@ class _SongRowDelegate(QStyledItemDelegate):
         elif option.state & QStyle.StateFlag.State_MouseOver:
             inset = rect.adjusted(SPACE_SM, 2, -SPACE_SM, -2)
             path = QPainterPath()
-            path.addRoundedRect(QRectF(inset), 6, 6)
+            path.addRoundedRect(QRectF(inset), rad(6), rad(6))
             painter.fillPath(path, QColor(*_ink, 10))
 
         thumb_y = rect.y() + (rect.height() - self.THUMB_SIZE) // 2

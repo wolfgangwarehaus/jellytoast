@@ -49,6 +49,7 @@ from jellytoast.design_tokens import (
     TYPE_CAPTION,
     TYPE_SUBHEAD,
     TYPE_TINY,
+    rad,
     type_qss,
 )
 from jellytoast.icons import icon
@@ -138,7 +139,7 @@ class _Swatch(QWidget):
         # Rounded-square clip so both the checker AND the color fill
         # respect the corner radius.
         path = QPainterPath()
-        path.addRoundedRect(0, 0, self.SIDE, self.SIDE, 6, 6)
+        path.addRoundedRect(0, 0, self.SIDE, self.SIDE, rad(6), rad(6))
         p.setClipPath(path)
         # Checkerboard backdrop — 4px tiles in two greys so the
         # transparency of the fill on top is obvious.
@@ -156,7 +157,7 @@ class _Swatch(QWidget):
         # a hardcoded white outline vanished on light-fill tokens in light.
         p.setClipping(False)
         p.setPen(QColor(*ink_rgb(), 40))
-        p.drawRoundedRect(0, 0, self.SIDE - 1, self.SIDE - 1, 6, 6)
+        p.drawRoundedRect(0, 0, self.SIDE - 1, self.SIDE - 1, rad(6), rad(6))
 
 
 # ── Per-token editor row ────────────────────────────────────────────────────
@@ -172,15 +173,15 @@ class _ColorTokenRow(QWidget):
         QSlider::groove:horizontal {{
             height: 3px;
             background: {ink_alpha(0.18)};
-            border-radius: 2px;
+            border-radius: {rad(2)}px;
         }}
         QSlider::sub-page:horizontal {{
             background: {ink_alpha(0.45)};
-            border-radius: 2px;
+            border-radius: {rad(2)}px;
         }}
         QSlider::add-page:horizontal {{
             background: {ink_alpha(0.18)};
-            border-radius: 2px;
+            border-radius: {rad(2)}px;
         }}
         QSlider::handle:horizontal {{
             width: 10px; height: 10px; margin: -4px 0;
@@ -250,7 +251,7 @@ class _ColorTokenRow(QWidget):
                 background: {ink_alpha(0.06)};
                 color: {ink_alpha(0.85)};
                 border: none;
-                border-radius: 4px;
+                border-radius: {rad(4)}px;
                 padding: 0 8px;
                 {type_qss(TYPE_TINY)}
             }}
@@ -465,7 +466,7 @@ def build_colors_page() -> QWidget:
             background: {ink_alpha(0.06)};
             color: {ink_alpha(0.85)};
             border: 1px solid {ink_alpha(0.12)};
-            border-radius: 6px;
+            border-radius: {rad(6)}px;
             padding: 6px 12px;
             {type_qss(TYPE_CAPTION)}
         }}

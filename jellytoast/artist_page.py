@@ -44,6 +44,7 @@ from jellytoast.design_tokens import (
     TYPE_MICRO,
     apply_type,
     font,
+    rad,
     type_qss,
 )
 from jellytoast.keyboard_focus import (
@@ -365,7 +366,7 @@ class ArtistPage(QWidget):
             }}
             QWidget#artistPage QScrollBar::handle:vertical {{
                 background: {_u.SLIDER_GROOVE};
-                border-radius: 3px; min-height: 28px;
+                border-radius: {rad(3)}px; min-height: 28px;
             }}
             QWidget#artistPage QScrollBar::handle:vertical:hover {{
                 background: {ink_alpha(0.32)};

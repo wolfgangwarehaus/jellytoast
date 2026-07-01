@@ -218,6 +218,7 @@ from jellytoast.design_tokens import (
     TYPE_SUBHEAD,
     TYPE_TITLE,
     font,
+    rad,
     type_qss,
 )
 from jellytoast.icon_button import IconButton
@@ -446,7 +447,7 @@ class _AboutDialog(QDialog):
             QPushButton {{
                 background: transparent;
                 border: none;
-                border-radius: 6px;
+                border-radius: {rad(6)}px;
             }}
             QPushButton:hover {{ background: {_u.WASH_HOVER}; }}
         """
@@ -680,7 +681,13 @@ class SettingsDialog(QDialog):
         # Height 540→620: lets the Playback page (Audio / Crossfade /
         # EQ / Shuffle) sit fully visible without invoking the page
         # scroller.
-        self.setFixedSize(720, 620)
+        #
+        # 720×620 is the tuned baseline for the default font (Inter @ default
+        # scale). It's scaled proportionally with the active font so a larger
+        # font scale or a wide/monospace family gets a proportionally bigger
+        # dialog (and a small scale a smaller one) instead of clipping — the
+        # pages scroll for any residual overflow. See _adaptive_dialog_size.
+        self.setFixedSize(*self._adaptive_dialog_size())
 
         # Independent top-level window (not ``Qt.Dialog``): KWin treats
         # ``Qt.Dialog`` as transient-for-parent, which pins it above
@@ -790,6 +797,11 @@ class SettingsDialog(QDialog):
         # picker + screen eyedropper on the Display page remain the only colour
         # controls users see.
 
+        # Width the sidebar to its longest label in the ACTIVE font now that
+        # every page (and thus every nav row) has been registered — a fixed
+        # 128px clipped "Scrobbling"/"Downloads" in a wide/monospace font.
+        self._size_nav_to_content()
+
         self.nav.currentRowChanged.connect(self._on_nav_changed)
         self.nav.setCurrentRow(0)  # fires _on_nav_changed → builds page 0
         # Seed keyboard focus on the sidebar so the dialog opens ready for
@@ -821,6 +833,45 @@ class SettingsDialog(QDialog):
         except Exception:
             pass
 
+    def _adaptive_dialog_size(self) -> tuple[int, int]:
+        """The dialog size for the active font. Keeps the tuned 720×620
+        balance but scales it: by the font-size scale in BOTH dimensions
+        (larger scale → bigger, small → smaller), and by a WIDTH-only factor
+        for wide/monospace families so their extra character width doesn't
+        overflow. Capped to the screen; residual overflow scrolls per-page."""
+        from PySide6.QtGui import QFontInfo
+        from PySide6.QtWidgets import QApplication
+
+        from jellytoast.design_tokens import FONT_SCALE
+
+        base_w, base_h = 720, 620
+        # Scale both dimensions by the font-size scale so the DEFAULT font at
+        # the default scale lands exactly on the tuned 720×620 ("where we
+        # started"), a larger scale grows it, a smaller one shrinks it — the
+        # balance is preserved. A monospace family packs wider glyphs, so give
+        # it a little extra WIDTH only (nothing changes for proportional fonts).
+        width_family = 1.10 if QFontInfo(QApplication.font()).fixedPitch() else 1.0
+        w = round(base_w * FONT_SCALE * width_family)
+        h = round(base_h * FONT_SCALE)
+        scr = self.screen() or QApplication.primaryScreen()
+        if scr is not None:
+            avail = scr.availableGeometry()
+            w = min(w, avail.width() - 64)
+            h = min(h, avail.height() - 64)
+        return int(w), int(h)
+
+    def _size_nav_to_content(self) -> None:
+        """Width the sidebar to its longest label in the active font + the
+        item/list padding, so a wide/monospace font never clips a nav row
+        (it was a fixed 128px tuned for Inter)."""
+        fm = self.nav.fontMetrics()
+        text_w = max(
+            (fm.horizontalAdvance(self.nav.item(i).text()) for i in range(self.nav.count())),
+            default=96,
+        )
+        # item padding (14+14) + list padding (4+4) + a little breathing room.
+        self.nav.setFixedWidth(int(text_w) + 28 + 8 + 8)
+
     def _nav_qss(self) -> str:
         """Sidebar nav QSS — bakes TEXT / TEXT_DIM / ink_alpha(), so
         rebuilt on a live theme switch (see `_rebuild_pages_for_theme`,
@@ -835,7 +886,7 @@ class SettingsDialog(QDialog):
             QListWidget::item {{
                 color: {TEXT_DIM};
                 padding: 9px 14px;
-                border-radius: 8px;
+                border-radius: {rad(8)}px;
                 margin: 2px 0;
             }}
             QListWidget::item:hover {{
@@ -1048,9 +1099,9 @@ class SettingsDialog(QDialog):
         from jellytoast.ui_helpers import ACCENT
 
         return f"""
-            QPushButton {{ background: transparent; border: 1px solid transparent; border-radius: 6px; }}
-            QPushButton:hover {{ background: {ink_alpha(0.08)}; border-radius: 6px; }}
-            QPushButton:focus {{ background: {ink_alpha(0.08)}; border: 1px solid {ACCENT}; border-radius: 6px; outline: none; }}
+            QPushButton {{ background: transparent; border: 1px solid transparent; border-radius: {rad(6)}px; }}
+            QPushButton:hover {{ background: {ink_alpha(0.08)}; border-radius: {rad(6)}px; }}
+            QPushButton:focus {{ background: {ink_alpha(0.08)}; border: 1px solid {ACCENT}; border-radius: {rad(6)}px; outline: none; }}
         """
 
     @staticmethod
@@ -1060,7 +1111,7 @@ class SettingsDialog(QDialog):
         return f"""
             QPushButton {{
                 background: transparent; color: {TEXT_DIM};
-                border: none; border-radius: 6px; {type_qss(TYPE_CAPTION)}
+                border: none; border-radius: {rad(6)}px; {type_qss(TYPE_CAPTION)}
             }}
             QPushButton:hover {{ background: {WASH_HOVER}; color: {TEXT}; }}
         """
@@ -1394,7 +1445,7 @@ class SettingsDialog(QDialog):
         color, tip = self._CONN_DOT_STATES.get(state, self._CONN_DOT_STATES["checking"])
         # 8×8 with border-radius 4 → circle.
         dot.setStyleSheet(
-            f"QLabel {{ background: {color}; border-radius: 4px; }}"
+            f"QLabel {{ background: {color}; border-radius: {rad(4)}px; }}"
         )
         dot.setToolTip(tip)
 
@@ -1677,7 +1728,7 @@ class SettingsDialog(QDialog):
         self._bp_path_hint.setStyleSheet(
             f"color: {TEXT_DIM}; "
             f"background: {ink_alpha(0.05)}; "
-            f"border-radius: 6px; "
+            f"border-radius: {rad(6)}px; "
             f"padding: 8px 12px; "
             f"{type_qss(TYPE_CAPTION)}"
         )
@@ -2081,10 +2132,10 @@ class SettingsDialog(QDialog):
 
         return f"""
             QSlider::groove:horizontal {{
-                height: 3px; background: {ink_alpha(0.12)}; border-radius: 1px;
+                height: 3px; background: {ink_alpha(0.12)}; border-radius: {rad(1)}px;
             }}
             QSlider::sub-page:horizontal {{
-                background: {_ACCENT_NOW}; border-radius: 1px;
+                background: {_ACCENT_NOW}; border-radius: {rad(1)}px;
             }}
             QSlider::add-page:horizontal {{
                 background: transparent;
@@ -2659,13 +2710,13 @@ class SettingsDialog(QDialog):
         # a new theme / accent. Visible only after a dirty change.
         _ar2, _ag2, _ab2 = _hex_to_rgb(ACCENT)
         self._theme_restart_notice = QLabel(
-            "Restart jellytoast to apply the new font size."
+            "Restart jellytoast to apply your display changes."
         )
         self._theme_restart_notice.setWordWrap(True)
         self._theme_restart_notice.setStyleSheet(
             f"color: {TEXT}; "
             f"background: rgba({_ar2},{_ag2},{_ab2},0.18); "
-            f"border-radius: 6px; "
+            f"border-radius: {rad(6)}px; "
             f"padding: 10px 14px; "
             f"{type_qss(TYPE_CAPTION)}"
         )
@@ -2711,7 +2762,7 @@ class SettingsDialog(QDialog):
         self._blur_hint.setStyleSheet(
             f"color: {TEXT_DIM}; "
             f"background: {ink_alpha(0.05)}; "
-            f"border-radius: 6px; "
+            f"border-radius: {rad(6)}px; "
             f"padding: 8px 12px; "
             f"{type_qss(TYPE_CAPTION)}"
         )
@@ -2772,12 +2823,41 @@ class SettingsDialog(QDialog):
         for label, key in LYRICS_FONT_SIZES:
             self._font_size_combo.addItem(label, key)
         self._initial_font_scale = self.s.font_scale
+        # Currently-APPLIED scale — updated on each live apply / revert.
+        self._active_font_scale = self._initial_font_scale
         self._select_combo_by_data(self._font_size_combo, self._initial_font_scale)
         self._font_size_combo.currentIndexChanged.connect(self._on_font_scale_changed)
         self._font_size_combo.setFixedWidth(185)  # 281 left → 466 (eyedropper right)
         scaling_form.addRow(
             self._field_label("Font size:"), _left(self._font_size_combo)
         )
+
+        # Font family — app-wide UI text font. Lists installed families that
+        # can render Latin text (drops private + symbol/icon fonts so the user
+        # can't pick one that renders all text as tofu). "System default" maps
+        # to '' = the built-in Inter stack. Writes settings.font_family and
+        # triggers the restart notice; applied via the global QSS font stack +
+        # app.setFont at boot. Icons are SVG, so they're never affected.
+        from PySide6.QtGui import QFont, QFontDatabase
+
+        self._font_family_combo = _Selector()
+        self._font_family_combo.addItem("System default", "")
+        _latin = QFontDatabase.WritingSystem.Latin
+        for _fam in QFontDatabase.families():
+            if QFontDatabase.isPrivateFamily(_fam):
+                continue
+            if _latin not in QFontDatabase.writingSystems(_fam):
+                continue
+            # Preview each family in its own typeface in the dropdown.
+            self._font_family_combo.addItem(_fam, _fam, font=QFont(_fam))
+        self._initial_font_family = self.s.font_family
+        # Currently-APPLIED family — updated on each live apply / revert so a
+        # subsequent pick reverts to the right previous value.
+        self._active_font_family = self._initial_font_family
+        self._select_combo_by_data(self._font_family_combo, self._initial_font_family)
+        self._font_family_combo.currentIndexChanged.connect(self._on_font_family_changed)
+        self._font_family_combo.setFixedWidth(185)
+        scaling_form.addRow(self._field_label("Font:"), _left(self._font_family_combo))
 
         # Lyrics font size — wires live to PlayerBus, no restart needed.
         self._lyrics_size_combo = _Selector()
@@ -2892,6 +2972,25 @@ class SettingsDialog(QDialog):
             nb_row.addStretch(1)
             v.addLayout(nb_row)
 
+        # Square corners — zero every rounded corner in the UI (windows, album
+        # art, tiles, dialogs, players, buttons, popups); genuinely circular
+        # controls (round icon buttons, the slider handle) stay round.
+        # design_tokens bakes the radii at module import, so this is restart-
+        # required; the toggle persists the intent and shows the notice.
+        sc_row = QHBoxLayout()
+        sc_row.setContentsMargins(0, 0, 0, 0)
+        sc_row.setSpacing(10)
+        self._square_corners_check = QCheckBox("Square corners")
+        self._initial_square_corners = self.s.square_corners
+        self._square_corners_check.setChecked(self._initial_square_corners)
+        self._square_corners_check.toggled.connect(self._on_square_corners_changed)
+        sc_row.addWidget(self._square_corners_check)
+        sc_hint = QLabel("(needs restart)")
+        sc_hint.setStyleSheet(f"color: {TEXT_FAINT}; {type_qss(TYPE_CAPTION)}")
+        sc_row.addWidget(sc_hint)
+        sc_row.addStretch(1)
+        v.addLayout(sc_row)
+
         # NB: no "Opaque background" toggle. A frosted theme that can't get
         # real compositor blur already falls back to a near-opaque body
         # automatically (see jellytoast.blur.status() + theme.body_color_for),
@@ -2915,25 +3014,79 @@ class SettingsDialog(QDialog):
         PlayerBus.get().lyrics_font_size_changed.emit(key)
 
     def _on_font_scale_changed(self):
-        # Persist immediately; design_tokens picks it up on the next
-        # module import (i.e. next launch). Show the same restart
-        # notice the theme + accent path uses so the user gets one
-        # consolidated reminder regardless of which display setting
-        # they changed.
-        key = self._font_size_combo.currentData() or "default"
-        self.s.font_scale = key
+        # LIVE-apply the font scale (no restart) + keep/auto-revert prompt.
+        new = self._font_size_combo.currentData() or "default"
+        old = self._active_font_scale
+        if new == old:
+            return
+        from PySide6.QtCore import QTimer
+
+        from jellytoast.appearance_confirm import show_appearance_revert
+        from jellytoast.ui_helpers import apply_font_settings_live
+
+        def _apply(scale):
+            self.s.font_scale = scale
+            apply_font_settings_live()  # recomputes + propagates the size tokens
+            self._active_font_scale = scale
+            self.setFixedSize(*self._adaptive_dialog_size())  # the dialog scales too
+            # Rebuild this dialog's pages so its OWN labels re-stamp at the new
+            # size — they bake type_qss at construction and don't otherwise
+            # re-run. Deferred: the combo that fired this lives on the page we
+            # tear down. The rebuilt combo re-selects the current scale, and
+            # its connect happens after selection so it won't re-fire.
+            QTimer.singleShot(0, self._rebuild_pages_for_theme)
+
+        _apply(new)
+        show_appearance_revert(lambda: _apply(old))
+
+    def _on_font_family_changed(self):
+        # LIVE-apply the font family (no restart) and show a keep/auto-revert
+        # safety prompt so a broken/illegible pick undoes itself in 10s.
+        new = self._font_family_combo.currentData() or ""
+        old = self._active_font_family
+        if new == old:
+            return
+        from jellytoast.appearance_confirm import show_appearance_revert
+        from jellytoast.ui_helpers import apply_font_settings_live
+
+        self.s.font_family = new
+        apply_font_settings_live()  # reads settings.font_family live
+        self._active_font_family = new
+
+        def _revert(old=old):
+            self.s.font_family = old
+            apply_font_settings_live()
+            self._active_font_family = old
+            # Reset the combo without re-firing this handler.
+            self._font_family_combo.blockSignals(True)
+            self._select_combo_by_data(self._font_family_combo, old)
+            self._font_family_combo.blockSignals(False)
+
+        show_appearance_revert(_revert)
+
+    def _on_square_corners_changed(self, on: bool):
+        # Persist + keep the in-memory design_tokens flag in sync, then show
+        # the restart notice — the radius tokens are baked at import, so the
+        # squared/rounded look fully applies on the next launch.
+        self.s.square_corners = bool(on)
+        from jellytoast.design_tokens import set_square_corners
+
+        set_square_corners(bool(on))
         self._refresh_restart_notice_visibility()
 
     def _refresh_restart_notice_visibility(self):
         """Show the restart banner if a setting that bakes into module
         state differs from the value loaded when the dialog opened.
 
-        Only ``font_scale`` still requires a restart — ``design_tokens``
-        reads it at import time. Theme mode and accent both live-apply
-        via ``refresh_theme()`` + ``PlayerBus.theme_changed`` (see
-        ``_on_theme_changed`` / ``_on_accent_picked``), so neither is
+        ``square_corners`` bakes into ``design_tokens`` at import time, so it's
+        the only setting that still needs a restart. Font family + font scale
+        now live-apply (``apply_font_settings_live`` — the tokens are recomputed
+        + propagated at runtime), and theme mode / accent live-apply via
+        ``refresh_theme()`` + ``PlayerBus.theme_changed`` — so none of those are
         part of the dirty check."""
-        dirty = self.s.font_scale != self._initial_font_scale
+        dirty = self.s.square_corners != getattr(
+            self, "_initial_square_corners", self.s.square_corners
+        )
         self._theme_restart_notice.setVisible(dirty)
 
     def _update_blur_hint(self):
@@ -3190,7 +3343,7 @@ class SettingsDialog(QDialog):
         binding.setStyleSheet(
             f"color: {TEXT_DIM}; {type_qss(TYPE_CAPTION)}"
             f"background: {ink_alpha(0.06)}; padding: 3px 9px; "
-            "border-radius: 5px;"
+            "border-radius: {rad(5)}px;"
         )
         row.addWidget(binding)
         return row
@@ -3217,7 +3370,7 @@ class SettingsDialog(QDialog):
         warning.setStyleSheet(
             f"color: {TEXT_DIM}; {type_qss(TYPE_CAPTION)}"
             f"padding: 10px 12px; border: 1px solid {border};"
-            f"border-radius: 8px; background: {bg};"
+            f"border-radius: {rad(8)}px; background: {bg};"
         )
 
     # ── Page: Scrobbling (placeholder) ─────────────────────────────────
@@ -3683,7 +3836,7 @@ class SettingsDialog(QDialog):
         from jellytoast.ui_helpers import ACCENT
 
         btn.setStyleSheet(
-            "QPushButton { border: 1px solid transparent; background: transparent; padding: 0; border-radius: 5px; }"
+            "QPushButton { border: 1px solid transparent; background: transparent; padding: 0; border-radius: {rad(5)}px; }"
             f"QPushButton:focus {{ border: 1px solid {ACCENT}; outline: none; }}"
         )
 
@@ -3826,7 +3979,7 @@ class SettingsDialog(QDialog):
                 border-bottom: 1px solid rgba({_ar},{_ag},{_ab},0.45);
                 border-left: 1px solid rgba({_ar},{_ag},{_ab},0.45);
                 border-right: 1px solid rgba({_ar},{_ag},{_ab},0.45);
-                border-radius: 6px;
+                border-radius: {rad(6)}px;
                 padding: 6px 12px;
                 {type_qss(TYPE_BODY)}
                 /* No min-height — when paired with the General page's
@@ -3886,7 +4039,7 @@ class SettingsDialog(QDialog):
                 background: {ink_alpha(0.06)};
                 color: {TEXT};
                 border: 1px solid rgba({_ar},{_ag},{_ab},0.45);
-                border-radius: 6px;
+                border-radius: {rad(6)}px;
                 padding: 6px 32px 6px 12px;
                 {type_qss(TYPE_BODY)}
                 text-align: left;
@@ -3905,7 +4058,7 @@ class SettingsDialog(QDialog):
                 background: {POPUP_OPAQUE_FILL};
                 color: {TEXT};
                 border: none;
-                border-radius: 8px;
+                border-radius: {rad(8)}px;
                 padding: 4px 0px;
                 outline: 0;
                 selection-background-color: rgba({_ar},{_ag},{_ab},0.85);
@@ -3914,7 +4067,7 @@ class SettingsDialog(QDialog):
             QComboBox QAbstractItemView::item {{
                 padding: 7px 14px;
                 min-height: 22px;
-                border-radius: 4px;
+                border-radius: {rad(4)}px;
                 margin: 1px 4px;
             }}
             QComboBox QAbstractItemView::item:hover {{
@@ -3929,7 +4082,7 @@ class SettingsDialog(QDialog):
                 background: {ink_alpha(0.04)};
                 color: {TEXT};
                 border: 1px solid rgba({_ar},{_ag},{_ab},0.45);
-                border-radius: 6px;
+                border-radius: {rad(6)}px;
                 padding: 6px 14px;
                 {type_qss(TYPE_BODY)}
             }}
@@ -3959,7 +4112,7 @@ class SettingsDialog(QDialog):
                 background: {ink_alpha(0.06)};
                 color: {TEXT};
                 border: 1px solid {BORDER};
-                border-radius: 6px;
+                border-radius: {rad(6)}px;
                 padding: 6px 12px;
                 min-height: 22px;
             }}
@@ -3971,7 +4124,7 @@ class SettingsDialog(QDialog):
             }}
             QCheckBox::indicator {{
                 width: 16px; height: 16px;
-                border: 1px solid {BORDER}; border-radius: 3px;
+                border: 1px solid {BORDER}; border-radius: {rad(3)}px;
                 background: {ink_alpha(0.04)};
             }}
             QCheckBox::indicator:hover {{
@@ -4019,11 +4172,11 @@ class SettingsDialog(QDialog):
             QScrollArea {{ background: transparent; border: none; }}
             QScrollBar:vertical {{
                 background: {ink_alpha(0.03)}; width: 8px;
-                border-radius: 4px; margin: 2px;
+                border-radius: {rad(4)}px; margin: 2px;
             }}
             QScrollBar::handle:vertical {{
                 background: rgba({_ar},{_ag},{_ab},0.4);
-                border-radius: 4px; min-height: 24px;
+                border-radius: {rad(4)}px; min-height: 24px;
             }}
             QScrollBar::handle:vertical:hover {{
                 background: rgba({_ar},{_ag},{_ab},0.85);
@@ -4120,7 +4273,7 @@ class SettingsDialog(QDialog):
             self._theme_restart_notice.setStyleSheet(
                 f"color: {TEXT}; "
                 f"background: rgba({_ar2},{_ag2},{_ab2},0.18); "
-                f"border-radius: 6px; "
+                f"border-radius: {rad(6)}px; "
                 f"padding: 10px 14px; "
                 f"{type_qss(TYPE_CAPTION)}"
             )

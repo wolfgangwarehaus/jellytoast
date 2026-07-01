@@ -43,11 +43,30 @@ from __future__ import annotations
 from typing import List, Tuple
 
 from PySide6.QtCore import QPoint, QRectF, Qt, Signal
-from PySide6.QtGui import QColor, QIcon, QPainter, QPixmap
+from PySide6.QtGui import QColor, QFont, QIcon, QPainter, QPixmap
 from PySide6.QtSvg import QSvgRenderer
-from PySide6.QtWidgets import QApplication, QPushButton
+from PySide6.QtWidgets import (
+    QApplication,
+    QProxyStyle,
+    QPushButton,
+    QStyle,
+    QStyleFactory,
+)
 
-from jellytoast.design_tokens import TYPE_BODY, type_qss
+from jellytoast.design_tokens import TYPE_BODY, rad, type_qss
+
+
+class _ScrollableMenuStyle(QProxyStyle):
+    """Force a QMenu to SCROLL an over-tall popup instead of running off the
+    screen. The Fusion style leaves menus non-scrollable
+    (``SH_Menu_Scrollable`` = 0), so a 200+ row list (the font-family picker)
+    would otherwise shove its top off the top of the screen. Applied to a
+    single menu instance so it never changes any other menu's behaviour."""
+
+    def styleHint(self, hint, option=None, widget=None, returnData=None):  # noqa: N802
+        if hint == QStyle.StyleHint.SH_Menu_Scrollable:
+            return 1
+        return super().styleHint(hint, option, widget, returnData)
 
 
 def _dot_icon(hex_color: str, size: int = 12) -> QIcon:
@@ -113,7 +132,7 @@ def selector_qss(host_selector: str = "") -> str:
             background: {ink_alpha(0.06)};
             color: {TEXT};
             border: 1px solid rgba({_ar},{_ag},{_ab},0.45);
-            border-radius: 6px;
+            border-radius: {rad(6)}px;
             padding: 6px 32px 6px 12px;
             {type_qss(TYPE_BODY)}
             text-align: left;
@@ -145,16 +164,27 @@ class Selector(QPushButton):
         self.setDefault(False)
         self._items: List[Tuple[str, object]] = []
         self._dot_colors: dict[int, str] = {}
+        # Optional per-row font (QFont), keyed by index — used by the font
+        # picker so each family renders its menu row in its own typeface.
+        self._fonts: dict[int, "QFont"] = {}
         self._current_index = -1
         self.clicked.connect(self._show_menu)
 
     # ── QComboBox-compatible API ─────────────────────────────────────
-    def addItem(self, label: str, data=None, dot_color: str = "") -> None:
+    def addItem(self, label: str, data=None, dot_color: str = "", font=None) -> None:
         """``dot_color`` (``#rrggbb``) paints a small filled circle as
         the row's menu icon — a family/category tag (e.g. the audio
-        output picker color-codes PipeWire vs ALSA devices)."""
+        output picker color-codes PipeWire vs ALSA devices).
+
+        ``font`` (``QFont``) renders THIS row's menu label in its own
+        typeface — the font picker passes ``QFont(family)`` so the list
+        previews each font in itself. Ignored for the closed-state text
+        (the button keeps the UI font)."""
+        idx = len(self._items)
         self._items.append((label, data))
-        self._dot_colors[len(self._items) - 1] = dot_color
+        self._dot_colors[idx] = dot_color
+        if font is not None:
+            self._fonts[idx] = font
         if self._current_index < 0:
             self.setCurrentIndex(0)
 
@@ -250,6 +280,14 @@ class Selector(QPushButton):
             dot = self._dot_colors.get(i)
             if dot:
                 action.setIcon(_dot_icon(dot))
+            row_font = self._fonts.get(i)
+            if row_font is not None:
+                # Render this row's label in its own font (font picker preview).
+                # Keep the design system's size/weight so long family names
+                # don't blow up the menu — only the family is per-row.
+                f = QFont(row_font)
+                f.setPixelSize(TYPE_BODY.size_px)
+                action.setFont(f)
             action.triggered.connect(
                 lambda _checked=False, idx=i: self.setCurrentIndex(idx)
             )
@@ -262,21 +300,35 @@ class Selector(QPushButton):
         _GAP = 8
         menu.ensurePolished()
         menu_w = max(menu.sizeHint().width(), self.width())
-        menu_h = menu.sizeHint().height()
         btn_global = self.mapToGlobal(QPoint(0, 0))
         btn_bottom_y = btn_global.y() + self.height()
         btn_center_x = btn_global.x() + self.width() // 2
         # Screen bottom (Wayland popups can clip against screen edge).
         screen = QApplication.screenAt(btn_global) or QApplication.primaryScreen()
-        screen_bottom = screen.availableGeometry().bottom()
-        # Dialog bottom (visual containment — keeps the menu inside
-        # the host card).
+        avail = screen.availableGeometry()
+        # Cap an over-tall popup (e.g. 200+ font families) so it can't run off
+        # the screen: bound it to the host window's height and let QMenu SCROLL
+        # the overflow. Fusion leaves menus non-scrollable, so force it with a
+        # proxy style on THIS menu only.
+        cap_h = avail.height() - 24
         win = self.window()
         if win is not None:
+            cap_h = min(cap_h, max(240, win.height() - 24))
+        menu_h = menu.sizeHint().height()
+        if menu_h > cap_h:
+            base = QStyleFactory.create(QApplication.style().objectName())
+            menu._jt_scroll_style = (
+                _ScrollableMenuStyle(base) if base else _ScrollableMenuStyle()
+            )
+            menu.setStyle(menu._jt_scroll_style)
+            menu.setMaximumHeight(cap_h)
+            menu_h = cap_h  # position against the capped height, not the natural one
+        # Dialog bottom (visual containment — keeps the menu inside the host card).
+        if win is not None:
             dlg_bottom = win.mapToGlobal(QPoint(0, win.height())).y()
-            below_limit = min(screen_bottom, dlg_bottom)
+            below_limit = min(avail.bottom(), dlg_bottom)
         else:
-            below_limit = screen_bottom
+            below_limit = avail.bottom()
         room_below = below_limit - btn_bottom_y
         pos_x = btn_center_x - menu_w // 2
         if menu_h + _GAP > room_below and btn_global.y() > menu_h + _GAP:
@@ -284,4 +336,7 @@ class Selector(QPushButton):
             pos = QPoint(pos_x, btn_global.y() - menu_h - _GAP)
         else:
             pos = QPoint(pos_x, btn_bottom_y + _GAP)
+        # Final clamp: never let the popup start above the screen top (the
+        # 200-font list was doing exactly that) or run off the bottom.
+        pos.setY(max(avail.top() + 8, min(pos.y(), avail.bottom() - menu_h - 8)))
         menu.exec(pos)

@@ -72,6 +72,7 @@ from jellytoast.design_tokens import (
     TYPE_CAPTION,
     TYPE_SUBHEAD,
     TYPE_TINY,
+    rad,
     type_qss,
 )
 from jellytoast.player_state import NowPlaying, PlayerBus, get_now_playing
@@ -718,15 +719,15 @@ class NowPlayingBar(QWidget):
             QSlider::groove:horizontal {{
                 height: 4px;
                 background: {ink_alpha(0.16)};
-                border-radius: 2px;
+                border-radius: {rad(2)}px;
             }}
             QSlider::sub-page:horizontal {{
                 background: {ink_alpha(0.85)};
-                border-radius: 2px;
+                border-radius: {rad(2)}px;
             }}
             QSlider::add-page:horizontal {{
                 background: {ink_alpha(0.10)};
-                border-radius: 2px;
+                border-radius: {rad(2)}px;
             }}
             QSlider::handle:horizontal {{
                 width: 12px; height: 12px; margin: -4px 0;
@@ -746,7 +747,7 @@ class NowPlayingBar(QWidget):
 
         return f"""
             QPushButton {{
-                background: transparent; border: 1px solid transparent; border-radius: 8px;
+                background: transparent; border: 1px solid transparent; border-radius: {rad(8)}px;
             }}
             QPushButton:hover {{ background: {_u.WASH_HOVER}; }}
             QPushButton:pressed {{ background: {_u.WASH_PRESSED}; }}
@@ -824,7 +825,7 @@ class NowPlayingBar(QWidget):
         text label can't share the parent's QSS without inheriting the
         background fill, so each child carries its own sheet."""
         self._live_dot.setStyleSheet(
-            f"QLabel {{ background: {color}; border-radius: 4px; }}"
+            f"QLabel {{ background: {color}; border-radius: {rad(4)}px; }}"
         )
         self._live_text.setStyleSheet(
             f"color: {color}; {type_qss(TYPE_TINY)} font-weight: 700;"
@@ -972,7 +973,7 @@ class NowPlayingBar(QWidget):
         # three corners use the standard card radius (10 logical).
         # Multiply radii by dpr so they read at the same logical
         # curvature after setDevicePixelRatio retags the pixmap.
-        r10 = int(round(10 * dpr))
+        r10 = int(round(rad(10) * dpr))
         r_body = int(round(RADIUS_WINDOW * dpr))
         scaled = _round_corners(scaled, tl=r10, tr=r10, br=r10, bl=r_body)
         scaled.setDevicePixelRatio(dpr)

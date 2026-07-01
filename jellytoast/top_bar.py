@@ -9,7 +9,7 @@ from PySide6.QtCore import QPoint, QSize, Qt, Signal
 from PySide6.QtGui import QAction
 from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QMenu, QPushButton, QWidget
 
-from jellytoast.design_tokens import TYPE_SUBHEAD, type_qss
+from jellytoast.design_tokens import TYPE_SUBHEAD, rad, type_qss
 from jellytoast.icon_button import IconButton
 from jellytoast.icons import icon
 from jellytoast.kde_titlebar import handle_titlebar_double_click
@@ -565,12 +565,12 @@ class JtTopBar(QWidget):
                 background: {_u.popup_body_fill()};
                 color: {_u.TEXT};
                 border: none;
-                border-radius: 8px;
+                border-radius: {rad(8)}px;
                 padding: 6px;
             }}
             QMenu::item {{
                 padding: 7px 26px 7px {left}px;
-                border-radius: 4px;
+                border-radius: {rad(4)}px;
             }}
             QMenu::item:selected {{ background: rgba({_ar},{_ag},{_ab},0.2); }}
             QMenu::separator {{
@@ -720,7 +720,7 @@ class JtTopBar(QWidget):
             QPushButton {{
                 background: transparent;
                 border: 1px solid transparent;
-                border-radius: 8px;
+                border-radius: {rad(8)}px;
             }}
             QPushButton:hover {{
                 background: {_u.WASH_HOVER};
@@ -747,7 +747,7 @@ class JtTopBar(QWidget):
                 background: transparent;
                 color: {_u.TEXT};
                 border: 1px solid transparent;
-                border-radius: 8px;
+                border-radius: {rad(8)}px;
                 padding: 4px 8px;
                 {type_qss(TYPE_SUBHEAD)}
                 text-align: left;
@@ -773,7 +773,7 @@ class JtTopBar(QWidget):
             QPushButton {{
                 background: transparent;
                 border: 1px solid transparent;
-                border-radius: 8px;
+                border-radius: {rad(8)}px;
             }}
             QPushButton:hover {{ background: {_u.WASH_HOVER}; }}
             QPushButton:pressed {{ background: {_u.WASH_PRESSED}; }}

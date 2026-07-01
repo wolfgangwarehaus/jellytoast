@@ -49,8 +49,6 @@ from PySide6.QtWidgets import (
 
 from jellytoast import image_cache as _disk_image_cache
 from jellytoast.async_io import get_qnam
-from jellytoast.icon_button import IconButton
-from jellytoast.platform_compat import IS_MACOS
 
 # ── Theme ────────────────────────────────────────────────────────────────────
 # Palette + body fills come from the active Theme (jellytoast/theme.py).
@@ -63,6 +61,9 @@ from jellytoast.platform_compat import IS_MACOS
 # callers typically grab the constants once at __init__ and splat them
 # into QSS strings, the subscriber has to re-run its styling code; the
 # new module-level values are what it'll read.
+from jellytoast.design_tokens import rad
+from jellytoast.icon_button import IconButton
+from jellytoast.platform_compat import IS_MACOS
 from jellytoast.theme import get_active_theme, ink_alpha  # noqa: F401  (re-exported)
 
 _THEME = get_active_theme()
@@ -319,12 +320,82 @@ def _tooltip_fill_opaque() -> str:
     return POPUP_OPAQUE_FILL
 
 
+def _ui_font_family_stack() -> str:
+    """CSS font-family stack for the global style. Prefixes the user's chosen
+    family (Settings → Display → Font) onto the built-in Inter stack; an empty
+    selection ('') uses the built-in stack. Icons are SVG (not font glyphs), so
+    this only ever affects text."""
+    base = "'Inter', 'Segoe UI', 'Noto Sans', sans-serif"
+    try:
+        from jellytoast.settings import get_settings
+
+        fam = (get_settings().font_family or "").strip()
+    except Exception:
+        fam = ""
+    return f"'{fam}', {base}" if fam else base
+
+
+# Snapshot of the platform/Qt default UI font, captured at boot BEFORE the
+# user's font_family (if any) is installed via app.setFont — so a live switch
+# back to "System default" can restore it (QFont("") does NOT reset the app
+# font to the platform default). Set by app.main() via set_boot_default_font.
+_BOOT_DEFAULT_FONT = None
+
+
+def set_boot_default_font(font) -> None:
+    """Record the app's default font at boot (see _BOOT_DEFAULT_FONT)."""
+    global _BOOT_DEFAULT_FONT
+    _BOOT_DEFAULT_FONT = font
+
+
+def apply_font_settings_live() -> None:
+    """Re-apply the current ``ui/font_family`` AND ``ui/font_scale`` to the
+    running app WITHOUT a restart. Recomputes the size-scaled design tokens
+    (``design_tokens.refresh_fonts``) and rebinds them across every module that
+    imported them by value (``_propagate_font_constants``) so a scale change is
+    actually seen; re-installs the application font for the family (so
+    painter-drawn delegate text, which inherits the app font, follows); then
+    broadcasts ``theme_changed`` — each surface re-runs its ``type_qss`` /
+    ``_build_fonts`` and picks up the new size + family. The whole fan-out is
+    wrapped in ``theme_swap_guard`` so it lands as a single repaint. Reads the
+    settings live, so a caller persists ``settings.font_family`` / ``font_scale``
+    first, then calls this."""
+    from PySide6.QtGui import QFont
+    from PySide6.QtWidgets import QApplication
+
+    from jellytoast import design_tokens as _dt
+    from jellytoast.player_state import PlayerBus
+    from jellytoast.settings import get_settings
+
+    app = QApplication.instance()
+    if app is None:
+        return
+    fam = (get_settings().font_family or "").strip()
+    with theme_swap_guard():
+        # Rebuild the size tokens + rebind them across modules BEFORE the emit,
+        # so the first theme_changed slot re-stamps from the fresh sizes.
+        _dt.refresh_fonts()
+        _propagate_font_constants()
+        # app.setFont MUST also precede the emit — delegates rebuild their bare
+        # QFont() during the fan-out and must resolve against the new app font.
+        app.setFont(QFont(fam) if fam else (_BOOT_DEFAULT_FONT or QFont()))
+        PlayerBus.get().theme_changed.emit()
+
+
 def _build_global_style() -> str:
+    # Radii flow through the rad()-resolved tokens so the "Square corners"
+    # setting zeros every corner here in lockstep with the rest of the UI.
+    # rad(N) handles the few non-token literals (a 3px checkbox tick, 1px
+    # slider groove). The circular slider HANDLE is left at a fixed radius so
+    # it stays a round dot when corners are squared.
+    from jellytoast.design_tokens import RADIUS_LG, RADIUS_MD, RADIUS_SM, rad
+
     ar, ag, ab = _accent_rgb_tuple()
     # Regenerate the check-mark PNG for the current accent (lazy +
     # cached per color). Embedding the path into the QSS string here
     # means the next stamp picks up the new path automatically.
     check_url = check_url_for_accent()
+    font_stack = _ui_font_family_stack()
     # NB hover tooltips are drawn by our custom popup (jellytoast/custom_tooltip),
     # NOT Qt's QTipLabel — the QToolTip QSS rule below is a defensive fallback
     # for any stray native tooltip and stays `background: transparent`, so the
@@ -332,7 +403,7 @@ def _build_global_style() -> str:
     return f"""
 * {{
     color: {TEXT};
-    font-family: 'Inter', 'Segoe UI', 'Noto Sans', sans-serif;
+    font-family: {font_stack};
 }}
 QMainWindow, QDialog, QWidget {{
     background: {BG};
@@ -346,7 +417,7 @@ QCheckBox::indicator {{
     width: 16px;
     height: 16px;
     border: 1px solid {BORDER};
-    border-radius: 3px;
+    border-radius: {rad(3)}px;
     background: {ink_alpha(0.04)};
 }}
 QCheckBox::indicator:hover {{
@@ -367,22 +438,22 @@ QCheckBox::indicator:disabled {{
 }}
 QScrollArea {{ background: transparent; border: none; }}
 QScrollBar:vertical {{
-    background: {ink_alpha(0.03)}; width: 8px; border-radius: 4px;
+    background: {ink_alpha(0.03)}; width: 8px; border-radius: {RADIUS_SM}px;
     margin: 2px;
 }}
 QScrollBar::handle:vertical {{
-    background: rgba({ar},{ag},{ab},0.4); border-radius: 4px; min-height: 24px;
+    background: rgba({ar},{ag},{ab},0.4); border-radius: {RADIUS_SM}px; min-height: 24px;
 }}
 QScrollBar::handle:vertical:hover {{ background: {ACCENT}; }}
 QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{ height: 0; }}
 QScrollBar:horizontal {{ height: 8px; background: transparent; }}
 QScrollBar::handle:horizontal {{
-    background: rgba({ar},{ag},{ab},0.4); border-radius: 4px; min-width: 24px;
+    background: rgba({ar},{ag},{ab},0.4); border-radius: {RADIUS_SM}px; min-width: 24px;
 }}
 QLineEdit {{
     background: {ink_alpha(0.05)};
     border: 1px solid {BORDER};
-    border-radius: 8px;
+    border-radius: {RADIUS_LG}px;
     padding: 8px 12px;
     color: {TEXT};
     selection-background-color: {ACCENT_DEEP};
@@ -392,7 +463,7 @@ QPushButton {{
     background: {ink_alpha(0.05)};
     color: {TEXT};
     border: 1px solid {BORDER};
-    border-radius: 8px;
+    border-radius: {RADIUS_LG}px;
     padding: 8px 14px;
 }}
 QPushButton:hover {{ background: rgba({ar},{ag},{ab},0.15); border-color: {BORDER_ACCENT}; }}
@@ -408,7 +479,7 @@ QPushButton#ghost:hover {{ background: {ink_alpha(0.06)}; }}
 QComboBox {{
     background: {ink_alpha(0.05)};
     border: 1px solid {BORDER};
-    border-radius: 8px;
+    border-radius: {RADIUS_LG}px;
     padding: 6px 12px;
     min-height: 22px;
 }}
@@ -416,18 +487,18 @@ QComboBox::drop-down {{ border: none; width: 20px; }}
 QComboBox QAbstractItemView {{
     background: {POPUP_OPAQUE_FILL};
     border: none;
-    border-radius: 6px;
+    border-radius: {RADIUS_MD}px;
     selection-background-color: rgba({ar},{ag},{ab},0.25);
     padding: 4px;
 }}
 QListWidget {{
     background: transparent;
     border: 1px solid {BORDER};
-    border-radius: 8px;
+    border-radius: {RADIUS_LG}px;
     outline-style: none;
 }}
 QListWidget::item {{
-    padding: 8px 10px; border-radius: 6px; margin: 1px 2px;
+    padding: 8px 10px; border-radius: {RADIUS_MD}px; margin: 1px 2px;
 }}
 QListWidget::item:selected {{ background: rgba({ar},{ag},{ab},0.18); }}
 QListWidget::item:hover {{ background: {ink_alpha(0.04)}; }}
@@ -445,9 +516,9 @@ QTabBar::tab:selected {{
     color: {ACCENT}; border-bottom: 2px solid {ACCENT};
 }}
 QSlider::groove:horizontal {{
-    height: 3px; background: {ink_alpha(0.12)}; border-radius: 1px;
+    height: 3px; background: {ink_alpha(0.12)}; border-radius: {rad(1)}px;
 }}
-QSlider::sub-page:horizontal {{ background: {ACCENT}; border-radius: 1px; }}
+QSlider::sub-page:horizontal {{ background: {ACCENT}; border-radius: {rad(1)}px; }}
 QSlider::handle:horizontal {{
     width: 12px; height: 12px; margin: -5px 0;
     background: {TEXT}; border-radius: 6px;
@@ -456,11 +527,11 @@ QSlider::handle:horizontal:hover {{ background: {ACCENT}; }}
 QMenu {{
     background: {POPUP_OPAQUE_FILL};
     border: none;
-    border-radius: 8px;
+    border-radius: {RADIUS_LG}px;
     padding: 4px;
 }}
 QMenu::item {{
-    padding: 8px 24px 8px 14px; border-radius: 4px;
+    padding: 8px 24px 8px 14px; border-radius: {RADIUS_SM}px;
 }}
 QMenu::item:selected {{ background: rgba({ar},{ag},{ab},0.2); }}
 QMenu::separator {{
@@ -473,7 +544,7 @@ QToolTip {{
        slips past the filter — keep it transparent + minimal so such a
        fallback still reads as a plain pill. */
     background: transparent; color: {TEXT};
-    border: none; padding: 4px 8px; border-radius: 6px;
+    border: none; padding: 4px 8px; border-radius: {RADIUS_MD}px;
 }}
 """
 
@@ -599,6 +670,38 @@ def _propagate_theme_constants() -> None:
     values = {n: getattr(src, n) for n in _PROPAGATED_TOKENS}
     for mod_name, mod in list(sys.modules.items()):
         if mod is None or mod is src or not mod_name.startswith("jellytoast."):
+            continue
+        for name, value in values.items():
+            if hasattr(mod, name):
+                setattr(mod, name, value)
+
+
+# Font-scale tokens are frozen dataclasses in design_tokens, baked from
+# FONT_SCALE at import; surfaces did `from design_tokens import TYPE_BODY,
+# BTN_PRIMARY, …` and hold those objects by value. A live font-scale change
+# rebuilds them (design_tokens.refresh_fonts), so — exactly like the color
+# tokens above — the by-value copies across every module must be rebound or a
+# surface's theme_changed re-stamp would read the OLD size.
+_PROPAGATED_FONT_TOKENS = (
+    "TYPE_DISPLAY", "TYPE_TITLE", "TYPE_HEADING", "TYPE_SUBHEAD",
+    "TYPE_BODY", "TYPE_CAPTION", "TYPE_TINY", "TYPE_MICRO", "TYPE",
+    "BTN_PRIMARY", "BTN_SECONDARY", "BTN_GHOST", "BTN_ICON", "BTN_DESTRUCTIVE",
+    "BUTTON",
+)
+
+
+def _propagate_font_constants() -> None:
+    """Rebind the rebuilt ``design_tokens`` typography/button tokens into every
+    ``jellytoast.*`` module that imported them by value — the font-scale analog
+    of :func:`_propagate_theme_constants`. Call after
+    ``design_tokens.refresh_fonts()`` and before emitting ``theme_changed``."""
+    import sys
+
+    from jellytoast import design_tokens as _dt
+
+    values = {n: getattr(_dt, n) for n in _PROPAGATED_FONT_TOKENS}
+    for mod_name, mod in list(sys.modules.items()):
+        if mod is None or mod is _dt or not mod_name.startswith("jellytoast."):
             continue
         for name, value in values.items():
             if hasattr(mod, name):
@@ -1859,7 +1962,7 @@ class EmptyState(QWidget):
             QPushButton {{
                 background: {WASH_HOVER};
                 border: 1px solid {ink_alpha(0.10)};
-                border-radius: 8px;
+                border-radius: {rad(8)}px;
                 padding: 6px 14px;
                 color: {TEXT};
                 font-weight: 500;
@@ -2000,7 +2103,7 @@ def opaque_menu(parent=None, *, menu_cls=None, blur_corner_radius: int = 4) -> "
             background-color: {popup_body_fill()};
             color: {TEXT};
             border: none;
-            border-radius: 4px;
+            border-radius: {rad(4)}px;
             padding: 4px;
         }}
         QMenu::item {{
@@ -2011,7 +2114,7 @@ def opaque_menu(parent=None, *, menu_cls=None, blur_corner_radius: int = 4) -> "
                needed. Symmetric padding tightens the menu to its
                content + matches the visual balance left↔right. */
             padding: 7px 14px;
-            border-radius: 4px;
+            border-radius: {rad(4)}px;
         }}
         QMenu::item:selected {{
             background-color: rgba({a_r},{a_g},{a_b},0.28);

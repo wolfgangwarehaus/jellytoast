@@ -70,11 +70,14 @@ from jellytoast import disk_cache
 # IMPORT_FROM opcodes every call.
 from jellytoast import ui_helpers as _u
 from jellytoast.design_tokens import (
+    RADIUS_LG,
+    RADIUS_SM,
     SPACE_LG,
     SPACE_SM,
     SPACE_XL,
     TYPE_BODY,
     TYPE_CAPTION,
+    rad,
     type_qss,
 )
 from jellytoast.library_paginator import _PaginatorMixin
@@ -594,7 +597,7 @@ class _TileDelegate(QStyledItemDelegate):
     COVER_SIZE = 180
     OVERLAY_SIZE = 56
     CELL_W = 196  # COVER_SIZE + 16 horizontal gap
-    COVER_RADIUS = 8
+    COVER_RADIUS = RADIUS_LG
     # Cell-height presets — picked based on which text lines the
     # delegate is configured to paint. `show_year=True` adds 22px for
     # the year row; `show_subtitle=True` adds 22px for the artist /
@@ -971,7 +974,7 @@ class _RowDelegate(QStyledItemDelegate):
     RIGHT_PAD = SPACE_SM
     GAP = SPACE_SM
     YEAR_W = 60
-    THUMB_RADIUS = 4
+    THUMB_RADIUS = RADIUS_SM
 
     def __init__(self, kind: str, parent=None):
         super().__init__(parent)
@@ -1051,12 +1054,12 @@ class _RowDelegate(QStyledItemDelegate):
         if option.state & QStyle.StateFlag.State_HasFocus:
             inset = rect.adjusted(2, 2, -2, -2)
             path = QPainterPath()
-            path.addRoundedRect(QRectF(inset), 4, 4)
+            path.addRoundedRect(QRectF(inset), rad(4), rad(4))
             painter.fillPath(path, QColor(*ink_rgb(), 22))
         elif option.state & QStyle.StateFlag.State_MouseOver:
             inset = rect.adjusted(2, 2, -2, -2)
             path = QPainterPath()
-            path.addRoundedRect(QRectF(inset), 4, 4)
+            path.addRoundedRect(QRectF(inset), rad(4), rad(4))
             painter.fillPath(path, QColor(*ink_rgb(), 13))
 
         # Thumb cell — centered vertically inside the row.

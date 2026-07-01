@@ -17,6 +17,8 @@ import weakref
 
 from PySide6.QtCore import QEvent, QObject, Qt
 
+from jellytoast.design_tokens import rad
+
 # WeakSet so a destroyed view drops out automatically — no manual deregister.
 _KEYBOARD_MODE_VIEWS: "weakref.WeakSet" = weakref.WeakSet()
 
@@ -331,7 +333,7 @@ def paint_kb_row_ring(widget) -> None:
     p.setBrush(Qt.BrushStyle.NoBrush)
     inset = widget.rect().adjusted(1, 1, -2, -2)
     path = QPainterPath()
-    path.addRoundedRect(QRectF(inset), 9, 9)
+    path.addRoundedRect(QRectF(inset), rad(9), rad(9))
     p.drawPath(path)
     p.end()
 

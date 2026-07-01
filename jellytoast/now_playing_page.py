@@ -59,6 +59,7 @@ from jellytoast.design_tokens import (
     TYPE_TITLE,
     button_qss,
     font,
+    rad,
     type_qss,
 )
 from jellytoast.download_button import _DownloadButton
@@ -264,7 +265,7 @@ class NowPlayingPage(_LeftPaneMixin, _LyricsMixin, QWidget):
             }}
             QWidget#npPage QScrollBar::handle:vertical {{
                 background: {ink_alpha(0.12)};
-                border-radius: 3px;
+                border-radius: {rad(3)}px;
                 min-height: 28px;
             }}
             QWidget#npPage QScrollBar::handle:vertical:hover,

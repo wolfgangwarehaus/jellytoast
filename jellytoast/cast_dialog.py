@@ -49,6 +49,7 @@ from jellytoast.design_tokens import (
     TYPE_SUBHEAD,
     TYPE_TINY,
     font,
+    rad,
     type_qss,
 )
 from jellytoast.icon_button import IconButton
@@ -115,7 +116,7 @@ class _CastDeviceRow(QWidget):
         self._heart.setIconSize(QSize(16, 16))
         self._heart.setStyleSheet(f"""
             QPushButton {{ background: transparent; border: none;
-                          border-radius: 6px; }}
+                          border-radius: {rad(6)}px; }}
             QPushButton:hover {{ background: {WASH_HOVER}; }}
         """)
         self._heart.clicked.connect(self._toggle)
@@ -185,7 +186,7 @@ class _CastDeviceRow(QWidget):
             p.setRenderHint(QPainter.RenderHint.Antialiasing)
             p.setPen(Qt.PenStyle.NoPen)
             p.setBrush(QColor(*ink_rgb(), 13))
-            p.drawRoundedRect(self.rect(), 6, 6)
+            p.drawRoundedRect(self.rect(), rad(6), rad(6))
 
 
 class _CastSection(QWidget):
@@ -295,7 +296,7 @@ class _CastSection(QWidget):
             QListWidget::item {{
                 color: {_u.TEXT};
                 padding: 0;
-                border-radius: 6px;
+                border-radius: {rad(6)}px;
                 margin: 1px 0;
             }}
             QListWidget::item:hover {{
@@ -314,7 +315,7 @@ class _CastSection(QWidget):
         return f"""
             QFrame#jtCastSectionHeader {{
                 background: transparent;
-                border-radius: 6px;
+                border-radius: {rad(6)}px;
             }}
             QFrame#jtCastSectionHeader:hover {{
                 background: {_u.ink_alpha(0.05)};
@@ -583,7 +584,7 @@ class CastDialog(QDialog):
             QPushButton {{
                 background: transparent;
                 border: none;
-                border-radius: 8px;
+                border-radius: {rad(8)}px;
                 padding: 7px 16px;
                 color: {TEXT};
                 font-weight: 500;
@@ -730,7 +731,7 @@ class CastDialog(QDialog):
         return f"""
             QPushButton {{
                 background: transparent; color: {_u.TEXT_DIM};
-                border: none; border-radius: 6px; {type_qss(TYPE_CAPTION)}
+                border: none; border-radius: {rad(6)}px; {type_qss(TYPE_CAPTION)}
             }}
             QPushButton:hover {{ background: {_u.WASH_HOVER}; color: {_u.TEXT}; }}
         """
@@ -956,7 +957,7 @@ class CastDialog(QDialog):
         return (
             f"color: {_u.TEXT_DIM}; {type_qss(TYPE_CAPTION)}"
             f"background: {_u.ink_alpha(0.04)};"
-            "border-radius: 8px; padding: 14px 16px;"
+            "border-radius: {rad(8)}px; padding: 14px 16px;"
         )
 
     @staticmethod
@@ -967,7 +968,7 @@ class CastDialog(QDialog):
             QPushButton {{
                 background: transparent;
                 border: 1px solid {_u.ink_alpha(0.28)};
-                border-radius: 7px;
+                border-radius: {rad(7)}px;
                 padding: 5px 14px;
                 color: {_u.TEXT};
                 font-weight: 500;
@@ -991,7 +992,7 @@ class CastDialog(QDialog):
             QFrame#castActiveBanner {{
                 background: rgba({_ar},{_ag},{_ab},0.14);
                 border: 1px solid rgba({_ar},{_ag},{_ab},0.25);
-                border-radius: 8px;
+                border-radius: {rad(8)}px;
             }}
         """)
 
@@ -1005,7 +1006,7 @@ class CastDialog(QDialog):
             QPushButton {{
                 background: transparent;
                 border: none;
-                border-radius: 8px;
+                border-radius: {rad(8)}px;
                 padding: 7px 16px;
                 color: {_ACCENT};
                 font-weight: 600;

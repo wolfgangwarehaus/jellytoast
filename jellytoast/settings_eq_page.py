@@ -43,6 +43,7 @@ from jellytoast.design_tokens import (
     TYPE_CAPTION,
     TYPE_MICRO,
     font,
+    rad,
     type_qss,
 )
 from jellytoast.player_state import PlayerBus
@@ -453,7 +454,7 @@ class EqSettingsPage(QWidget):
                    from this margin. */
                 margin: 7px 0;
                 background: {ink_alpha(0.10)};
-                border-radius: 2px;
+                border-radius: {rad(2)}px;
             }}
             /* Sub-page / add-page intentionally transparent. Qt paints
                them on top of the groove without honouring the groove's
@@ -616,7 +617,7 @@ class EqSettingsPage(QWidget):
         # QLineEdit treatment so the paste area matches the input surface.
         text_edit.setStyleSheet(
             f"QPlainTextEdit {{ background: {_u.ink_alpha(0.05)}; "
-            f"border: 1px solid {_u.BORDER}; border-radius: 8px; "
+            f"border: 1px solid {_u.BORDER}; border-radius: {rad(8)}px; "
             f"padding: 8px 12px; color: {_u.TEXT}; "
             f"selection-background-color: {_u.ACCENT_DEEP}; }}"
         )
