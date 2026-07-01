@@ -350,11 +350,11 @@ def test_unknown_timing_value_defaults_to_on_demand(cm):
 # the property accessors.
 
 
-def test_settings_cast_type_defaults_false():
-    # Opt-in: every cast type is off until the user enables it.
-    from jellytoast.settings import Settings
-
-    s = Settings()
+def test_settings_cast_type_defaults_false(isolated_settings):
+    # Opt-in: every cast type is off until the user enables it. isolated_settings
+    # clears the shared QSettings on setup, so this reads the TRUE defaults
+    # regardless of what another test wrote in a random ordering.
+    s = isolated_settings
     assert s.cast_chromecast_enabled is False
     assert s.cast_airplay_enabled is False
     assert s.cast_dlna_enabled is False
@@ -363,10 +363,8 @@ def test_settings_cast_type_defaults_false():
     assert s.any_cast_type_enabled is False
 
 
-def test_settings_cast_timing_default_on_demand():
-    from jellytoast.settings import Settings
-
-    s = Settings()
+def test_settings_cast_timing_default_on_demand(isolated_settings):
+    s = isolated_settings  # cleared store → true default, order-independent
     assert s.cast_discovery_timing == "on_demand"
 
 
@@ -394,6 +392,10 @@ def test_settings_cast_toggle_round_trip():
     assert s.cast_airplay_enabled is False
     # Enabling any one type flips the aggregate gate on.
     assert s.any_cast_type_enabled is True
+    # Cleanup: restore the opt-in-off defaults so this doesn't leak enabled
+    # cast types into a defaults test under a random ordering.
+    s.cast_chromecast_enabled = False
+    s.cast_sonos_enabled = False
 
 
 # ── CastBrowser migration ─────────────────────────────────────────────
