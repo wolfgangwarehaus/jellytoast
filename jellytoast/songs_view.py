@@ -11,6 +11,7 @@ loading + scrolling on the cheap delegate-paint path.
 """
 
 import logging
+from collections import OrderedDict
 from typing import Dict, List
 
 logger = logging.getLogger(__name__)
@@ -92,10 +93,18 @@ class _SongsListModel(QAbstractListModel):
     ItemRole = Qt.ItemDataRole.UserRole + 1
     CoverRole = Qt.ItemDataRole.UserRole + 2
 
+    # Decoded-thumb LRU bound. _covers held a QPixmap per ROW with no cap;
+    # scrolling a large flat-song library (a first external user had ~73,000
+    # tracks) leaked a pixmap per painted row — multi-GB worst case. Cap it
+    # LRU-by-paint exactly like _LibraryItemsModel: data() bumps a painted
+    # (visible) thumb to the MRU end so eviction only drops off-screen rows,
+    # and _load_visible_covers re-arms an evicted row on scroll-back.
+    _COVER_CACHE_MAX = 512
+
     def __init__(self, parent=None):
         super().__init__(parent)
         self._items: List[Dict] = []
-        self._covers: Dict[int, QPixmap] = {}
+        self._covers: "OrderedDict[int, QPixmap]" = OrderedDict()
 
     def rowCount(self, parent=QModelIndex()):
         if parent.isValid():
@@ -111,16 +120,26 @@ class _SongsListModel(QAbstractListModel):
         if role == self.ItemRole:
             return self._items[row]
         if role == self.CoverRole:
-            return self._covers.get(row)
+            pix = self._covers.get(row)
+            if pix is not None:
+                # LRU touch: a painted (visible) thumb becomes most-recently
+                # used so set_cover's eviction never drops an on-screen row.
+                self._covers.move_to_end(row)
+            return pix
         return None
 
     def items(self) -> List[Dict]:
         return self._items
 
+    def has_cover(self, row: int) -> bool:
+        """True if a decoded thumb is resident for ``row`` (no LRU bump).
+        Lets _load_visible_covers re-arm a row whose thumb was evicted."""
+        return row in self._covers
+
     def set_items(self, items: List[Dict]):
         self.beginResetModel()
         self._items = list(items)
-        self._covers = {}
+        self._covers = OrderedDict()
         self.endResetModel()
 
     def append_items(self, items: List[Dict]):
@@ -142,6 +161,12 @@ class _SongsListModel(QAbstractListModel):
         if pix is None or pix.isNull():
             return
         self._covers[row] = pix
+        self._covers.move_to_end(row)
+        # Evict the least-recently-painted thumb(s) over the cap. data()
+        # bumps every visible row to the MRU end, so the LRU front is always
+        # off-screen — a re-scroll reloads it from the disk cache.
+        while len(self._covers) > self._COVER_CACHE_MAX:
+            self._covers.popitem(last=False)
         idx = self.index(row, 0)
         self.dataChanged.emit(idx, idx, [self.CoverRole])
 
@@ -671,7 +696,10 @@ class SongsView(QWidget):
 
         items = self._model.items()
         for row in range(first, last + 1):
-            if row in self._covers_loaded:
+            # Re-arm a row whose thumb the LRU evicted: skip only if it's
+            # loaded AND still resident. Art-less rows fall through and are
+            # re-checked cheaply (no network) on each pass.
+            if row in self._covers_loaded and self._model.has_cover(row):
                 continue
             item = items[row]
             cover_id = item.get("AlbumId") or item.get("Id", "")

@@ -26,14 +26,24 @@ from typing import Optional
 from PySide6.QtCore import QStandardPaths
 from PySide6.QtGui import QImage, QPixmap
 
-# Bound the disk cache. 200MB holds ~1500-4000 covers at typical
-# sizes — comfortably above any realistic music library.
-_DISK_CACHE_MAX_BYTES = 200 * 1024 * 1024
+# Bound the disk cache. The old 200MB held only ~1500-4000 covers — fine
+# for a small library, but a real one (a first external user reported
+# ~5,200 albums / 580GB on Navidrome) stores a raw_ source PNG *plus* a
+# rounded per-size PNG per album, ~1.2GB total. At 200MB the cache evicted
+# faster than it filled and NEVER converged, so every relaunch re-hit the
+# network and re-triggered the cold-load stall ("rebooted twice, still
+# broken"). 2GB comfortably persists a multi-thousand-album browse across
+# launches; on a truly enormous library it still bounds disk use and the
+# in-memory tiers keep RAM flat.
+_DISK_CACHE_MAX_BYTES = 2 * 1024 * 1024 * 1024
 
-# Eviction is amortized: every Nth put runs a directory walk + LRU
-# trim. A bare put is just a file write, so this keeps the steady-
-# state cost low even on large libraries that exceed the cap once.
-_EVICTION_INTERVAL = 50
+# Eviction is amortized: every Nth put runs a directory walk + LRU trim.
+# A bare put is just a file write, so this keeps the steady-state cost low
+# even on large libraries that exceed the cap once. Raised from 50 → 250
+# because at the new cap a full cache holds far more files, so the
+# whole-dir stat sweep is heavier; running it a fifth as often keeps the
+# shared pool free for the cover disk-lookups that gate tile display.
+_EVICTION_INTERVAL = 250
 
 _CACHE_DIR: "Optional[Path]" = None
 _puts_since_eviction = 0

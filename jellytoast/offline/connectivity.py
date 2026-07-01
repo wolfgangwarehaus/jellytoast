@@ -666,6 +666,16 @@ def is_offline_mode() -> bool:
     return _offline_mode
 
 
+def offline_source() -> Optional[str]:
+    """Who put us in offline mode: ``"user"`` (explicit toggle), ``"auto"``
+    (a connectivity trip), or ``None`` when online. Surfaces let the UI
+    treat an AUTO trip differently from a deliberate user choice — e.g. a
+    populated server-backed grid preserves its rendered items + covers on
+    an AUTO flip instead of blanking to a downloads-only view, since a
+    slow-but-alive server mid-browse can trip auto-offline transiently."""
+    return _offline_source
+
+
 def set_offline_mode(enabled: bool) -> None:
     """Public setter — used by the user's explicit toggle. Always
     treated as "user-set" so a reconnect won't undo it. The persistent

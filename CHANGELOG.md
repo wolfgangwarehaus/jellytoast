@@ -5,6 +5,18 @@ developer-facing history lives in [`docs/CHANGELOG.md`](docs/CHANGELOG.md).
 
 ## [Unreleased]
 
+- **Big libraries load their album art reliably now.** On a large library
+  (thousands of albums, especially on Subsonic / Navidrome) the cover grid could
+  load a handful of covers and then stall, or all the art could blink out at once
+  and come back — over and over. Three things were behind it: the loader flooded a
+  busy server, a slow-but-alive server got mistaken for "offline" (which blanked
+  the grid), and the on-disk cover cache was too small to keep a big library
+  between launches. All fixed — covers fill in steadily and stay put, and ones you
+  scroll past and back reload instantly.
+- **Lighter still on huge track lists.** The Songs view caps the thumbnails it
+  keeps in memory, so a library with tens of thousands of tracks no longer grows
+  RAM the longer you scroll.
+
 ## [0.1.5] — 2026-06-29
 
 <!-- Voice: short, plain, a little casual — what's new for a *user*, not a press

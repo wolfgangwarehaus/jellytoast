@@ -263,6 +263,18 @@ class SubsonicProvider(MediaProvider):
 
         try:
             r = self.session.get(url, timeout=(3.05, 15))
+        except requests.exceptions.ReadTimeout:
+            # The TCP connect SUCCEEDED — the server is reachable, it was
+            # just slow to send the body. A big Navidrome generating cover
+            # thumbnails on demand for a multi-thousand-album library can
+            # blow past the 15s read budget for a while. Counting that as a
+            # network failure trips auto-offline mid-browse (and on a flap
+            # back online, re-trips), so we do NOT slander the connection:
+            # leave the failure counter untouched (neither success nor
+            # failure) and just re-raise so the caller handles the slow page.
+            # A genuinely dead host still fails the 3.05s CONNECT timeout
+            # below, which does count.
+            raise
         except requests.exceptions.RequestException:
             _offline.note_request_failure()
             raise
