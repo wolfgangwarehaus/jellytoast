@@ -848,14 +848,20 @@ class SettingsDialog(QDialog):
         from jellytoast.design_tokens import FONT_SCALE
 
         base_w, base_h = 720, 620
-        # Scale both dimensions by the font-size scale so the DEFAULT font at
-        # the default scale lands exactly on the tuned 720×620 ("where we
-        # started"), a larger scale grows it, a smaller one shrinks it — the
-        # balance is preserved. A monospace family packs wider glyphs, so give
-        # it a little extra WIDTH only (nothing changes for proportional fonts).
-        width_family = 1.10 if QFontInfo(QApplication.font()).fixedPitch() else 1.0
-        w = round(base_w * FONT_SCALE * width_family)
+        # HEIGHT scales fully with the font-size scale — bigger text genuinely
+        # needs proportionally more vertical room (and the pages scroll anyway).
         h = round(base_h * FONT_SCALE)
+        # WIDTH scales only PARTIALLY. The widest text line grows with the font,
+        # but the layout has horizontal slack (left-aligned content, right-
+        # hugging buttons), so scaling width by the full factor sprawls the
+        # dialog and leaves dead space on the right at larger sizes. Half the
+        # scale delta keeps it comfortably wide without pushing everything apart.
+        # Default scale (1.0) still lands exactly on the tuned 720 ("where we
+        # started"). A monospace family packs wider glyphs → a small width-only
+        # bump (nothing changes for proportional fonts).
+        width_scale = 1.0 + (FONT_SCALE - 1.0) * 0.15
+        width_family = 1.06 if QFontInfo(QApplication.font()).fixedPitch() else 1.0
+        w = round(base_w * width_scale * width_family)
         scr = self.screen() or QApplication.primaryScreen()
         if scr is not None:
             avail = scr.availableGeometry()
@@ -3230,12 +3236,12 @@ class SettingsDialog(QDialog):
             "shortcut settings — they can't be rebound here."
         )
         note.setWordWrap(True)
-        # Cap the note width so it wraps onto two lines rather than
-        # running edge-to-edge under the rebind rows; matches the
-        # trailing right margin we use on the rows above so the
-        # text column reads as one consistent block.
-        note.setMaximumWidth(420)
-        note.setStyleSheet(f"color: {TEXT_FAINT}; {type_qss(TYPE_CAPTION)} padding-top: 4px;")
+        # Wrap to the page's content width (no maxWidth): capping the render
+        # width while the layout sizes the label's HEIGHT for the wider column
+        # under-allocated it, so the extra wrapped lines overflowed into the row
+        # above. The narrower dialog keeps this from running awkwardly wide.
+        note.setStyleSheet(f"color: {TEXT_FAINT}; {type_qss(TYPE_CAPTION)}")
+        v.addSpacing(6)
         v.addWidget(note)
         v.addStretch(1)
         return page
@@ -3369,7 +3375,7 @@ class SettingsDialog(QDialog):
         binding.setStyleSheet(
             f"color: {TEXT_DIM}; {type_qss(TYPE_CAPTION)}"
             f"background: {ink_alpha(0.06)}; padding: 3px 9px; "
-            "border-radius: {rad(5)}px;"
+            f"border-radius: {rad(5)}px;"
         )
         row.addWidget(binding)
         return row
