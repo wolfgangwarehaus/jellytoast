@@ -10,7 +10,7 @@
 # end-user application. arch=('any') — pure Python, no compiled extension.
 
 pkgname=jellytoast
-pkgver=0.1.5
+pkgver=0.1.6
 pkgrel=1
 pkgdesc='Audio-first native Jellyfin / Subsonic desktop music client with bit-perfect mpv playback'
 arch=('any')

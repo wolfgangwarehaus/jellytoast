@@ -5,6 +5,8 @@ developer-facing history lives in [`docs/CHANGELOG.md`](docs/CHANGELOG.md).
 
 ## [Unreleased]
 
+## [0.1.6] — 2026-07-01
+
 - **Font and size change live.** **Settings → Display → Font** lets you set the
   app's text to any font installed on your system (each previewed in itself;
   icons are unaffected), and both the **font** and the **font size** now apply
