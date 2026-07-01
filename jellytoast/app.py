@@ -1485,8 +1485,8 @@ class JellytoastWindow(_NavMixin, _SessionMixin, _CastDispatcherMixin, _ShuffleP
 
         from jellytoast.design_tokens import FONT_SCALE
 
-        mono = 1.08 if QFontInfo(QApplication.font()).fixedPitch() else 1.0
-        min_w = round(720 * (1.0 + (FONT_SCALE - 1.0) * 0.5) * mono)
+        mono = 1.05 if QFontInfo(QApplication.font()).fixedPitch() else 1.0
+        min_w = round(720 * (1.0 + (FONT_SCALE - 1.0) * 0.25) * mono)
         min_h = round(560 * (1.0 + (FONT_SCALE - 1.0) * 0.4))
         self.setMinimumSize(min_w, min_h)
 
