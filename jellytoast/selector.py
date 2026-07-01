@@ -283,15 +283,21 @@ class Selector(QPushButton):
         # closed state they came from.
         menu.setMinimumWidth(self.width())
 
-        # Height budget: bound the popup to the host window's height so it can't
-        # run off-screen.
+        # Vertical bounds the popup must stay WITHIN: the host dialog's top and
+        # bottom when there is one (so a long dropdown stays inside the settings
+        # panel instead of spilling past it), else the screen. cap_h is the room
+        # between them; the list caps itself to that and scrolls the overflow.
         btn_global = self.mapToGlobal(QPoint(0, 0))
         screen = QApplication.screenAt(btn_global) or QApplication.primaryScreen()
         avail = screen.availableGeometry()
-        cap_h = avail.height() - 24
+        top_limit = avail.top() + 8
+        bot_limit = avail.bottom() - 8
         win = self.window()
         if win is not None:
-            cap_h = min(cap_h, max(240, win.height() - 24))
+            wt = win.mapToGlobal(QPoint(0, 0)).y()
+            top_limit = max(top_limit, wt + 8)
+            bot_limit = min(bot_limit, wt + win.height() - 8)
+        cap_h = max(240, bot_limit - top_limit)
 
         # Long lists (the ~200-family font picker) use a scrollable QListWidget
         # hosted in the menu — a real drag-thumb scrollbar + smooth wheel,
@@ -337,19 +343,16 @@ class Selector(QPushButton):
             menu.setStyle(menu._jt_scroll_style)
             menu.setMaximumHeight(cap_h)
             menu_h = cap_h
-        if win is not None:
-            dlg_bottom = win.mapToGlobal(QPoint(0, win.height())).y()
-            below_limit = min(avail.bottom(), dlg_bottom)
-        else:
-            below_limit = avail.bottom()
-        room_below = below_limit - btn_bottom_y
+        room_below = bot_limit - btn_bottom_y
         pos_x = btn_center_x - menu_w // 2
-        if menu_h + _GAP > room_below and btn_global.y() > menu_h + _GAP:
+        if menu_h + _GAP > room_below and (btn_global.y() - _GAP) - menu_h > top_limit:
             pos = QPoint(pos_x, btn_global.y() - menu_h - _GAP)
         else:
             pos = QPoint(pos_x, btn_bottom_y + _GAP)
-        # Final clamp: never start above the screen top or run off the bottom.
-        pos.setY(max(avail.top() + 8, min(pos.y(), avail.bottom() - menu_h - 8)))
+        # Final clamp: keep the WHOLE popup within the vertical bounds (the
+        # settings panel when hosted in one) rather than the raw screen — so a
+        # tall list fills the panel instead of spilling past its bottom.
+        pos.setY(max(top_limit, min(pos.y(), bot_limit - menu_h)))
         # Focus the list + scroll the current row into view once shown (fires in
         # the menu's own event loop during exec).
         if list_widget is not None:
@@ -389,6 +392,11 @@ class Selector(QPushButton):
         lw.setFrameShape(QFrame.Shape.NoFrame)
         lw.setUniformItemSizes(True)
         lw.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        # Scroll NATIVELY (opt out of the app-wide smooth-scroll momentum glide,
+        # which felt way too fast here) and snap to whole rows — a precise,
+        # controlled dropdown feel for a 200-item list.
+        lw.setProperty("jt_native_scroll", True)
+        lw.setVerticalScrollMode(QListWidget.ScrollMode.ScrollPerItem)
         lw.setStyleSheet(
             f"""
             QListWidget#jtSelectorList {{
