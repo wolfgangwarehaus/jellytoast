@@ -42,15 +42,19 @@ from __future__ import annotations
 
 from typing import List, Tuple
 
-from PySide6.QtCore import QPoint, QRectF, Qt, Signal
+from PySide6.QtCore import QPoint, QRectF, Qt, QTimer, Signal
 from PySide6.QtGui import QColor, QFont, QIcon, QPainter, QPixmap
 from PySide6.QtSvg import QSvgRenderer
 from PySide6.QtWidgets import (
     QApplication,
+    QFrame,
+    QListWidget,
+    QListWidgetItem,
     QProxyStyle,
     QPushButton,
     QStyle,
     QStyleFactory,
+    QWidgetAction,
 )
 
 from jellytoast.design_tokens import TYPE_BODY, rad, type_qss
@@ -152,6 +156,13 @@ def selector_qss(host_selector: str = "") -> str:
 
 class Selector(QPushButton):
     currentIndexChanged = Signal(int)
+
+    # Above this many items the dropdown swaps its per-QAction menu for a
+    # scrollable QListWidget hosted in the menu (a proper drag-thumb scrollbar
+    # + smooth wheel, consistent across Linux/Windows/macOS — native menu
+    # scrolling is clunky and per-OS). The font-family picker (~200 families)
+    # trips this; every other selector (theme, quality, ~<10) stays a menu.
+    _LONG_LIST_THRESHOLD = 40
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -268,62 +279,64 @@ class Selector(QPushButton):
         from jellytoast.ui_helpers import opaque_menu
 
         menu = opaque_menu(self)
-        # Width at least the button — items shouldn't read narrower
-        # than the closed state they came from.
+        # Width at least the button — items shouldn't read narrower than the
+        # closed state they came from.
         menu.setMinimumWidth(self.width())
-        # No checkmark on the current item — the selector button
-        # itself shows the current value at all times, so a left-
-        # column check is redundant and would shove every label
-        # right.
-        for i, (label, _data) in enumerate(self._items):
-            action = menu.addAction(label)
-            dot = self._dot_colors.get(i)
-            if dot:
-                action.setIcon(_dot_icon(dot))
-            row_font = self._fonts.get(i)
-            if row_font is not None:
-                # Render this row's label in its own font (font picker preview).
-                # Keep the design system's size/weight so long family names
-                # don't blow up the menu — only the family is per-row.
-                f = QFont(row_font)
-                f.setPixelSize(TYPE_BODY.size_px)
-                action.setFont(f)
-            action.triggered.connect(
-                lambda _checked=False, idx=i: self.setCurrentIndex(idx)
-            )
-        # Position: prefer below the button; flip above when the menu
-        # would extend past either the parent dialog's bottom or the
-        # screen's available bottom. Always anchor with a small gap
-        # so the menu doesn't graze the button. Horizontally centre
-        # the menu on the button so the dropdown reads as balanced
-        # under the chevron, regardless of label width.
-        _GAP = 8
-        menu.ensurePolished()
-        menu_w = max(menu.sizeHint().width(), self.width())
+
+        # Height budget: bound the popup to the host window's height so it can't
+        # run off-screen.
         btn_global = self.mapToGlobal(QPoint(0, 0))
-        btn_bottom_y = btn_global.y() + self.height()
-        btn_center_x = btn_global.x() + self.width() // 2
-        # Screen bottom (Wayland popups can clip against screen edge).
         screen = QApplication.screenAt(btn_global) or QApplication.primaryScreen()
         avail = screen.availableGeometry()
-        # Cap an over-tall popup (e.g. 200+ font families) so it can't run off
-        # the screen: bound it to the host window's height and let QMenu SCROLL
-        # the overflow. Fusion leaves menus non-scrollable, so force it with a
-        # proxy style on THIS menu only.
         cap_h = avail.height() - 24
         win = self.window()
         if win is not None:
             cap_h = min(cap_h, max(240, win.height() - 24))
+
+        # Long lists (the ~200-family font picker) use a scrollable QListWidget
+        # hosted in the menu — a real drag-thumb scrollbar + smooth wheel,
+        # consistent across platforms. Short selectors stay per-QAction menus.
+        long_list = len(self._items) > self._LONG_LIST_THRESHOLD
+        list_widget = self._add_list_widget(menu, cap_h) if long_list else None
+        if not long_list:
+            # No checkmark on the current item — the selector button shows the
+            # current value already, so a left check just shoves labels right.
+            for i, (label, _data) in enumerate(self._items):
+                action = menu.addAction(label)
+                dot = self._dot_colors.get(i)
+                if dot:
+                    action.setIcon(_dot_icon(dot))
+                row_font = self._fonts.get(i)
+                if row_font is not None:
+                    # Render this row in its own font (font-picker preview); keep
+                    # the design size/weight so long family names don't blow up
+                    # the menu — only the family is per-row.
+                    f = QFont(row_font)
+                    f.setPixelSize(TYPE_BODY.size_px)
+                    action.setFont(f)
+                action.triggered.connect(
+                    lambda _checked=False, idx=i: self.setCurrentIndex(idx)
+                )
+
+        # Position: prefer below the button; flip above when it would extend
+        # past the parent dialog's or the screen's bottom. Centre on the button.
+        _GAP = 8
+        menu.ensurePolished()
+        menu_w = max(menu.sizeHint().width(), self.width())
+        btn_bottom_y = btn_global.y() + self.height()
+        btn_center_x = btn_global.x() + self.width() // 2
         menu_h = menu.sizeHint().height()
-        if menu_h > cap_h:
+        # A SHORT menu that's still taller than the cap (rare) forces QMenu
+        # scroll via a per-menu proxy style (Fusion leaves menus non-scrollable).
+        # The long-list QListWidget is already internally capped, so skip it.
+        if not long_list and menu_h > cap_h:
             base = QStyleFactory.create(QApplication.style().objectName())
             menu._jt_scroll_style = (
                 _ScrollableMenuStyle(base) if base else _ScrollableMenuStyle()
             )
             menu.setStyle(menu._jt_scroll_style)
             menu.setMaximumHeight(cap_h)
-            menu_h = cap_h  # position against the capped height, not the natural one
-        # Dialog bottom (visual containment — keeps the menu inside the host card).
+            menu_h = cap_h
         if win is not None:
             dlg_bottom = win.mapToGlobal(QPoint(0, win.height())).y()
             below_limit = min(avail.bottom(), dlg_bottom)
@@ -332,11 +345,100 @@ class Selector(QPushButton):
         room_below = below_limit - btn_bottom_y
         pos_x = btn_center_x - menu_w // 2
         if menu_h + _GAP > room_below and btn_global.y() > menu_h + _GAP:
-            # Not enough room below — flip above the button.
             pos = QPoint(pos_x, btn_global.y() - menu_h - _GAP)
         else:
             pos = QPoint(pos_x, btn_bottom_y + _GAP)
-        # Final clamp: never let the popup start above the screen top (the
-        # 200-font list was doing exactly that) or run off the bottom.
+        # Final clamp: never start above the screen top or run off the bottom.
         pos.setY(max(avail.top() + 8, min(pos.y(), avail.bottom() - menu_h - 8)))
+        # Focus the list + scroll the current row into view once shown (fires in
+        # the menu's own event loop during exec).
+        if list_widget is not None:
+            QTimer.singleShot(0, lambda lw=list_widget: self._focus_list(lw))
         menu.exec(pos)
+
+    def _focus_list(self, lw: QListWidget) -> None:
+        try:
+            lw.setFocus(Qt.FocusReason.PopupFocusReason)
+            cur = lw.currentItem()
+            if cur is not None:
+                lw.scrollToItem(cur)
+        except RuntimeError:
+            pass  # menu closed before the deferred call ran
+
+    def _add_list_widget(self, menu, cap_h: int) -> QListWidget:
+        """Populate the menu with a single scrollable QListWidget (proper
+        drag-thumb scrollbar + smooth wheel, consistent cross-platform) instead
+        of one QAction per row — for long lists like the font picker. The QMenu
+        still owns positioning + click-outside dismissal (Wayland-safe); the
+        list owns scrolling. Gated by ``_LONG_LIST_THRESHOLD``."""
+        from jellytoast.theme import _hex_to_rgb
+        from jellytoast.ui_helpers import (
+            ACCENT,
+            TEXT,
+            ink_alpha,
+            install_autofade_scrollbars,
+        )
+
+        try:
+            _ar, _ag, _ab = _hex_to_rgb(ACCENT)
+        except Exception:
+            _ar, _ag, _ab = (255, 255, 255)
+
+        lw = QListWidget()
+        lw.setObjectName("jtSelectorList")
+        lw.setFrameShape(QFrame.Shape.NoFrame)
+        lw.setUniformItemSizes(True)
+        lw.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        lw.setStyleSheet(
+            f"""
+            QListWidget#jtSelectorList {{
+                background: transparent; border: none; outline: none;
+                {type_qss(TYPE_BODY)}
+            }}
+            QListWidget#jtSelectorList::item {{
+                color: {TEXT}; padding: 7px 14px; border-radius: {rad(6)}px;
+            }}
+            QListWidget#jtSelectorList::item:hover {{ background: {ink_alpha(0.06)}; }}
+            QListWidget#jtSelectorList::item:selected {{
+                background: rgba({_ar},{_ag},{_ab},0.28); color: {TEXT};
+            }}
+            """
+        )
+        for i, (label, _data) in enumerate(self._items):
+            it = QListWidgetItem(label)
+            row_font = self._fonts.get(i)
+            if row_font is not None:
+                f = QFont(row_font)
+                f.setPixelSize(TYPE_BODY.size_px)
+                it.setFont(f)
+            dot = self._dot_colors.get(i)
+            if dot:
+                it.setIcon(_dot_icon(dot))
+            lw.addItem(it)
+        if 0 <= self._current_index < lw.count():
+            lw.setCurrentRow(self._current_index)
+
+        def _pick(item):
+            self.setCurrentIndex(lw.row(item))
+            menu.close()
+
+        lw.itemClicked.connect(_pick)
+        lw.itemActivated.connect(_pick)  # Enter / Return
+
+        # Size: at least the button width; height capped so the LIST scrolls
+        # internally rather than the menu growing off-screen.
+        row_h = lw.sizeHintForRow(0) if lw.count() else 0
+        if row_h <= 0:
+            row_h = TYPE_BODY.size_px + 16
+        content_h = row_h * lw.count() + 2 * lw.frameWidth() + 4
+        lw.setMinimumWidth(max(self.width(), 200))
+        lw.setFixedHeight(min(content_h, cap_h))
+        try:
+            install_autofade_scrollbars(lw)
+        except Exception:
+            pass
+
+        wa = QWidgetAction(menu)
+        wa.setDefaultWidget(lw)
+        menu.addAction(wa)
+        return lw
