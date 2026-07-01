@@ -178,6 +178,11 @@ class JtTopBar(QWidget):
         # hover affordance where it'd be a dead control.
         self.title_label = QLabel("")
         self.title_label.setStyleSheet(self._title_label_qss())
+        # Cap the flexible left-side text so a long page title / library name in
+        # a large font can't grow the left cluster and push the center/right
+        # controls off-screen at the 720px minimum width. Only bites on genuinely
+        # long text; normal short titles are unaffected.
+        self.title_label.setMaximumWidth(260)
         left_layout.addWidget(self.title_label)
         # Dropdown variant — hidden until 2+ libraries are available. A
         # borderless text+chevron button mirroring the view_btn styling.
@@ -187,6 +192,10 @@ class JtTopBar(QWidget):
         self.library_btn.setLayoutDirection(Qt.LayoutDirection.RightToLeft)
         self.library_btn.setToolTip("Choose which libraries to load")
         self.library_btn.setFixedHeight(34)
+        # Same overflow guard as title_label — a long library name in a big font
+        # can't push the rest of the bar off-screen. QPushButton elides its label
+        # with "…" when capped; the full name stays in the tooltip.
+        self.library_btn.setMaximumWidth(260)
         self.library_btn.setStyleSheet(self._view_btn_qss())
         self.library_btn.clicked.connect(self._show_library_menu)
         self._install_enter_to_click(self.library_btn)
@@ -232,6 +241,10 @@ class JtTopBar(QWidget):
         self.view_btn.setIconSize(QSize(14, 14))
         self.view_btn.setLayoutDirection(Qt.LayoutDirection.RightToLeft)
         self.view_btn.setToolTip("Switch library view")
+        # Defensive cap so a big font can't blow the absolutely-positioned
+        # center cluster past its width clamp (see _position_center_cluster).
+        # View names are short, so this only bites in extreme fonts.
+        self.view_btn.setMaximumWidth(260)
         # Match the 34px icon-button height so every hover pill in the
         # bar reads as the same rectangle — without this, the view_btn
         # sizes to its natural text-padding height (~28 px) and the
