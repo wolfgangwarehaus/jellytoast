@@ -592,7 +592,7 @@ class JellytoastWindow(_NavMixin, _SessionMixin, _CastDispatcherMixin, _ShuffleP
         # here means every view honors the same minimum — albums grid
         # included — so the user never overshoots into a layout that the
         # now-playing page can't render cleanly.
-        self.setMinimumSize(720, 560)
+        self._apply_adaptive_min_size()
         # Default size tuned to fit ~3 columns × 2 rows of the
         # albums grid (3 × 240 px tiles + margins + scrollbar +
         # alphabet sidebar; 2 rows of tile-height with the top bar
@@ -1461,7 +1461,34 @@ class JellytoastWindow(_NavMixin, _SessionMixin, _CastDispatcherMixin, _ShuffleP
             self.update()
             self._apply_blur_whole()
             self._blur_settle.start()
+        if e.type() in (
+            _QEvent.Type.FontChange,
+            _QEvent.Type.ApplicationFontChange,
+        ):
+            # A live font swap widens the top-bar controls; grow the window's
+            # minimum WIDTH to match so they can't stack at the floor width.
+            # Deferred so the new font metrics settle first.
+            from PySide6.QtCore import QTimer as _QTimer
+
+            _QTimer.singleShot(0, self._apply_adaptive_min_size)
         super().changeEvent(e)
+
+    def _apply_adaptive_min_size(self):
+        """Window minimum size, scaled for the active font. The 720x560 floor is
+        tuned for the default font; a large / wide (monospace) user font makes
+        the top-bar controls wider, so at the floor width the sort / search /
+        window controls stack. Scale the minimum WIDTH up with the font-size
+        scale (+ a mono bump) — default font is unchanged (720). Height grows
+        gently too so the transport + a tall now-playing page still fit."""
+        from PySide6.QtGui import QFontInfo
+        from PySide6.QtWidgets import QApplication
+
+        from jellytoast.design_tokens import FONT_SCALE
+
+        mono = 1.08 if QFontInfo(QApplication.font()).fixedPitch() else 1.0
+        min_w = round(720 * (1.0 + (FONT_SCALE - 1.0) * 0.5) * mono)
+        min_h = round(560 * (1.0 + (FONT_SCALE - 1.0) * 0.4))
+        self.setMinimumSize(min_w, min_h)
 
     def resizeEvent(self, e):
         super().resizeEvent(e)
