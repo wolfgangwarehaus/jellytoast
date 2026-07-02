@@ -145,14 +145,23 @@ class SystemAccentFollower(QObject):
         if self._subscribed:
             return
         try:
+            from PySide6.QtCore import SLOT
             from PySide6.QtDBus import QDBusConnection
 
+            # QtDBus needs the receiver + a SLOT() signature string (6 args). The
+            # bound-method form (5 args) raises TypeError in this PySide6 build —
+            # which the except below used to swallow, silently leaving the live
+            # accent watch UNSUBSCRIBED (only the launch re-read worked). The
+            # signature must match _on_setting_changed's
+            # ``@Slot(str, str, "QDBusVariant")``. Verified live on KDE Plasma:
+            # changing the system accent delivers this signal and we re-read it.
             ok = QDBusConnection.sessionBus().connect(
                 _PORTAL_SERVICE,
                 _PORTAL_PATH,
                 _SETTINGS_IFACE,
                 "SettingChanged",
-                self._on_setting_changed,
+                self,
+                SLOT("_on_setting_changed(QString,QString,QDBusVariant)"),
             )
             self._subscribed = bool(ok)
         except Exception:
