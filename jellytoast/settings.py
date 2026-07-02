@@ -1854,6 +1854,17 @@ class Settings:
         self._s.setValue("ui/accent_color", (v or "").strip())
 
     @property
+    def last_preset_name(self) -> str:
+        """Name of the last-applied curated color preset (theme_presets), so the
+        Settings picker can show which swatch is selected. Empty = none / the
+        colors were changed by hand or a different path."""
+        return self._s.value("ui/last_preset_name", "", type=str)
+
+    @last_preset_name.setter
+    def last_preset_name(self, v: str):
+        self._s.setValue("ui/last_preset_name", (v or "").strip())
+
+    @property
     def shuffle_queue_size(self) -> int:
         """Number of tracks pulled into the queue by "Shuffle library".
         Default 100 — keeps the queue render snappy on commit (1 mutation
