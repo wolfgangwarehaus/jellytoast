@@ -88,6 +88,10 @@ def test_follow_accent_active_requires_builtin_family(qapp, isolated_settings):
     isolated_settings.follow_system_accent = True
     isolated_settings.theme_family = ""
     assert follow_accent_active() is True
+    # The family dropdown persists the built-in family as the "jellytoast"
+    # sentinel — regression: the gate treated it as a preset and went dead.
+    isolated_settings.theme_family = "jellytoast"
+    assert follow_accent_active() is True
 
     isolated_settings.theme_family = "catppuccin"
     assert follow_accent_active() is False

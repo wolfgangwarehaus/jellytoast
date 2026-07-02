@@ -90,7 +90,10 @@ def follow_accent_active() -> bool:
     from jellytoast.settings import get_settings
 
     s = get_settings()
-    return bool(s.follow_system_accent) and not s.theme_family
+    # The built-in family is stored as EITHER "" or the "jellytoast" sentinel
+    # (the family dropdown persists the latter) — treat both as built-in, same
+    # as family_label()/family_has_both().
+    return bool(s.follow_system_accent) and s.theme_family in ("", "jellytoast")
 
 
 def apply_accent_now(hex_color: str) -> None:
