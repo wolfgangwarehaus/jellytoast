@@ -182,3 +182,89 @@ class TestWindowsAccentBackend:
         isolated_settings.theme_family = ""  # built-in → drives
         f._on_windows_accent_changed()
         assert synced["n"] == 1
+
+
+class TestMacOSAccentBackend:
+    def test_read_macos_accent_converts_srgb(self, monkeypatch):
+        import sys
+        import types
+
+        # Fake AppKit: controlAccentColor → sRGB 0.0/0.47/0.84 (Big Sur blue-ish)
+        class _RGB:
+            def redComponent(self):
+                return 0.0
+
+            def greenComponent(self):
+                return 0.47843
+
+            def blueComponent(self):
+                return 0.84314
+
+        class _Color:
+            def colorUsingColorSpace_(self, _space):
+                return _RGB()
+
+        appkit = types.ModuleType("AppKit")
+        appkit.NSColor = types.SimpleNamespace(controlAccentColor=lambda: _Color())
+        appkit.NSColorSpace = types.SimpleNamespace(sRGBColorSpace=lambda: object())
+        monkeypatch.setitem(sys.modules, "AppKit", appkit)
+
+        from jellytoast.system_accent import _read_macos_accent
+
+        assert _read_macos_accent() == "#007ad7"
+
+    def test_read_macos_accent_none_on_missing_appkit(self, monkeypatch):
+        import sys
+
+        # No AppKit importable → None, never raises.
+        monkeypatch.setitem(sys.modules, "AppKit", None)
+        from jellytoast.system_accent import _read_macos_accent
+
+        assert _read_macos_accent() is None
+
+    def test_read_dispatches_to_macos_reader(self, monkeypatch):
+        from jellytoast import system_accent as sa
+
+        monkeypatch.setattr(sa, "_IS_MACOS", True)
+        monkeypatch.setattr(sa, "_read_macos_accent", lambda: "#007ad7")
+        assert sa.read_system_accent() == "#007ad7"
+
+    def test_macos_change_handler_gates_like_portal(
+        self, qapp, isolated_settings, monkeypatch
+    ):
+        from jellytoast import system_accent as sa
+
+        synced = {"n": 0}
+        monkeypatch.setattr(
+            sa.SystemAccentFollower,
+            "_sync_now",
+            lambda self: synced.__setitem__("n", synced["n"] + 1),
+        )
+        f = sa.SystemAccentFollower()
+        isolated_settings.follow_system_accent = True
+        isolated_settings.theme_family = "catppuccin"  # preset → gated off
+        f._on_macos_accent_changed()
+        assert synced["n"] == 0
+        isolated_settings.theme_family = ""  # built-in → drives
+        f._on_macos_accent_changed()
+        assert synced["n"] == 1
+
+    def test_macos_sync_now_reads_inline_not_on_worker(
+        self, qapp, isolated_settings, monkeypatch
+    ):
+        """macOS must NOT push the AppKit read to a worker thread."""
+        from jellytoast import system_accent as sa
+
+        monkeypatch.setattr(sa, "_IS_MACOS", True)
+        monkeypatch.setattr(sa, "read_system_accent", lambda: "#112233")
+        applied = {}
+        monkeypatch.setattr(sa, "apply_accent_now", lambda h: applied.setdefault("h", h))
+
+        def _boom(*a, **k):
+            raise AssertionError("run_async must not be used on macOS _sync_now")
+
+        import jellytoast.async_io as aio
+
+        monkeypatch.setattr(aio, "run_async", _boom)
+        sa.SystemAccentFollower()._sync_now()
+        assert applied["h"] == "#112233"

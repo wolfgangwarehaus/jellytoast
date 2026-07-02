@@ -12,7 +12,10 @@ Windows: the accent is ``HKCU\\Software\\Microsoft\\Windows\\DWM\\AccentColor``
 caught with an app-wide native event filter (same pattern as ``taskbar``).
 UNVERIFIED on a real Windows box yet — ships behind the needs:windows checklist.
 
-macOS accent-follow still needs a per-OS backend (needs:mac).
+macOS: ``NSColor.controlAccentColor`` (10.14+) is the live accent; changes post
+``AppleColorPreferencesChangedNotification`` on the distributed notification
+center. Read + observed via pyobjc (already a mac dependency — see
+``macos_window``). UNVERIFIED on a real Mac yet — ships behind needs:mac.
 """
 
 from __future__ import annotations
@@ -22,6 +25,7 @@ import sys
 from PySide6.QtCore import QObject, Slot
 
 _IS_WINDOWS = sys.platform == "win32"
+_IS_MACOS = sys.platform == "darwin"
 
 _APPEARANCE = "org.freedesktop.appearance"
 _ACCENT_KEY = "accent-color"
@@ -91,9 +95,31 @@ def _read_windows_accent() -> str | None:
         return None
 
 
+def _read_macos_accent() -> str | None:
+    """macOS ``NSColor.controlAccentColor`` → ``#rrggbb``, or None. Reads AppKit,
+    so call on the GUI/main thread (see ``_sync_now``). Never raises."""
+    try:
+        from AppKit import NSColor, NSColorSpace
+
+        c = NSColor.controlAccentColor()
+        rgb = c.colorUsingColorSpace_(NSColorSpace.sRGBColorSpace())
+        if rgb is None:
+            return None
+        r = int(round(rgb.redComponent() * 255))
+        g = int(round(rgb.greenComponent() * 255))
+        b = int(round(rgb.blueComponent() * 255))
+        return f"#{max(0, min(255, r)):02x}{max(0, min(255, g)):02x}{max(0, min(255, b)):02x}"
+    except Exception:
+        return None
+
+
 def read_system_accent() -> str | None:
-    """Blocking accent read — call on a worker via ``async_io.run_async``.
-    Returns ``#rrggbb`` or None (unset / unsupported platform). Never raises."""
+    """Read the OS accent → ``#rrggbb`` or None (unset / unsupported). Never
+    raises. Linux/Windows do a blocking read (D-Bus / registry) → call on a
+    worker; macOS reads AppKit → call on the GUI thread (``_sync_now`` routes
+    each correctly)."""
+    if _IS_MACOS:
+        return _read_macos_accent()
     if _IS_WINDOWS:
         return _read_windows_accent()
     if not _jeepney_available():
@@ -213,6 +239,13 @@ class SystemAccentFollower(QObject):
         self._subscribe()  # always listen; the handler gates on the live setting
 
     def _sync_now(self) -> None:
+        if _IS_MACOS:
+            # AppKit reads must stay on the GUI/main thread, and the read is
+            # cheap — do it inline instead of on a worker.
+            h = read_system_accent()
+            if h:
+                apply_accent_now(h)
+            return
         from jellytoast.async_io import run_async
 
         run_async(
@@ -223,6 +256,9 @@ class SystemAccentFollower(QObject):
 
     def _subscribe(self) -> None:
         if self._subscribed:
+            return
+        if _IS_MACOS:
+            self._subscribe_macos()
             return
         if _IS_WINDOWS:
             self._subscribe_windows()
@@ -249,6 +285,34 @@ class SystemAccentFollower(QObject):
             self._subscribed = bool(ok)
         except Exception:
             self._subscribed = False
+
+    def _subscribe_macos(self) -> None:
+        """Observe ``AppleColorPreferencesChangedNotification`` on the distributed
+        notification center (posted when the user changes the accent in System
+        Settings). Delivered on the main run loop, which is Qt's event loop on
+        macOS, so the handler lands on the GUI thread. Gated like the others."""
+        try:
+            from Foundation import NSDistributedNotificationCenter
+
+            center = NSDistributedNotificationCenter.defaultCenter()
+            # Block-based observer → no NSObject subclass needed. Keep the
+            # returned token alive (pinned on self) or the observation drops.
+            self._mac_observer = center.addObserverForName_object_queue_usingBlock_(
+                "AppleColorPreferencesChangedNotification",
+                None,
+                None,
+                lambda _note: self._on_macos_accent_changed(),
+            )
+            self._subscribed = True
+        except Exception:
+            self._subscribed = False
+
+    def _on_macos_accent_changed(self) -> None:
+        try:
+            if follow_accent_active():
+                self._sync_now()
+        except Exception:
+            pass
 
     def _subscribe_windows(self) -> None:
         """Install the app-wide DWM-colorization filter. The handler gates on

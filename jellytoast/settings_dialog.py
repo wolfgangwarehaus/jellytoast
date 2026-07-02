@@ -3240,7 +3240,7 @@ class SettingsDialog(QDialog):
             self._follow_accent_check.setChecked(self.s.follow_system_accent)
             self._follow_accent_check.setToolTip(
                 "Adopt your desktop's accent colour "
-                "(KDE Plasma / GNOME 47+ / Windows)."
+                "(KDE Plasma / GNOME 47+ / Windows / macOS)."
             )
             self._follow_accent_check.toggled.connect(
                 self._on_follow_system_accent_toggled
