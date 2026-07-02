@@ -283,3 +283,29 @@ def test_themes_folder_rows_in_family_dropdown(
         s.imported_scheme_path = ""
         ct.reset_all()
         d.deleteLater()
+
+
+def test_glass_settle_flushes_on_dialog_close(qapp, isolated_settings, monkeypatch):
+    """A glass drag that settles within 120ms of the dialog closing must still
+    run the full re-stamp — the settle timer dies with the dialog, so `finished`
+    flushes it. Regression: cached-body surfaces stayed stale until the next
+    theme event."""
+    from jellytoast.settings_dialog import SettingsDialog
+
+    s = get_settings()
+    s.theme_family = ""
+    s.theme_mode = "dark"
+    s.frosted = True
+    d = SettingsDialog()
+    d.nav.setCurrentRow(_DISPLAY_ROW)
+    d._glass_slider.setValue(150)  # starts the 120ms settle timer
+    assert d._glass_settle.isActive()
+
+    committed = {"n": 0}
+    monkeypatch.setattr(
+        d, "_commit_glass_alpha", lambda: committed.__setitem__("n", committed["n"] + 1)
+    )
+    d._flush_pending_glass_settle()  # what `finished` calls before deleteLater
+    assert committed["n"] == 1
+    assert not d._glass_settle.isActive()
+    d.deleteLater()

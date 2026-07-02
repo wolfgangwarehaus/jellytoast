@@ -664,6 +664,11 @@ class SettingsDialog(QDialog):
         # close; finished→deleteLater covers the accept()/reject() button
         # paths (done() hides without a close event), so both are needed.
         self.setAttribute(Qt.WA_DeleteOnClose)
+        # A glass-opacity drag that settles within 120ms of the dialog closing
+        # would otherwise lose its full re-stamp (the settle QTimer dies with
+        # the dialog), leaving cached-body surfaces stale until the next theme
+        # event. Flush any pending settle synchronously before teardown.
+        self.finished.connect(self._flush_pending_glass_settle)
         self.finished.connect(self.deleteLater)
         self.s = get_settings()
         # Distinct title so the KWin `noborder` rule (jellytoast.keep_above)
@@ -3398,6 +3403,15 @@ class SettingsDialog(QDialog):
             self._update_glass_readout(self._glass_slider.value())
         self._commit_glass_alpha()
 
+    def _flush_pending_glass_settle(self) -> None:
+        """If a glass-opacity settle is still pending at dialog close, run the
+        re-stamp now (the persisted alpha is already correct; this just refreshes
+        the surfaces that cache their body colour)."""
+        settle = getattr(self, "_glass_settle", None)
+        if settle is not None and settle.isActive():
+            settle.stop()
+            self._commit_glass_alpha()
+
     def _commit_glass_alpha(self) -> None:
         from jellytoast import icons as _icons
         from jellytoast import ui_helpers as _uih
@@ -4394,7 +4408,8 @@ class SettingsDialog(QDialog):
             p.setRenderHint(QPainter.RenderHint.Antialiasing, True)
             path_rect = QRectF(0.5, 0.5, w - 1, h - 1)
             clip = QPainterPath()
-            clip.addRoundedRect(path_rect, 3, 3)
+            r = rad(3)  # honour the square-corners toggle like every other chrome
+            clip.addRoundedRect(path_rect, r, r)
             p.setClipPath(clip)
             n = max(1, len(cols))
             bw = w / n
