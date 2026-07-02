@@ -81,6 +81,18 @@ def read_system_accent() -> str | None:
         return None
 
 
+def follow_accent_active() -> bool:
+    """Whether the OS accent should drive the app accent RIGHT NOW: the toggle
+    is on AND the built-in jellytoast family is active. Preset / imported
+    families supply their own accent — letting the OS accent through would
+    silently mismatch their palette, and the Settings toggle is hidden for
+    those families so the user couldn't even see why."""
+    from jellytoast.settings import get_settings
+
+    s = get_settings()
+    return bool(s.follow_system_accent) and not s.theme_family
+
+
 def apply_accent_now(hex_color: str) -> None:
     """Apply a hex accent app-wide from a NON-dialog context (launch re-read /
     the live watcher): persist it to ``ui/accent_color``, drop any stale
@@ -126,9 +138,7 @@ class SystemAccentFollower(QObject):
         self._subscribed = False
 
     def start(self) -> None:
-        from jellytoast.settings import get_settings
-
-        if get_settings().follow_system_accent:
+        if follow_accent_active():
             self._sync_now()
         self._subscribe()  # always listen; the handler gates on the live setting
 
@@ -170,12 +180,10 @@ class SystemAccentFollower(QObject):
     @Slot(str, str, "QDBusVariant")
     def _on_setting_changed(self, namespace, key, _value=None) -> None:
         try:
-            from jellytoast.settings import get_settings
-
             if (
                 namespace == _APPEARANCE
                 and key == _ACCENT_KEY
-                and get_settings().follow_system_accent
+                and follow_accent_active()
             ):
                 self._sync_now()  # re-read the value via jeepney (handles the struct)
         except Exception:

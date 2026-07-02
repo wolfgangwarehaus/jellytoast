@@ -77,3 +77,51 @@ def test_subscribe_uses_six_arg_qtdbus_form(qapp, isolated_settings, monkeypatch
 
 
 _APPEARANCE_NS = "org.freedesktop.appearance"
+
+
+def test_follow_accent_active_requires_builtin_family(qapp, isolated_settings):
+    """Preset / imported families supply their own accent — the follower must
+    only drive the accent on the built-in (empty) family, or the OS accent
+    silently mismatches the preset palette while its toggle is hidden."""
+    from jellytoast.system_accent import follow_accent_active
+
+    isolated_settings.follow_system_accent = True
+    isolated_settings.theme_family = ""
+    assert follow_accent_active() is True
+
+    isolated_settings.theme_family = "catppuccin"
+    assert follow_accent_active() is False
+    isolated_settings.theme_family = "imported"
+    assert follow_accent_active() is False
+
+    isolated_settings.theme_family = ""
+    isolated_settings.follow_system_accent = False
+    assert follow_accent_active() is False
+
+
+def test_follower_is_gated_off_while_preset_family_active(
+    qapp, isolated_settings, monkeypatch
+):
+    from jellytoast import system_accent as sa
+
+    isolated_settings.follow_system_accent = True
+    isolated_settings.theme_family = "catppuccin"
+
+    synced = {"n": 0}
+    monkeypatch.setattr(
+        sa.SystemAccentFollower,
+        "_sync_now",
+        lambda self: synced.__setitem__("n", synced["n"] + 1),
+    )
+    monkeypatch.setattr(sa.SystemAccentFollower, "_subscribe", lambda self: None)
+
+    f = sa.SystemAccentFollower()
+    f.start()  # launch re-read must not fire on a preset family
+    assert synced["n"] == 0
+    f._on_setting_changed(_APPEARANCE_NS, "accent-color")  # nor the live watch
+    assert synced["n"] == 0
+
+    # back on the built-in family, the same stored toggle resumes driving
+    isolated_settings.theme_family = ""
+    f._on_setting_changed(_APPEARANCE_NS, "accent-color")
+    assert synced["n"] == 1

@@ -349,6 +349,14 @@ def _migrate_theme_axes(qs: QSettings) -> None:
             family = PRESET_NAME_TO_FAMILY.get(lpn, "imported")
         except Exception:
             family = "imported"
+        if family == "imported" and not qs.value(
+            "ui/imported_scheme_json", "", type=str
+        ):
+            # An unknown preset name with no imported-scheme payload (e.g. a
+            # curated preset renamed/dropped in a later release) would strand
+            # the user in an EMPTY "imported" family — blank palette section,
+            # preset glass depths, nothing to render. Fall back to built-in.
+            family = ""
     qs.setValue("ui/theme_family", family)
 
     qs.setValue(_THEME_AXES_MARKER, True)
