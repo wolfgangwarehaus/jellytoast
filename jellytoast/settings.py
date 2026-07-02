@@ -1865,6 +1865,16 @@ class Settings:
         self._s.setValue("ui/last_preset_name", (v or "").strip())
 
     @property
+    def follow_system_accent(self) -> bool:
+        """When on, jellytoast adopts the desktop's accent colour (read from the
+        XDG portal — see system_accent) on enable + at launch. Off by default."""
+        return self._s.value("ui/follow_system_accent", False, type=bool)
+
+    @follow_system_accent.setter
+    def follow_system_accent(self, v: bool):
+        self._s.setValue("ui/follow_system_accent", bool(v))
+
+    @property
     def shuffle_queue_size(self) -> int:
         """Number of tracks pulled into the queue by "Shuffle library".
         Default 100 — keeps the queue render snappy on commit (1 mutation
