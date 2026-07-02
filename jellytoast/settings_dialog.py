@@ -1006,6 +1006,14 @@ class SettingsDialog(QDialog):
         when deferred (QTimer.singleShot) — the combo lives on the
         Display page this tears down.
         """
+        import shiboken6
+
+        if not shiboken6.isValid(self):
+            # The deferral window means a theme change landing as the dialog
+            # closes (OS auto-mode flip, accent watcher, keep/revert timeout)
+            # can fire this on an already-deleted dialog — a RuntimeError
+            # traceback on stderr. Nothing to rebuild; bail.
+            return
         global TEXT, TEXT_DIM, TEXT_FAINT, ERROR_FG, BORDER, POPUP_OPAQUE_FILL
         global WASH_HOVER
         from jellytoast import ui_helpers as _u
