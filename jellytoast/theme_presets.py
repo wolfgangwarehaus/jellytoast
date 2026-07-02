@@ -413,7 +413,9 @@ def apply_theme_family(family: str, mode: str, frosted: bool) -> None:
     s = get_settings()
     s.theme_mode = mode
     s.frosted = bool(frosted)
-    s.theme_family = family or ""
+    # Normalize the built-in sentinel to "" so every consumer can test one
+    # canonical value (the dropdown passes "jellytoast").
+    s.theme_family = "" if family in ("", "jellytoast") else family
     if family in ("", "jellytoast"):
         # Built-in jellytoast theme: wipe any preset overrides so the base theme
         # + user accent win. Leaves accent_color as the user set it.
