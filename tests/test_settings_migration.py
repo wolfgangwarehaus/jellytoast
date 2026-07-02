@@ -45,10 +45,11 @@ import pytest
 # The org-rename migration is a LINUX-ONLY code path (production
 # short-circuits on IS_LINUX; new installs on Windows/macOS never had the
 # CamelCase layout). Its scenario tests also assume a case-SENSITIVE
-# filesystem — on Windows ``JellyToast/`` and ``jellytoast/`` are the same
-# directory, so the move/merge asserts are unsatisfiable there.
+# filesystem — on Windows and default APFS ``JellyToast/`` and
+# ``jellytoast/`` are the same directory, so the move/merge asserts are
+# unsatisfiable there.
 pytestmark = pytest.mark.skipif(
-    sys.platform == "win32",
+    sys.platform in ("win32", "darwin"),
     reason="Linux-only migration path; needs a case-sensitive filesystem",
 )
 

@@ -152,6 +152,8 @@ class TestWindowsAccentBackend:
         from jellytoast import system_accent as sa
 
         monkeypatch.setattr(sa, "_IS_WINDOWS", True)
+        # on a real Mac the macOS reader wins the dispatch otherwise
+        monkeypatch.setattr(sa, "_IS_MACOS", False)
         monkeypatch.setattr(sa, "_read_windows_accent", lambda: "#0077d7")
         assert sa.read_system_accent() == "#0077d7"
 
@@ -161,6 +163,7 @@ class TestWindowsAccentBackend:
         from jellytoast import system_accent as sa
 
         monkeypatch.setattr(sa, "_IS_WINDOWS", True)
+        monkeypatch.setattr(sa, "_IS_MACOS", False)
         f = sa.SystemAccentFollower()
         f._subscribe()
         assert f._subscribed is True

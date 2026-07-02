@@ -9,6 +9,10 @@ the test runs headless.
 
 from __future__ import annotations
 
+import sys
+
+import pytest
+
 from jellytoast import blur
 from jellytoast.blur import _kwin, _unsupported
 
@@ -464,6 +468,10 @@ class TestMacosBackend:
     is_supported() False → probe() UNSUPPORTED → near-opaque body, never
     see-through, and apply() never raises."""
 
+    @pytest.mark.skipif(
+        sys.platform == "darwin",
+        reason="on real macOS AppKit is present, so the backend IS supported",
+    )
     def test_degrades_to_unsupported_off_platform_and_never_raises(self):
         from jellytoast.blur import _macos
 

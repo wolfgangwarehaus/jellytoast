@@ -94,7 +94,7 @@ def _config_root(home: Path) -> Path:
 # where the helper's samefile guard correctly refuses to move anything. The
 # recovery path itself only runs on Linux in production.
 _case_sensitive_fs = pytest.mark.skipif(
-    sys.platform == "win32",
+    sys.platform in ("win32", "darwin"),
     reason="stages case-colliding dirs; needs a case-sensitive filesystem",
 )
 
