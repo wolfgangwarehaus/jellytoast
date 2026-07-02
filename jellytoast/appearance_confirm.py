@@ -161,6 +161,28 @@ def show_appearance_revert(
     if the user doesn't keep it within ``seconds``. Hosted on the main window
     (not the Settings dialog, which the user may close mid-countdown)."""
     global _active
+    prev = _active
+    if prev is not None and not prev._finished:
+        # A second live change landed while the previous prompt was still
+        # ticking. Two independent countdowns fight: the buried one auto-reverts
+        # UNDERNEATH the new one, stomping the shared applied state with its
+        # stale backup. Supersede instead: keep the previous change applied
+        # (its revert must not run now — the new change was already applied on
+        # top and would be clobbered) and fold its revert into this prompt's,
+        # so Revert / timeout unwinds BOTH changes, back to the state before
+        # the user started experimenting.
+        prev_revert = prev._on_revert
+        prev._kept = True
+        try:
+            prev._finish()
+        except RuntimeError:
+            pass  # C++ side already gone — nothing to tear down
+        newest_revert = on_revert
+
+        def on_revert() -> None:
+            newest_revert()
+            prev_revert()
+
     main = None
     for w in QApplication.topLevelWidgets():
         if type(w).__name__ == "JellytoastWindow":
