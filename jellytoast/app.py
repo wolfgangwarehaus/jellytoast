@@ -2508,10 +2508,12 @@ def main():
         # current colors.json now and watch it for wallpaper changes. Best-
         # effort — no pywal, no events. Pinned on `win`.
         try:
-            from jellytoast.theme_watcher import PywalFollower
+            from jellytoast.theme_watcher import PywalFollower, ThemeFolderFollower
 
             win._pywal_follower = PywalFollower(win)
             win._pywal_follower.start()
+            win._theme_folder_follower = ThemeFolderFollower(win)
+            win._theme_folder_follower.start()
         except Exception:
             pass
 

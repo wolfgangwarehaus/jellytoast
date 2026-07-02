@@ -131,6 +131,38 @@ windowrule = noblur, class:^(jellytoast)$   # Hyprland — opt OUT (blur is on b
 (SwayFX / Wayfire: target `app_id = jellytoast` in their per-app / layer blur
 config.)
 
+## Theming & ricing
+
+**Settings → Display** is one dropdown: pick the built-in jellytoast look or a
+preset family — Catppuccin (Mocha / Macchiato / Frappé / Latte), Dracula,
+Everforest, Gruvbox, Nord, One Dark, Rosé Pine, Solarized, Tokyo Night. A family
+with both a dark and a light half gets a **Mode** control (Dark / Light / Follow
+system); every family gets the **Frosted glass** switch and a **glass opacity**
+slider. Changes apply live with a 10-second keep-or-revert prompt.
+
+Beyond the presets:
+
+- **Import…** any base16 `.yaml` scheme (~250 community themes). Mislabeled or
+  unreadable schemes are caught at import.
+- **Follow system accent** (jellytoast family, KDE Plasma / GNOME 47+) adopts
+  your desktop accent color, live.
+- **Follow pywal / wallust** re-themes jellytoast from `~/.cache/wal/colors.json`
+  on every wallpaper change.
+- **`~/.config/jellytoast/themes/`** is a watched drop-folder: any base16
+  `.yaml` in it appears in the theme dropdown, and if the file changes while
+  active, the app re-themes live — so a templater like **matugen** can drive
+  jellytoast. A matugen template is one file:
+
+```toml
+[templates.jellytoast]
+input_path = "~/.config/matugen/templates/jellytoast.yaml"
+output_path = "~/.config/jellytoast/themes/matugen.yaml"
+```
+
+with a template that writes the 16 `base00`–`base0F` keys from matugen's
+colors. Pick `matugen` in the theme dropdown once; every wallpaper change
+re-themes the app.
+
 ## Why mpv?
 
 Browser-based playback stacks transcode FLAC / ALAC to AAC server-side. mpv

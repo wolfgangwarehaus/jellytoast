@@ -5,6 +5,22 @@ developer-facing history lives in [`docs/CHANGELOG.md`](docs/CHANGELOG.md).
 
 ## [Unreleased]
 
+- **Themes.** Settings → Display now has a proper theme picker: Catppuccin
+  (all four flavors), Dracula, Everforest, Gruvbox, Nord, One Dark, Rosé Pine,
+  Solarized, and Tokyo Night, alongside the jellytoast look — each previewed
+  with its own palette strip. Families with a dark and a light half can follow
+  your system's light/dark setting, and a **glass opacity** slider tunes how
+  deep the frosted look goes. Everything applies live, with a 10-second
+  keep-or-revert prompt so a bad pick undoes itself.
+- **Bring your own theme.** Import any base16 `.yaml` color scheme (there are
+  hundreds in the community), or drop schemes into
+  `~/.config/jellytoast/themes/` and they show up in the picker. If a file in
+  that folder changes while it's your active theme, the app re-themes on the
+  spot — so wallpaper-theming tools like matugen can drive jellytoast.
+- **Follow your desktop.** Two new switches: **Follow system accent** adopts
+  your KDE / GNOME accent color live, and **Follow pywal / wallust** re-themes
+  the whole app every time your wallpaper changes.
+
 ## [0.1.6] — 2026-07-01
 
 - **Font and size change live.** **Settings → Display → Font** lets you set the

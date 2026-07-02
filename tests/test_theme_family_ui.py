@@ -245,3 +245,41 @@ def test_jellytoast_glass_slider_and_default_button(
     finally:
         s.jellytoast_glass_alpha = 0
         d.deleteLater()
+
+
+def test_themes_folder_rows_in_family_dropdown(
+    qapp, isolated_settings, _no_revert_prompt, tmp_path, monkeypatch
+):
+    """A scheme dropped in the watched themes folder shows as a family row
+    (key file:<path>), and the active folder scheme's row is the selection —
+    not a duplicate 'imported' row."""
+    from jellytoast.settings_dialog import SettingsDialog
+
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
+    folder = tmp_path / "jellytoast" / "themes"
+    folder.mkdir(parents=True)
+    ramp = ["#101418", "#181c22", "#20262e", "#3a4250", "#8a93a6", "#d8dee9",
+            "#e5e9f0", "#eceff4", "#bf616a", "#d08770", "#ebcb8b", "#a3be8c",
+            "#88c0d0", "#81a1c1", "#b48ead", "#5e81ac"]
+    (folder / "drop.yaml").write_text(
+        'scheme: "Dropped"\n'
+        + "\n".join(f'base0{c}: "{v}"' for c, v in zip("0123456789ABCDEF", ramp, strict=True)),
+        encoding="utf-8",
+    )
+    path = str(folder / "drop.yaml")
+
+    s = get_settings()
+    s.theme_family = "imported"
+    s.imported_scheme_path = path
+    s.imported_scheme_json = ""  # folder row supplies the palette, not the blob
+    d = SettingsDialog()
+    try:
+        d.nav.setCurrentRow(_DISPLAY_ROW)
+        keys = [d._family_combo.itemData(i) for i in range(d._family_combo.count())]
+        assert f"file:{path}" in keys
+        assert "imported" not in keys  # no duplicate row for a folder scheme
+        assert d._family_combo.currentData() == f"file:{path}"
+    finally:
+        s.imported_scheme_path = ""
+        ct.reset_all()
+        d.deleteLater()
