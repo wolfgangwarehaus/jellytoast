@@ -495,6 +495,31 @@ class TestThemeAxesMigration:
         self._run(**{"ui/theme_mode": "transparent"})
         assert th.get_active_theme().name == "frosted_dark"
 
+    def test_unknown_preset_without_scheme_falls_back_to_builtin(
+        self, clean_theme_settings
+    ):
+        """Regression: an unknown last_preset_name (e.g. a curated preset
+        renamed/dropped in a later release) with NO imported-scheme payload
+        used to strand the user in an empty "imported" family — blank palette
+        section, preset glass depths, nothing to render."""
+        s = _settings_handle()
+        s.remove("ui/imported_scheme_json")
+        assert self._run(
+            **{"ui/theme_mode": "frosted_dark", "ui/last_preset_name": "Gone Preset"}
+        ) == ("dark", True, "")
+
+    def test_unknown_preset_with_scheme_payload_stays_imported(
+        self, clean_theme_settings
+    ):
+        s = _settings_handle()
+        s.setValue("ui/imported_scheme_json", '{"name": "x"}')
+        try:
+            assert self._run(
+                **{"ui/theme_mode": "frosted_dark", "ui/last_preset_name": "My Scheme"}
+            ) == ("dark", True, "imported")
+        finally:
+            s.remove("ui/imported_scheme_json")
+
 
 # ── ink_alpha() ───────────────────────────────────────────────────────
 
