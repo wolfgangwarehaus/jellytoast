@@ -25,7 +25,6 @@ import sys
 from pathlib import Path
 
 import pytest
-from PySide6.QtCore import QSettings
 
 from jellytoast import settings as settings_mod
 from jellytoast.settings_migration import (
@@ -36,6 +35,7 @@ from jellytoast.settings_migration import (
     _pick_richer_downloads_db,
     _recover_nested_appdata,
     _rename_inner_app_subdir,
+    open_qsettings,
 )
 
 
@@ -65,11 +65,11 @@ def fake_home(tmp_path, monkeypatch):
     # un-fired. Test mode redirects QSettings under tmpfs already, so
     # we just remove the key (clear() would wipe unrelated tests'
     # state in the same xdist worker).
-    qs = QSettings(_QSETTINGS_ORG, _QSETTINGS_APP)
+    qs = open_qsettings()
     qs.remove(_NESTED_RECOVERY_MARKER)
     qs.sync()
     yield tmp_path
-    qs = QSettings(_QSETTINGS_ORG, _QSETTINGS_APP)
+    qs = open_qsettings()
     qs.remove(_NESTED_RECOVERY_MARKER)
     qs.sync()
 
@@ -89,6 +89,17 @@ def _config_root(home: Path) -> Path:
 # ── _rename_inner_app_subdir ────────────────────────────────────────────────
 
 
+# The rename/merge scenarios stage ``JellyToast/`` next to ``jellytoast/`` —
+# names that collide on a case-insensitive filesystem (Windows, default macOS),
+# where the helper's samefile guard correctly refuses to move anything. The
+# recovery path itself only runs on Linux in production.
+_case_sensitive_fs = pytest.mark.skipif(
+    sys.platform == "win32",
+    reason="stages case-colliding dirs; needs a case-sensitive filesystem",
+)
+
+
+@_case_sensitive_fs
 def test_rename_when_only_legacy_inner_exists(fake_home):
     legacy_inner = _data_root(fake_home) / _LEGACY_QSETTINGS_APP
     legacy_inner.mkdir(parents=True)
@@ -122,6 +133,7 @@ def test_rename_noop_when_root_missing(fake_home):
     assert not _data_root(fake_home).exists()
 
 
+@_case_sensitive_fs
 def test_merge_keeps_richer_downloads_db(fake_home):
     legacy_inner = _data_root(fake_home) / _LEGACY_QSETTINGS_APP
     new_inner = _data_root(fake_home) / _QSETTINGS_APP
@@ -142,6 +154,7 @@ def test_merge_keeps_richer_downloads_db(fake_home):
     assert (new_inner / "new_only.txt").read_text() == "N"
 
 
+@_case_sensitive_fs
 def test_merge_keeps_new_downloads_db_when_richer(fake_home):
     legacy_inner = _data_root(fake_home) / _LEGACY_QSETTINGS_APP
     new_inner = _data_root(fake_home) / _QSETTINGS_APP
@@ -156,6 +169,7 @@ def test_merge_keeps_new_downloads_db_when_richer(fake_home):
         assert c.execute("SELECT COUNT(*) FROM nodes").fetchone()[0] == 20
 
 
+@_case_sensitive_fs
 def test_merge_skips_existing_files_at_destination(fake_home):
     legacy_inner = _data_root(fake_home) / _LEGACY_QSETTINGS_APP
     new_inner = _data_root(fake_home) / _QSETTINGS_APP
@@ -172,6 +186,7 @@ def test_merge_skips_existing_files_at_destination(fake_home):
     assert (new_inner / "settings.json").read_text() == "new-content"
 
 
+@_case_sensitive_fs
 def test_merge_removes_empty_legacy_dir(fake_home):
     legacy_inner = _data_root(fake_home) / _LEGACY_QSETTINGS_APP
     new_inner = _data_root(fake_home) / _QSETTINGS_APP
@@ -185,6 +200,7 @@ def test_merge_removes_empty_legacy_dir(fake_home):
     assert not legacy_inner.exists()
 
 
+@_case_sensitive_fs
 def test_merge_keeps_legacy_dir_when_collision_blocks_move(fake_home):
     legacy_inner = _data_root(fake_home) / _LEGACY_QSETTINGS_APP
     new_inner = _data_root(fake_home) / _QSETTINGS_APP
@@ -239,6 +255,7 @@ def test_pick_richer_db_unreadable_new_prefers_legacy(fake_home):
 # ── _recover_nested_appdata ─────────────────────────────────────────────────
 
 
+@_case_sensitive_fs
 def test_recover_moves_data_when_only_legacy_inner_exists(fake_home):
     legacy_inner = _data_root(fake_home) / _LEGACY_QSETTINGS_APP
     legacy_inner.mkdir(parents=True)
@@ -254,6 +271,7 @@ def test_recover_moves_data_when_only_legacy_inner_exists(fake_home):
     assert not legacy_inner.exists()
 
 
+@_case_sensitive_fs
 def test_recover_merges_both_dirs_keeping_richer_db(fake_home):
     legacy_inner = _data_root(fake_home) / _LEGACY_QSETTINGS_APP
     new_inner = _data_root(fake_home) / _QSETTINGS_APP
@@ -268,6 +286,7 @@ def test_recover_merges_both_dirs_keeping_richer_db(fake_home):
         assert c.execute("SELECT COUNT(*) FROM nodes").fetchone()[0] == 5
 
 
+@_case_sensitive_fs
 def test_recover_marker_prevents_rerun(fake_home):
     legacy_inner = _data_root(fake_home) / _LEGACY_QSETTINGS_APP
     legacy_inner.mkdir(parents=True)
@@ -297,10 +316,11 @@ def test_recover_noop_when_no_legacy_inner_anywhere(fake_home):
     _recover_nested_appdata()
 
     # Marker still gets set so we don't keep re-checking.
-    qs = QSettings(_QSETTINGS_ORG, _QSETTINGS_APP)
+    qs = open_qsettings()
     assert qs.value(_NESTED_RECOVERY_MARKER, False, type=bool) is True
 
 
+@_case_sensitive_fs
 def test_recover_handles_cache_and_config_dirs(fake_home):
     # All three roots have a legacy inner subdir with one file each.
     for root in (
@@ -333,7 +353,7 @@ def test_recover_skips_on_non_linux(fake_home, monkeypatch):
 
     # macOS path is short-circuited — marker set, filesystem untouched.
     assert (legacy_inner / "a.txt").exists()
-    qs = QSettings(_QSETTINGS_ORG, _QSETTINGS_APP)
+    qs = open_qsettings()
     assert qs.value(_NESTED_RECOVERY_MARKER, False, type=bool) is True
 
 

@@ -18,9 +18,9 @@ from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 import pytest
-from PySide6.QtCore import QSettings
 
 from jellytoast.cast_manager import CastManager
+from jellytoast.settings_migration import open_qsettings
 
 
 @pytest.fixture
@@ -190,7 +190,7 @@ def cm(monkeypatch):
 
 
 def _qs():
-    return QSettings("jellytoast", "jellytoast")
+    return open_qsettings()
 
 
 def _clear_cast_settings():

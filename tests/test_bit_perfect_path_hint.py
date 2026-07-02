@@ -144,13 +144,16 @@ def test_explicit_device_ignores_resolution_tag():
 
 
 def test_exclusive_checkbox_hidden_on_linux_and_armed_setting_cleared(
-    qapp, isolated_settings
+    qapp, isolated_settings, monkeypatch
 ):
     """mpv's PipeWire exclusive mode has no working Linux backend (every
     AO open fails with it on; the alsa AO ignores it) — the checkbox is
     not built on Linux, and a previously-armed persisted value is
     force-cleared at page build so it can't keep poisoning opens
     invisibly."""
+    import jellytoast.platform_compat as pc
+
+    monkeypatch.setattr(pc, "IS_LINUX", True)  # dialog reads the flag lazily
     isolated_settings.audio_exclusive = True
     from jellytoast.settings_dialog import SettingsDialog
 

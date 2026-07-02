@@ -171,7 +171,7 @@ class TestOrphanFiles:
         out = _index.repair()
 
         assert out["orphan_files"] == 1
-        assert out["orphan_paths"] == ["ab/loose.flac"]
+        assert [x.replace("\\", "/") for x in out["orphan_paths"]] == ["ab/loose.flac"]
         # CRITICAL: never delete an orphan — the user decides.
         assert abs_path.is_file()
 
@@ -263,7 +263,7 @@ class TestCombined:
         assert out["blobs_dropped"] == 1
         assert out["bytes_fixed"] == 1
         assert out["orphan_files"] == 1
-        assert out["orphan_paths"] == ["bb/orphan.flac"]
+        assert [x.replace("\\", "/") for x in out["orphan_paths"]] == ["bb/orphan.flac"]
         # Two widows: the explicit one + the row whose blob was just
         # dropped (t-missing's node was 'complete' with no blob).
         assert out["nodes_recovered"] == 2

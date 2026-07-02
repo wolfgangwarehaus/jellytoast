@@ -224,6 +224,15 @@ class TestBlurField:
 
 
 class TestBodyColorFor:
+    @pytest.fixture(autouse=True)
+    def _linux_platform(self, monkeypatch):
+        # These pin the PORTAL/KWin behavior (ACTIVE returns the base alpha
+        # untouched). On a Windows/macOS host the platform glass caps fire
+        # (see _platform_active_alpha) and the expectations differ — that
+        # branch is covered by the preset-cap tests below.
+        monkeypatch.setattr(th, "IS_WINDOWS", False)
+        monkeypatch.setattr(th, "IS_MACOS", False)
+
     def test_active_keeps_glass_alpha(self):
         from jellytoast.blur import BlurStatus
 
@@ -286,6 +295,10 @@ class TestBodyColorTuple:
         _set_theme_settings(theme_mode="dark", accent_color="", frosted=frosted)
         monkeypatch.setattr(blur, "_FORCE", "")  # ignore JT_BLUR_FORCE
         monkeypatch.setattr(blur, "_status_cache", status)
+        # Pin the portal/KWin ACTIVE behavior — Windows/macOS glass caps
+        # would rewrite the expected alphas (see TestBodyColorFor note).
+        monkeypatch.setattr(th, "IS_WINDOWS", False)
+        monkeypatch.setattr(th, "IS_MACOS", False)
 
     def test_frosted_glass_when_active(self, clean_theme_settings, monkeypatch):
         from jellytoast import ui_helpers

@@ -46,6 +46,37 @@ from PySide6.QtCore import QStandardPaths  # noqa: E402
 # isolating QSettings and the queue.json file used by Settings.save_queue.
 QStandardPaths.setTestModeEnabled(True)
 
+if sys.platform == "win32":
+    # Windows needs its own QSettings redirect — the HOME/XDG env vars above
+    # are Linux-only, and test mode does NOT move the registry. Worse, the
+    # default backend IS the registry (NativeFormat) and the qapp fixture sets
+    # no organizationName, so a bare QSettings() has NO valid registry path at
+    # all: status() latches AccessError and every setValue is silently dropped.
+    # That's why e.g. test_switch_family_applies_and_tints_body failed only on
+    # Windows — color_tokens persisted the preset palette into a black hole and
+    # refresh_theme()'s load_persisted_overrides() re-read nothing, wiping the
+    # tint. Force the INI backend into a per-worker temp dir (mirroring the
+    # $HOME split above) and give QSettings a real org/app name to file under.
+    import tempfile
+
+    from PySide6.QtCore import QCoreApplication, QSettings
+
+    _qs_dir = os.path.join(
+        tempfile.gettempdir(),
+        f"jellytoast-test-{_xdist_worker or 'main'}",
+        "qsettings",
+    )
+    # Wipe the previous RUN's leftovers before anything constructs a QSettings:
+    # jellytoast modules stamp theme state at import time, so a stale INI from
+    # an earlier run would leak into this one before isolated_settings clears.
+    import shutil
+
+    shutil.rmtree(_qs_dir, ignore_errors=True)
+    QSettings.setDefaultFormat(QSettings.Format.IniFormat)
+    QSettings.setPath(QSettings.Format.IniFormat, QSettings.Scope.UserScope, _qs_dir)
+    QCoreApplication.setOrganizationName("jellytoast-tests")
+    QCoreApplication.setApplicationName("jellytoast-tests")
+
 
 @pytest.fixture
 def isolated_settings(tmp_path, monkeypatch):

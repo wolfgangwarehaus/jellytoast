@@ -54,6 +54,7 @@ def test_subscribe_uses_six_arg_qtdbus_form(qapp, isolated_settings, monkeypatch
     the launch re-read worked). This pins the shape so a revert fails loudly."""
     from PySide6.QtDBus import QDBusConnection
 
+    from jellytoast import system_accent
     from jellytoast.system_accent import SystemAccentFollower
 
     calls: list[tuple] = []
@@ -64,6 +65,10 @@ def test_subscribe_uses_six_arg_qtdbus_form(qapp, isolated_settings, monkeypatch
             return True
 
     monkeypatch.setattr(QDBusConnection, "sessionBus", staticmethod(_FakeBus))
+    # Pin the PORTAL branch: on a Windows/macOS host _subscribe routes to the
+    # native backend and never touches QtDBus.
+    monkeypatch.setattr(system_accent, "_IS_WINDOWS", False)
+    monkeypatch.setattr(system_accent, "_IS_MACOS", False)
     f = SystemAccentFollower()
     f._subscribe()
 

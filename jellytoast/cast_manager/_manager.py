@@ -116,9 +116,9 @@ class CastManager(_ChromecastMixin, _AirplayMixin, _OtherProtocolsMixin):
         fires when they actually open the cast menu. ``startup`` mode
         falls through to ``discover_all`` so the cast dialog opens
         with results already loaded."""
-        from PySide6.QtCore import QSettings
+        from jellytoast.settings_migration import open_qsettings
 
-        qs = QSettings("jellytoast", "jellytoast")
+        qs = open_qsettings()
         timing = qs.value("cast/discovery_timing", "on_demand", type=str)
         if timing == "startup":
             self.discover_all()

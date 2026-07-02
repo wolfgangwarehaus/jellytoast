@@ -8,10 +8,10 @@ here — the registry data is the part we care about correctness-wise.
 
 
 import pytest
-from PySide6.QtCore import QSettings
 from PySide6.QtGui import QKeySequence
 
 from jellytoast import hotkeys
+from jellytoast.settings_migration import open_qsettings
 
 REQUIRED_KEYS = {"action_id", "default_seq", "label", "callable", "context"}
 
@@ -45,7 +45,7 @@ def _reset_hotkey_settings(monkeypatch):
     # Force a fresh QSettings handle in case conftest's test-mode
     # redirect kicked in after a prior cached handle.
     hotkeys._reset_settings_cache()
-    qs = QSettings("jellytoast", "jellytoast")
+    qs = open_qsettings()
     qs.beginGroup("hotkeys")
     qs.remove("")
     qs.endGroup()
@@ -144,7 +144,7 @@ def test_reset_all_clears_every_hotkey_entry():
 
 def test_reset_all_leaves_other_settings_groups_intact():
     """``hotkeys/*`` wipe must not touch unrelated QSettings keys."""
-    qs = QSettings("jellytoast", "jellytoast")
+    qs = open_qsettings()
     # Remove these keys on teardown. Under setTestModeEnabled the whole
     # process shares ONE QSettings store, so a leaked ``server/url``
     # leaks into every later test — and SettingsDialog auto-probes the
@@ -160,7 +160,7 @@ def test_reset_all_leaves_other_settings_groups_intact():
         hotkeys.set_sequence("search_find", "Ctrl+K")
         hotkeys.reset_all()
 
-        qs2 = QSettings("jellytoast", "jellytoast")
+        qs2 = open_qsettings()
         assert qs2.value("playback/volume", type=int) == 73
         assert qs2.value("server/url", type=str) == "http://example.test"
         # And the hotkey group really is gone.

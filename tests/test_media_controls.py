@@ -40,6 +40,10 @@ def _force_non_linux(monkeypatch):
     import jellytoast.platform_compat as pc
 
     monkeypatch.setattr(pc, "IS_LINUX", False)
+    # "non-linux" here means NO native backend at all — on the Windows/macOS
+    # boxes the real flags would still select SMTC / NowPlaying.
+    monkeypatch.setattr(pc, "IS_WINDOWS", False)
+    monkeypatch.setattr(pc, "IS_MACOS", False)
 
 
 def test_imports_cleanly_on_linux(monkeypatch, qapp):

@@ -291,10 +291,11 @@ class TestDwmBackend:
     unit-testable cross-platform by importing the module and mocking
     its IS_WINDOWS gate + the build/registry reads."""
 
-    def test_degrades_off_windows_and_never_raises(self):
+    def test_degrades_off_windows_and_never_raises(self, monkeypatch):
         from jellytoast.blur import _dwm
 
-        # On the non-Windows test host everything degrades safely.
+        # Emulate a non-Windows host so this also runs on the Windows box.
+        monkeypatch.setattr(_dwm, "IS_WINDOWS", False)
         assert _dwm.is_supported() is False
         assert _dwm.probe() is blur.BlurStatus.UNSUPPORTED
         assert _dwm.apply(None, True, 0) is False  # must not touch winId/DWM
@@ -368,6 +369,9 @@ class TestDwmBackend:
         monkeypatch.delenv("JT_NO_WIN_BLUR", raising=False)  # take the Acrylic path
 
         class _FakeWidget:
+            def windowHandle(self):
+                return object()  # "shown" — apply()'s not-yet-shown guard passes
+
             def winId(self):
                 return 12345
 

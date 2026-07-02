@@ -38,8 +38,20 @@ behaviour is exercised regardless of CI host.
 
 import sys
 import types
+from pathlib import Path
 
 import pytest
+
+# The org-rename migration is a LINUX-ONLY code path (production
+# short-circuits on IS_LINUX; new installs on Windows/macOS never had the
+# CamelCase layout). Its scenario tests also assume a case-SENSITIVE
+# filesystem — on Windows ``JellyToast/`` and ``jellytoast/`` are the same
+# directory, so the move/merge asserts are unsatisfiable there.
+pytestmark = pytest.mark.skipif(
+    sys.platform == "win32",
+    reason="Linux-only migration path; needs a case-sensitive filesystem",
+)
+
 
 # ── fake keyring backend ─────────────────────────────────────────────
 
@@ -129,8 +141,17 @@ def _legacy_qs(sandbox_home):
     and verify it actually writes under the sandboxed HOME."""
     from PySide6.QtCore import QSettings
 
-    qs = QSettings("JellyToast", "JellyToast")
-    assert str(sandbox_home) in qs.fileName(), (
+    # defaultFormat-honoring ctor: the two-arg form hardwires NativeFormat,
+    # which on Windows is the registry and ignores the fixture's setPath —
+    # the sandbox assert below would trip on the REAL HKCU store.
+    qs = QSettings(
+        QSettings.defaultFormat(),
+        QSettings.Scope.UserScope,
+        "JellyToast",
+        "JellyToast",
+    )
+    # as_posix(): QSettings.fileName() always uses forward slashes.
+    assert sandbox_home.as_posix() in qs.fileName(), (
         f"legacy QSettings landed outside sandbox: {qs.fileName()}"
     )
     return qs
@@ -139,8 +160,13 @@ def _legacy_qs(sandbox_home):
 def _new_qs(sandbox_home):
     from PySide6.QtCore import QSettings
 
-    qs = QSettings("jellytoast", "jellytoast")
-    assert str(sandbox_home) in qs.fileName(), (
+    qs = QSettings(
+        QSettings.defaultFormat(),
+        QSettings.Scope.UserScope,
+        "jellytoast",
+        "jellytoast",
+    )
+    assert sandbox_home.as_posix() in qs.fileName(), (
         f"new QSettings landed outside sandbox: {qs.fileName()}"
     )
     return qs
@@ -193,8 +219,10 @@ def test_full_migration_first_call(sandbox_home, fake_keyring):
     # redirected QSettings's UserScope into ``tmp/.config``), so this
     # dir exists.
     (sandbox_home / ".config" / "JellyToast").mkdir(parents=True, exist_ok=True)
-    legacy_conf = sandbox_home / ".config" / "JellyToast" / "JellyToast.conf"
-    assert legacy_conf.exists(), "QSettings sync should have created the .conf"
+    # Derive the store file from the handle: .conf on Linux NativeFormat,
+    # .ini where the conftest forces IniFormat (Windows).
+    legacy_conf = Path(old.fileName())
+    assert legacy_conf.exists(), "QSettings sync should have created the store file"
     (sandbox_home / ".config" / "JellyToast" / "queue.json").write_text("{}")
     (sandbox_home / ".local" / "share" / "JellyToast").mkdir(parents=True)
     (sandbox_home / ".local" / "share" / "JellyToast" / "downloads.db").write_text("blob")
