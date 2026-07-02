@@ -3262,17 +3262,26 @@ class SettingsDialog(QDialog):
                 box.addWidget(self._base16_grid(base16), 0, Qt.AlignmentFlag.AlignLeft)
 
         # Follow pywal / wallust — Linux ricing loop (any family: following
-        # re-themes onto the imported family on the next wallpaper change).
+        # re-themes onto the imported family on the next wallpaper change). The
+        # ⓘ carries the "what is this" so the label stays terse.
         if sys.platform.startswith("linux"):
             self._follow_pywal_check = QCheckBox("Follow pywal / wallust")
             self._follow_pywal_check.setChecked(self.s.follow_pywal)
-            self._follow_pywal_check.setToolTip(
-                "Theme jellytoast from your pywal / wallust palette and re-theme "
-                "live on every wallpaper change (~/.cache/wal/colors.json)."
-            )
             self._follow_pywal_check.toggled.connect(self._on_follow_pywal_toggled)
+            pywal_row = QHBoxLayout()
+            pywal_row.setContentsMargins(0, 0, 0, 0)
+            pywal_row.setSpacing(10)
+            pywal_row.addWidget(self._follow_pywal_check)
+            pywal_row.addWidget(
+                self._info_button(
+                    "Follow pywal / wallust",
+                    "pywal / wallust are tools that build themes from your "
+                    "wallpaper.",
+                )
+            )
+            pywal_row.addStretch(1)
             box.addSpacing(4)
-            box.addWidget(self._follow_pywal_check)
+            box.addLayout(pywal_row)
         else:
             self._follow_pywal_check = None
 
