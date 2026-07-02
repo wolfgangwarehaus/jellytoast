@@ -43,6 +43,7 @@ from jellytoast.settings_migration import (
     _QSETTINGS_APP,
     _QSETTINGS_ORG,
     _migrate_legacy_org_name,
+    _migrate_theme_axes,
     _recover_nested_appdata,
 )
 
@@ -80,6 +81,10 @@ class Settings:
         # encrypted, since defence-in-depth costs nothing. Idempotent
         # on subsequent runs.
         self._chmod_config_owner_only()
+        # Split the old single ui/theme_mode into the orthogonal theme axes
+        # (theme_mode ∈ auto/dark/light · frosted · theme_family). Run-once,
+        # marker-guarded — a no-op after the first launch on 0.1.7.
+        _migrate_theme_axes(self._s)
 
     def _chmod_config_owner_only(self):
         """chmod 600 the QSettings config file. No-op on platforms or
@@ -1766,31 +1771,89 @@ class Settings:
     # dropping translucency. The JT_OPAQUE=1 env switch remains as a dev-only
     # diagnostic (see jellytoast.blur.opaque_mode_active).
 
-    # The Transparent / Transparent-light themes were dropped; map a stored
-    # selection onto the Frosted variant of the same family (both are the
-    # translucent/glass aesthetic — Frosted just rides compositor blur and is
-    # never see-through). One-shot, self-healing on first read, mirroring the
-    # accent_color legacy-remap below.
-    _LEGACY_THEME_REMAP = {
-        "transparent": "frosted_dark",
-        "transparent_light": "frosted_light",
-    }
-
     @property
     def theme_mode(self) -> str:
-        # "auto" (follow the OS light/dark) | one of theme.THEMES:
-        # "frosted_dark" (default) | "dark" | "frosted_light" | "light".
-        # All live-apply (only font_scale needs a restart); get_active_theme()
-        # resolves this key ("auto" → frosted_light/frosted_dark by OS scheme).
-        v = self._s.value("ui/theme_mode", "frosted_dark", type=str)
-        if v in self._LEGACY_THEME_REMAP:
-            v = self._LEGACY_THEME_REMAP[v]
+        """Luminance intent — ``"auto"`` (follow the OS light/dark), ``"dark"``,
+        or ``"light"``. Orthogonal to :attr:`frosted` (Frosted/Opaque) and
+        :attr:`theme_family`; ``get_active_theme()`` composes the built-in theme
+        from all three. The old single-key 4-name scheme (frosted_dark / dark /
+        frosted_light / light / transparent*) is split into these axes at boot by
+        ``settings_migration._migrate_theme_axes``; this getter self-heals any
+        stray 4-name to its luminance as a belt-and-braces fallback."""
+        v = self._s.value("ui/theme_mode", "dark", type=str)
+        if v not in ("auto", "dark", "light"):
+            v = "light" if "light" in v else "dark"
             self._s.setValue("ui/theme_mode", v)
         return v
 
     @theme_mode.setter
     def theme_mode(self, v: str):
-        self._s.setValue("ui/theme_mode", v)
+        self._s.setValue("ui/theme_mode", v if v in ("auto", "dark", "light") else "dark")
+
+    @property
+    def frosted(self) -> bool:
+        """Frosted glass (translucent, blur-riding) vs Opaque body — the
+        Frosted/Opaque switch, orthogonal to :attr:`theme_mode` +
+        :attr:`theme_family`. Default on (the frosted aesthetic ships)."""
+        return self._s.value("ui/frosted", True, type=bool)
+
+    @frosted.setter
+    def frosted(self, v: bool):
+        self._s.setValue("ui/frosted", bool(v))
+
+    @property
+    def preset_glass_alpha(self) -> int:
+        """User override for a PRESET family's frosted body alpha (0 = use the
+        built-in per-luminance default). Higher = deeper, truer to the scheme's
+        background; lower = airier. Surfaced as the "Glass opacity" slider that
+        appears when Frosted is on for a preset. Ignored for the jellytoast
+        family (its glass is fixed) and env JT_PRESET_GLASS_ALPHA."""
+        return self._s.value("ui/preset_glass_alpha", 0, type=int)
+
+    @preset_glass_alpha.setter
+    def preset_glass_alpha(self, v: int):
+        try:
+            self._s.setValue("ui/preset_glass_alpha", int(v))
+        except (TypeError, ValueError):
+            self._s.setValue("ui/preset_glass_alpha", 0)
+
+    @property
+    def jellytoast_glass_alpha(self) -> int:
+        """User override for the built-in jellytoast theme's frosted body alpha
+        (0 = its own airier default, 172 dark / 140 light). Same "Glass opacity"
+        slider as presets, but tracked separately so each family keeps its own
+        default + tuning. Ignored on the Opaque (solid) variant."""
+        return self._s.value("ui/jellytoast_glass_alpha", 0, type=int)
+
+    @jellytoast_glass_alpha.setter
+    def jellytoast_glass_alpha(self, v: int):
+        try:
+            self._s.setValue("ui/jellytoast_glass_alpha", int(v))
+        except (TypeError, ValueError):
+            self._s.setValue("ui/jellytoast_glass_alpha", 0)
+
+    @property
+    def theme_family(self) -> str:
+        """Active theme family — ``""`` / ``"jellytoast"`` (built-in), a preset
+        family key (``theme_presets.THEME_FAMILIES``), or ``"imported"``. Drives
+        which palette applies and whether the Display page shows the accent row
+        (jellytoast) or the base16 preview (presets)."""
+        return self._s.value("ui/theme_family", "", type=str)
+
+    @theme_family.setter
+    def theme_family(self, v: str):
+        self._s.setValue("ui/theme_family", (v or "").strip())
+
+    @property
+    def imported_scheme_json(self) -> str:
+        """Raw JSON of the last user-imported base16 scheme (name / variant /
+        accent_slot / base16), so its preview grid + body tint survive a restart.
+        Empty when nothing has been imported."""
+        return self._s.value("ui/imported_scheme_json", "", type=str)
+
+    @imported_scheme_json.setter
+    def imported_scheme_json(self, v: str):
+        self._s.setValue("ui/imported_scheme_json", v or "")
 
     # ── Update check (jellytoast/updates.py) ──────────────────────────
     @property

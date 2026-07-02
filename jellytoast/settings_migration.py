@@ -301,3 +301,55 @@ def _migrate_legacy_org_name():
     new_qs.setValue(_MIGRATION_MARKER, True)
     new_qs.sync()
     logger.info("org-name migration complete (JellyToast → jellytoast)")
+
+
+_THEME_AXES_MARKER = "migration/theme_axes_done"
+
+# Old single ``ui/theme_mode`` value → (new theme_mode ∈ auto/dark/light, frosted).
+# A missing key (fresh install, or a user who never changed the default) maps to
+# the shipped frosted-dark default. Explicit ``auto`` stays auto; the dropped
+# transparent* aliases fold into their frosted family.
+_THEME_MODE_SPLIT = {
+    None: ("dark", True),
+    "": ("dark", True),
+    "auto": ("auto", True),
+    "frosted_dark": ("dark", True),
+    "dark": ("dark", False),
+    "frosted_light": ("light", True),
+    "light": ("light", False),
+    "transparent": ("dark", True),
+    "transparent_light": ("light", True),
+}
+
+
+def _migrate_theme_axes(qs: QSettings) -> None:
+    """One-shot: split the old single ``ui/theme_mode`` (frosted_dark / dark /
+    frosted_light / light / auto / transparent*) into the orthogonal 0.1.7 axes
+    — ``ui/theme_mode`` (auto/dark/light), ``ui/frosted``, ``ui/theme_family`` —
+    and map the old ``ui/last_preset_name`` onto a family key. Idempotent via
+    ``_THEME_AXES_MARKER``. Operates on the app's QSettings (``qs``); runs from
+    ``Settings.__init__`` after the legacy-org migration."""
+    if qs.value(_THEME_AXES_MARKER, False, type=bool):
+        return
+    raw = qs.value("ui/theme_mode", None)
+    mode, frosted = _THEME_MODE_SPLIT.get(raw, ("dark", True))
+    qs.setValue("ui/theme_mode", mode)
+    qs.setValue("ui/frosted", frosted)
+
+    # last_preset_name → family key. A known preset member maps to its family; a
+    # non-empty unknown name is an imported scheme (sentinel "imported"); empty
+    # is the built-in jellytoast theme.
+    lpn = qs.value("ui/last_preset_name", "", type=str)
+    if not lpn:
+        family = ""
+    else:
+        try:
+            from jellytoast.theme_presets import PRESET_NAME_TO_FAMILY
+
+            family = PRESET_NAME_TO_FAMILY.get(lpn, "imported")
+        except Exception:
+            family = "imported"
+    qs.setValue("ui/theme_family", family)
+
+    qs.setValue(_THEME_AXES_MARKER, True)
+    qs.sync()

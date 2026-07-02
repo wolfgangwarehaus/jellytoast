@@ -62,3 +62,53 @@ def test_import_round_trips_through_the_engine(qapp):
 def test_preset_names_are_unique():
     names = [p.name for p in BUILTIN_PRESETS]
     assert len(names) == len(set(names))
+
+
+# ── Theme families (0.1.7 unified family + mode model) ───────────────────────
+
+from jellytoast.theme_presets import (  # noqa: E402
+    FAMILY_ORDER,
+    PRESET_NAME_TO_FAMILY,
+    THEME_FAMILIES,
+    family_has_both,
+    family_label,
+)
+
+
+def test_every_builtin_preset_belongs_to_a_family():
+    covered = set(PRESET_NAME_TO_FAMILY)
+    assert covered == {p.name for p in BUILTIN_PRESETS}
+
+
+def test_family_members_are_builtin_presets():
+    names = {p.name for p in BUILTIN_PRESETS}
+    for fam in THEME_FAMILIES.values():
+        for m in (fam.dark, fam.light):
+            if m is not None:
+                assert m.name in names, (fam.key, m.name)
+
+
+def test_has_both_only_for_paired_families():
+    paired = {k for k, fam in THEME_FAMILIES.items() if fam.has_both}
+    assert paired == {"catppuccin", "gruvbox"}
+    # jellytoast (sentinel, not a table row) always offers all three modes.
+    assert family_has_both("jellytoast") and family_has_both("")
+    assert not family_has_both("nord")
+
+
+def test_family_order_covers_every_family():
+    assert set(FAMILY_ORDER) == set(THEME_FAMILIES)
+
+
+def test_member_for_falls_back_for_dark_only():
+    nord = THEME_FAMILIES["nord"]
+    assert nord.member_for("light").name == "Nord"  # no light → dark fallback
+    catp = THEME_FAMILIES["catppuccin"]
+    assert catp.member_for("dark").name == "Catppuccin Mocha"
+    assert catp.member_for("light").name == "Catppuccin Latte"
+
+
+def test_family_label_sentinels():
+    assert family_label("") == "jellytoast"
+    assert family_label("jellytoast") == "jellytoast"
+    assert family_label("catppuccin") == "Catppuccin"
