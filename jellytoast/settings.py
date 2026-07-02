@@ -1938,6 +1938,17 @@ class Settings:
         self._s.setValue("ui/follow_system_accent", bool(v))
 
     @property
+    def follow_pywal(self) -> bool:
+        """When on, jellytoast follows the pywal / wallust palette: the theme
+        watcher applies ``~/.cache/wal/colors.json`` at launch and live on every
+        wallpaper change (see theme_watcher). Off by default."""
+        return self._s.value("ui/follow_pywal", False, type=bool)
+
+    @follow_pywal.setter
+    def follow_pywal(self, v: bool):
+        self._s.setValue("ui/follow_pywal", bool(v))
+
+    @property
     def shuffle_queue_size(self) -> int:
         """Number of tracks pulled into the queue by "Shuffle library".
         Default 100 — keeps the queue render snappy on commit (1 mutation

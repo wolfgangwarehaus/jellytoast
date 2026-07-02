@@ -13,6 +13,7 @@ Settings that need the host window to react (sign-out, server change)
 are emitted as signals; the host listens and acts.
 """
 
+import sys
 
 from PySide6.QtCore import QPointF, QSize, Qt, QTimer, Signal
 from PySide6.QtGui import QColor, QPainter, QPainterPath
@@ -3250,6 +3251,21 @@ class SettingsDialog(QDialog):
                 box.addWidget(self._section_header("Palette"))
                 box.addWidget(self._base16_grid(base16), 0, Qt.AlignmentFlag.AlignLeft)
 
+        # Follow pywal / wallust — Linux ricing loop (any family: following
+        # re-themes onto the imported family on the next wallpaper change).
+        if sys.platform.startswith("linux"):
+            self._follow_pywal_check = QCheckBox("Follow pywal / wallust")
+            self._follow_pywal_check.setChecked(self.s.follow_pywal)
+            self._follow_pywal_check.setToolTip(
+                "Theme jellytoast from your pywal / wallust palette and re-theme "
+                "live on every wallpaper change (~/.cache/wal/colors.json)."
+            )
+            self._follow_pywal_check.toggled.connect(self._on_follow_pywal_toggled)
+            box.addSpacing(4)
+            box.addWidget(self._follow_pywal_check)
+        else:
+            self._follow_pywal_check = None
+
         return box
 
     # Glass-opacity slider range — spans the airy jellytoast light default (140)
@@ -3551,6 +3567,9 @@ class SettingsDialog(QDialog):
             self.s.last_preset_name,
             ct.export_palette(),
         )
+        # An explicit family/mode pick detaches the pywal follow — otherwise
+        # the next wallpaper change silently clobbers the user's choice.
+        self.s.follow_pywal = False
         # Pre-set the resolved name so the external-change watcher treats this
         # in-dialog pick as handled and doesn't schedule a second rebuild.
         self._last_theme_name = _resolve_base_name(mode, frosted, family)
@@ -4401,12 +4420,44 @@ class SettingsDialog(QDialog):
             ct.export_palette(),
         )
         variant = "light" if preset.variant == "light" else "dark"
+        self.s.follow_pywal = False  # a hand-picked import detaches the follow
         self._last_theme_name = _resolve_base_name(variant, self.s.frosted, "imported")
         apply_imported_preset(preset, self.s.frosted)
         show_appearance_revert(
             lambda b=backup: self._revert_theme_axes(b), seconds=10
         )
         QTimer.singleShot(0, self._rebuild_pages_for_theme)
+
+    def _on_follow_pywal_toggled(self, on: bool) -> None:
+        """Persist the toggle; when enabled, apply the current pywal palette
+        right away (the watcher handles subsequent wallpaper changes). If no
+        colors.json exists, tell the user and flip the toggle back."""
+        self.s.follow_pywal = bool(on)
+        if not on:
+            return
+        from jellytoast.theme_watcher import pywal_apply_once
+
+        def _missing(msg: str) -> None:
+            import shiboken6
+
+            self.s.follow_pywal = False
+            if not shiboken6.isValid(self):
+                return
+            chk = getattr(self, "_follow_pywal_check", None)
+            if chk is not None and shiboken6.isValid(chk):
+                chk.blockSignals(True)
+                chk.setChecked(False)
+                chk.blockSignals(False)
+            from PySide6.QtWidgets import QMessageBox
+
+            QMessageBox.information(
+                self,
+                "pywal palette not found",
+                f"{msg}\n\nRun pywal (or wallust) once so it generates a "
+                "palette, then turn this back on.",
+            )
+
+        pywal_apply_once(on_missing=_missing)
 
     def _on_follow_system_accent_toggled(self, on: bool) -> None:
         """Persist the toggle; when enabled, read the desktop accent off a worker
