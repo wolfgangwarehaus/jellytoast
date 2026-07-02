@@ -47,4 +47,33 @@ def test_follower_start_is_safe_without_portal(qapp, isolated_settings):
     f._on_setting_changed(_APPEARANCE_NS, "accent-color")  # handler is null-safe
 
 
+def test_subscribe_uses_six_arg_qtdbus_form(qapp, isolated_settings, monkeypatch):
+    """Regression: QtDBus needs connect(service, path, iface, name, receiver,
+    SLOT(sig)) — the 6-arg form. The old 5-arg bound-method call raised
+    TypeError, was swallowed, and left the live accent watch UNSUBSCRIBED (only
+    the launch re-read worked). This pins the shape so a revert fails loudly."""
+    from PySide6.QtDBus import QDBusConnection
+
+    from jellytoast.system_accent import SystemAccentFollower
+
+    calls: list[tuple] = []
+
+    class _FakeBus:
+        def connect(self, *args):
+            calls.append(args)
+            return True
+
+    monkeypatch.setattr(QDBusConnection, "sessionBus", staticmethod(_FakeBus))
+    f = SystemAccentFollower()
+    f._subscribe()
+
+    assert f._subscribed is True
+    assert len(calls) == 1
+    args = calls[0]
+    assert len(args) == 6, f"QtDBus connect must be the 6-arg form, got {len(args)}"
+    assert args[3] == "SettingChanged"
+    assert args[4] is f  # receiver is the follower itself
+    assert "_on_setting_changed" in str(args[5])  # the SLOT() signature string
+
+
 _APPEARANCE_NS = "org.freedesktop.appearance"

@@ -4745,21 +4745,8 @@ class SettingsDialog(QDialog):
 
         _uih.refresh_theme()
         _icons.refresh_theme()
-        # 3. Update the swatch ring states so the new pick reads as checked.
-        #    A preset match selects that preset and de-selects the dropper; a
-        #    non-preset colour is a custom/eyedropper pick → load it into the
-        #    dropper swatch and select that instead.
-        matched_preset = False
-        for h, btn in self._accent_buttons:
-            m = h.lower() == hex_value.lower()
-            btn.set_accent_state(h, m)
-            matched_preset = matched_preset or m
-        if hasattr(self, "_accent_dropper"):
-            if matched_preset:
-                self._accent_dropper.setChecked(False)
-                self._accent_dropper.update()
-            else:
-                self._accent_dropper.set_picked(hex_value, checked=True)
+        # 3. Reflect the pick in the swatch ring / eyedropper.
+        self._refresh_accent_swatches(hex_value)
         # 4. Broadcast — and let the SINGLE theme_changed path do all the live
         #    work: the main window's `_cascade_global_style` re-stamps the app
         #    (GLOBAL_STYLE + palette + a deferred, visible-only checkbox
@@ -4775,6 +4762,30 @@ class SettingsDialog(QDialog):
         #    keep the restart notice visible if any of those differ
         #    from the initial values when the dialog was opened.
         self._refresh_restart_notice_visibility()
+
+    def _refresh_accent_swatches(self, hex_value: str) -> None:
+        """Sync the accent preset rings + the eyedropper swatch to ``hex_value``:
+        the matching preset (if any) reads selected, else the eyedropper shows
+        the custom colour — so it acts as a live indicator of the active accent,
+        including a "Follow system accent" update that lands from OUTSIDE the
+        dialog. No-op when the accent row isn't built (non-jellytoast family, or
+        the Display page hasn't been visited yet)."""
+        buttons = getattr(self, "_accent_buttons", None)
+        if not buttons:
+            return
+        cur = (hex_value or "").strip().lower()
+        matched = False
+        for h, btn in buttons:
+            m = h.lower() == cur
+            btn.set_accent_state(h, m)
+            matched = matched or m
+        dropper = getattr(self, "_accent_dropper", None)
+        if dropper is not None:
+            if matched or not cur:
+                dropper.setChecked(False)
+                dropper.update()
+            else:
+                dropper.set_picked(cur, checked=True)
 
     def _reapply_dialog_accent_styling(self, accent_only: bool = False):
         """Rebuild every QSS string in the dialog that bakes ACCENT.
@@ -4792,6 +4803,11 @@ class SettingsDialog(QDialog):
         # means re-running the same code with the now-refreshed
         # module-level constant.
         self._build_and_apply_dialog_stylesheet()
+        # Keep the accent preset ring + eyedropper swatch in sync with the live
+        # accent, so a "Follow system accent" update (which lands from outside the
+        # dialog) shows the current system colour in the eyedropper. No-op when
+        # the accent row isn't built.
+        self._refresh_accent_swatches(self.s.accent_color)
         # Restart notice fill / left bar use the active accent. Rebuild
         # its inline stylesheet so its colour matches the new accent.
         # hasattr-guarded — the Display page (which owns the notice) is
