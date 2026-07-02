@@ -37,14 +37,21 @@ def _settings_handle():
 
 @pytest.fixture
 def clean_theme_settings():
-    """Wipe ui/theme_mode + ui/accent_color before AND after the test
-    so get_active_theme() sees a clean slate, then restore nothing
-    (the defaults are re-derived from QSettings defaults)."""
+    """Wipe every theme axis get_active_theme() reads before AND after the
+    test so it sees a clean slate (defaults re-derive from QSettings)."""
 
     def _wipe():
         s = _settings_handle()
-        s.remove("ui/theme_mode")
-        s.remove("ui/accent_color")
+        for k in (
+            "ui/theme_mode",
+            "ui/accent_color",
+            "ui/frosted",
+            "ui/theme_family",
+            "ui/imported_scheme_json",
+            "ui/preset_glass_alpha",
+            "ui/jellytoast_glass_alpha",
+        ):
+            s.remove(k)
         s.sync()
 
     _wipe()
@@ -52,15 +59,20 @@ def clean_theme_settings():
     _wipe()
 
 
-def _set_theme_settings(theme_mode=None, accent_color=None):
-    """Write the two keys get_active_theme() reads through the same
-    QSettings handle get_settings() uses, then sync so the read in
-    get_active_theme() sees them."""
+def _set_theme_settings(theme_mode=None, accent_color=None, frosted=None, theme_family=None):
+    """Write the theme axes get_active_theme() reads through the same QSettings
+    handle get_settings() uses, then sync so the read sees them. ``theme_mode``
+    is now the luminance intent (auto/dark/light); ``frosted`` is the orthogonal
+    Frosted/Opaque axis (defaults True when unset)."""
     s = _settings_handle()
     if theme_mode is not None:
         s.setValue("ui/theme_mode", theme_mode)
     if accent_color is not None:
         s.setValue("ui/accent_color", accent_color)
+    if frosted is not None:
+        s.setValue("ui/frosted", frosted)
+    if theme_family is not None:
+        s.setValue("ui/theme_family", theme_family)
     s.sync()
 
 
@@ -267,10 +279,11 @@ class TestBodyColorTuple:
     frosted dialog, so it's the choke point that keeps them degrading
     together. It resolves the live theme + the cached blur status."""
 
-    def _setup(self, monkeypatch, theme_mode, status):
+    def _setup(self, monkeypatch, status, *, frosted=True):
         from jellytoast import blur
 
-        _set_theme_settings(theme_mode=theme_mode, accent_color="")
+        # Dark luminance; Frosted vs Opaque via the orthogonal axis.
+        _set_theme_settings(theme_mode="dark", accent_color="", frosted=frosted)
         monkeypatch.setattr(blur, "_FORCE", "")  # ignore JT_BLUR_FORCE
         monkeypatch.setattr(blur, "_status_cache", status)
 
@@ -278,14 +291,14 @@ class TestBodyColorTuple:
         from jellytoast import ui_helpers
         from jellytoast.blur import BlurStatus
 
-        self._setup(monkeypatch, "frosted_dark", BlurStatus.ACTIVE)
+        self._setup(monkeypatch, BlurStatus.ACTIVE, frosted=True)
         assert ui_helpers.body_color_tuple("main") == (18, 18, 18, 172)
 
     def test_frosted_fallback_when_not_active(self, clean_theme_settings, monkeypatch):
         from jellytoast import ui_helpers
         from jellytoast.blur import BlurStatus
 
-        self._setup(monkeypatch, "frosted_dark", BlurStatus.UNSUPPORTED)
+        self._setup(monkeypatch, BlurStatus.UNSUPPORTED, frosted=True)
         # Every body surface lands on the near-opaque fallback, not 172.
         assert ui_helpers.body_color_tuple("main") == (18, 18, 18, 236)
         assert ui_helpers.body_color_tuple("mini")[3] == 236
@@ -295,7 +308,7 @@ class TestBodyColorTuple:
         from jellytoast import ui_helpers
         from jellytoast.blur import BlurStatus
 
-        self._setup(monkeypatch, "dark", BlurStatus.UNSUPPORTED)
+        self._setup(monkeypatch, BlurStatus.UNSUPPORTED, frosted=False)
         assert ui_helpers.body_color_tuple("main") == THEMES["dark"].body_color
 
 
@@ -304,8 +317,14 @@ class TestBodyColorTuple:
 
 class TestGetActiveTheme:
     def test_returns_theme_matching_theme_mode(self, clean_theme_settings):
-        for name in ("frosted_dark", "dark", "frosted_light", "light"):
-            _set_theme_settings(theme_mode=name, accent_color="")
+        # (luminance mode, frosted) composes the built-in theme name.
+        for mode, frosted, name in (
+            ("dark", True, "frosted_dark"),
+            ("dark", False, "dark"),
+            ("light", True, "frosted_light"),
+            ("light", False, "light"),
+        ):
+            _set_theme_settings(theme_mode=mode, frosted=frosted, accent_color="")
             assert th.get_active_theme().name == name
 
     def test_unknown_mode_falls_back_to_default(self, clean_theme_settings):
@@ -315,17 +334,19 @@ class TestGetActiveTheme:
     def test_default_accent_returns_base_unchanged(self, clean_theme_settings):
         """When accent_color equals the theme default, the base theme
         object is returned verbatim (no replace())."""
-        _set_theme_settings(theme_mode="dark", accent_color=th._DEFAULT_ACCENT)
+        _set_theme_settings(
+            theme_mode="dark", frosted=False, accent_color=th._DEFAULT_ACCENT
+        )
         active = th.get_active_theme()
         assert active is THEMES["dark"]
 
     def test_empty_accent_returns_base_unchanged(self, clean_theme_settings):
-        _set_theme_settings(theme_mode="dark", accent_color="")
+        _set_theme_settings(theme_mode="dark", frosted=False, accent_color="")
         active = th.get_active_theme()
         assert active is THEMES["dark"]
 
     def test_accent_override_applied(self, clean_theme_settings):
-        _set_theme_settings(theme_mode="dark", accent_color="#112233")
+        _set_theme_settings(theme_mode="dark", frosted=False, accent_color="#112233")
         active = th.get_active_theme()
         assert active.accent == "#112233"
         # accent_deep is the darkened variant.
@@ -334,7 +355,7 @@ class TestGetActiveTheme:
         assert active.border_accent == "rgba(17,34,51,0.45)"  # dark = 0.45
 
     def test_accent_override_preserves_other_tokens(self, clean_theme_settings):
-        _set_theme_settings(theme_mode="frosted_dark", accent_color="#abcdef")
+        _set_theme_settings(theme_mode="dark", frosted=True, accent_color="#abcdef")
         active = th.get_active_theme()
         base = THEMES["frosted_dark"]
         # Non-accent tokens unchanged.
@@ -348,7 +369,7 @@ class TestGetActiveTheme:
         """A non-hex accent string must not raise — get_active_theme
         catches ValueError/IndexError and returns the base theme."""
         for bad in ("not-a-hex", "#zzz", "#12", "garbage"):
-            _set_theme_settings(theme_mode="frosted_dark", accent_color=bad)
+            _set_theme_settings(theme_mode="dark", frosted=True, accent_color=bad)
             active = th.get_active_theme()
             # Falls back to the base theme.
             assert active.name == "frosted_dark"
@@ -360,27 +381,118 @@ class TestGetActiveTheme:
             th.get_active_theme()  # must not raise
 
 
-class TestDroppedTransparentMigration:
-    """The removed Transparent / Transparent-light themes remap onto the
-    Frosted variant of the same family on read (self-healing), so upgrading
-    from a build that had one selected doesn't leave a stale/blank choice."""
+class TestPresetBodyTint:
+    """A preset family recolours the painted body with its background (base00):
+    get_active_theme overlays the persisted BODY_COLOR override's RGB but keeps
+    the resolved base theme's alpha, so Frosted/Opaque still owns opacity."""
 
-    def test_transparent_remaps_to_frosted_dark(self, clean_theme_settings):
-        from jellytoast.settings import get_settings
+    def test_preset_tints_body_keeps_base_alpha(self, clean_theme_settings, qapp):
+        import jellytoast.color_tokens as ct
 
-        _set_theme_settings(theme_mode="transparent")
-        assert get_settings().theme_mode == "frosted_dark"
-        # The rewrite persists, so the migrated choice is durable.
-        assert _settings_handle().value("ui/theme_mode", type=str) == "frosted_dark"
+        try:
+            _set_theme_settings(
+                theme_mode="dark", theme_family="catppuccin", frosted=True, accent_color=""
+            )
+            ct.apply_override("BODY_COLOR", (30, 30, 46, 172))
+            active = th.get_active_theme()
+            # RGB from the override; alpha is the DEEPER preset glass (truer to
+            # base00 than jellytoast's own 172), not the stored override alpha.
+            assert active.body_color == (30, 30, 46, th._glass_alpha(True, True))
+            assert active.body_color[3] > 172  # deeper than jellytoast's glass
+            # Flip to Opaque → base "dark" (alpha 255), tint RGB unchanged.
+            _set_theme_settings(frosted=False)
+            active2 = th.get_active_theme()
+            assert active2.body_color[:3] == (30, 30, 46)
+            assert active2.body_color[3] == THEMES["dark"].body_color[3]
+        finally:
+            ct.reset_all()
 
-    def test_transparent_light_remaps_to_frosted_light(self, clean_theme_settings):
-        from jellytoast.settings import get_settings
+    def test_jellytoast_never_reads_body_override(self, clean_theme_settings, qapp):
+        import jellytoast.color_tokens as ct
 
-        _set_theme_settings(theme_mode="transparent_light")
-        assert get_settings().theme_mode == "frosted_light"
+        try:
+            # A stray BODY_COLOR override must NOT tint the built-in jellytoast body.
+            ct.apply_override("BODY_COLOR", (1, 2, 3, 99))
+            _set_theme_settings(theme_mode="dark", frosted=True, theme_family="")
+            active = th.get_active_theme()
+            assert active.body_color == THEMES["frosted_dark"].body_color
+        finally:
+            ct.reset_all()
 
-    def test_active_theme_after_migration_is_frosted(self, clean_theme_settings):
-        _set_theme_settings(theme_mode="transparent")
+    def test_jellytoast_glass_default_returns_base(self, clean_theme_settings):
+        # No jellytoast override → get_active_theme returns the base theme verbatim
+        # (its own 172 glass), the airier default the user likes.
+        _set_theme_settings(
+            theme_mode="dark", frosted=True, theme_family="", accent_color=""
+        )
+        _settings_handle().remove("ui/jellytoast_glass_alpha")
+        _settings_handle().sync()
+        active = th.get_active_theme()
+        assert active is THEMES["frosted_dark"]
+
+    def test_jellytoast_glass_override_applies(self, clean_theme_settings):
+        # A jellytoast override retints only the frosted body ALPHA (RGB stays the
+        # theme's own), independent of presets.
+        _set_theme_settings(
+            theme_mode="dark", frosted=True, theme_family="", accent_color=""
+        )
+        _settings_handle().setValue("ui/jellytoast_glass_alpha", 160)
+        _settings_handle().sync()
+        active = th.get_active_theme()
+        assert active.body_color == (18, 18, 18, 160)
+        assert active.mini_body_color[3] == 160
+        # Opaque jellytoast ignores the override (solid body).
+        _set_theme_settings(frosted=False)
+        assert th.get_active_theme().body_color == THEMES["dark"].body_color
+        _settings_handle().remove("ui/jellytoast_glass_alpha")
+        _settings_handle().sync()
+
+
+class TestThemeAxesMigration:
+    """The old single ui/theme_mode (frosted_dark / dark / … / transparent*) is
+    split into the orthogonal (theme_mode ∈ auto/dark/light, frosted,
+    theme_family) axes by settings_migration._migrate_theme_axes. The dropped
+    Transparent aliases fold into their frosted family."""
+
+    def _run(self, **kv):
+        from jellytoast.settings_migration import (
+            _THEME_AXES_MARKER,
+            _migrate_theme_axes,
+        )
+
+        s = _settings_handle()
+        s.remove(_THEME_AXES_MARKER)  # force a re-run in the shared test QSettings
+        for k in ("ui/theme_mode", "ui/frosted", "ui/theme_family", "ui/last_preset_name"):
+            s.remove(k)
+        for k, v in kv.items():
+            s.setValue(k, v)
+        s.sync()
+        _migrate_theme_axes(s)
+        return (
+            s.value("ui/theme_mode", type=str),
+            s.value("ui/frosted", type=bool),
+            s.value("ui/theme_family", type=str),
+        )
+
+    def test_transparent_folds_to_frosted_dark(self, clean_theme_settings):
+        assert self._run(**{"ui/theme_mode": "transparent"}) == ("dark", True, "")
+
+    def test_transparent_light_folds_to_frosted_light(self, clean_theme_settings):
+        assert self._run(**{"ui/theme_mode": "transparent_light"}) == ("light", True, "")
+
+    def test_frosted_dark_splits(self, clean_theme_settings):
+        assert self._run(**{"ui/theme_mode": "frosted_dark"}) == ("dark", True, "")
+
+    def test_solid_dark_splits(self, clean_theme_settings):
+        assert self._run(**{"ui/theme_mode": "dark"}) == ("dark", False, "")
+
+    def test_preset_maps_to_family(self, clean_theme_settings):
+        assert self._run(
+            **{"ui/theme_mode": "frosted_light", "ui/last_preset_name": "Catppuccin Latte"}
+        ) == ("light", True, "catppuccin")
+
+    def test_active_theme_after_transparent_migration_is_frosted(self, clean_theme_settings):
+        self._run(**{"ui/theme_mode": "transparent"})
         assert th.get_active_theme().name == "frosted_dark"
 
 

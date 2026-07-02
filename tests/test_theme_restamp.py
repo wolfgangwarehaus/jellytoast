@@ -17,11 +17,27 @@ from jellytoast import ui_helpers as u
 from jellytoast.player_state import PlayerBus
 from jellytoast.settings import get_settings
 
+# Legacy 4-name theme → the orthogonal (luminance, frosted) axes. These tests
+# flip between a dark and a light theme to prove per-widget QSS re-stamps; the
+# split just moves "frosted vs solid" onto its own axis.
+_LEGACY_THEME_AXES = {
+    "frosted_dark": ("dark", True),
+    "dark": ("dark", False),
+    "frosted_light": ("light", True),
+    "light": ("light", False),
+}
+
 
 def _flip(mode: str) -> None:
-    """Replicate the live theme-swap fan-out (settings_dialog path):
-    set the mode, refresh the token + icon caches, broadcast."""
-    get_settings().theme_mode = mode
+    """Replicate the live theme-swap fan-out (settings_dialog path): set the
+    theme axes, refresh the token + icon caches, broadcast."""
+    s = get_settings()
+    if mode == "auto":
+        s.theme_mode = "auto"
+    else:
+        lum, frosted = _LEGACY_THEME_AXES.get(mode, ("dark", True))
+        s.theme_mode = lum
+        s.frosted = frosted
     u.refresh_theme()
     icons.refresh_theme()
     PlayerBus.get().theme_changed.emit()

@@ -89,6 +89,48 @@ def _mac_glass_alpha() -> int:
     return max(_WIN_BODY_FLOOR_ALPHA, min(255, v))
 
 
+# Default frosted body alpha for a PRESET family (Catppuccin / Nord / …) when
+# blur is active — the "Default" the Glass-opacity slider resets to. Deliberately
+# DEEPER than jellytoast's own glass (172 dark / 140 light): a preset's background
+# (base00) is lighter than jellytoast's near-black, so at jellytoast's airier
+# alpha the wallpaper lifts it into a washed, light-feeling wash that no longer
+# matches the scheme's OPAQUE tone (or the same theme in other apps). A higher
+# alpha lets less wallpaper through, so the translucent body reads as a truer,
+# deeper — still blurred — version of base00. jellytoast defaults to its own
+# airier alpha; both are user-tunable via the slider (and presets via the
+# JT_PRESET_GLASS_ALPHA dev knob). See _glass_alpha().
+_PRESET_GLASS_DARK = 205
+_PRESET_GLASS_LIGHT = 185
+
+
+def _glass_alpha(dark: bool, is_preset: bool, override: int = 0) -> int:
+    """Effective active-blur frosted body alpha for a family — the value behind
+    the "Glass opacity" slider.
+
+    Precedence: the user's slider (``override``; 0 = the family's default), then
+    — presets only — the ``JT_PRESET_GLASS_ALPHA`` dev knob, then the default. A
+    preset defaults DEEPER (truer to its base00, since a preset background is
+    lighter than jellytoast's near-black and the wallpaper otherwise lifts it
+    into a wash); jellytoast defaults to its own airier frosted alpha (172 dark /
+    140 light — read from the theme so it never drifts). Clamped so it can't be
+    dialled fully opaque (which would kill the frosted feel)."""
+    if override:
+        try:
+            return max(_WIN_BODY_FLOOR_ALPHA, min(245, int(override)))
+        except (TypeError, ValueError):
+            pass
+    if is_preset:
+        env = os.environ.get("JT_PRESET_GLASS_ALPHA")
+        if env:
+            try:
+                return max(_WIN_BODY_FLOOR_ALPHA, min(245, int(env)))
+            except ValueError:
+                pass
+        return _PRESET_GLASS_DARK if dark else _PRESET_GLASS_LIGHT
+    key = "frosted_dark" if dark else "frosted_light"
+    return THEMES[key].body_color[3]
+
+
 @dataclass(frozen=True)
 class Theme:
     name: str  # canonical key persisted to QSettings
@@ -556,44 +598,124 @@ def os_color_scheme() -> str:
         return "dark"
 
 
-def get_active_theme() -> Theme:
-    """Return the Theme matching ``settings.theme_mode``, or the default
-    if the saved name is unknown. ``settings.accent_color`` overrides
-    the theme's ``accent`` / ``accent_deep`` / ``border_accent`` triple
-    in-place so a user can pick a non-default accent without forking a
-    whole theme.
+def _resolve_base_name(mode: str, frosted: bool, family: str) -> str:
+    """Compose the built-in theme name (``frosted_dark`` / ``dark`` /
+    ``frosted_light`` / ``light``) from the three orthogonal axes.
 
-    ``theme_mode == "auto"`` follows the OS light/dark setting, resolving
-    to ``frosted_light`` / ``frosted_dark`` via ``os_color_scheme()``. Theme
-    + accent are read live: ``ui_helpers.refresh_theme()`` + a
-    ``PlayerBus.theme_changed`` emit re-stamp the whole app, so a theme (or
-    OS-scheme) change applies without a restart.
-    """
+    The luminance comes from the *active member's* variant for a registered
+    preset family — so a dark-only preset stays on a dark base even when the OS
+    scheme resolves to light — otherwise from ``mode`` (``"auto"`` follows the
+    OS). ``frosted`` picks the frosted vs solid variant of that luminance."""
+    lum = os_color_scheme() if mode == "auto" else ("light" if mode == "light" else "dark")
+    if family and family not in ("", "jellytoast"):
+        try:
+            from jellytoast.theme_presets import THEME_FAMILIES
+
+            fam = THEME_FAMILIES.get(family)
+            if fam is not None:
+                member = fam.member_for(lum)
+                if member is not None:
+                    lum = member.variant
+        except Exception:
+            pass
+    lum = "light" if lum == "light" else "dark"
+    return ("frosted_" if frosted else "") + lum
+
+
+def _persisted_body_rgb(token: str) -> tuple[int, int, int] | None:
+    """Read a persisted BODY_COLOR-family override's RGB straight from QSettings
+    (``debug/colors/<token>``, a JSON ``[r,g,b,a]``) without importing
+    ``color_tokens`` — avoids the ordering dependency where ``refresh_theme``
+    runs ``get_active_theme`` *before* ``load_persisted_overrides``. Returns
+    ``(r, g, b)`` or None. Never raises."""
+    try:
+        import json
+
+        from PySide6.QtCore import QSettings
+
+        raw = QSettings().value(f"debug/colors/{token}", type=str)
+        if not raw:
+            return None
+        parsed = json.loads(raw)
+        if isinstance(parsed, (list, tuple)) and len(parsed) >= 3:
+            return int(parsed[0]), int(parsed[1]), int(parsed[2])
+    except Exception:
+        pass
+    return None
+
+
+def get_active_theme() -> Theme:
+    """Return the live Theme resolved from the orthogonal theme axes
+    (``settings.theme_mode`` ∈ auto/dark/light · ``settings.frosted`` ·
+    ``settings.theme_family``).
+
+    The built-in base theme (which carries the structural washes + border-alpha)
+    is chosen by :func:`_resolve_base_name`. ``settings.accent_color`` overrides
+    the ``accent`` / ``accent_deep`` / ``border_accent`` triple in-place. For a
+    preset family the painted body-fill tuples are re-tinted with the scheme's
+    background colour (the persisted ``BODY_COLOR`` override's RGB) while keeping
+    the base theme's alpha, so the Frosted/Opaque switch still drives opacity.
+
+    Everything is read live: ``ui_helpers.refresh_theme()`` + a
+    ``PlayerBus.theme_changed`` emit re-stamp the whole app, so a theme, accent,
+    family, frosted, or OS-scheme change applies without a restart."""
     from dataclasses import replace as _replace
 
     from jellytoast.settings import get_settings
 
     s = get_settings()
-    mode = s.theme_mode
-    if mode == "auto":
-        mode = "frosted_light" if os_color_scheme() == "light" else "frosted_dark"
-    base = THEMES.get(mode, DEFAULT_THEME)
+    family = s.theme_family
+    base = THEMES.get(_resolve_base_name(s.theme_mode, s.frosted, family), DEFAULT_THEME)
+
+    overlays: dict = {}
+
+    # Accent override — jellytoast and presets both honour accent_color (a preset
+    # persists its member accent there). Bad hex silently keeps the base accent.
     accent = (s.accent_color or base.accent).strip()
-    if not accent or accent.lower() == base.accent.lower():
-        return base
-    try:
-        accent_deep = _darken(accent)
-        alpha = _BORDER_ALPHAS.get(base.name, 0.35)
-        border_accent = _border_accent_for(accent, alpha)
-    except (ValueError, IndexError):
-        # Bad hex — fall back to the theme's defaults.
-        return base
-    return _replace(
-        base,
-        accent=accent,
-        accent_deep=accent_deep,
-        border_accent=border_accent,
+    if accent and accent.lower() != base.accent.lower():
+        try:
+            deep = _darken(accent)
+            alpha = _BORDER_ALPHAS.get(base.name, 0.35)
+            border = _border_accent_for(accent, alpha)
+        except (ValueError, IndexError):
+            pass
+        else:
+            overlays["accent"] = accent
+            overlays["accent_deep"] = deep
+            overlays["border_accent"] = border
+
+    # Body-material tint + glass opacity. A preset recolours the painted glass
+    # with its background (base00); the frosted alpha (both families) tracks the
+    # user's Glass-opacity slider. Opaque themes (base.blur False) keep the solid
+    # 255 and are never overlaid, so the blur-fallback logic in body_color_for is
+    # untouched. The jellytoast-default path (no override) creates NO overlay, so
+    # get_active_theme still returns the base object verbatim there.
+    _body_attrs = (
+        ("body_color", "BODY_COLOR"),
+        ("mini_body_color", "MINI_BODY_COLOR"),
+        ("dialog_body_color", "DIALOG_BODY_COLOR"),
     )
+    is_preset = bool(family and family not in ("", "jellytoast"))
+    if is_preset:
+        # A preset ALWAYS re-tints the body with its background (base00). The
+        # alpha is the Glass-opacity slider when frosted, else the solid 255.
+        glass = _glass_alpha(base.dark, True, s.preset_glass_alpha) if base.blur else None
+        for attr, tok in _body_attrs:
+            base_tuple = getattr(base, attr)
+            rgb = _persisted_body_rgb(tok) or base_tuple[:3]
+            alpha = glass if glass is not None else base_tuple[3]
+            overlays[attr] = (rgb[0], rgb[1], rgb[2], alpha)
+    elif base.blur:
+        # jellytoast frosted: the user may tune only the body ALPHA (RGB stays
+        # the theme's). No override → default alpha → NO overlay, so the base
+        # object is returned verbatim (the airier look the user likes).
+        glass = _glass_alpha(base.dark, False, s.jellytoast_glass_alpha)
+        for attr, _tok in _body_attrs:
+            base_tuple = getattr(base, attr)
+            if glass != base_tuple[3]:
+                overlays[attr] = (base_tuple[0], base_tuple[1], base_tuple[2], glass)
+
+    return _replace(base, **overlays) if overlays else base
 
 
 _BODY_ATTR = {

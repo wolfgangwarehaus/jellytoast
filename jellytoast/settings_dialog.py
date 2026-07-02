@@ -236,7 +236,6 @@ from jellytoast.selector import (
     Selector as _Selector,  # noqa: E402  (deliberate post-class import for layout)
 )
 from jellytoast.settings import get_settings
-from jellytoast.theme import THEMES as _THEME_REGISTRY
 from jellytoast.theme import _hex_to_rgb, contrast_ink, ink_rgb
 from jellytoast.ui_helpers import (
     ACCENT,
@@ -265,16 +264,13 @@ HOME_DESTINATIONS = [
     ("Suggestions", "suggestions"),
 ]
 
-# Themes the user can pick from. Entries flagged `enabled=False` show
-# up in the dropdown but can't be selected — placeholder slots for
-# palettes we haven't shipped yet. Auto first (follows the OS), then the
-# dark family, then light.
-_THEME_CHOICES = [
-    ("Auto (follow OS)", "auto", True),
-    (_THEME_REGISTRY["frosted_dark"].label, "frosted_dark", True),
-    (_THEME_REGISTRY["dark"].label, "dark", True),
-    (_THEME_REGISTRY["frosted_light"].label, "frosted_light", True),
-    (_THEME_REGISTRY["light"].label, "light", True),
+# The luminance-mode picker shown for a family that has both a dark and a light
+# member (jellytoast, Catppuccin, Gruvbox). Order: follow-system first, then the
+# explicit choices — mirrors how the old theme dropdown led with Auto.
+_THEME_MODE_CHOICES = [
+    ("Follow system", "auto"),
+    ("Dark", "dark"),
+    ("Light", "light"),
 ]
 
 LYRICS_FONT_SIZES = [
@@ -2750,34 +2746,17 @@ class SettingsDialog(QDialog):
         v.addWidget(self._theme_restart_notice)
 
         # ── Theme ──────────────────────────────────────────────────────
+        # One dropdown of theme families (jellytoast + the preset brands) + an
+        # Import button; an orthogonal Dark/Light/Follow-system Mode control
+        # (only when the family ships both) and an always-present Frosted/Opaque
+        # switch. Then the accent row (jellytoast) OR a base16 palette preview
+        # (presets), chosen by the active family. Built by _build_theme_section
+        # so the whole block re-evaluates on the page rebuild a family/mode
+        # change triggers.
         v.addWidget(self._section_header("Theme"))
+        v.addLayout(self._build_theme_section())
 
-        self._theme_combo = _Selector()
-        self._initial_theme = self.s.theme_mode
-        for label, key, enabled in _THEME_CHOICES:
-            self._theme_combo.addItem(label, key)
-            if not enabled:
-                # Disable through the underlying model — QComboBox itself
-                # doesn't expose per-item enable. The item still renders
-                # in the popup but is not selectable.
-                idx = self._theme_combo.count() - 1
-                item = self._theme_combo.model().item(idx)
-                if item is not None:
-                    item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEnabled)
-        self._select_combo_by_data(self._theme_combo, self._initial_theme)
-        self._theme_combo.currentIndexChanged.connect(self._on_theme_changed)
-        # Width capped so the Theme combo ends at the green (4th) accent swatch /
-        # the Crossfade checkbox column directly below it — short enough to read
-        # as paired with the swatches rather than stretching the full page width.
-        # (172 left edge → 314 right; 314 is the green swatch's right + the
-        # Crossfade box's left, so 314 − 172 = 142.)
-        self._theme_combo.setMinimumWidth(142)
-        # Align left in the vbox so the fixed width sits flush with
-        # the rest of the page content's left edge rather than
-        # centering in the row.
-        v.addWidget(self._theme_combo, 0, Qt.AlignmentFlag.AlignLeft)
-
-        # Blur-availability hint — when a Frosted theme is selected but this
+        # Blur-availability hint — when a Frosted theme is active but this
         # machine can't produce real compositor/OS blur, explain why the body
         # reads near-opaque rather than glass (it is never see-through). Shown
         # only in that case; the page rebuilds on every theme change so it
@@ -2795,31 +2774,6 @@ class SettingsDialog(QDialog):
         self._blur_hint.hide()
         v.addWidget(self._blur_hint)
         self._update_blur_hint()
-
-        # ── Accent color ───────────────────────────────────────────────
-        v.addWidget(self._section_header("Accent color"))
-        v.addLayout(self._build_accent_row())
-        # Follow the desktop's accent colour (XDG portal — KDE / GNOME). When a
-        # DE doesn't expose one, the read returns None and we surface a hint.
-        self._follow_accent_check = QCheckBox("Follow system accent")
-        self._follow_accent_check.setChecked(self.s.follow_system_accent)
-        self._follow_accent_check.setToolTip(
-            "Adopt your desktop's accent colour (KDE Plasma / GNOME 47+)."
-        )
-        self._follow_accent_check.toggled.connect(self._on_follow_system_accent_toggled)
-        v.addSpacing(6)
-        v.addWidget(self._follow_accent_check)
-        # NOTE: the old "Customize" button (jump to the per-token color editor)
-        # was removed deliberately — that editor is now a hidden power-user
-        # subsystem with no UI entry point. See the page-registration note in
-        # __init__ and jellytoast/settings_colors_page.py.
-
-        # ── Color presets ──────────────────────────────────────────────
-        # Curated named schemes (Catppuccin/Nord/Gruvbox/…) applied live through
-        # the color_tokens engine, guarded by the 10s keep/revert prompt.
-        v.addSpacing(6)
-        v.addWidget(self._section_header("Color presets"))
-        v.addWidget(self._build_preset_dropdown())
 
         # ── Scaling ────────────────────────────────────────────────────
         # Font size scales every design-token font size + button
@@ -3139,20 +3093,21 @@ class SettingsDialog(QDialog):
         self._theme_restart_notice.setVisible(dirty)
 
     def _update_blur_hint(self):
-        """Show a 'why is Frosted near-opaque' note when the selected theme
-        is frosted but this machine can't produce verified compositor/OS
-        blur. Hidden otherwise (solid/transparent themes, or blur ACTIVE)."""
+        """Show a 'why is Frosted near-opaque' note when the active theme is
+        frosted but this machine can't produce verified compositor/OS blur.
+        Hidden otherwise (Opaque theme, or blur ACTIVE)."""
         hint = getattr(self, "_blur_hint", None)
         if hint is None:
             return
         from jellytoast import blur
         from jellytoast.platform_compat import IS_MACOS
-        from jellytoast.theme import THEMES
+        from jellytoast.theme import get_active_theme
 
         # macOS: the faux-frost body is the INTENDED frosted look there (native
         # vibrancy is disabled by design — see blur/_macos.py), not a
-        # can't-get-blur degradation, so don't nag about it.
-        theme = THEMES.get(self._theme_combo.currentData())
+        # can't-get-blur degradation, so don't nag about it. `blur` on the
+        # resolved theme tracks the Frosted/Opaque switch (frosted_* → True).
+        theme = get_active_theme()
         if (
             theme is not None
             and theme.blur
@@ -3177,41 +3132,450 @@ class SettingsDialog(QDialog):
             self._last_theme_name = name
             QTimer.singleShot(0, self._rebuild_pages_for_theme)
 
-    def _on_theme_changed(self):
-        chosen = self._theme_combo.currentData() or "frosted_dark"
-        if chosen == self.s.theme_mode:
-            return
-        self._clear_active_preset()  # a built-in theme pick drops any active preset
-        self.s.theme_mode = chosen
-        # Record the (resolved) name so the external-change watcher below
-        # treats this in-dialog pick as already-handled and doesn't schedule
-        # a second page rebuild.
-        from jellytoast.theme import get_active_theme as _gat_pick
+    # ── Theme family / mode / frosted — the unified theme controls ──────
+    def _build_theme_section(self) -> QVBoxLayout:
+        """The Theme block: family dropdown + Import, an orthogonal Dark/Light/
+        Follow-system Mode control (only when the family has both), an
+        always-present Frosted/Opaque switch, and then the accent row
+        (jellytoast) or a base16 palette preview (a preset). Rebuilt whole on
+        each family/mode change via ``_rebuild_pages_for_theme``."""
+        from jellytoast.theme_presets import family_has_both
 
-        self._last_theme_name = _gat_pick().name
-        # Live-apply — theme mode now switches without a restart.
-        # Refresh the ui_helpers + icon token constants BEFORE
-        # broadcasting: theme_changed slots (per-surface _reapply_accent,
-        # the window's _cascade_global_style, this dialog's
-        # _reapply_dialog_accent_styling) re-stamp from the module-level
-        # constants, and connection order isn't guaranteed — so the
-        # values must already be fresh when the first slot fires.
-        # Mirrors _on_accent_picked.
+        fam_key = self.s.theme_family or "jellytoast"
+
+        box = QVBoxLayout()
+        box.setContentsMargins(0, 0, 0, 0)
+        box.setSpacing(10)
+
+        # Family dropdown (fixed width so its right edge is stable across family
+        # names) + Import button. The glass "Default" button reuses these widths
+        # so it right-aligns with Import (same slider width + same button width).
+        fam_w = self._THEME_COMBO_W
+        self._theme_btn_w = self._theme_button_width()
+        top = QHBoxLayout()
+        top.setContentsMargins(0, 0, 0, 0)
+        top.setSpacing(10)
+        self._family_combo = _Selector()
+        self._family_combo.setFixedHeight(34)
+        self._family_combo.setIconSize(QSize(52, 16))
+        self._family_combo.setFixedWidth(fam_w)
+        for label, key, ic in self._family_items():
+            if ic is not None:
+                self._family_combo.addItem(label, key, icon=ic)
+            else:
+                self._family_combo.addItem(label, key)
+        self._select_combo_by_data(self._family_combo, fam_key)
+        self._family_combo.currentIndexChanged.connect(
+            lambda _=0: self._on_family_changed()
+        )
+        top.addWidget(self._family_combo)
+        imp = QPushButton("Import…")
+        imp.setObjectName("ghost")
+        imp.setFixedWidth(self._theme_btn_w)
+        imp.setToolTip("Import a base16 .yaml colour scheme (≈250 community themes)")
+        imp.clicked.connect(self._on_import_theme)
+        top.addWidget(imp)
+        top.addStretch(1)
+        box.addLayout(top)
+
+        # Mode (luminance) — only for a family that ships both dark + light. The
+        # combo is sized so its RIGHT edge lines up with the family dropdown's:
+        # combo_w = family_w − label_w − spacing (both rows share the left edge).
+        if family_has_both(fam_key):
+            self._mode_combo = _Selector()
+            for label, key in _THEME_MODE_CHOICES:
+                self._mode_combo.addItem(label, key)
+            self._select_combo_by_data(self._mode_combo, self.s.theme_mode)
+            self._mode_combo.currentIndexChanged.connect(
+                lambda _=0: self._on_mode_changed()
+            )
+            mode_row = QHBoxLayout()
+            mode_row.setContentsMargins(0, 0, 0, 0)
+            mode_row.setSpacing(10)
+            mode_label = self._field_label("Mode:")
+            mode_row.addWidget(mode_label)
+            mode_row.addWidget(self._mode_combo)
+            mode_row.addStretch(1)
+            self._mode_combo.setFixedWidth(
+                max(120, fam_w - mode_label.sizeHint().width() - 10)
+            )
+            box.addLayout(mode_row)
+        else:
+            self._mode_combo = None
+
+        # Frosted / Opaque — always present.
+        self._frosted_check = QCheckBox("Frosted glass")
+        self._frosted_check.setChecked(self.s.frosted)
+        self._frosted_check.setToolTip(
+            "Translucent, blurred body (Frosted) vs a solid opaque body."
+        )
+        self._frosted_check.toggled.connect(self._on_frosted_toggled)
+        box.addWidget(self._frosted_check)
+
+        is_preset = fam_key not in ("", "jellytoast")
+        # Glass opacity sits right under Frosted for ANY family (jellytoast +
+        # presets), only while Frosted is on — an opaque body is fixed at solid.
+        if self.s.frosted:
+            box.addLayout(self._build_glass_opacity_row())
+
+        if not is_preset:
+            # Accent row + follow-system-accent (jellytoast owns its accent).
+            box.addSpacing(2)
+            box.addWidget(self._section_header("Accent color"))
+            box.addLayout(self._build_accent_row())
+            self._follow_accent_check = QCheckBox("Follow system accent")
+            self._follow_accent_check.setChecked(self.s.follow_system_accent)
+            self._follow_accent_check.setToolTip(
+                "Adopt your desktop's accent colour (KDE Plasma / GNOME 47+)."
+            )
+            self._follow_accent_check.toggled.connect(
+                self._on_follow_system_accent_toggled
+            )
+            box.addSpacing(4)
+            box.addWidget(self._follow_accent_check)
+        else:
+            # base16 palette preview — the scheme designates its own accent, so
+            # no swatch row; show the 16-colour palette instead.
+            base16 = self._current_member_base16()
+            if base16:
+                box.addSpacing(2)
+                box.addWidget(self._section_header("Palette"))
+                box.addWidget(self._base16_grid(base16), 0, Qt.AlignmentFlag.AlignLeft)
+
+        return box
+
+    # Glass-opacity slider range — spans the airy jellytoast light default (140)
+    # up to near-opaque. Wider than the preset-only band so every family's
+    # default is reachable/displayable.
+    _GLASS_MIN = 120
+    _GLASS_MAX = 245
+    # Fixed width for the family dropdown (stable right edge). The Mode combo and
+    # the glass slider match it so their right edges line up, and Import + the
+    # glass "Default" share one button width so those right-align too.
+    _THEME_COMBO_W = 250
+
+    def _theme_button_width(self) -> int:
+        """One width for the Import + glass Default ghost buttons so they right-
+        align (both sit at family_w + spacing from the shared left edge)."""
+        from PySide6.QtGui import QFontMetrics
+
+        fm = QFontMetrics(font(TYPE_BODY))
+        text = max(fm.horizontalAdvance("Import…"), fm.horizontalAdvance("Default"))
+        return text + 2 * 14 + 2  # ghost padding (6px 14px) + 1px border each side
+
+    def _glass_is_preset(self) -> bool:
+        return self.s.theme_family not in ("", "jellytoast")
+
+    def _build_glass_opacity_row(self) -> QVBoxLayout:
+        """The 'Glass opacity' slider for the active frosted family — deeper reads
+        truer to the theme's colour, airier lets more wallpaper/blur through. A
+        Default button restores the family's own default (jellytoast airier,
+        presets deeper). Live-previews on drag (bodies repaint from
+        body_color_tuple) and commits a full re-stamp when the drag settles."""
+        from jellytoast.theme import _glass_alpha, get_active_theme
+
+        is_preset = self._glass_is_preset()
+        dark = get_active_theme().dark
+        override = self.s.preset_glass_alpha if is_preset else self.s.jellytoast_glass_alpha
+        eff = _glass_alpha(dark, is_preset, override)
+
+        wrap = QVBoxLayout()
+        wrap.setContentsMargins(0, 0, 0, 0)
+        wrap.setSpacing(4)
+
+        # Header with the % readout right next to the label (not pushed right).
+        head = QHBoxLayout()
+        head.setContentsMargins(0, 0, 0, 0)
+        head.setSpacing(8)
+        head.addWidget(self._section_header("Glass opacity"))
+        self._glass_readout = QLabel()
+        self._glass_readout.setStyleSheet(f"color: {TEXT_FAINT}; {type_qss(TYPE_CAPTION)}")
+        head.addWidget(self._glass_readout)
+        head.addStretch(1)
+        wrap.addLayout(head)
+
+        # Settle timer coalesces the heavy full re-stamp to ~once after the drag
+        # stops (mouse OR keyboard); the drag itself only cheap-repaints bodies.
+        self._glass_settle = QTimer(self)
+        self._glass_settle.setSingleShot(True)
+        self._glass_settle.setInterval(120)
+        self._glass_settle.timeout.connect(self._commit_glass_alpha)
+
+        self._glass_slider = QSlider(Qt.Orientation.Horizontal)
+        self._glass_slider.setRange(self._GLASS_MIN, self._GLASS_MAX)
+        self._glass_slider.setValue(max(self._GLASS_MIN, min(self._GLASS_MAX, eff)))
+        self._glass_slider.setStyleSheet(self._horiz_slider_qss())
+        self._glass_slider.valueChanged.connect(self._on_glass_alpha_changed)
+        # Slider == family-combo width and the Default button == Import width, so
+        # Default right-aligns with Import (a pinch of gap sits before it).
+        self._glass_slider.setFixedWidth(self._THEME_COMBO_W)
+        srow = QHBoxLayout()
+        srow.setContentsMargins(0, 0, 0, 0)
+        srow.setSpacing(10)
+        srow.addWidget(self._glass_slider)
+        reset_btn = QPushButton("Default")
+        reset_btn.setObjectName("ghost")
+        reset_btn.setFixedWidth(getattr(self, "_theme_btn_w", self._theme_button_width()))
+        reset_btn.setToolTip("Reset glass opacity to this theme's default")
+        reset_btn.clicked.connect(self._reset_glass_alpha)
+        srow.addWidget(reset_btn)
+        srow.addStretch(1)
+        wrap.addLayout(srow)
+
+        self._update_glass_readout(self._glass_slider.value())
+        return wrap
+
+    def _update_glass_readout(self, val: int) -> None:
+        # The true body opacity (alpha / 255), which reads intuitively —
+        # 172 → 67 %, 205 → 80 %, 140 → 55 %.
+        if hasattr(self, "_glass_readout"):
+            self._glass_readout.setText(f"{round(val / 255 * 100)}%")
+
+    def _on_glass_alpha_changed(self, val: int) -> None:
+        # Persist to the active family's own key + live-preview: the painted
+        # bodies read body_color_tuple() live in paintEvent, so a plain repaint of
+        # the top-levels shows the new alpha without the cost of a full token
+        # re-stamp. The heavy re-stamp (for any surface that caches its body
+        # colour) fires once the drag settles.
+        from PySide6.QtWidgets import QApplication
+
+        if self._glass_is_preset():
+            self.s.preset_glass_alpha = int(val)
+        else:
+            self.s.jellytoast_glass_alpha = int(val)
+        self._update_glass_readout(val)
+        app = QApplication.instance()
+        if app is not None:
+            for w in app.topLevelWidgets():
+                w.update()
+        self._glass_settle.start()
+
+    def _reset_glass_alpha(self) -> None:
+        # Clear the active family's override (→ its built-in default) and snap the
+        # slider there without re-firing the handler, then commit a full re-stamp.
+        from jellytoast.theme import _glass_alpha, get_active_theme
+
+        is_preset = self._glass_is_preset()
+        if is_preset:
+            self.s.preset_glass_alpha = 0
+        else:
+            self.s.jellytoast_glass_alpha = 0
+        default = _glass_alpha(get_active_theme().dark, is_preset, 0)
+        if hasattr(self, "_glass_slider"):
+            self._glass_slider.blockSignals(True)
+            self._glass_slider.setValue(
+                max(self._GLASS_MIN, min(self._GLASS_MAX, default))
+            )
+            self._glass_slider.blockSignals(False)
+            self._update_glass_readout(self._glass_slider.value())
+        self._commit_glass_alpha()
+
+    def _commit_glass_alpha(self) -> None:
         from jellytoast import icons as _icons
         from jellytoast import ui_helpers as _uih
 
-        # The swap is all-synchronous on the GUI thread; the guard shows a busy
-        # cursor + batches the top-levels' repaints into one so it doesn't read
-        # as a freeze. See ui_helpers.theme_swap_guard.
         with _uih.theme_swap_guard():
             _uih.refresh_theme()
             _icons.refresh_theme()
             PlayerBus.get().theme_changed.emit()
-        self._refresh_restart_notice_visibility()
-        # A light↔dark switch changes the text-token colours pages bake
-        # into their labels — rebuild so the open dialog stays legible.
-        # Deferred: we're inside the theme combo's signal and the combo
-        # lives on the Display page _rebuild_pages_for_theme tears down.
+
+    def _family_items(self) -> list[tuple[str, str, object]]:
+        """(label, family-key, palette-strip icon) for the family dropdown —
+        jellytoast first, then the preset families, plus the active imported
+        scheme (if any) as a trailing entry."""
+        from jellytoast.theme_presets import (
+            FAMILY_ORDER,
+            family_label,
+            imported_preset_from_settings,
+        )
+
+        items: list[tuple[str, str, object]] = [
+            ("jellytoast", "jellytoast", self._family_strip_icon("jellytoast"))
+        ]
+        for key in FAMILY_ORDER:
+            items.append((family_label(key), key, self._family_strip_icon(key)))
+        if self.s.theme_family == "imported":
+            imp = imported_preset_from_settings()
+            label = imp.name if imp else "Imported scheme"
+            ic = self._palette_icon(imp) if imp else None
+            items.append((label, "imported", ic))
+        return items
+
+    def _family_strip_icon(self, key: str):
+        """A little colour strip previewing a family in the dropdown. jellytoast
+        uses the built-in dark theme + current accent; a preset family uses its
+        representative (dark) member's base16 spread."""
+        if key in ("", "jellytoast"):
+            from jellytoast.theme import FROSTED_DARK
+            from jellytoast.ui_helpers import ACCENT as _ACCENT_NOW
+
+            return self._strip_icon(
+                [FROSTED_DARK.bg, _ACCENT_NOW, "#7c66d0", "#ffffff", "#a8a8a8"]
+            )
+        from jellytoast.theme_presets import THEME_FAMILIES
+
+        fam = THEME_FAMILIES.get(key)
+        member = fam.member_for("dark") if fam else None
+        if member is None:
+            return None
+        return self._palette_icon(member)
+
+    def _current_member_base16(self) -> dict | None:
+        """The base16 palette of the currently-resolved preset member (for the
+        preview grid), or None for jellytoast / a missing import."""
+        fam_key = self.s.theme_family
+        if fam_key in ("", "jellytoast"):
+            return None
+        if fam_key == "imported":
+            from jellytoast.theme_presets import imported_preset_from_settings
+
+            imp = imported_preset_from_settings()
+            return imp.base16 if imp else None
+        from jellytoast.theme import os_color_scheme
+        from jellytoast.theme_presets import THEME_FAMILIES
+
+        fam = THEME_FAMILIES.get(fam_key)
+        if fam is None:
+            return None
+        lum = os_color_scheme() if self.s.theme_mode == "auto" else self.s.theme_mode
+        member = fam.member_for(lum)
+        return member.base16 if member else None
+
+    def _base16_grid(self, base16: dict) -> QWidget:
+        """A 2×8 grid of the 16 base16 swatches — the scheme's palette preview."""
+        from PySide6.QtGui import QColor, QPainter, QPainterPath
+
+        slots = [f"base0{c}" for c in "0123456789ABCDEF"]
+        cols = [base16.get(s, "#000000") for s in slots]
+
+        class _Grid(QWidget):
+            CELL = 24
+            GAP = 4
+            COLS = 8
+
+            def __init__(self, colours):
+                super().__init__()
+                self._cols = colours
+                rows = 2
+                self.setFixedSize(
+                    self.COLS * self.CELL + (self.COLS - 1) * self.GAP,
+                    rows * self.CELL + (rows - 1) * self.GAP,
+                )
+
+            def paintEvent(self, _e):
+                p = QPainter(self)
+                p.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+                for i, hexc in enumerate(self._cols):
+                    r, c = divmod(i, self.COLS)
+                    x = c * (self.CELL + self.GAP)
+                    y = r * (self.CELL + self.GAP)
+                    path = QPainterPath()
+                    path.addRoundedRect(x, y, self.CELL, self.CELL, rad(5), rad(5))
+                    p.fillPath(path, QColor(hexc))
+                    p.setPen(QColor(*ink_rgb(), 40))
+                    p.drawPath(path)
+
+        return _Grid(cols)
+
+    def _on_family_changed(self) -> None:
+        key = self._family_combo.currentData() or "jellytoast"
+        if key == (self.s.theme_family or "jellytoast"):
+            return
+        from jellytoast.theme_presets import family_has_both
+
+        # A dark-only family can't honour light/auto — pin it to dark; otherwise
+        # carry the current luminance intent into the new family.
+        if key not in ("", "jellytoast") and not family_has_both(key):
+            new_mode = "dark"
+        else:
+            new_mode = self.s.theme_mode
+        # Applying a preset imports a whole palette (illegibility risk) → guard
+        # with the keep/revert prompt; switching to jellytoast just resets.
+        self._apply_axes_live(
+            key, new_mode, self.s.frosted, prompt=key not in ("", "jellytoast")
+        )
+
+    def _on_mode_changed(self) -> None:
+        combo = getattr(self, "_mode_combo", None)
+        if combo is None:
+            return
+        new_mode = combo.currentData() or "dark"
+        if new_mode == self.s.theme_mode:
+            return
+        fam = self.s.theme_family
+        # On a preset a mode change swaps the member palette (revert-guarded);
+        # on jellytoast it just recomposes the base theme (no prompt).
+        self._apply_axes_live(
+            fam, new_mode, self.s.frosted, prompt=fam not in ("", "jellytoast")
+        )
+
+    def _on_frosted_toggled(self, on: bool) -> None:
+        on = bool(on)
+        if on == self.s.frosted:
+            return
+        # Frosted/Opaque changes only the body opacity (base theme name), not the
+        # luminance or which controls show — restamp live, no rebuild, no prompt.
+        from jellytoast.theme import _resolve_base_name
+        from jellytoast.theme_presets import apply_theme_family
+
+        self._last_theme_name = _resolve_base_name(
+            self.s.theme_mode, on, self.s.theme_family
+        )
+        apply_theme_family(self.s.theme_family, self.s.theme_mode, on)
+        self._update_blur_hint()
+        # Any family gains / loses the Glass opacity slider with Frosted → rebuild
+        # so its visibility re-evaluates.
+        QTimer.singleShot(0, self._rebuild_pages_for_theme)
+
+    def _apply_axes_live(self, family: str, mode: str, frosted: bool, *, prompt: bool) -> None:
+        """Apply a family/mode/frosted change live, back up every axis for a
+        clean 10s keep/revert (when ``prompt``), and rebuild the page so the
+        conditional controls (Mode / accent row / palette preview) re-evaluate."""
+        from jellytoast import color_tokens as ct
+        from jellytoast.theme import _resolve_base_name
+        from jellytoast.theme_presets import apply_theme_family
+
+        backup = (
+            self.s.theme_family,
+            self.s.theme_mode,
+            self.s.frosted,
+            self.s.accent_color,
+            self.s.last_preset_name,
+            ct.export_palette(),
+        )
+        # Pre-set the resolved name so the external-change watcher treats this
+        # in-dialog pick as handled and doesn't schedule a second rebuild.
+        self._last_theme_name = _resolve_base_name(mode, frosted, family)
+        apply_theme_family(family, mode, frosted)
+        if prompt:
+            from jellytoast.appearance_confirm import show_appearance_revert
+
+            show_appearance_revert(lambda b=backup: self._revert_theme_axes(b), seconds=10)
+        QTimer.singleShot(0, self._rebuild_pages_for_theme)
+
+    def _revert_theme_axes(self, backup) -> None:
+        """Restore every theme axis + the full token palette captured before an
+        apply. Reused by the 10s keep/revert prompt."""
+        from jellytoast import color_tokens as ct
+        from jellytoast import icons as _icons
+        from jellytoast import ui_helpers as _uih
+        from jellytoast.theme import _resolve_base_name
+
+        family, mode, frosted, accent, lpn, palette = backup
+        self.s.theme_family = family
+        self.s.theme_mode = mode
+        self.s.frosted = frosted
+        self.s.accent_color = accent
+        self.s.last_preset_name = lpn
+        if family in ("", "jellytoast"):
+            ct.reset_all()  # no preset overrides — accent_color drives the accent
+        else:
+            ct.import_palette(palette)
+        self._last_theme_name = _resolve_base_name(mode, frosted, family)
+        with _uih.theme_swap_guard():
+            _uih.refresh_theme()
+            _icons.refresh_theme()
+            PlayerBus.get().theme_changed.emit()
         QTimer.singleShot(0, self._rebuild_pages_for_theme)
 
     # ── Page: Hotkeys ──────────────────────────────────────────────────
@@ -3953,30 +4317,35 @@ class SettingsDialog(QDialog):
     def _palette_icon(self, preset, w: int = 52, h: int = 16):
         """A little rounded colour strip previewing a scheme — background, its
         accent, then a spread of its base16 hues — shown beside the name in the
-        preset dropdown (both the row and the closed button)."""
-        from PySide6.QtCore import QRectF
-        from PySide6.QtGui import QColor, QIcon, QPainter, QPixmap
+        family dropdown (both the row and the closed button)."""
+        return self._strip_icon(
+            [
+                preset.base16["base00"],
+                preset.base16[preset.accent_slot],
+                preset.base16["base08"],
+                preset.base16["base0B"],
+                preset.base16["base0D"],
+            ],
+            w,
+            h,
+        )
 
-        cols = [
-            preset.base16["base00"],
-            preset.base16[preset.accent_slot],
-            preset.base16["base08"],
-            preset.base16["base0B"],
-            preset.base16["base0D"],
-        ]
+    def _strip_icon(self, cols: list[str], w: int = 52, h: int = 16):
+        """A rounded horizontal strip of colour bands (one per hex in ``cols``),
+        returned as a QIcon — the preview shown beside a family/preset name."""
+        from PySide6.QtCore import QRectF
+        from PySide6.QtGui import QColor, QIcon, QPainter, QPainterPath, QPixmap
+
         pm = QPixmap(w, h)
         pm.fill(Qt.GlobalColor.transparent)
         p = QPainter(pm)
         try:
             p.setRenderHint(QPainter.RenderHint.Antialiasing, True)
             path_rect = QRectF(0.5, 0.5, w - 1, h - 1)
-            p.setClipRect(path_rect)  # rounded clip via a path below
-            from PySide6.QtGui import QPainterPath
-
             clip = QPainterPath()
             clip.addRoundedRect(path_rect, 3, 3)
             p.setClipPath(clip)
-            n = len(cols)
+            n = max(1, len(cols))
             bw = w / n
             for i, c in enumerate(cols):
                 p.fillRect(QRectF(i * bw, 0, bw + 1, h), QColor(c))
@@ -3984,137 +4353,17 @@ class SettingsDialog(QDialog):
             p.end()
         return QIcon(pm)
 
-    def _build_preset_dropdown(self) -> QWidget:
-        """Dropdown of curated schemes (name + colour-palette strip per row) plus
-        an Import button. Picking one applies it live via the color_tokens engine
-        + the 10s keep/revert net; 'None' returns to the built-in jellytoast
-        theme (see _on_preset_combo_changed)."""
-        from PySide6.QtCore import QSize
-
-        from jellytoast.theme_presets import BUILTIN_PRESETS
-
-        wrap = QWidget()
-        wrap.setStyleSheet("background: transparent;")
-        row = QHBoxLayout(wrap)
-        row.setContentsMargins(0, 4, 0, 0)
-        row.setSpacing(10)
-        self._preset_combo = _Selector()
-        self._preset_combo.setFixedHeight(34)
-        self._preset_combo.setIconSize(QSize(52, 16))
-        self._preset_combo.setMinimumWidth(240)
-        self._preset_combo.addItem("None (jellytoast theme)", "")
-        for p in BUILTIN_PRESETS:
-            self._preset_combo.addItem(p.name, p.name, icon=self._palette_icon(p))
-        self._select_combo_by_data(
-            self._preset_combo, (self.s.last_preset_name or "").strip()
-        )
-        self._preset_combo.currentIndexChanged.connect(
-            lambda _=0: self._on_preset_combo_changed()
-        )
-        row.addWidget(self._preset_combo)
-        imp = QPushButton("Import…")
-        imp.setObjectName("ghost")
-        imp.setToolTip("Import a base16 .yaml colour scheme (≈250 community themes)")
-        imp.clicked.connect(self._on_import_theme)
-        row.addWidget(imp)
-        row.addStretch(1)
-        return wrap
-
-    def _on_preset_combo_changed(self) -> None:
-        data = self._preset_combo.currentData() or ""
-        if data == (self.s.last_preset_name or ""):
-            return  # programmatic sync / already active — don't re-apply
-        if not data:
-            self._clear_active_preset()  # "None" → back to the built-in theme
-        else:
-            from jellytoast.theme_presets import PRESET_BY_NAME
-
-            self._apply_theme_preset(PRESET_BY_NAME[data], data)
-
-    def _sync_preset_selection(self, active_name: str) -> None:
-        """Point the dropdown at the active preset (or 'None') WITHOUT re-firing
-        its handler. An imported scheme has no dropdown row, so it lands on
-        'None' — its colours are still applied + tracked by last_preset_name."""
-        combo = getattr(self, "_preset_combo", None)
-        if combo is None:
-            return
-        idx = combo.findData((active_name or "").strip())
-        combo.blockSignals(True)
-        combo.setCurrentIndex(idx if idx >= 0 else 0)
-        combo.blockSignals(False)
-
-    def _clear_active_preset(self) -> None:
-        """Switching to a built-in jellytoast theme/accent DROPS any active color
-        preset — the two are separate, mutually-exclusive theme families. Resets
-        the preset's token overrides (back to the built-in theme) and points the
-        preset dropdown at 'None'. No-op when no preset is active, so it never
-        wipes hand-tuned Settings → Colors overrides unprompted."""
-        if not (self.s.last_preset_name or "").strip():
-            return
-        from jellytoast import color_tokens as ct
-
-        ct.reset_all()  # single coalesced re-stamp back to the built-in theme
-        self.s.last_preset_name = ""
-        self._sync_preset_selection("")
-
-    def _apply_theme_preset(self, preset, active_name: str) -> None:
-        """Apply a ThemePreset (curated OR imported) live: set the light/dark
-        variant + accent, push the palette through the engine (one coalesced
-        re-stamp, cascades the accent family + persists), re-derive the theme,
-        and show the 10s keep/revert prompt. ``active_name`` is recorded as
-        last_preset_name (drives the dropdown + the built-in-theme exclusivity)."""
-        from jellytoast import color_tokens as ct
-        from jellytoast import icons as _icons
-        from jellytoast import ui_helpers as _uih
-        from jellytoast.appearance_confirm import show_appearance_revert
-        from jellytoast.theme_presets import _base16_to_palette
-
-        palette = _base16_to_palette(preset)
-        # Backup for revert — the whole palette PLUS the state we mutate.
-        backup_palette = ct.export_palette()
-        backup_mode = self.s.theme_mode
-        backup_accent = self.s.accent_color
-        backup_preset = self.s.last_preset_name
-
-        def _apply(mode, accent, pal, name):
-            # theme_mode BEFORE import_palette: the accent cascade reads the
-            # variant's border-alpha, and refresh_theme re-derives the OMITTED
-            # washes from this base then re-overlays the preset's colours.
-            self.s.theme_mode = mode
-            self.s.accent_color = accent
-            ct.import_palette(pal)
-            with _uih.theme_swap_guard():
-                _uih.refresh_theme()
-                _icons.refresh_theme()
-                PlayerBus.get().theme_changed.emit()
-            self.s.last_preset_name = name
-            self._sync_preset_selection(name)
-            # Reflect the variant in the theme dropdown WITHOUT re-firing its
-            # handler (which would re-apply the plain theme + wipe the preset).
-            self._theme_combo.blockSignals(True)
-            self._select_combo_by_data(self._theme_combo, mode)
-            self._theme_combo.blockSignals(False)
-
-        _apply(
-            "frosted_dark" if preset.variant == "dark" else "frosted_light",
-            preset.base16[preset.accent_slot],
-            palette,
-            active_name,
-        )
-
-        def _revert():
-            _apply(backup_mode, backup_accent, backup_palette, backup_preset)
-
-        show_appearance_revert(_revert, seconds=10)
-
     def _on_import_theme(self) -> None:
         """Import a base16 .yaml scheme and apply it live (keep/revert-guarded).
-        Uses the scheme's conventional accent (base0D); the accent swatches can
-        re-pick afterward. Recorded in last_preset_name so switching to a
-        built-in accent/theme still resets cleanly."""
+        Uses the scheme's conventional accent (base0D); persisted as an
+        ``imported`` family so its preview grid + body tint survive a restart."""
         from PySide6.QtWidgets import QFileDialog, QMessageBox
 
+        from jellytoast import color_tokens as ct
+        from jellytoast.appearance_confirm import show_appearance_revert
         from jellytoast.external_theme import Base16ParseError, parse_base16_yaml
+        from jellytoast.theme import _resolve_base_name
+        from jellytoast.theme_presets import apply_imported_preset
 
         path, _ = QFileDialog.getOpenFileName(
             self,
@@ -4134,7 +4383,22 @@ class SettingsDialog(QDialog):
                 f"Couldn't read that as a base16 colour scheme:\n\n{exc}",
             )
             return
-        self._apply_theme_preset(preset, preset.name)
+
+        backup = (
+            self.s.theme_family,
+            self.s.theme_mode,
+            self.s.frosted,
+            self.s.accent_color,
+            self.s.last_preset_name,
+            ct.export_palette(),
+        )
+        variant = "light" if preset.variant == "light" else "dark"
+        self._last_theme_name = _resolve_base_name(variant, self.s.frosted, "imported")
+        apply_imported_preset(preset, self.s.frosted)
+        show_appearance_revert(
+            lambda b=backup: self._revert_theme_axes(b), seconds=10
+        )
+        QTimer.singleShot(0, self._rebuild_pages_for_theme)
 
     def _on_follow_system_accent_toggled(self, on: bool) -> None:
         """Persist the toggle; when enabled, read the desktop accent off a worker
@@ -4455,10 +4719,8 @@ class SettingsDialog(QDialog):
         """)
 
     def _on_accent_picked(self, hex_value: str):
-        # Picking a built-in accent = leaving any active preset (separate theme
-        # families), so drop the preset's overrides first — back to the
-        # jellytoast theme — then apply the accent to that, not on top of it.
-        self._clear_active_preset()
+        # The accent row only shows for the jellytoast family, so an accent pick
+        # is always applied on the built-in theme — no preset to drop here.
         # 1. Persist the pick.
         self.s.accent_color = hex_value
         # 1a. Clear every accent-derived override set via Settings →

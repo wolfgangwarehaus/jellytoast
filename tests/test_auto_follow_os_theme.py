@@ -35,8 +35,8 @@ def _settings_handle():
 def clean_theme_settings():
     def _wipe():
         s = _settings_handle()
-        s.remove("ui/theme_mode")
-        s.remove("ui/accent_color")
+        for k in ("ui/theme_mode", "ui/accent_color", "ui/frosted", "ui/theme_family"):
+            s.remove(k)
         s.sync()
 
     _wipe()
@@ -45,6 +45,9 @@ def clean_theme_settings():
 
 
 def _set_theme_mode(mode: str):
+    # These tests drive the luminance axis; frosted defaults True (wiped by the
+    # fixture), so a "frosted_*" arg self-heals to its luminance and still
+    # resolves to the frosted variant — matching the pre-split behaviour.
     s = _settings_handle()
     s.setValue("ui/theme_mode", mode)
     s.sync()
