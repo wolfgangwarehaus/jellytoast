@@ -3151,6 +3151,10 @@ class SettingsDialog(QDialog):
         from jellytoast.theme_presets import family_has_both
 
         fam_key = self.s.theme_family or "jellytoast"
+        if fam_key == "imported" and self.s.imported_scheme_path:
+            # The active import came from the watched themes folder — select
+            # its folder row so the pick sticks visually across rebuilds.
+            fam_key = f"file:{self.s.imported_scheme_path}"
 
         box = QVBoxLayout()
         box.setContentsMargins(0, 0, 0, 0)
@@ -3407,6 +3411,7 @@ class SettingsDialog(QDialog):
         """(label, family-key, palette-strip icon) for the family dropdown —
         jellytoast first, then the preset families, plus the active imported
         scheme (if any) as a trailing entry."""
+        from jellytoast.external_theme import list_folder_schemes
         from jellytoast.theme_presets import (
             FAMILY_ORDER,
             family_label,
@@ -3418,7 +3423,16 @@ class SettingsDialog(QDialog):
         ]
         for key in FAMILY_ORDER:
             items.append((family_label(key), key, self._family_strip_icon(key)))
-        if self.s.theme_family == "imported":
+        # Schemes dropped into the watched themes folder ride along after the
+        # curated families, keyed by their file path.
+        folder_paths = set()
+        for path, preset in list_folder_schemes():
+            folder_paths.add(path)
+            items.append((preset.name, f"file:{path}", self._palette_icon(preset)))
+        if self.s.theme_family == "imported" and (
+            self.s.imported_scheme_path not in folder_paths
+        ):
+            # One-off import (or pywal) — not represented by a folder row.
             imp = imported_preset_from_settings()
             label = imp.name if imp else "Imported scheme"
             ic = self._palette_icon(imp) if imp else None
@@ -3503,7 +3517,13 @@ class SettingsDialog(QDialog):
 
     def _on_family_changed(self) -> None:
         key = self._family_combo.currentData() or "jellytoast"
-        if key == (self.s.theme_family or "jellytoast"):
+        active = self.s.theme_family or "jellytoast"
+        if active == "imported" and self.s.imported_scheme_path:
+            active = f"file:{self.s.imported_scheme_path}"
+        if key == active:
+            return
+        if key.startswith("file:"):
+            self._apply_folder_scheme(key[len("file:"):])
             return
         from jellytoast.theme_presets import family_has_both
 
@@ -3566,10 +3586,13 @@ class SettingsDialog(QDialog):
             self.s.accent_color,
             self.s.last_preset_name,
             ct.export_palette(),
+            self.s.imported_scheme_path,
         )
-        # An explicit family/mode pick detaches the pywal follow — otherwise
-        # the next wallpaper change silently clobbers the user's choice.
+        # An explicit family/mode pick detaches the pywal follow AND the
+        # followed folder file — otherwise the next wallpaper change / file
+        # edit silently clobbers the user's choice.
         self.s.follow_pywal = False
+        self.s.imported_scheme_path = ""
         # Pre-set the resolved name so the external-change watcher treats this
         # in-dialog pick as handled and doesn't schedule a second rebuild.
         self._last_theme_name = _resolve_base_name(mode, frosted, family)
@@ -3588,8 +3611,9 @@ class SettingsDialog(QDialog):
         from jellytoast import ui_helpers as _uih
         from jellytoast.theme import _resolve_base_name
 
-        family, mode, frosted, accent, lpn, palette = backup
+        family, mode, frosted, accent, lpn, palette, scheme_path = backup
         self.s.theme_family = family
+        self.s.imported_scheme_path = scheme_path
         self.s.theme_mode = mode
         self.s.frosted = frosted
         self.s.accent_color = accent
@@ -4418,11 +4442,60 @@ class SettingsDialog(QDialog):
             self.s.accent_color,
             self.s.last_preset_name,
             ct.export_palette(),
+            self.s.imported_scheme_path,
         )
         variant = "light" if preset.variant == "light" else "dark"
         self.s.follow_pywal = False  # a hand-picked import detaches the follow
+        self.s.imported_scheme_path = ""  # one-off import: nothing to follow
         self._last_theme_name = _resolve_base_name(variant, self.s.frosted, "imported")
         apply_imported_preset(preset, self.s.frosted)
+        show_appearance_revert(
+            lambda b=backup: self._revert_theme_axes(b), seconds=10
+        )
+        QTimer.singleShot(0, self._rebuild_pages_for_theme)
+
+    def _apply_folder_scheme(self, path: str) -> None:
+        """Apply a scheme picked from the watched themes folder (a ``file:``
+        row in the family dropdown) — like a hand import, but the source path
+        is remembered so the folder watcher re-applies edits live."""
+        from jellytoast import color_tokens as ct
+        from jellytoast.appearance_confirm import show_appearance_revert
+        from jellytoast.external_theme import (
+            Base16ParseError,
+            ensure_readable,
+            parse_base16_yaml,
+        )
+        from jellytoast.theme import _resolve_base_name
+        from jellytoast.theme_presets import apply_imported_preset
+
+        try:
+            with open(path, encoding="utf-8") as f:
+                preset = ensure_readable(parse_base16_yaml(f.read()))
+        except (OSError, UnicodeDecodeError, Base16ParseError) as exc:
+            from PySide6.QtWidgets import QMessageBox
+
+            QMessageBox.warning(
+                self,
+                "Couldn't apply that theme",
+                f"Couldn't read {path} as a base16 colour scheme:\n\n{exc}",
+            )
+            QTimer.singleShot(0, self._rebuild_pages_for_theme)  # reset the combo
+            return
+
+        backup = (
+            self.s.theme_family,
+            self.s.theme_mode,
+            self.s.frosted,
+            self.s.accent_color,
+            self.s.last_preset_name,
+            ct.export_palette(),
+            self.s.imported_scheme_path,
+        )
+        variant = "light" if preset.variant == "light" else "dark"
+        self.s.follow_pywal = False  # an explicit pick detaches the pywal follow
+        self._last_theme_name = _resolve_base_name(variant, self.s.frosted, "imported")
+        apply_imported_preset(preset, self.s.frosted)
+        self.s.imported_scheme_path = path  # after apply — it's path-agnostic
         show_appearance_revert(
             lambda b=backup: self._revert_theme_axes(b), seconds=10
         )

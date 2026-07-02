@@ -150,6 +150,56 @@ def ensure_readable(preset: ThemePreset) -> ThemePreset:
     return preset
 
 
+def themes_folder_path() -> str:
+    """``~/.config/jellytoast/themes`` (honouring ``XDG_CONFIG_HOME``) — a
+    watched drop-folder: any base16 ``.yaml``/``.yml`` in it appears in the
+    Settings family dropdown, and edits to the active one re-apply live (the
+    matugen / template ricing loop)."""
+    import os
+
+    cfg = os.environ.get("XDG_CONFIG_HOME") or os.path.expanduser("~/.config")
+    return os.path.join(cfg, "jellytoast", "themes")
+
+
+def list_folder_schemes() -> list[tuple[str, ThemePreset]]:
+    """(abs-path, preset) for every parseable scheme in the themes folder,
+    sorted by display name. Unparseable / unreadable files are skipped —
+    the folder is user-writable free-for-all."""
+    import os
+
+    folder = themes_folder_path()
+    out: list[tuple[str, ThemePreset]] = []
+    try:
+        entries = sorted(os.listdir(folder))
+    except OSError:
+        return out
+    for fn in entries:
+        if not fn.lower().endswith((".yaml", ".yml")):
+            continue
+        path = os.path.join(folder, fn)
+        try:
+            with open(path, encoding="utf-8") as f:
+                preset = parse_base16_yaml(f.read())
+        except (OSError, UnicodeDecodeError, Base16ParseError):
+            continue
+        name = preset.name
+        if name == "Imported scheme":  # unnamed file: fall back to its stem
+            name = os.path.splitext(fn)[0]
+        out.append(
+            (
+                path,
+                ThemePreset(
+                    name=name,
+                    variant=preset.variant,
+                    accent_slot=preset.accent_slot,
+                    base16=preset.base16,
+                ),
+            )
+        )
+    out.sort(key=lambda t: t[1].name.lower())
+    return out
+
+
 def parse_pywal_json(text: str) -> ThemePreset:
     """Parse a pywal / wallust ``colors.json`` into a ``ThemePreset``.
 

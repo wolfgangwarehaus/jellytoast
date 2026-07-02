@@ -172,3 +172,92 @@ class TestBase16SanityGuards:
         )
         with pytest.raises(Base16ParseError, match="too similar"):
             parse_base16_yaml(bad)
+
+
+class TestThemesFolder:
+    def _write_scheme(self, folder, fn, name="Test Scheme", bg="#101418", fg="#d8dee9"):
+        ramp = {
+            "0": bg, "1": "#181c22", "2": "#20262e", "3": "#3a4250",
+            "4": "#8a93a6", "5": fg, "6": "#e5e9f0", "7": "#eceff4",
+            "8": "#bf616a", "9": "#d08770", "A": "#ebcb8b", "B": "#a3be8c",
+            "C": "#88c0d0", "D": "#81a1c1", "E": "#b48ead", "F": "#5e81ac",
+        }
+        body = f"scheme: \"{name}\"\n" + "\n".join(
+            f"base0{c}: \"{v}\"" for c, v in ramp.items()
+        )
+        (folder / fn).write_text(body, encoding="utf-8")
+
+    def test_list_folder_schemes(self, tmp_path, monkeypatch):
+        from jellytoast.external_theme import list_folder_schemes
+
+        monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
+        folder = tmp_path / "jellytoast" / "themes"
+        folder.mkdir(parents=True)
+        self._write_scheme(folder, "b.yaml", name="Bravo")
+        self._write_scheme(folder, "a.yml", name="alpha")
+        (folder / "junk.yaml").write_text("not a scheme", encoding="utf-8")
+        (folder / "notes.txt").write_text("ignored", encoding="utf-8")
+
+        schemes = list_folder_schemes()
+        assert [p.name for _, p in schemes] == ["alpha", "Bravo"]  # sorted, junk skipped
+        assert all(path.endswith((".yaml", ".yml")) for path, _ in schemes)
+
+    def test_missing_folder_is_empty(self, tmp_path, monkeypatch):
+        from jellytoast.external_theme import list_folder_schemes
+
+        monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
+        assert list_folder_schemes() == []
+
+    def test_folder_follower_reapplies_active_file(
+        self, qapp, isolated_settings, tmp_path, monkeypatch
+    ):
+        from jellytoast import theme_watcher
+        from jellytoast.theme_watcher import ThemeFolderFollower
+
+        monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
+        folder = tmp_path / "jellytoast" / "themes"
+        folder.mkdir(parents=True)
+        self._write_scheme(folder, "active.yaml", name="Active")
+        path = str(folder / "active.yaml")
+
+        isolated_settings.theme_family = "imported"
+        isolated_settings.imported_scheme_path = path
+        isolated_settings.frosted = True
+
+        applied = {}
+
+        def _fake_apply(preset, frosted):
+            applied["name"] = preset.name
+
+        import jellytoast.theme_presets as tp
+
+        monkeypatch.setattr(tp, "apply_imported_preset", _fake_apply)
+        # run the worker read synchronously so the test needs no event loop
+        monkeypatch.setattr(
+            theme_watcher,
+            "run_async",
+            lambda fn, on_result=None, on_error=None: on_result(fn()),
+            raising=False,
+        )
+        import jellytoast.async_io as aio
+
+        monkeypatch.setattr(
+            aio, "run_async", lambda fn, on_result=None, on_error=None: on_result(fn())
+        )
+
+        f = ThemeFolderFollower()
+        f._fire()
+        assert applied["name"] == "Active"
+        # the pin survives the apply for the next edit
+        assert isolated_settings.imported_scheme_path == path
+
+    def test_folder_follower_noop_when_not_following(
+        self, qapp, isolated_settings, monkeypatch
+    ):
+        from jellytoast.theme_watcher import ThemeFolderFollower
+
+        isolated_settings.imported_scheme_path = ""
+        f = ThemeFolderFollower()
+        f._on_fs_event("/whatever")
+        assert not f._debounce.isActive()
+        f._fire()  # must not raise with nothing to follow

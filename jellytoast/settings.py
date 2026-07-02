@@ -1949,6 +1949,17 @@ class Settings:
         self._s.setValue("ui/follow_pywal", bool(v))
 
     @property
+    def imported_scheme_path(self) -> str:
+        """Source file of the active imported scheme when it came from the
+        watched themes folder — the folder watcher re-applies it live when the
+        file changes. Empty = a one-off import (or pywal), nothing to follow."""
+        return self._s.value("ui/imported_scheme_path", "", type=str)
+
+    @imported_scheme_path.setter
+    def imported_scheme_path(self, v: str):
+        self._s.setValue("ui/imported_scheme_path", v or "")
+
+    @property
     def shuffle_queue_size(self) -> int:
         """Number of tracks pulled into the queue by "Shuffle library".
         Default 100 — keeps the queue render snappy on commit (1 mutation
