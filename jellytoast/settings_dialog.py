@@ -131,66 +131,6 @@ class _AccentSwatch(QPushButton):
             p.end()
 
 
-class _PresetSwatch(QPushButton):
-    """A curated color-preset swatch — an outer disc in the preset's BACKGROUND
-    tone with a smaller inner disc in its ACCENT, so it previews the scheme at a
-    glance. Same hand-painted antialiased circle + theme-aware selection ring as
-    _AccentSwatch (QSS border-radius aliases on small buttons)."""
-
-    def __init__(self, bg_hex: str, accent_hex: str, parent=None):
-        super().__init__(parent)
-        self._bg = QColor(bg_hex)
-        self._accent = QColor(accent_hex)
-        self._hovered = False
-        self.setCheckable(True)
-        self.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.setFixedSize(34, 34)
-
-    def enterEvent(self, e):
-        self._hovered = True
-        self.update()
-        super().enterEvent(e)
-
-    def leaveEvent(self, e):
-        self._hovered = False
-        self.update()
-        super().leaveEvent(e)
-
-    def paintEvent(self, _e):
-        from PySide6.QtGui import QPen
-
-        p = QPainter(self)
-        try:
-            p.setRenderHint(QPainter.RenderHint.Antialiasing, True)
-            r = self.rect()
-            cx = r.center().x() + 0.5
-            cy = r.center().y() + 0.5
-            radius = min(r.width(), r.height()) / 2.0 - 1.5
-            p.setPen(Qt.PenStyle.NoPen)
-            p.setBrush(self._bg)
-            p.drawEllipse(QPointF(cx, cy), radius, radius)
-            p.setBrush(self._accent)
-            p.drawEllipse(QPointF(cx, cy), radius * 0.52, radius * 0.52)
-            # selection / hover ring — mirrors _AccentSwatch exactly.
-            ink = ink_rgb()
-            if self.isChecked():
-                ring_color = QColor(*ink, int(0.85 * 255))
-                ring_w = 1.5
-            elif self._hovered:
-                ring_color = QColor(*ink, int(0.55 * 255))
-                ring_w = 1.0
-            else:
-                ring_color = QColor(*ink, int(0.18 * 255))
-                ring_w = 1.0
-            pen = QPen(ring_color)
-            pen.setWidthF(ring_w)
-            p.setPen(pen)
-            p.setBrush(Qt.BrushStyle.NoBrush)
-            p.drawEllipse(QPointF(cx, cy), radius, radius)
-        finally:
-            p.end()
-
-
 class _EyedropperSwatch(_AccentSwatch):
     """Accent-picker swatch that triggers the screen eyedropper. Sits in line
     with the preset swatches. Shows the eyedropper glyph on an empty disc until
@@ -2869,7 +2809,7 @@ class SettingsDialog(QDialog):
         # the color_tokens engine, guarded by the 10s keep/revert prompt.
         v.addSpacing(6)
         v.addWidget(self._section_header("Color presets"))
-        v.addWidget(self._build_preset_grid())
+        v.addWidget(self._build_preset_dropdown())
 
         # ── Scaling ────────────────────────────────────────────────────
         # Font size scales every design-token font size + button
@@ -4000,71 +3940,133 @@ class SettingsDialog(QDialog):
         )
         return intro + body + ports
 
-    def _build_preset_grid(self) -> QWidget:
-        """Grid of curated-scheme swatches (Catppuccin/Nord/Gruvbox/…). Picking
-        one applies it live via the color_tokens engine + the 10s keep/revert
-        net (see _on_preset_picked)."""
-        from PySide6.QtWidgets import QGridLayout
+    def _palette_icon(self, preset, w: int = 52, h: int = 16):
+        """A little rounded colour strip previewing a scheme — background, its
+        accent, then a spread of its base16 hues — shown beside the name in the
+        preset dropdown (both the row and the closed button)."""
+        from PySide6.QtCore import QRectF
+        from PySide6.QtGui import QColor, QIcon, QPainter, QPixmap
+
+        cols = [
+            preset.base16["base00"],
+            preset.base16[preset.accent_slot],
+            preset.base16["base08"],
+            preset.base16["base0B"],
+            preset.base16["base0D"],
+        ]
+        pm = QPixmap(w, h)
+        pm.fill(Qt.GlobalColor.transparent)
+        p = QPainter(pm)
+        try:
+            p.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+            path_rect = QRectF(0.5, 0.5, w - 1, h - 1)
+            p.setClipRect(path_rect)  # rounded clip via a path below
+            from PySide6.QtGui import QPainterPath
+
+            clip = QPainterPath()
+            clip.addRoundedRect(path_rect, 3, 3)
+            p.setClipPath(clip)
+            n = len(cols)
+            bw = w / n
+            for i, c in enumerate(cols):
+                p.fillRect(QRectF(i * bw, 0, bw + 1, h), QColor(c))
+        finally:
+            p.end()
+        return QIcon(pm)
+
+    def _build_preset_dropdown(self) -> QWidget:
+        """Dropdown of curated schemes (name + colour-palette strip per row) plus
+        an Import button. Picking one applies it live via the color_tokens engine
+        + the 10s keep/revert net; 'None' returns to the built-in jellytoast
+        theme (see _on_preset_combo_changed)."""
+        from PySide6.QtCore import QSize
 
         from jellytoast.theme_presets import BUILTIN_PRESETS
 
         wrap = QWidget()
         wrap.setStyleSheet("background: transparent;")
-        grid = QGridLayout(wrap)
-        grid.setContentsMargins(0, 4, 0, 0)
-        grid.setHorizontalSpacing(10)
-        grid.setVerticalSpacing(10)
-        self._preset_buttons: list[tuple[str, _PresetSwatch]] = []
-        current = (self.s.last_preset_name or "").strip()
-        cols = 5
-        for i, p in enumerate(BUILTIN_PRESETS):
-            btn = _PresetSwatch(p.base16["base00"], p.base16[p.accent_slot])
-            btn.setToolTip(p.name)
-            btn.setChecked(p.name == current)
-            btn.clicked.connect(lambda _=False, n=p.name: self._on_preset_picked(n))
-            self._preset_buttons.append((p.name, btn))
-            grid.addWidget(btn, i // cols, i % cols, Qt.AlignmentFlag.AlignLeft)
-        grid.setColumnStretch(cols, 1)  # pack swatches to the left
+        row = QHBoxLayout(wrap)
+        row.setContentsMargins(0, 4, 0, 0)
+        row.setSpacing(10)
+        self._preset_combo = _Selector()
+        self._preset_combo.setFixedHeight(34)
+        self._preset_combo.setIconSize(QSize(52, 16))
+        self._preset_combo.setMinimumWidth(240)
+        self._preset_combo.addItem("None (jellytoast theme)", "")
+        for p in BUILTIN_PRESETS:
+            self._preset_combo.addItem(p.name, p.name, icon=self._palette_icon(p))
+        self._select_combo_by_data(
+            self._preset_combo, (self.s.last_preset_name or "").strip()
+        )
+        self._preset_combo.currentIndexChanged.connect(
+            lambda _=0: self._on_preset_combo_changed()
+        )
+        row.addWidget(self._preset_combo)
+        imp = QPushButton("Import…")
+        imp.setObjectName("ghost")
+        imp.setToolTip("Import a base16 .yaml colour scheme (≈250 community themes)")
+        imp.clicked.connect(self._on_import_theme)
+        row.addWidget(imp)
+        row.addStretch(1)
         return wrap
 
-    def _sync_preset_swatch_rings(self, active_name: str) -> None:
-        for name, btn in getattr(self, "_preset_buttons", []):
-            btn.setChecked(name == active_name)
-            btn.update()
+    def _on_preset_combo_changed(self) -> None:
+        data = self._preset_combo.currentData() or ""
+        if data == (self.s.last_preset_name or ""):
+            return  # programmatic sync / already active — don't re-apply
+        if not data:
+            self._clear_active_preset()  # "None" → back to the built-in theme
+        else:
+            from jellytoast.theme_presets import PRESET_BY_NAME
+
+            self._apply_theme_preset(PRESET_BY_NAME[data], data)
+
+    def _sync_preset_selection(self, active_name: str) -> None:
+        """Point the dropdown at the active preset (or 'None') WITHOUT re-firing
+        its handler. An imported scheme has no dropdown row, so it lands on
+        'None' — its colours are still applied + tracked by last_preset_name."""
+        combo = getattr(self, "_preset_combo", None)
+        if combo is None:
+            return
+        idx = combo.findData((active_name or "").strip())
+        combo.blockSignals(True)
+        combo.setCurrentIndex(idx if idx >= 0 else 0)
+        combo.blockSignals(False)
 
     def _clear_active_preset(self) -> None:
         """Switching to a built-in jellytoast theme/accent DROPS any active color
         preset — the two are separate, mutually-exclusive theme families. Resets
-        the preset's token overrides (back to the built-in theme) and deselects
-        the preset swatch. No-op when no preset is active, so it never wipes
-        hand-tuned Settings → Colors overrides unprompted."""
+        the preset's token overrides (back to the built-in theme) and points the
+        preset dropdown at 'None'. No-op when no preset is active, so it never
+        wipes hand-tuned Settings → Colors overrides unprompted."""
         if not (self.s.last_preset_name or "").strip():
             return
         from jellytoast import color_tokens as ct
 
         ct.reset_all()  # single coalesced re-stamp back to the built-in theme
         self.s.last_preset_name = ""
-        self._sync_preset_swatch_rings("")
+        self._sync_preset_selection("")
 
-    def _on_preset_picked(self, preset_name: str) -> None:
-        """Apply a curated preset live: set the light/dark variant + accent, push
-        the palette through the engine (cascades the accent family + persists),
-        re-derive the theme, and show the 10s keep/revert prompt."""
+    def _apply_theme_preset(self, preset, active_name: str) -> None:
+        """Apply a ThemePreset (curated OR imported) live: set the light/dark
+        variant + accent, push the palette through the engine (one coalesced
+        re-stamp, cascades the accent family + persists), re-derive the theme,
+        and show the 10s keep/revert prompt. ``active_name`` is recorded as
+        last_preset_name (drives the dropdown + the built-in-theme exclusivity)."""
         from jellytoast import color_tokens as ct
         from jellytoast import icons as _icons
         from jellytoast import ui_helpers as _uih
         from jellytoast.appearance_confirm import show_appearance_revert
-        from jellytoast.theme_presets import PRESET_BY_NAME, _base16_to_palette
+        from jellytoast.theme_presets import _base16_to_palette
 
-        p = PRESET_BY_NAME[preset_name]
-        palette = _base16_to_palette(p)
-        # Backup for revert — the whole palette PLUS the two settings we mutate.
+        palette = _base16_to_palette(preset)
+        # Backup for revert — the whole palette PLUS the state we mutate.
         backup_palette = ct.export_palette()
         backup_mode = self.s.theme_mode
         backup_accent = self.s.accent_color
         backup_preset = self.s.last_preset_name
 
-        def _apply(mode, accent, pal, preset):
+        def _apply(mode, accent, pal, name):
             # theme_mode BEFORE import_palette: the accent cascade reads the
             # variant's border-alpha, and refresh_theme re-derives the OMITTED
             # washes from this base then re-overlays the preset's colours.
@@ -4075,8 +4077,8 @@ class SettingsDialog(QDialog):
                 _uih.refresh_theme()
                 _icons.refresh_theme()
                 PlayerBus.get().theme_changed.emit()
-            self.s.last_preset_name = preset
-            self._sync_preset_swatch_rings(preset)
+            self.s.last_preset_name = name
+            self._sync_preset_selection(name)
             # Reflect the variant in the theme dropdown WITHOUT re-firing its
             # handler (which would re-apply the plain theme + wipe the preset).
             self._theme_combo.blockSignals(True)
@@ -4084,16 +4086,45 @@ class SettingsDialog(QDialog):
             self._theme_combo.blockSignals(False)
 
         _apply(
-            "frosted_dark" if p.variant == "dark" else "frosted_light",
-            p.base16[p.accent_slot],
+            "frosted_dark" if preset.variant == "dark" else "frosted_light",
+            preset.base16[preset.accent_slot],
             palette,
-            preset_name,
+            active_name,
         )
 
         def _revert():
             _apply(backup_mode, backup_accent, backup_palette, backup_preset)
 
         show_appearance_revert(_revert, seconds=10)
+
+    def _on_import_theme(self) -> None:
+        """Import a base16 .yaml scheme and apply it live (keep/revert-guarded).
+        Uses the scheme's conventional accent (base0D); the accent swatches can
+        re-pick afterward. Recorded in last_preset_name so switching to a
+        built-in accent/theme still resets cleanly."""
+        from PySide6.QtWidgets import QFileDialog, QMessageBox
+
+        from jellytoast.external_theme import Base16ParseError, parse_base16_yaml
+
+        path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Import a base16 theme",
+            "",
+            "base16 schemes (*.yaml *.yml);;All files (*)",
+        )
+        if not path:
+            return
+        try:
+            with open(path, encoding="utf-8") as f:
+                preset = parse_base16_yaml(f.read())
+        except (OSError, UnicodeDecodeError, Base16ParseError) as exc:
+            QMessageBox.warning(
+                self,
+                "Import failed",
+                f"Couldn't read that as a base16 colour scheme:\n\n{exc}",
+            )
+            return
+        self._apply_theme_preset(preset, preset.name)
 
     def _build_accent_row(self) -> QHBoxLayout:
         """Row of color swatches matching ACCENT_PRESETS. Selecting one
