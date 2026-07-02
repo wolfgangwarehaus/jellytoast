@@ -212,3 +212,202 @@ PRESET_PALETTES: list[tuple[str, dict]] = [
     (p.name, _base16_to_palette(p)) for p in BUILTIN_PRESETS
 ]
 PRESET_BY_NAME: dict[str, ThemePreset] = {p.name: p for p in BUILTIN_PRESETS}
+
+
+# ── Theme families (0.1.7 P2 — unified family + mode model) ──────────────────
+# A *family* groups the dark/light members a user flips between with the
+# Dark / Light / Follow-system mode control. A family with BOTH members exposes
+# follow-system (swap on OS light/dark); a single-member family is dark-only (no
+# mode control). ``"jellytoast"`` (the built-in Theme set) and ``"imported"`` (a
+# one-off base16 the user loaded) are recognised sentinels, NOT rows in the
+# table below — the resolver + UI special-case them.
+
+
+@dataclass(frozen=True)
+class ThemeFamily:
+    key: str
+    label: str
+    dark: ThemePreset | None
+    light: ThemePreset | None
+
+    @property
+    def has_both(self) -> bool:
+        return self.dark is not None and self.light is not None
+
+    def member_for(self, lum: str) -> ThemePreset | None:
+        """The member for a resolved luminance (``"dark"``/``"light"``), falling
+        back to whichever member exists — so a dark-only family ignores ``lum``."""
+        pick = self.light if lum == "light" else self.dark
+        return pick or self.dark or self.light
+
+
+def _fam(key: str, label: str, dark_name: str, light_name: str | None = None) -> ThemeFamily:
+    return ThemeFamily(
+        key,
+        label,
+        dark=PRESET_BY_NAME.get(dark_name) if dark_name else None,
+        light=PRESET_BY_NAME.get(light_name) if light_name else None,
+    )
+
+
+THEME_FAMILIES: dict[str, ThemeFamily] = {
+    "catppuccin": _fam("catppuccin", "Catppuccin", "Catppuccin Mocha", "Catppuccin Latte"),
+    "catppuccin-frappe": _fam("catppuccin-frappe", "Catppuccin Frappé", "Catppuccin Frappé"),
+    "catppuccin-macchiato": _fam(
+        "catppuccin-macchiato", "Catppuccin Macchiato", "Catppuccin Macchiato"
+    ),
+    "gruvbox": _fam("gruvbox", "Gruvbox", "Gruvbox Dark", "Gruvbox Light"),
+    "nord": _fam("nord", "Nord", "Nord"),
+    "tokyo-night": _fam("tokyo-night", "Tokyo Night", "Tokyo Night"),
+    "rose-pine": _fam("rose-pine", "Rosé Pine", "Rosé Pine"),
+}
+
+# Dropdown order for the preset families (the UI prepends the "jellytoast"
+# sentinel first). Keeps the Catppuccin flavours adjacent.
+FAMILY_ORDER: list[str] = [
+    "catppuccin",
+    "catppuccin-frappe",
+    "catppuccin-macchiato",
+    "gruvbox",
+    "nord",
+    "tokyo-night",
+    "rose-pine",
+]
+
+# member preset name → family key: migrates the old ``last_preset_name`` and
+# points the dropdown at the family a stored member belongs to.
+PRESET_NAME_TO_FAMILY: dict[str, str] = {
+    m.name: fam.key
+    for fam in THEME_FAMILIES.values()
+    for m in (fam.dark, fam.light)
+    if m is not None
+}
+
+
+def family_label(key: str) -> str:
+    """Human label for a family key (``""``/``"jellytoast"`` → ``"jellytoast"``)."""
+    if key in ("", "jellytoast"):
+        return "jellytoast"
+    fam = THEME_FAMILIES.get(key)
+    return fam.label if fam else key
+
+
+def family_has_both(key: str) -> bool:
+    """Whether the Dark / Light / Follow-system mode control applies. jellytoast
+    always does; a preset family does only when it ships both members; a
+    single-member or imported family does not."""
+    if key in ("", "jellytoast"):
+        return True
+    fam = THEME_FAMILIES.get(key)
+    return bool(fam and fam.has_both)
+
+
+# ── Live apply — the single source of truth for a theme selection ────────────
+
+
+def _os_lum(mode: str) -> str:
+    """Resolve a luminance intent (``"auto"``/``"dark"``/``"light"``) to
+    ``"dark"``/``"light"`` — ``"auto"`` follows the OS scheme."""
+    if mode == "auto":
+        from jellytoast.theme import os_color_scheme
+
+        return os_color_scheme()
+    return "light" if mode == "light" else "dark"
+
+
+def _live_restamp() -> None:
+    """Refresh the token constants + icons and broadcast ``theme_changed`` under
+    the swap guard — the shared live-apply tail every theme change runs."""
+    from jellytoast import icons as _icons
+    from jellytoast import ui_helpers as _uih
+    from jellytoast.player_state import PlayerBus
+
+    with _uih.theme_swap_guard():
+        _uih.refresh_theme()
+        _icons.refresh_theme()
+        PlayerBus.get().theme_changed.emit()
+
+
+def apply_theme_family(family: str, mode: str, frosted: bool) -> None:
+    """Apply a theme selection (family + luminance ``mode`` + ``frosted``) live.
+
+    The single entry point shared by launch re-resolve, the OS-scheme watcher,
+    and the Settings dialog. ``jellytoast``/``""`` drops any preset overrides so
+    the built-in base theme + accent tokens win; a preset family imports the
+    resolved member's palette (cascades its accent + tints the body), and the
+    built-in base theme (``frosted_<variant>`` / ``<variant>``) still supplies
+    the omitted washes. Persists all three axes. Does NOT show the keep/revert
+    prompt — that's the dialog's responsibility."""
+    from jellytoast import color_tokens as ct
+    from jellytoast.settings import get_settings
+
+    s = get_settings()
+    s.theme_mode = mode
+    s.frosted = bool(frosted)
+    s.theme_family = family or ""
+    if family in ("", "jellytoast"):
+        # Built-in jellytoast theme: wipe any preset overrides so the base theme
+        # + user accent win. Leaves accent_color as the user set it.
+        ct.reset_all()
+        s.last_preset_name = ""
+    elif family == "imported":
+        # Imported scheme has no registered members — its palette is already
+        # persisted (see apply_imported_preset); just re-stamp on the new axes.
+        pass
+    else:
+        member = THEME_FAMILIES[family].member_for(_os_lum(mode))
+        if member is not None:
+            s.accent_color = member.base16[member.accent_slot]
+            ct.import_palette(_base16_to_palette(member))
+            s.last_preset_name = member.name
+    _live_restamp()
+
+
+def apply_imported_preset(preset: ThemePreset, frosted: bool) -> None:
+    """Apply a user-imported base16 scheme (no family). Persists the raw scheme
+    so its preview grid + body tint survive a restart, records
+    ``theme_family="imported"`` with the scheme's own variant as the luminance
+    (single variant → no follow-system), imports the palette, and live-restamps."""
+    import json
+
+    from jellytoast import color_tokens as ct
+    from jellytoast.settings import get_settings
+
+    s = get_settings()
+    s.theme_mode = "light" if preset.variant == "light" else "dark"
+    s.frosted = bool(frosted)
+    s.theme_family = "imported"
+    s.imported_scheme_json = json.dumps(
+        {
+            "name": preset.name,
+            "variant": preset.variant,
+            "accent_slot": preset.accent_slot,
+            "base16": preset.base16,
+        }
+    )
+    s.accent_color = preset.base16[preset.accent_slot]
+    ct.import_palette(_base16_to_palette(preset))
+    s.last_preset_name = preset.name
+    _live_restamp()
+
+
+def imported_preset_from_settings() -> ThemePreset | None:
+    """Reconstruct the imported ThemePreset from the persisted JSON (for the
+    dialog's preview grid). None when nothing valid is stored."""
+    import json
+
+    from jellytoast.settings import get_settings
+
+    raw = get_settings().imported_scheme_json
+    if not raw:
+        return None
+    try:
+        d = json.loads(raw)
+        return ThemePreset(
+            name=d["name"],
+            variant=d["variant"],
+            accent_slot=d["accent_slot"],
+            base16=dict(d["base16"]),
+        )
+    except Exception:
+        return None

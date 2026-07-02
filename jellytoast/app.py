@@ -1625,7 +1625,18 @@ class JellytoastWindow(_NavMixin, _SessionMixin, _CastDispatcherMixin, _ShuffleP
         it lands as one frame. No-op for any explicit theme choice."""
         from jellytoast.settings import get_settings
 
-        if get_settings().theme_mode != "auto":
+        s = get_settings()
+        if s.theme_mode != "auto":
+            return
+        # A paired preset family in follow-system mode must re-IMPORT the matching
+        # light/dark member on the OS flip (Mocha↔Latte, Gruvbox Dark↔Light), not
+        # merely re-stamp. jellytoast / dark-only / imported just recompose the
+        # base theme via refresh_theme below — never reset_all, which would wipe
+        # any hand-tuned Settings→Colors overrides on every OS toggle.
+        from jellytoast.theme_presets import apply_theme_family, family_has_both
+
+        if s.theme_family not in ("", "jellytoast") and family_has_both(s.theme_family):
+            apply_theme_family(s.theme_family, "auto", s.frosted)
             return
         from jellytoast import icons as _icons
         from jellytoast import ui_helpers as _uih
@@ -2212,6 +2223,25 @@ def main():
     from jellytoast.color_tokens import load_persisted_overrides
 
     load_persisted_overrides()
+
+    # Follow-system for a paired preset: if the OS light/dark scheme changed
+    # while the app was closed, re-resolve the active preset family to the
+    # matching member (Mocha↔Latte, Gruvbox Dark↔Light) before any widget is
+    # built. jellytoast "auto" needs nothing here (refresh_theme composes the
+    # base theme live); dark-only / imported families never swap.
+    try:
+        from jellytoast.settings import get_settings as _get_settings_boot
+        from jellytoast.theme_presets import apply_theme_family, family_has_both
+
+        _s_boot = _get_settings_boot()
+        if (
+            _s_boot.theme_mode == "auto"
+            and _s_boot.theme_family not in ("", "jellytoast")
+            and family_has_both(_s_boot.theme_family)
+        ):
+            apply_theme_family(_s_boot.theme_family, "auto", _s_boot.frosted)
+    except Exception:
+        pass
 
     # App-wide palette override: paint Qt's "Highlight" / "HighlightedText"
     # roles with the user's accent colour so every Qt-style-drawn
