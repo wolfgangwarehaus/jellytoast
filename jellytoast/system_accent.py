@@ -14,6 +14,8 @@ per-OS backends and is gated behind the needs:windows / needs:mac boxes.
 
 from __future__ import annotations
 
+from PySide6.QtCore import QObject, Slot
+
 _APPEARANCE = "org.freedesktop.appearance"
 _ACCENT_KEY = "accent-color"
 _PORTAL_SERVICE = "org.freedesktop.portal.Desktop"
@@ -77,3 +79,95 @@ def read_system_accent() -> str | None:
             conn.close()
     except Exception:
         return None
+
+
+def apply_accent_now(hex_color: str) -> None:
+    """Apply a hex accent app-wide from a NON-dialog context (launch re-read /
+    the live watcher): persist it to ``ui/accent_color``, drop any stale
+    accent-family override so the cascade re-derives cleanly, then refresh the
+    theme + icons and broadcast ``theme_changed``. GUI thread only. Mirrors the
+    accent picker's apply path (``_on_accent_picked``) minus the dialog bits."""
+    if not hex_color:
+        return
+    try:
+        from PySide6.QtCore import QSettings
+
+        from jellytoast import icons as _icons
+        from jellytoast import ui_helpers as _uih
+        from jellytoast.player_state import PlayerBus
+        from jellytoast.settings import get_settings
+
+        get_settings().accent_color = hex_color
+        qs = QSettings()
+        for tok in ("ACCENT", "ACCENT_DEEP", "BORDER_ACCENT"):
+            qs.remove(f"debug/colors/{tok}")
+        _uih.refresh_theme()
+        _icons.refresh_theme()
+        PlayerBus.get().theme_changed.emit()
+    except Exception:
+        pass
+
+
+class SystemAccentFollower(QObject):
+    """Keeps jellytoast's accent in sync with the desktop's while
+    ``settings.follow_system_accent`` is on: applies it once at :meth:`start`
+    and again whenever the portal's ``accent-color`` changes.
+
+    The change NOTIFICATION uses QtDBus (event-loop-integrated, no worker
+    thread — so it respects the no-raw-threads rule); the actual value is
+    RE-READ via jeepney on an ``async_io`` worker, because QtDBus can't
+    demarshal the ``(ddd)`` struct in this PySide6 build. Everything is
+    best-effort and wrapped — a DE without the portal (or a build where the
+    signal doesn't deliver) simply never fires, and the launch-time read still
+    covers "follow on every launch"."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._subscribed = False
+
+    def start(self) -> None:
+        from jellytoast.settings import get_settings
+
+        if get_settings().follow_system_accent:
+            self._sync_now()
+        self._subscribe()  # always listen; the handler gates on the live setting
+
+    def _sync_now(self) -> None:
+        from jellytoast.async_io import run_async
+
+        run_async(
+            read_system_accent,
+            on_result=lambda h: apply_accent_now(h) if h else None,
+            on_error=lambda _e: None,
+        )
+
+    def _subscribe(self) -> None:
+        if self._subscribed:
+            return
+        try:
+            from PySide6.QtDBus import QDBusConnection
+
+            ok = QDBusConnection.sessionBus().connect(
+                _PORTAL_SERVICE,
+                _PORTAL_PATH,
+                _SETTINGS_IFACE,
+                "SettingChanged",
+                self._on_setting_changed,
+            )
+            self._subscribed = bool(ok)
+        except Exception:
+            self._subscribed = False
+
+    @Slot(str, str, "QDBusVariant")
+    def _on_setting_changed(self, namespace, key, _value=None) -> None:
+        try:
+            from jellytoast.settings import get_settings
+
+            if (
+                namespace == _APPEARANCE
+                and key == _ACCENT_KEY
+                and get_settings().follow_system_accent
+            ):
+                self._sync_now()  # re-read the value via jeepney (handles the struct)
+        except Exception:
+            pass
