@@ -155,3 +155,54 @@ def test_font_family_change_applies_live_and_reverts(qapp, monkeypatch):
     assert d.s.font_family == initial
     assert d._active_font_family == initial
     d.deleteLater()
+
+
+def test_second_prompt_supersedes_first(qapp):
+    """Regression: two live changes inside one countdown window used to leave
+    TWO dialogs with fighting timers — the buried first one auto-reverted
+    UNDERNEATH the new one with a stale backup, desyncing the applied state.
+    A new prompt must supersede the old (kept — its revert must NOT run, the
+    new change was already applied on top) and fold the old revert into its
+    own, so Revert unwinds both changes, newest first."""
+    from jellytoast.appearance_confirm import show_appearance_revert
+
+    order: list[str] = []
+    d1 = show_appearance_revert(lambda: order.append("revert1"))
+    qapp.processEvents()
+    d2 = show_appearance_revert(lambda: order.append("revert2"))
+    qapp.processEvents()
+
+    assert d1._finished  # first prompt torn down…
+    assert not d1.isVisible()
+    assert order == []  # …without running its revert
+
+    d2.reject()  # Revert on the surviving prompt unwinds BOTH, newest first
+    assert order == ["revert2", "revert1"]
+
+
+def test_keep_on_superseding_prompt_keeps_everything(qapp):
+    from jellytoast.appearance_confirm import show_appearance_revert
+
+    order: list[str] = []
+    show_appearance_revert(lambda: order.append("revert1"))
+    qapp.processEvents()
+    d2 = show_appearance_revert(lambda: order.append("revert2"))
+    qapp.processEvents()
+
+    d2._do_keep()
+    assert order == []  # Keep commits the whole chain — no revert fires
+
+
+def test_third_prompt_chains_through_two_supersedes(qapp):
+    from jellytoast.appearance_confirm import show_appearance_revert
+
+    order: list[str] = []
+    show_appearance_revert(lambda: order.append("revert1"))
+    qapp.processEvents()
+    show_appearance_revert(lambda: order.append("revert2"))
+    qapp.processEvents()
+    d3 = show_appearance_revert(lambda: order.append("revert3"))
+    qapp.processEvents()
+
+    d3.reject()  # (timeout routes through the same _finish path)
+    assert order == ["revert3", "revert2", "revert1"]
