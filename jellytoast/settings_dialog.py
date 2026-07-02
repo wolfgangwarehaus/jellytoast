@@ -2799,6 +2799,16 @@ class SettingsDialog(QDialog):
         # ── Accent color ───────────────────────────────────────────────
         v.addWidget(self._section_header("Accent color"))
         v.addLayout(self._build_accent_row())
+        # Follow the desktop's accent colour (XDG portal — KDE / GNOME). When a
+        # DE doesn't expose one, the read returns None and we surface a hint.
+        self._follow_accent_check = QCheckBox("Follow system accent")
+        self._follow_accent_check.setChecked(self.s.follow_system_accent)
+        self._follow_accent_check.setToolTip(
+            "Adopt your desktop's accent colour (KDE Plasma / GNOME 47+)."
+        )
+        self._follow_accent_check.toggled.connect(self._on_follow_system_accent_toggled)
+        v.addSpacing(6)
+        v.addWidget(self._follow_accent_check)
         # NOTE: the old "Customize" button (jump to the per-token color editor)
         # was removed deliberately — that editor is now a hidden power-user
         # subsystem with no UI entry point. See the page-registration note in
@@ -4125,6 +4135,35 @@ class SettingsDialog(QDialog):
             )
             return
         self._apply_theme_preset(preset, preset.name)
+
+    def _on_follow_system_accent_toggled(self, on: bool) -> None:
+        """Persist the toggle; when enabled, read the desktop accent off a worker
+        (portal D-Bus) and apply it via the accent path. If the DE reports none,
+        surface a hint and switch the toggle back off."""
+        self.s.follow_system_accent = bool(on)
+        if not on:
+            return
+        from jellytoast.async_io import run_async
+        from jellytoast.system_accent import read_system_accent
+
+        def _got(hex_color):  # on the GUI thread (run_async pins the signaler)
+            if hex_color:
+                self._on_accent_picked(hex_color)  # applies + persists + drops any preset
+                return
+            from PySide6.QtWidgets import QMessageBox
+
+            QMessageBox.information(
+                self,
+                "No system accent",
+                "Your desktop didn't report an accent colour — this works on "
+                "KDE Plasma and GNOME 47+.",
+            )
+            self._follow_accent_check.blockSignals(True)
+            self._follow_accent_check.setChecked(False)
+            self._follow_accent_check.blockSignals(False)
+            self.s.follow_system_accent = False
+
+        run_async(read_system_accent, on_result=_got, on_error=lambda _e: None)
 
     def _build_accent_row(self) -> QHBoxLayout:
         """Row of color swatches matching ACCENT_PRESETS. Selecting one
