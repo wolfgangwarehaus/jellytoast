@@ -203,6 +203,67 @@ BUILTIN_PRESETS: list[ThemePreset] = [
             "base0C": "#9ccfd8", "base0D": "#c4a7e7", "base0E": "#c4a7e7", "base0F": "#524f67",
         },
     ),
+    # Rosé Pine's official light variant — the soft rosy one; accent is the
+    # rose slot (not iris like the dark member) so the family reads pink in
+    # the light half.
+    ThemePreset(
+        name="Rosé Pine Dawn", variant="light", accent_slot="base0A",
+        base16={
+            "base00": "#faf4ed", "base01": "#fffaf3", "base02": "#f2e9e1", "base03": "#9893a5",
+            "base04": "#797593", "base05": "#575279", "base06": "#575279", "base07": "#cecacd",
+            "base08": "#b4637a", "base09": "#ea9d34", "base0A": "#d7827e", "base0B": "#286983",
+            "base0C": "#56949f", "base0D": "#907aa9", "base0E": "#907aa9", "base0F": "#cecacd",
+        },
+    ),
+    # Authored from the Dracula spec's 10 named colors (+ its darker sidebar
+    # tone for base01 and the bright-ANSI set for the light fg fills); the
+    # signature purple is the accent, pink rides base0E.
+    ThemePreset(
+        name="Dracula", variant="dark", accent_slot="base0D",
+        base16={
+            "base00": "#282a36", "base01": "#21222c", "base02": "#44475a", "base03": "#6272a4",
+            "base04": "#7b88b8", "base05": "#f8f8f2", "base06": "#f8f8f2", "base07": "#ffffff",
+            "base08": "#ff5555", "base09": "#ffb86c", "base0A": "#f1fa8c", "base0B": "#50fa7b",
+            "base0C": "#8be9fd", "base0D": "#bd93f9", "base0E": "#ff79c6", "base0F": "#d6acff",
+        },
+    ),
+    # Everforest (medium dark) — the green one; accent is its green slot.
+    ThemePreset(
+        name="Everforest", variant="dark", accent_slot="base0B",
+        base16={
+            "base00": "#2d353b", "base01": "#343f44", "base02": "#475258", "base03": "#859289",
+            "base04": "#9da9a0", "base05": "#d3c6aa", "base06": "#f3ead3", "base07": "#fdf6e3",
+            "base08": "#e67e80", "base09": "#e69875", "base0A": "#dbbc7f", "base0B": "#a7c080",
+            "base0C": "#83c092", "base0D": "#7fbbb3", "base0E": "#d699b6", "base0F": "#e69875",
+        },
+    ),
+    ThemePreset(
+        name="One Dark", variant="dark", accent_slot="base0D",
+        base16={
+            "base00": "#282c34", "base01": "#353b45", "base02": "#3e4451", "base03": "#545862",
+            "base04": "#565c64", "base05": "#abb2bf", "base06": "#b6bdca", "base07": "#c8ccd4",
+            "base08": "#e06c75", "base09": "#d19a66", "base0A": "#e5c07b", "base0B": "#98c379",
+            "base0C": "#56b6c2", "base0D": "#61afef", "base0E": "#c678dd", "base0F": "#be5046",
+        },
+    ),
+    ThemePreset(
+        name="Solarized Dark", variant="dark", accent_slot="base0D",
+        base16={
+            "base00": "#002b36", "base01": "#073642", "base02": "#586e75", "base03": "#657b83",
+            "base04": "#839496", "base05": "#93a1a1", "base06": "#eee8d5", "base07": "#fdf6e3",
+            "base08": "#dc322f", "base09": "#cb4b16", "base0A": "#b58900", "base0B": "#859900",
+            "base0C": "#2aa198", "base0D": "#268bd2", "base0E": "#6c71c4", "base0F": "#d33682",
+        },
+    ),
+    ThemePreset(
+        name="Solarized Light", variant="light", accent_slot="base0D",
+        base16={
+            "base00": "#fdf6e3", "base01": "#eee8d5", "base02": "#d5cdb4", "base03": "#839496",
+            "base04": "#657b83", "base05": "#586e75", "base06": "#073642", "base07": "#002b36",
+            "base08": "#dc322f", "base09": "#cb4b16", "base0A": "#b58900", "base0B": "#859900",
+            "base0C": "#2aa198", "base0D": "#268bd2", "base0E": "#6c71c4", "base0F": "#d33682",
+        },
+    ),
 ]
 
 
@@ -256,10 +317,14 @@ THEME_FAMILIES: dict[str, ThemeFamily] = {
     "catppuccin-macchiato": _fam(
         "catppuccin-macchiato", "Catppuccin Macchiato", "Catppuccin Macchiato"
     ),
+    "dracula": _fam("dracula", "Dracula", "Dracula"),
+    "everforest": _fam("everforest", "Everforest", "Everforest"),
     "gruvbox": _fam("gruvbox", "Gruvbox", "Gruvbox Dark", "Gruvbox Light"),
     "nord": _fam("nord", "Nord", "Nord"),
+    "one-dark": _fam("one-dark", "One Dark", "One Dark"),
+    "rose-pine": _fam("rose-pine", "Rosé Pine", "Rosé Pine", "Rosé Pine Dawn"),
+    "solarized": _fam("solarized", "Solarized", "Solarized Dark", "Solarized Light"),
     "tokyo-night": _fam("tokyo-night", "Tokyo Night", "Tokyo Night"),
-    "rose-pine": _fam("rose-pine", "Rosé Pine", "Rosé Pine"),
 }
 
 # Dropdown order for the preset families (the UI prepends the "jellytoast"
@@ -268,10 +333,14 @@ FAMILY_ORDER: list[str] = [
     "catppuccin",
     "catppuccin-frappe",
     "catppuccin-macchiato",
+    "dracula",
+    "everforest",
     "gruvbox",
     "nord",
-    "tokyo-night",
+    "one-dark",
     "rose-pine",
+    "solarized",
+    "tokyo-night",
 ]
 
 # member preset name → family key: migrates the old ``last_preset_name`` and

@@ -90,7 +90,7 @@ def test_family_members_are_builtin_presets():
 
 def test_has_both_only_for_paired_families():
     paired = {k for k, fam in THEME_FAMILIES.items() if fam.has_both}
-    assert paired == {"catppuccin", "gruvbox"}
+    assert paired == {"catppuccin", "gruvbox", "rose-pine", "solarized"}
     # jellytoast (sentinel, not a table row) always offers all three modes.
     assert family_has_both("jellytoast") and family_has_both("")
     assert not family_has_both("nord")
