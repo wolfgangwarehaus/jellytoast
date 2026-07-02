@@ -129,3 +129,56 @@ def test_follower_is_gated_off_while_preset_family_active(
     isolated_settings.theme_family = ""
     f._on_setting_changed(_APPEARANCE_NS, "accent-color")
     assert synced["n"] == 1
+
+
+class TestWindowsAccentBackend:
+    def test_abgr_to_hex(self):
+        from jellytoast.system_accent import _abgr_to_hex
+
+        # DWM AccentColor is 0xAABBGGRR: blue=0xd7, green=0x77, red=0x00
+        assert _abgr_to_hex(0xFFD77700) == "#0077d7"
+        assert _abgr_to_hex(0x00000000) == "#000000"
+        assert _abgr_to_hex(0xFFFFFFFF) == "#ffffff"
+        assert _abgr_to_hex("junk") is None
+        assert _abgr_to_hex(-1) is None
+        assert _abgr_to_hex(2**33) is None
+
+    def test_read_dispatches_to_windows_reader(self, monkeypatch):
+        from jellytoast import system_accent as sa
+
+        monkeypatch.setattr(sa, "_IS_WINDOWS", True)
+        monkeypatch.setattr(sa, "_read_windows_accent", lambda: "#0077d7")
+        assert sa.read_system_accent() == "#0077d7"
+
+    def test_windows_subscribe_installs_native_filter(
+        self, qapp, isolated_settings, monkeypatch
+    ):
+        from jellytoast import system_accent as sa
+
+        monkeypatch.setattr(sa, "_IS_WINDOWS", True)
+        f = sa.SystemAccentFollower()
+        f._subscribe()
+        assert f._subscribed is True
+        assert getattr(f, "_win_filter", None) is not None
+        # teardown: don't leave an app-wide filter behind for other tests
+        qapp.removeNativeEventFilter(f._win_filter)
+
+    def test_windows_change_handler_gates_like_portal(
+        self, qapp, isolated_settings, monkeypatch
+    ):
+        from jellytoast import system_accent as sa
+
+        synced = {"n": 0}
+        monkeypatch.setattr(
+            sa.SystemAccentFollower,
+            "_sync_now",
+            lambda self: synced.__setitem__("n", synced["n"] + 1),
+        )
+        f = sa.SystemAccentFollower()
+        isolated_settings.follow_system_accent = True
+        isolated_settings.theme_family = "catppuccin"  # preset → gated off
+        f._on_windows_accent_changed()
+        assert synced["n"] == 0
+        isolated_settings.theme_family = ""  # built-in → drives
+        f._on_windows_accent_changed()
+        assert synced["n"] == 1

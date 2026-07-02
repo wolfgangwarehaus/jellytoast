@@ -615,3 +615,39 @@ class TestHexToRgbSafe:
 
         for value in ("#ffffff", "garbage", "", "#abc"):
             ui_helpers._hex_to_rgb_safe(value)  # must not raise
+
+
+class TestPlatformActiveAlpha:
+    """Win/mac active-blur caps: preset-aware defaults, and an explicit Glass
+    slider value wins over the cap (the old flat min() got both wrong)."""
+
+    def test_builtin_default_capped(self, clean_theme_settings):
+        s = _settings_handle()
+        s.setValue("ui/theme_family", "")
+        s.setValue("ui/jellytoast_glass_alpha", 0)
+        s.sync()
+        assert th._platform_active_alpha(172, mac=False) == 96
+        assert th._platform_active_alpha(172, mac=True) == 110
+
+    def test_preset_default_gets_deeper_cap(self, clean_theme_settings):
+        s = _settings_handle()
+        s.setValue("ui/theme_family", "dracula")
+        s.setValue("ui/preset_glass_alpha", 0)
+        s.sync()
+        assert th._platform_active_alpha(205, mac=False) == 128
+        assert th._platform_active_alpha(205, mac=True) == 150
+
+    def test_explicit_slider_value_wins_over_cap(self, clean_theme_settings):
+        s = _settings_handle()
+        s.setValue("ui/theme_family", "dracula")
+        s.setValue("ui/preset_glass_alpha", 230)
+        s.sync()
+        assert th._platform_active_alpha(230, mac=False) == 230
+        assert th._platform_active_alpha(230, mac=True) == 230
+
+    def test_base_lighter_than_cap_stays(self, clean_theme_settings):
+        s = _settings_handle()
+        s.setValue("ui/theme_family", "")
+        s.setValue("ui/jellytoast_glass_alpha", 0)
+        s.sync()
+        assert th._platform_active_alpha(60, mac=False) == 60

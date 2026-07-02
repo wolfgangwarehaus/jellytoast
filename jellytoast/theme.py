@@ -89,6 +89,67 @@ def _mac_glass_alpha() -> int:
     return max(_WIN_BODY_FLOOR_ALPHA, min(255, v))
 
 
+# Preset-family analogues of the Win/mac caps. The Linux preset default (205/185)
+# is deliberately DEEPER than jellytoast's (172/140) so a preset reads like its
+# own theme; a flat per-OS cap erased that distinction on Windows/macOS. These
+# keep the ratio in spirit — deeper than the builtin cap, still letting Acrylic /
+# vibrancy read through. PROVISIONAL until eyeballed on the needs:windows box;
+# tune live with the env knobs, then bake.
+_WIN_PRESET_DEFAULT_ALPHA = 128
+_MAC_PRESET_DEFAULT_ALPHA = 150
+
+
+def _win_preset_glass_alpha() -> int:
+    """Windows Acrylic body alpha for a PRESET family default (see
+    ``_WIN_PRESET_DEFAULT_ALPHA``). Env-tunable: ``JT_WIN_PRESET_GLASS_ALPHA``."""
+    try:
+        v = int(
+            os.environ.get("JT_WIN_PRESET_GLASS_ALPHA", str(_WIN_PRESET_DEFAULT_ALPHA))
+        )
+    except ValueError:
+        v = _WIN_PRESET_DEFAULT_ALPHA
+    return max(_WIN_BODY_FLOOR_ALPHA, min(255, v))
+
+
+def _mac_preset_glass_alpha() -> int:
+    """macOS vibrancy body alpha for a PRESET family default (see
+    ``_MAC_PRESET_DEFAULT_ALPHA``). Env-tunable: ``JT_MAC_PRESET_GLASS_ALPHA``."""
+    try:
+        v = int(
+            os.environ.get("JT_MAC_PRESET_GLASS_ALPHA", str(_MAC_PRESET_DEFAULT_ALPHA))
+        )
+    except ValueError:
+        v = _MAC_PRESET_DEFAULT_ALPHA
+    return max(_WIN_BODY_FLOOR_ALPHA, min(255, v))
+
+
+def _platform_active_alpha(base_alpha: int, *, mac: bool) -> int:
+    """Effective active-blur body alpha on Windows/macOS.
+
+    Two rules the old flat ``min(base, cap)`` got wrong:
+    1. An EXPLICIT Glass-opacity slider value is honored verbatim — the user
+       dialled it on this machine, on this backdrop; capping it made the slider
+       dead above the cap on Win/mac.
+    2. Family DEFAULTS keep the preset-deeper-than-jellytoast distinction via
+       the preset-specific caps, instead of clamping both to one number."""
+    try:
+        from jellytoast.settings import get_settings
+
+        s = get_settings()
+        fam = s.theme_family
+        is_preset = bool(fam and fam not in ("", "jellytoast"))
+        override = s.preset_glass_alpha if is_preset else s.jellytoast_glass_alpha
+    except Exception:
+        is_preset, override = False, 0
+    if override:
+        return base_alpha  # already the slider value, clamped by _glass_alpha
+    if mac:
+        cap = _mac_preset_glass_alpha() if is_preset else _mac_glass_alpha()
+    else:
+        cap = _win_preset_glass_alpha() if is_preset else _win_glass_alpha()
+    return min(base_alpha, cap)
+
+
 # Default frosted body alpha for a PRESET family (Catppuccin / Nord / …) when
 # blur is active — the "Default" the Glass-opacity slider resets to. Deliberately
 # DEEPER than jellytoast's own glass (172 dark / 140 light): a preset's background
@@ -752,16 +813,16 @@ def body_color_for(theme: "Theme", status, surface: str = "main") -> tuple:
     from jellytoast.blur import BlurStatus
 
     if status is BlurStatus.ACTIVE:
-        if IS_WINDOWS:
-            # Windows Mica is subtler than KWin blur — cap the body alpha
-            # lower so it reads through (see _win_glass_alpha). min() keeps a
-            # theme that's already lighter than the cap.
-            return (base[0], base[1], base[2], min(base[3], _win_glass_alpha()))
-        if IS_MACOS:
-            # macOS vibrancy veils heavier than KWin — cap the body alpha
-            # lower so it reads through (see _mac_glass_alpha). min() keeps a
-            # theme that's already lighter than the cap.
-            return (base[0], base[1], base[2], min(base[3], _mac_glass_alpha()))
+        if IS_WINDOWS or IS_MACOS:
+            # Acrylic / vibrancy composite denser than KWin blur, so family
+            # DEFAULTS are capped lower to read through — preset-aware, and an
+            # explicit slider value wins (see _platform_active_alpha).
+            return (
+                base[0],
+                base[1],
+                base[2],
+                _platform_active_alpha(base[3], mac=IS_MACOS),
+            )
         return base
     # macOS, no vibrancy (Reduce Transparency on, or AppKit absent): faux-frost
     # fallback. The main window and the mini player BOTH knock their frost base

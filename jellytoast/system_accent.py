@@ -1,20 +1,27 @@
-"""Read the desktop's accent colour from the XDG portal (0.1.7 P1b).
+"""Read the desktop's accent colour (0.1.7 P1b; Windows backend added later).
 
-``org.freedesktop.portal.Settings.ReadOne("org.freedesktop.appearance",
+Linux: ``org.freedesktop.portal.Settings.ReadOne("org.freedesktop.appearance",
 "accent-color")`` returns a ``(ddd)`` sRGB triple in [0,1] (or a negative
 sentinel when unset). Read via **jeepney** on an ``async_io`` worker — QtDBus
 can't demarshal the struct in this PySide6 build (same reason as the eyedropper,
-see ``color_picker``). This feeds the accent path so jellytoast can *follow the
-OS accent*; light/dark already rides ``QStyleHints`` via the ``auto`` theme mode.
+see ``color_picker``). KDE Plasma + GNOME 47+ expose the key; older / other DEs
+return None and the caller just leaves the accent as-is.
 
-Cross-DE: KDE Plasma + GNOME 47+ expose this key; older / other DEs return None
-and the caller just leaves the accent as-is. Windows/macOS accent-follow needs
-per-OS backends and is gated behind the needs:windows / needs:mac boxes.
+Windows: the accent is ``HKCU\\Software\\Microsoft\\Windows\\DWM\\AccentColor``
+(a 0xAABBGGRR DWORD); live changes broadcast ``WM_DWMCOLORIZATIONCOLORCHANGED``,
+caught with an app-wide native event filter (same pattern as ``taskbar``).
+UNVERIFIED on a real Windows box yet — ships behind the needs:windows checklist.
+
+macOS accent-follow still needs a per-OS backend (needs:mac).
 """
 
 from __future__ import annotations
 
+import sys
+
 from PySide6.QtCore import QObject, Slot
+
+_IS_WINDOWS = sys.platform == "win32"
 
 _APPEARANCE = "org.freedesktop.appearance"
 _ACCENT_KEY = "accent-color"
@@ -56,9 +63,39 @@ def _accent_from_variant(v) -> str | None:
     return rgb01_to_hex(r, g, b)
 
 
+def _abgr_to_hex(dword: int) -> str | None:
+    """Windows DWM ``AccentColor`` DWORD (0xAABBGGRR) → ``#rrggbb``."""
+    try:
+        v = int(dword)
+    except (TypeError, ValueError):
+        return None
+    if not 0 <= v <= 0xFFFFFFFF:
+        return None
+    r = v & 0xFF
+    g = (v >> 8) & 0xFF
+    b = (v >> 16) & 0xFF
+    return f"#{r:02x}{g:02x}{b:02x}"
+
+
+def _read_windows_accent() -> str | None:
+    """HKCU DWM AccentColor → ``#rrggbb``, or None. Never raises."""
+    try:
+        import winreg
+
+        with winreg.OpenKey(
+            winreg.HKEY_CURRENT_USER, r"Software\Microsoft\Windows\DWM"
+        ) as key:
+            value, _kind = winreg.QueryValueEx(key, "AccentColor")
+        return _abgr_to_hex(value)
+    except Exception:
+        return None
+
+
 def read_system_accent() -> str | None:
-    """Blocking portal read — call on a worker via ``async_io.run_async``.
-    Returns ``#rrggbb`` or None (unset / no portal / no jeepney). Never raises."""
+    """Blocking accent read — call on a worker via ``async_io.run_async``.
+    Returns ``#rrggbb`` or None (unset / unsupported platform). Never raises."""
+    if _IS_WINDOWS:
+        return _read_windows_accent()
     if not _jeepney_available():
         return None
     try:
@@ -123,6 +160,36 @@ def apply_accent_now(hex_color: str) -> None:
         pass
 
 
+# Broadcast to every top-level window when the DWM colorization (accent)
+# changes — Settings → Personalization → Colors, or an accent-syncing tool.
+_WM_DWMCOLORIZATIONCOLORCHANGED = 0x0320
+
+
+def _make_accent_filter(on_changed):
+    """App-wide native event filter firing ``on_changed`` on
+    ``WM_DWMCOLORIZATIONCOLORCHANGED`` — the Windows analogue of the portal's
+    SettingChanged signal (same filter shape as ``taskbar._ButtonCreatedFilter``)."""
+    from PySide6.QtCore import QAbstractNativeEventFilter
+
+    class _Filter(QAbstractNativeEventFilter):
+        def nativeEventFilter(self, event_type, message):
+            # Runs for EVERY Windows message — bail before touching MSG unless
+            # it's the generic channel.
+            if event_type != b"windows_generic_MSG":
+                return False, 0
+            try:
+                import ctypes.wintypes as wintypes
+
+                msg = wintypes.MSG.from_address(int(message))
+                if msg.message == _WM_DWMCOLORIZATIONCOLORCHANGED:
+                    on_changed()
+            except Exception:
+                pass
+            return False, 0
+
+    return _Filter()
+
+
 class SystemAccentFollower(QObject):
     """Keeps jellytoast's accent in sync with the desktop's while
     ``settings.follow_system_accent`` is on: applies it once at :meth:`start`
@@ -157,6 +224,9 @@ class SystemAccentFollower(QObject):
     def _subscribe(self) -> None:
         if self._subscribed:
             return
+        if _IS_WINDOWS:
+            self._subscribe_windows()
+            return
         try:
             from PySide6.QtCore import SLOT
             from PySide6.QtDBus import QDBusConnection
@@ -179,6 +249,29 @@ class SystemAccentFollower(QObject):
             self._subscribed = bool(ok)
         except Exception:
             self._subscribed = False
+
+    def _subscribe_windows(self) -> None:
+        """Install the app-wide DWM-colorization filter. The handler gates on
+        the live setting + family (``follow_accent_active``), same contract as
+        the portal path; the re-read goes through the registry on a worker."""
+        try:
+            from PySide6.QtWidgets import QApplication
+
+            self._win_filter = _make_accent_filter(self._on_windows_accent_changed)
+            app = QApplication.instance()
+            if app is None:
+                return
+            app.installNativeEventFilter(self._win_filter)
+            self._subscribed = True
+        except Exception:
+            self._subscribed = False
+
+    def _on_windows_accent_changed(self) -> None:
+        try:
+            if follow_accent_active():
+                self._sync_now()
+        except Exception:
+            pass
 
     @Slot(str, str, "QDBusVariant")
     def _on_setting_changed(self, namespace, key, _value=None) -> None:
