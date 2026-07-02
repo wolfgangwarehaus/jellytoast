@@ -2463,6 +2463,17 @@ def main():
         except Exception:
             pass
 
+        # Follow the desktop accent colour if the user enabled it: apply it now
+        # (launch re-read) and watch the XDG portal for live changes. Best-
+        # effort — a DE without the portal simply never fires. Pinned on `win`.
+        try:
+            from jellytoast.system_accent import SystemAccentFollower
+
+            win._accent_follower = SystemAccentFollower(win)
+            win._accent_follower.start()
+        except Exception:
+            pass
+
         # Windows taskbar overlay badge (play/pause state at a glance).
         # No-op elsewhere; pinned on `win` so _cleanup can stop() it
         # (detaches the native event filter + releases the badge HICONs).
