@@ -81,10 +81,19 @@ def _base16_to_palette(p: ThemePreset) -> dict:
             "IDLE_TEXT": b["base04"],
             "ERROR_FG": b["base08"],
             "WARN_FG": b["base09"],
-            # surfaces (QSS)
+            # surfaces (QSS) — commit the preset's OWN elevation ramp so the
+            # whole app adopts the scheme, not just bg/text/accent: base01 is
+            # base16's "lighter background" (cards/inputs), base02 its selection,
+            # base03 its comment-grey (borders). Opaque so they read as the
+            # preset's tone rather than a faint white wash over it.
             "BG": b["base00"],
             "BG_PANEL": b["base02"],
             "POPUP_OPAQUE_FILL": _rgba(b["base02"], 0.98),
+            "BG_CARD": _rgba(b["base01"], 1.0),
+            "SELECTED_ROW": _rgba(b["base02"], 1.0),
+            "SURFACE_INPUT": _rgba(b["base01"], 1.0),
+            "SURFACE_INPUT_FOCUS": _rgba(b["base02"], 1.0),
+            "BORDER": _rgba(b["base03"], 0.9),
             # body paint fills (QPainter) — tuple_rgba; alpha is app glass, not base16
             "BODY_COLOR": [*bg_rgb, _GLASS_A],
             "MINI_BODY_COLOR": [*bg_rgb, _GLASS_A],
@@ -101,8 +110,9 @@ def _base16_to_palette(p: ThemePreset) -> dict:
 # _base16_to_palette by test_theme_presets.
 EMITTED_TOKENS: tuple[str, ...] = (
     "ACCENT", "TEXT", "TEXT_DIM", "TEXT_FAINT", "IDLE_TEXT", "ERROR_FG", "WARN_FG",
-    "BG", "BG_PANEL", "POPUP_OPAQUE_FILL", "BODY_COLOR", "MINI_BODY_COLOR",
-    "DIALOG_BODY_COLOR", "DANGER", "DANGER_DEEP",
+    "BG", "BG_PANEL", "POPUP_OPAQUE_FILL", "BG_CARD", "SELECTED_ROW",
+    "SURFACE_INPUT", "SURFACE_INPUT_FOCUS", "BORDER", "BODY_COLOR",
+    "MINI_BODY_COLOR", "DIALOG_BODY_COLOR", "DANGER", "DANGER_DEEP",
 )
 
 

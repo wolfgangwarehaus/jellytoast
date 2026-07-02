@@ -3231,6 +3231,7 @@ class SettingsDialog(QDialog):
         chosen = self._theme_combo.currentData() or "frosted_dark"
         if chosen == self.s.theme_mode:
             return
+        self._clear_active_preset()  # a built-in theme pick drops any active preset
         self.s.theme_mode = chosen
         # Record the (resolved) name so the external-change watcher below
         # treats this in-dialog pick as already-handled and doesn't schedule
@@ -4031,6 +4032,20 @@ class SettingsDialog(QDialog):
             btn.setChecked(name == active_name)
             btn.update()
 
+    def _clear_active_preset(self) -> None:
+        """Switching to a built-in jellytoast theme/accent DROPS any active color
+        preset — the two are separate, mutually-exclusive theme families. Resets
+        the preset's token overrides (back to the built-in theme) and deselects
+        the preset swatch. No-op when no preset is active, so it never wipes
+        hand-tuned Settings → Colors overrides unprompted."""
+        if not (self.s.last_preset_name or "").strip():
+            return
+        from jellytoast import color_tokens as ct
+
+        ct.reset_all()  # single coalesced re-stamp back to the built-in theme
+        self.s.last_preset_name = ""
+        self._sync_preset_swatch_rings("")
+
     def _on_preset_picked(self, preset_name: str) -> None:
         """Apply a curated preset live: set the light/dark variant + accent, push
         the palette through the engine (cascades the accent family + persists),
@@ -4370,6 +4385,10 @@ class SettingsDialog(QDialog):
         """)
 
     def _on_accent_picked(self, hex_value: str):
+        # Picking a built-in accent = leaving any active preset (separate theme
+        # families), so drop the preset's overrides first — back to the
+        # jellytoast theme — then apply the accent to that, not on top of it.
+        self._clear_active_preset()
         # 1. Persist the pick.
         self.s.accent_color = hex_value
         # 1a. Clear every accent-derived override set via Settings →
