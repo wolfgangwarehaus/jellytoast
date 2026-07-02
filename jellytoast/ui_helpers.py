@@ -1270,15 +1270,25 @@ def _after_disk_miss(
             return
         _gated_in_flight += 1
 
-    _fire_image_request(
-        cache_key,
-        sem_key,
-        url,
-        target_w,
-        target_h,
-        rounded_radius,
-        priority,
-    )
+    try:
+        _fire_image_request(
+            cache_key,
+            sem_key,
+            url,
+            target_w,
+            target_h,
+            rounded_radius,
+            priority,
+        )
+    except Exception:
+        # The request failed to even start (QNAM teardown, bad URL) AFTER we
+        # claimed a gate slot — release it so the gate can't ratchet
+        # permanently shut over a long session (5 leaks would wedge it). HIGH
+        # loads never took a slot, so only release for gated priorities.
+        # (_gated_in_flight is already declared global above in this function.)
+        if priority != "high":
+            _gated_in_flight -= 1
+        raise
 
 
 def _fire_image_request(

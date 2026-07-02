@@ -107,6 +107,33 @@ class TestEviction:
         for i in range(3):
             assert image_cache.get(f"k-{i}") is not None
 
+    def test_schedule_coalesces_concurrent_sweeps(
+        self, qapp, isolated_cache, monkeypatch
+    ):
+        """A second _schedule_eviction while a sweep is still running is a
+        no-op — two concurrent disk walks double-count and can over-evict a
+        cover a live read still needs."""
+        calls = {"n": 0}
+        held = []
+
+        def _fake_run_async(fn, on_result=None, on_error=None):
+            calls["n"] += 1
+            held.append((fn, on_result))  # "in flight": don't call on_result yet
+
+        monkeypatch.setattr(image_cache, "_eviction_in_flight", False)
+        import jellytoast.async_io as aio
+
+        monkeypatch.setattr(aio, "run_async", _fake_run_async)
+
+        image_cache._schedule_eviction()
+        image_cache._schedule_eviction()  # sweep still "running" → coalesced
+        assert calls["n"] == 1
+        # Completing the first sweep re-arms scheduling.
+        fn, on_result = held[0]
+        on_result(None)
+        image_cache._schedule_eviction()
+        assert calls["n"] == 2
+
 
 class TestClear:
     def test_clear_wipes_directory(self, qapp, isolated_cache):
