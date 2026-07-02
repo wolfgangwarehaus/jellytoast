@@ -184,6 +184,37 @@ def test_glass_slider_shows_for_frosted_hides_for_opaque(qapp, isolated_settings
         d2.deleteLater()
 
 
+def test_eyedropper_reflects_live_system_accent(qapp, isolated_settings):
+    from jellytoast.settings_dialog import SettingsDialog
+    from jellytoast.system_accent import apply_accent_now
+
+    s = get_settings()
+    s.theme_family = ""
+    s.theme_mode = "dark"
+    s.frosted = True
+    d = SettingsDialog()
+    try:
+        d.nav.setCurrentRow(_DISPLAY_ROW)  # builds the accent row + eyedropper
+        # A custom (non-preset) accent applied from OUTSIDE the dialog (the
+        # Follow-system-accent path) should land in the eyedropper swatch as the
+        # live indicator of the current colour.
+        custom = "#3daee9"  # KDE Breeze blue — not a jellytoast preset
+        apply_accent_now(custom)  # sets accent_color + emits theme_changed
+        assert d._accent_dropper._fill is not None
+        assert d._accent_dropper._fill.name().lower() == custom
+        assert d._accent_dropper.isChecked()
+        # A subsequent PRESET-matching accent clears the dropper (the preset ring
+        # indicates it instead) — no stale custom fill left selected.
+        from jellytoast.theme import ACCENT_PRESETS
+
+        preset_hex = ACCENT_PRESETS[0][1]  # Purple #967de1
+        apply_accent_now(preset_hex)
+        assert not d._accent_dropper.isChecked()
+    finally:
+        ct.reset_all()
+        d.deleteLater()
+
+
 def test_jellytoast_glass_slider_and_default_button(
     qapp, isolated_settings, _no_revert_prompt
 ):
