@@ -109,9 +109,13 @@ def test_import_scheme_applies_and_previews(
     from jellytoast.settings_dialog import SettingsDialog
     from jellytoast.theme_presets import apply_imported_preset
 
-    # A minimal valid base16 scheme (all 16 slots).
+    # A minimal valid base16 scheme (all 16 slots) — the grey ramp is steep
+    # enough that base05-on-base00 clears the import contrast guard.
     yaml = "\n".join(
-        [f'base0{c}: "{i:02x}{i:02x}{i:02x}"' for i, c in enumerate("0123456789ABCDEF")]
+        [
+            f'base0{c}: "{min(i * 34, 255):02x}{min(i * 34, 255):02x}{min(i * 34, 255):02x}"'
+            for i, c in enumerate("0123456789ABCDEF")
+        ]
     )
     preset = parse_base16_yaml(yaml)
     apply_imported_preset(preset, get_settings().frosted)

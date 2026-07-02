@@ -2504,6 +2504,17 @@ def main():
         except Exception:
             pass
 
+        # Follow the pywal / wallust palette if the user enabled it: apply the
+        # current colors.json now and watch it for wallpaper changes. Best-
+        # effort — no pywal, no events. Pinned on `win`.
+        try:
+            from jellytoast.theme_watcher import PywalFollower
+
+            win._pywal_follower = PywalFollower(win)
+            win._pywal_follower.start()
+        except Exception:
+            pass
+
         # Windows taskbar overlay badge (play/pause state at a glance).
         # No-op elsewhere; pinned on `win` so _cleanup can stop() it
         # (detaches the native event filter + releases the badge HICONs).
