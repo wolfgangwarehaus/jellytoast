@@ -5,6 +5,8 @@ developer-facing history lives in [`docs/CHANGELOG.md`](docs/CHANGELOG.md).
 
 ## [Unreleased]
 
+## [0.1.7] — 2026-07-03
+
 - **Themes.** Settings → Display now has a proper theme picker: Catppuccin
   (all four flavors), Dracula, Everforest, Gruvbox, Nord, One Dark, Rosé Pine,
   Solarized, and Tokyo Night, alongside the jellytoast look — each previewed
