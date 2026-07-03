@@ -246,6 +246,9 @@ filterwarnings = [
 [tool.ruff]
 line-length = 100
 target-version = "py311"
+# Captured one-shot platform diagnostic artifacts (mac vibrancy probes, etc.) —
+# deliberately terse fragments kept for reference, not maintained tooling.
+extend-exclude = ["dev/mac_test_artifacts"]
 
 [tool.ruff.lint]
 # Default ruleset is small + sane: pyflakes (F) catches real bugs,
