@@ -309,3 +309,65 @@ def test_glass_settle_flushes_on_dialog_close(qapp, isolated_settings, monkeypat
     assert committed["n"] == 1
     assert not d._glass_settle.isActive()
     d.deleteLater()
+
+
+def test_switch_back_to_builtin_resyncs_accent(
+    qapp, isolated_settings, _no_revert_prompt, monkeypatch
+):
+    """Returning to the built-in family with Follow-system-accent on must
+    re-read + re-apply the OS accent immediately (the live watcher only fires on
+    OS-side changes) — otherwise the preset accent lingers until restart."""
+    import jellytoast.system_accent as sa
+    from jellytoast.settings_dialog import SettingsDialog
+
+    s = get_settings()
+    s.theme_family = "dracula"
+    s.theme_mode = "dark"
+    s.follow_system_accent = True
+    from jellytoast.theme_presets import THEME_FAMILIES, _base16_to_palette
+
+    ct.import_palette(_base16_to_palette(THEME_FAMILIES["dracula"].member_for("dark")))
+
+    resynced = {"n": 0}
+    monkeypatch.setattr(
+        sa, "resync_system_accent", lambda: resynced.__setitem__("n", resynced["n"] + 1)
+    )
+    d = SettingsDialog()
+    try:
+        d.nav.setCurrentRow(_DISPLAY_ROW)
+        idx = d._family_combo.findData("jellytoast")
+        assert idx >= 0
+        d._family_combo.setCurrentIndex(idx)  # → _on_family_changed → builtin
+        assert s.theme_family == ""
+        assert resynced["n"] == 1  # resync fired on the switch back
+    finally:
+        ct.reset_all()
+        d.deleteLater()
+
+
+def test_refresh_accent_swatches_survives_deleted_swatch(
+    qapp, isolated_settings, monkeypatch
+):
+    """theme_changed can fire after a page rebuild tore the accent swatches
+    down; _refresh_accent_swatches must skip the dead C++ objects instead of
+    raising RuntimeError (P3 follow-up from the Mac box)."""
+    import shiboken6
+
+    from jellytoast.settings_dialog import SettingsDialog
+
+    s = get_settings()
+    s.theme_family = ""
+    s.theme_mode = "dark"
+    d = SettingsDialog()
+    try:
+        d.nav.setCurrentRow(_DISPLAY_ROW)  # builds the accent swatches
+        assert getattr(d, "_accent_buttons", None)
+        # Force a swatch's C++ side to be deleted out from under the list.
+        _h, victim = d._accent_buttons[0]
+        shiboken6.delete(victim)
+        assert not shiboken6.isValid(victim)
+        # Must not raise despite the dangling reference.
+        d._refresh_accent_swatches("#3daee9")
+    finally:
+        ct.reset_all()
+        d.deleteLater()

@@ -276,3 +276,16 @@ class TestMacOSAccentBackend:
         monkeypatch.setattr(aio, "run_async", _boom)
         sa.SystemAccentFollower()._sync_now()
         assert applied["h"] == "#112233"
+
+
+def test_resync_system_accent_dispatches(qapp, isolated_settings, monkeypatch):
+    """The shared resync helper reads + applies the OS accent (mac inline;
+    Linux/Windows via worker). Pin the mac-inline path for determinism."""
+    from jellytoast import system_accent as sa
+
+    monkeypatch.setattr(sa, "_IS_MACOS", True)
+    monkeypatch.setattr(sa, "read_system_accent", lambda: "#0088cc")
+    applied = {}
+    monkeypatch.setattr(sa, "apply_accent_now", lambda h: applied.setdefault("h", h))
+    sa.resync_system_accent()
+    assert applied["h"] == "#0088cc"
