@@ -83,9 +83,7 @@ def _reduce_transparency() -> bool:
     try:
         from AppKit import NSWorkspace
 
-        return bool(
-            NSWorkspace.sharedWorkspace().accessibilityDisplayShouldReduceTransparency()
-        )
+        return bool(NSWorkspace.sharedWorkspace().accessibilityDisplayShouldReduceTransparency())
     except Exception:
         return False
 
@@ -132,6 +130,19 @@ def apply(widget, enabled, corner_radius=0, dark=True, elevated=False) -> bool:
 
     key = id(widget)
     try:
+        # windowHandle() check BEFORE _ns_view(): winId() force-creates the
+        # native window on a never-shown widget, violating the "call after
+        # show()" contract above (same guard as the _dwm backend).
+        if widget.windowHandle() is None:
+            return False
+        # Only the cocoa QPA backs winId() with an NSView — under any other
+        # platform plugin (offscreen in tests/CI smoke, minimal) wrapping the
+        # id as an objc object and messaging it is a hard SIGSEGV, which the
+        # try/except here cannot catch.
+        from PySide6.QtGui import QGuiApplication
+
+        if QGuiApplication.platformName() != "cocoa":
+            return False
         qt_view = _ns_view(widget)
         if qt_view is None:
             return False
@@ -241,9 +252,7 @@ def _set_appearance(effect, dark: bool):
     try:
         from AppKit import NSAppearance
 
-        name = (
-            "NSAppearanceNameVibrantDark" if dark else "NSAppearanceNameVibrantLight"
-        )
+        name = "NSAppearanceNameVibrantDark" if dark else "NSAppearanceNameVibrantLight"
         import AppKit
 
         appr = NSAppearance.appearanceNamed_(getattr(AppKit, name, name))

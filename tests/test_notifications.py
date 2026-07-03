@@ -26,6 +26,13 @@ def _reload_notifications():
 
 def test_imports_cleanly_on_linux(monkeypatch):
     monkeypatch.setattr(sys, "platform", "linux")
+    # platform_compat's constants are baked at ITS import — patch them too,
+    # or on a Windows/macOS host _select_backend still routes natively.
+    import jellytoast.platform_compat as pc
+
+    monkeypatch.setattr(pc, "IS_LINUX", True)
+    monkeypatch.setattr(pc, "IS_WINDOWS", False)
+    monkeypatch.setattr(pc, "IS_MACOS", False)
     notifications = _reload_notifications()
     assert hasattr(notifications, "notify")
     assert hasattr(notifications, "is_supported")
@@ -46,6 +53,13 @@ def test_is_supported_returns_bool():
 
 def test_notify_does_not_raise_on_linux_with_notify_send(monkeypatch):
     monkeypatch.setattr(sys, "platform", "linux")
+    # platform_compat's constants are baked at ITS import — patch them too,
+    # or on a Windows/macOS host _select_backend still routes natively.
+    import jellytoast.platform_compat as pc
+
+    monkeypatch.setattr(pc, "IS_LINUX", True)
+    monkeypatch.setattr(pc, "IS_WINDOWS", False)
+    monkeypatch.setattr(pc, "IS_MACOS", False)
     notifications = _reload_notifications()
 
     monkeypatch.setattr(
@@ -72,6 +86,13 @@ def test_notify_does_not_raise_on_linux_with_notify_send(monkeypatch):
 
 def test_notify_passes_icon_when_provided(monkeypatch):
     monkeypatch.setattr(sys, "platform", "linux")
+    # platform_compat's constants are baked at ITS import — patch them too,
+    # or on a Windows/macOS host _select_backend still routes natively.
+    import jellytoast.platform_compat as pc
+
+    monkeypatch.setattr(pc, "IS_LINUX", True)
+    monkeypatch.setattr(pc, "IS_WINDOWS", False)
+    monkeypatch.setattr(pc, "IS_MACOS", False)
     notifications = _reload_notifications()
 
     monkeypatch.setattr(
@@ -112,6 +133,13 @@ def test_unsupported_backend_silently_noops(monkeypatch):
 
 def test_linux_backend_graceful_when_notify_send_missing(monkeypatch):
     monkeypatch.setattr(sys, "platform", "linux")
+    # platform_compat's constants are baked at ITS import — patch them too,
+    # or on a Windows/macOS host _select_backend still routes natively.
+    import jellytoast.platform_compat as pc
+
+    monkeypatch.setattr(pc, "IS_LINUX", True)
+    monkeypatch.setattr(pc, "IS_WINDOWS", False)
+    monkeypatch.setattr(pc, "IS_MACOS", False)
     notifications = _reload_notifications()
 
     monkeypatch.setattr(
@@ -125,6 +153,13 @@ def test_linux_backend_graceful_when_notify_send_missing(monkeypatch):
 
 def test_linux_backend_graceful_on_subprocess_exception(monkeypatch):
     monkeypatch.setattr(sys, "platform", "linux")
+    # platform_compat's constants are baked at ITS import — patch them too,
+    # or on a Windows/macOS host _select_backend still routes natively.
+    import jellytoast.platform_compat as pc
+
+    monkeypatch.setattr(pc, "IS_LINUX", True)
+    monkeypatch.setattr(pc, "IS_WINDOWS", False)
+    monkeypatch.setattr(pc, "IS_MACOS", False)
     notifications = _reload_notifications()
 
     monkeypatch.setattr(
@@ -145,6 +180,13 @@ def test_linux_backend_graceful_on_subprocess_exception(monkeypatch):
 
 def test_select_backend_memoizes(monkeypatch):
     monkeypatch.setattr(sys, "platform", "linux")
+    # platform_compat's constants are baked at ITS import — patch them too,
+    # or on a Windows/macOS host _select_backend still routes natively.
+    import jellytoast.platform_compat as pc
+
+    monkeypatch.setattr(pc, "IS_LINUX", True)
+    monkeypatch.setattr(pc, "IS_WINDOWS", False)
+    monkeypatch.setattr(pc, "IS_MACOS", False)
     notifications = _reload_notifications()
 
     first = notifications._select_backend()

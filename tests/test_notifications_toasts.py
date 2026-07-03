@@ -89,10 +89,12 @@ class TestLinuxReplaceHint:
 
 
 class TestWindowsBackendNoop:
-    def test_unsupported_and_noop_without_package(self):
+    def test_unsupported_and_noop_without_package(self, monkeypatch):
         from jellytoast.notifications import _windows
 
-        # windows_toasts isn't installed on Linux → toaster is None.
+        # Emulate the package being absent (the norm on Linux CI — on the
+        # Windows box windows_toasts IS installed, so force the None toaster).
+        monkeypatch.setattr(_windows, "_get_toaster", lambda: None)
         assert _windows.is_supported() is False
         _windows.notify("t", "b", tag="x")  # must not raise
 

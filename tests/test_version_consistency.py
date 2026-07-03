@@ -169,7 +169,9 @@ def test_workflow_referenced_packaging_scripts_exist():
     ref_re = re.compile(r"packaging/[A-Za-z0-9_./-]+\.(?:sh|ps1)")
     missing = []
     for wf in sorted(wf_dir.glob("*.yml")):
-        for ref in sorted(set(ref_re.findall(wf.read_text()))):
+        # encoding= matters: dough-sync-nudge.yml has a 🍞 that cp1252 (the
+        # Windows locale default) can't decode.
+        for ref in sorted(set(ref_re.findall(wf.read_text(encoding="utf-8")))):
             if not (REPO_ROOT / ref).is_file():
                 missing.append(f"{wf.name} → {ref}")
     assert not missing, "workflow(s) reference missing packaging scripts:\n" + "\n".join(missing)

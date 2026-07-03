@@ -87,7 +87,7 @@ def _type_enabled(kind: str) -> bool:
     stays light at import time (settings.py runs the legacy-org migration
     on first construction). Mirrors the False default in
     jellytoast.settings.Settings.cast_<kind>_enabled — keep in sync."""
-    from PySide6.QtCore import QSettings
+    from jellytoast.settings_migration import open_qsettings
 
-    qs = QSettings("jellytoast", "jellytoast")
+    qs = open_qsettings()
     return bool(qs.value(f"cast/{kind}_enabled", False, type=bool))

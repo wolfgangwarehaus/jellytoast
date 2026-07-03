@@ -9,6 +9,7 @@ pointed at a pytest tmp_path.
 from __future__ import annotations
 
 import json
+import sys
 
 import pytest
 
@@ -129,7 +130,13 @@ class TestAtomicWrite:
         finally:
             disk_logger.removeHandler(handler)
 
-        assert [r for r in records if "cache write failed" in r.getMessage()] == []
+        if sys.platform != "win32":
+            # POSIX rename() is atomic over an open destination, so every
+            # write must land silently. On Windows os.replace() can fail
+            # transiently while another writer/reader holds the destination
+            # (no FILE_SHARE_DELETE) — the cache logs-and-skips by design, so
+            # only the final-state asserts below apply there.
+            assert [r for r in records if "cache write failed" in r.getMessage()] == []
         assert list(tmp_path.glob("*.tmp")) == []
         assert (tmp_path / "songs.json").exists()
         assert cache.load("songs", {"s": 1}) == big

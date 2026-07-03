@@ -175,7 +175,9 @@ def test_remove_returns_false_when_no_stored_uuid(monkeypatch, tmp_path):
         def remove(self, key):
             pass
 
-    monkeypatch.setattr(_kwin, "QSettings", _FakeQSettings)
+    # _kwin builds its store via open_qsettings() now (defaultFormat-honoring
+    # choke point) — patch that factory, not a QSettings symbol.
+    monkeypatch.setattr(_kwin, "open_qsettings", _FakeQSettings)
     assert keep_above.remove_mini_player_rule() is False
 
 
@@ -297,7 +299,9 @@ def test_remove_main_window_noborder_false_when_nothing_installed(monkeypatch):
         def remove(self, key):
             pass
 
-    monkeypatch.setattr(_kwin, "QSettings", _FakeQSettings)
+    # _kwin builds its store via open_qsettings() now (defaultFormat-honoring
+    # choke point) — patch that factory, not a QSettings symbol.
+    monkeypatch.setattr(_kwin, "open_qsettings", _FakeQSettings)
     assert keep_above.remove_main_window_noborder() is False
 
 

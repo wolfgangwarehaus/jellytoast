@@ -28,7 +28,7 @@ import os
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Optional
 
-from PySide6.QtCore import QSettings, QStandardPaths
+from PySide6.QtCore import QStandardPaths
 
 from jellytoast.credentials import (
     _ENC_PREFIX,  # noqa: F401  (re-exported for airplay2 + tests)
@@ -40,11 +40,12 @@ from jellytoast.credentials import (
     warm_keyring_async,  # noqa: F401  (re-exported for jellytoast boot)
 )
 from jellytoast.settings_migration import (
-    _QSETTINGS_APP,
-    _QSETTINGS_ORG,
+    _QSETTINGS_APP,  # noqa: F401  (re-exported)
+    _QSETTINGS_ORG,  # noqa: F401  (re-exported)
     _migrate_legacy_org_name,
     _migrate_theme_axes,
     _recover_nested_appdata,
+    open_qsettings,
 )
 
 logger = logging.getLogger(__name__)
@@ -70,7 +71,7 @@ class Settings:
         # the inner app subdir). Independent marker so users who
         # already "migrated" still get rescued.
         _recover_nested_appdata()
-        self._s = QSettings(_QSETTINGS_ORG, _QSETTINGS_APP)
+        self._s = open_qsettings()
         self._config_dir = Path(
             QStandardPaths.writableLocation(QStandardPaths.StandardLocation.AppConfigLocation)
         )

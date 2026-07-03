@@ -182,7 +182,8 @@ class TestKWinUninstall:
 class TestKWinPaths:
     def test_data_home_honours_xdg(self, monkeypatch):
         monkeypatch.setenv("XDG_DATA_HOME", "/custom/data")
-        assert str(_kwin._data_home()) == "/custom/data"
+        # as_posix(): on Windows Path("/custom/data") stringifies with backslashes
+        assert _kwin._data_home().as_posix() == "/custom/data"
 
     def test_data_home_default(self, monkeypatch):
         monkeypatch.delenv("XDG_DATA_HOME", raising=False)

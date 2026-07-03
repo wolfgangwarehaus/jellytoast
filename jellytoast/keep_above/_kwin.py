@@ -22,8 +22,6 @@ import shutil
 import subprocess
 import uuid as _uuid
 
-from PySide6.QtCore import QSettings
-
 from jellytoast.keep_above import (
     ABOUT_DIALOG_WINDOW_TITLE,
     CAST_DIALOG_WINDOW_TITLE,
@@ -32,6 +30,7 @@ from jellytoast.keep_above import (
     SETTINGS_WINDOW_TITLE,
     SMART_PLAYLIST_EDITOR_WINDOW_TITLE,
 )
+from jellytoast.settings_migration import open_qsettings
 
 _DESCRIPTION = "jellytoast — keep mini player above (managed)"
 _APP_ID = "jellytoast"
@@ -68,7 +67,7 @@ def install_mini_player_rule() -> bool:
     if not is_supported():
         return False
 
-    qs = QSettings("jellytoast", "jellytoast")
+    qs = open_qsettings()
     rule_uuid = qs.value(_SETTINGS_KEY, "", type=str)
     if not rule_uuid:
         rule_uuid = str(_uuid.uuid4())
@@ -86,7 +85,7 @@ def remove_mini_player_rule() -> bool:
     if not is_supported():
         return False
 
-    qs = QSettings("jellytoast", "jellytoast")
+    qs = open_qsettings()
     rule_uuid = qs.value(_SETTINGS_KEY, "", type=str)
     if not rule_uuid:
         return False
@@ -111,7 +110,7 @@ def install_noborder_rules() -> bool:
     if not is_supported():
         return False
 
-    qs = QSettings("jellytoast", "jellytoast")
+    qs = open_qsettings()
     for settings_key, title in _NOBORDER_TARGETS:
         rule_uuid = qs.value(settings_key, "", type=str)
         if not rule_uuid:
@@ -129,7 +128,7 @@ def remove_noborder_rules() -> bool:
     if not is_supported():
         return False
 
-    qs = QSettings("jellytoast", "jellytoast")
+    qs = open_qsettings()
     removed = False
     for settings_key, _title in _NOBORDER_TARGETS:
         rule_uuid = qs.value(settings_key, "", type=str)
@@ -155,7 +154,7 @@ def install_main_window_noborder() -> bool:
     if not is_supported():
         return False
 
-    qs = QSettings("jellytoast", "jellytoast")
+    qs = open_qsettings()
     rule_uuid = qs.value(_MAIN_NOBORDER_KEY, "", type=str)
     if not rule_uuid:
         rule_uuid = str(_uuid.uuid4())
@@ -173,7 +172,7 @@ def remove_main_window_noborder() -> bool:
     if not is_supported():
         return False
 
-    qs = QSettings("jellytoast", "jellytoast")
+    qs = open_qsettings()
     rule_uuid = qs.value(_MAIN_NOBORDER_KEY, "", type=str)
     if not rule_uuid:
         return False

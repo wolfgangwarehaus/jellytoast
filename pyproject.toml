@@ -158,6 +158,10 @@ dev = [
     # Dependency / advisory scanning (advisory CI step). Surfaces known
     # CVEs in the resolved dependency set.
     "pip-audit>=2.7",
+    # The runtime dep is Linux-gated (MPRIS), but the mpris unit tests force
+    # IS_LINUX and import it on every platform — pure-python, so unconditional
+    # here keeps `pip install -e .[dev]` + pytest green on the Win/Mac QA boxes.
+    "dbus-next>=0.2.3",
 ]
 # The DLNA / Sonos cast backends + the visualizer FFT dep are now
 # bundled as REQUIRED dependencies (see [project.dependencies]) so every

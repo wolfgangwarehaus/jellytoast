@@ -54,6 +54,7 @@ def test_subscribe_uses_six_arg_qtdbus_form(qapp, isolated_settings, monkeypatch
     the launch re-read worked). This pins the shape so a revert fails loudly."""
     from PySide6.QtDBus import QDBusConnection
 
+    from jellytoast import system_accent
     from jellytoast.system_accent import SystemAccentFollower
 
     calls: list[tuple] = []
@@ -64,6 +65,10 @@ def test_subscribe_uses_six_arg_qtdbus_form(qapp, isolated_settings, monkeypatch
             return True
 
     monkeypatch.setattr(QDBusConnection, "sessionBus", staticmethod(_FakeBus))
+    # Pin the PORTAL branch: on a Windows/macOS host _subscribe routes to the
+    # native backend and never touches QtDBus.
+    monkeypatch.setattr(system_accent, "_IS_WINDOWS", False)
+    monkeypatch.setattr(system_accent, "_IS_MACOS", False)
     f = SystemAccentFollower()
     f._subscribe()
 
@@ -129,3 +134,145 @@ def test_follower_is_gated_off_while_preset_family_active(
     isolated_settings.theme_family = ""
     f._on_setting_changed(_APPEARANCE_NS, "accent-color")
     assert synced["n"] == 1
+
+
+class TestWindowsAccentBackend:
+    def test_abgr_to_hex(self):
+        from jellytoast.system_accent import _abgr_to_hex
+
+        # DWM AccentColor is 0xAABBGGRR: blue=0xd7, green=0x77, red=0x00
+        assert _abgr_to_hex(0xFFD77700) == "#0077d7"
+        assert _abgr_to_hex(0x00000000) == "#000000"
+        assert _abgr_to_hex(0xFFFFFFFF) == "#ffffff"
+        assert _abgr_to_hex("junk") is None
+        assert _abgr_to_hex(-1) is None
+        assert _abgr_to_hex(2**33) is None
+
+    def test_read_dispatches_to_windows_reader(self, monkeypatch):
+        from jellytoast import system_accent as sa
+
+        monkeypatch.setattr(sa, "_IS_WINDOWS", True)
+        # on a real Mac the macOS reader wins the dispatch otherwise
+        monkeypatch.setattr(sa, "_IS_MACOS", False)
+        monkeypatch.setattr(sa, "_read_windows_accent", lambda: "#0077d7")
+        assert sa.read_system_accent() == "#0077d7"
+
+    def test_windows_subscribe_installs_native_filter(
+        self, qapp, isolated_settings, monkeypatch
+    ):
+        from jellytoast import system_accent as sa
+
+        monkeypatch.setattr(sa, "_IS_WINDOWS", True)
+        monkeypatch.setattr(sa, "_IS_MACOS", False)
+        f = sa.SystemAccentFollower()
+        f._subscribe()
+        assert f._subscribed is True
+        assert getattr(f, "_win_filter", None) is not None
+        # teardown: don't leave an app-wide filter behind for other tests
+        qapp.removeNativeEventFilter(f._win_filter)
+
+    def test_windows_change_handler_gates_like_portal(
+        self, qapp, isolated_settings, monkeypatch
+    ):
+        from jellytoast import system_accent as sa
+
+        synced = {"n": 0}
+        monkeypatch.setattr(
+            sa.SystemAccentFollower,
+            "_sync_now",
+            lambda self: synced.__setitem__("n", synced["n"] + 1),
+        )
+        f = sa.SystemAccentFollower()
+        isolated_settings.follow_system_accent = True
+        isolated_settings.theme_family = "catppuccin"  # preset → gated off
+        f._on_windows_accent_changed()
+        assert synced["n"] == 0
+        isolated_settings.theme_family = ""  # built-in → drives
+        f._on_windows_accent_changed()
+        assert synced["n"] == 1
+
+
+class TestMacOSAccentBackend:
+    def test_read_macos_accent_converts_srgb(self, monkeypatch):
+        import sys
+        import types
+
+        # Fake AppKit: controlAccentColor → sRGB 0.0/0.47/0.84 (Big Sur blue-ish)
+        class _RGB:
+            def redComponent(self):
+                return 0.0
+
+            def greenComponent(self):
+                return 0.47843
+
+            def blueComponent(self):
+                return 0.84314
+
+        class _Color:
+            def colorUsingColorSpace_(self, _space):
+                return _RGB()
+
+        appkit = types.ModuleType("AppKit")
+        appkit.NSColor = types.SimpleNamespace(controlAccentColor=lambda: _Color())
+        appkit.NSColorSpace = types.SimpleNamespace(sRGBColorSpace=lambda: object())
+        monkeypatch.setitem(sys.modules, "AppKit", appkit)
+
+        from jellytoast.system_accent import _read_macos_accent
+
+        assert _read_macos_accent() == "#007ad7"
+
+    def test_read_macos_accent_none_on_missing_appkit(self, monkeypatch):
+        import sys
+
+        # No AppKit importable → None, never raises.
+        monkeypatch.setitem(sys.modules, "AppKit", None)
+        from jellytoast.system_accent import _read_macos_accent
+
+        assert _read_macos_accent() is None
+
+    def test_read_dispatches_to_macos_reader(self, monkeypatch):
+        from jellytoast import system_accent as sa
+
+        monkeypatch.setattr(sa, "_IS_MACOS", True)
+        monkeypatch.setattr(sa, "_read_macos_accent", lambda: "#007ad7")
+        assert sa.read_system_accent() == "#007ad7"
+
+    def test_macos_change_handler_gates_like_portal(
+        self, qapp, isolated_settings, monkeypatch
+    ):
+        from jellytoast import system_accent as sa
+
+        synced = {"n": 0}
+        monkeypatch.setattr(
+            sa.SystemAccentFollower,
+            "_sync_now",
+            lambda self: synced.__setitem__("n", synced["n"] + 1),
+        )
+        f = sa.SystemAccentFollower()
+        isolated_settings.follow_system_accent = True
+        isolated_settings.theme_family = "catppuccin"  # preset → gated off
+        f._on_macos_accent_changed()
+        assert synced["n"] == 0
+        isolated_settings.theme_family = ""  # built-in → drives
+        f._on_macos_accent_changed()
+        assert synced["n"] == 1
+
+    def test_macos_sync_now_reads_inline_not_on_worker(
+        self, qapp, isolated_settings, monkeypatch
+    ):
+        """macOS must NOT push the AppKit read to a worker thread."""
+        from jellytoast import system_accent as sa
+
+        monkeypatch.setattr(sa, "_IS_MACOS", True)
+        monkeypatch.setattr(sa, "read_system_accent", lambda: "#112233")
+        applied = {}
+        monkeypatch.setattr(sa, "apply_accent_now", lambda h: applied.setdefault("h", h))
+
+        def _boom(*a, **k):
+            raise AssertionError("run_async must not be used on macOS _sync_now")
+
+        import jellytoast.async_io as aio
+
+        monkeypatch.setattr(aio, "run_async", _boom)
+        sa.SystemAccentFollower()._sync_now()
+        assert applied["h"] == "#112233"

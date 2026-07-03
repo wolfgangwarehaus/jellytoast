@@ -224,6 +224,15 @@ class TestBlurField:
 
 
 class TestBodyColorFor:
+    @pytest.fixture(autouse=True)
+    def _linux_platform(self, monkeypatch):
+        # These pin the PORTAL/KWin behavior (ACTIVE returns the base alpha
+        # untouched). On a Windows/macOS host the platform glass caps fire
+        # (see _platform_active_alpha) and the expectations differ — that
+        # branch is covered by the preset-cap tests below.
+        monkeypatch.setattr(th, "IS_WINDOWS", False)
+        monkeypatch.setattr(th, "IS_MACOS", False)
+
     def test_active_keeps_glass_alpha(self):
         from jellytoast.blur import BlurStatus
 
@@ -286,6 +295,10 @@ class TestBodyColorTuple:
         _set_theme_settings(theme_mode="dark", accent_color="", frosted=frosted)
         monkeypatch.setattr(blur, "_FORCE", "")  # ignore JT_BLUR_FORCE
         monkeypatch.setattr(blur, "_status_cache", status)
+        # Pin the portal/KWin ACTIVE behavior — Windows/macOS glass caps
+        # would rewrite the expected alphas (see TestBodyColorFor note).
+        monkeypatch.setattr(th, "IS_WINDOWS", False)
+        monkeypatch.setattr(th, "IS_MACOS", False)
 
     def test_frosted_glass_when_active(self, clean_theme_settings, monkeypatch):
         from jellytoast import ui_helpers
@@ -615,3 +628,39 @@ class TestHexToRgbSafe:
 
         for value in ("#ffffff", "garbage", "", "#abc"):
             ui_helpers._hex_to_rgb_safe(value)  # must not raise
+
+
+class TestPlatformActiveAlpha:
+    """Win/mac active-blur caps: preset-aware defaults, and an explicit Glass
+    slider value wins over the cap (the old flat min() got both wrong)."""
+
+    def test_builtin_default_capped(self, clean_theme_settings):
+        s = _settings_handle()
+        s.setValue("ui/theme_family", "")
+        s.setValue("ui/jellytoast_glass_alpha", 0)
+        s.sync()
+        assert th._platform_active_alpha(172, mac=False) == 96
+        assert th._platform_active_alpha(172, mac=True) == 110
+
+    def test_preset_default_gets_deeper_cap(self, clean_theme_settings):
+        s = _settings_handle()
+        s.setValue("ui/theme_family", "dracula")
+        s.setValue("ui/preset_glass_alpha", 0)
+        s.sync()
+        assert th._platform_active_alpha(205, mac=False) == 128
+        assert th._platform_active_alpha(205, mac=True) == 150
+
+    def test_explicit_slider_value_wins_over_cap(self, clean_theme_settings):
+        s = _settings_handle()
+        s.setValue("ui/theme_family", "dracula")
+        s.setValue("ui/preset_glass_alpha", 230)
+        s.sync()
+        assert th._platform_active_alpha(230, mac=False) == 230
+        assert th._platform_active_alpha(230, mac=True) == 230
+
+    def test_base_lighter_than_cap_stays(self, clean_theme_settings):
+        s = _settings_handle()
+        s.setValue("ui/theme_family", "")
+        s.setValue("ui/jellytoast_glass_alpha", 0)
+        s.sync()
+        assert th._platform_active_alpha(60, mac=False) == 60
