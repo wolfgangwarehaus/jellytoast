@@ -3562,6 +3562,15 @@ class SettingsDialog(QDialog):
         self._apply_axes_live(
             key, new_mode, self.s.frosted, prompt=key not in ("", "jellytoast")
         )
+        # Returning to the built-in family with Follow-system-accent on: the
+        # live watcher only fires on OS-side changes, so re-read + re-apply the
+        # OS accent now instead of lingering on the preset's accent until the
+        # next launch. (apply_axes_live left accent_color as the user's, which
+        # for a preset was the preset's — resync overwrites it.)
+        if key in ("", "jellytoast") and self.s.follow_system_accent:
+            from jellytoast.system_accent import resync_system_accent
+
+            resync_system_accent()
 
     def _on_mode_changed(self) -> None:
         combo = getattr(self, "_mode_combo", None)
@@ -4927,17 +4936,24 @@ class SettingsDialog(QDialog):
         including a "Follow system accent" update that lands from OUTSIDE the
         dialog. No-op when the accent row isn't built (non-jellytoast family, or
         the Display page hasn't been visited yet)."""
+        import shiboken6
+
         buttons = getattr(self, "_accent_buttons", None)
         if not buttons:
             return
         cur = (hex_value or "").strip().lower()
         matched = False
         for h, btn in buttons:
+            # theme_changed can fire after a page rebuild tore these swatches
+            # down (e.g. a family switch), leaving _accent_buttons pointing at
+            # deleted C++ objects — touching one raises RuntimeError. Skip them.
+            if not shiboken6.isValid(btn):
+                continue
             m = h.lower() == cur
             btn.set_accent_state(h, m)
             matched = matched or m
         dropper = getattr(self, "_accent_dropper", None)
-        if dropper is not None:
+        if dropper is not None and shiboken6.isValid(dropper):
             if matched or not cur:
                 dropper.setChecked(False)
                 dropper.update()

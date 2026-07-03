@@ -216,6 +216,28 @@ def _make_accent_filter(on_changed):
     return _Filter()
 
 
+def resync_system_accent() -> None:
+    """Re-read the OS accent and apply it (platform-correct read path). GUI
+    thread only. Shared by the follower's launch/live sync and by the Settings
+    dialog when switching back to the built-in family with Follow on (the live
+    watcher only fires on OS-side changes, so an in-app family switch needs an
+    explicit resync or the preset accent lingers until restart)."""
+    if _IS_MACOS:
+        # AppKit reads must stay on the GUI/main thread, and the read is cheap
+        # — do it inline instead of on a worker.
+        h = read_system_accent()
+        if h:
+            apply_accent_now(h)
+        return
+    from jellytoast.async_io import run_async
+
+    run_async(
+        read_system_accent,
+        on_result=lambda h: apply_accent_now(h) if h else None,
+        on_error=lambda _e: None,
+    )
+
+
 class SystemAccentFollower(QObject):
     """Keeps jellytoast's accent in sync with the desktop's while
     ``settings.follow_system_accent`` is on: applies it once at :meth:`start`
@@ -239,20 +261,7 @@ class SystemAccentFollower(QObject):
         self._subscribe()  # always listen; the handler gates on the live setting
 
     def _sync_now(self) -> None:
-        if _IS_MACOS:
-            # AppKit reads must stay on the GUI/main thread, and the read is
-            # cheap — do it inline instead of on a worker.
-            h = read_system_accent()
-            if h:
-                apply_accent_now(h)
-            return
-        from jellytoast.async_io import run_async
-
-        run_async(
-            read_system_accent,
-            on_result=lambda h: apply_accent_now(h) if h else None,
-            on_error=lambda _e: None,
-        )
+        resync_system_accent()
 
     def _subscribe(self) -> None:
         if self._subscribed:

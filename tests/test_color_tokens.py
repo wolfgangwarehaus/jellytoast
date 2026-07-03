@@ -219,6 +219,29 @@ class TestReset:
                 f"{name} override should have been cleared"
             )
 
+    def test_reset_reapplies_platform_adjustment(
+        self, restore_tokens, isolated_settings, monkeypatch
+    ):
+        """A reset must land the token's *applied* (platform-adjusted) value,
+        not the raw pre-adjustment default — refresh_theme is re-run so e.g. the
+        macOS POPUP_OPAQUE_FILL opacity bump is back immediately, not one theme
+        event late (P3 follow-up from the Mac box)."""
+        called = {"n": 0}
+        from jellytoast import ui_helpers
+
+        real = ui_helpers.refresh_theme
+        monkeypatch.setattr(
+            ui_helpers,
+            "refresh_theme",
+            lambda: (called.__setitem__("n", called["n"] + 1), real())[1],
+        )
+        ct.apply_override("POPUP_OPAQUE_FILL", "rgba(1,2,3,0.5)")
+        called["n"] = 0
+        ct.reset("POPUP_OPAQUE_FILL")
+        assert called["n"] >= 1  # platform post-processing re-run on reset
+        ct.reset_all()
+        assert called["n"] >= 2
+
 
 # ── load_persisted_overrides ────────────────────────────────────────────
 

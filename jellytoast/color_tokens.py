@@ -445,6 +445,22 @@ def _cascade_accent_family(accent_value: Any, *, persist: bool) -> None:
             )
 
 
+def _reapply_platform_adjustments() -> None:
+    """Re-run ``ui_helpers.refresh_theme`` so tokens with platform post-
+    processing (e.g. the macOS ``POPUP_OPAQUE_FILL`` opacity bump) recompute
+    their *applied* value after a reset — the raw ``token.default`` set above is
+    the pre-adjustment value, so without this a reset briefly under-opaques
+    popups on macOS until the next theme event. refresh_theme reads the theme +
+    re-overlays any REMAINING overrides, so it can't clobber other tokens.
+    Best-effort: a no-op before the app/theme is up."""
+    try:
+        from jellytoast import ui_helpers
+
+        ui_helpers.refresh_theme()
+    except Exception:
+        pass
+
+
 def reset(name: str) -> None:
     """Remove the override; restore the shipped default."""
     from PySide6.QtCore import QSettings
@@ -453,6 +469,7 @@ def reset(name: str) -> None:
     QSettings().remove(_qs_key(name))
     module = importlib.import_module(token.module)
     setattr(module, name, token.default)
+    _reapply_platform_adjustments()
     _emit_theme_changed()
 
 
@@ -465,6 +482,7 @@ def reset_all() -> None:
         s.remove(_qs_key(name))
         module = importlib.import_module(token.module)
         setattr(module, name, token.default)
+    _reapply_platform_adjustments()
     _emit_theme_changed()
 
 
