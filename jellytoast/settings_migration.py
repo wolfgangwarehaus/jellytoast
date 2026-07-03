@@ -43,6 +43,25 @@ _MIGRATION_MARKER = "_migrated_to_lowercase"
 _NESTED_RECOVERY_MARKER = "_nested_appdata_recovered"
 
 
+def open_qsettings() -> QSettings:
+    """The app's QSettings store — the ONE way to construct it.
+
+    Uses the (format, scope, org, app) ctor so ``QSettings.setDefaultFormat``
+    is honored: the bare two-arg ``QSettings(org, app)`` form hardwires
+    NativeFormat. In production nothing calls ``setDefaultFormat``, so this is
+    the OS-native store (registry / plist / ini) exactly as before; the test
+    conftest redirects it to a per-xdist-worker INI file on Windows, where the
+    registry can't be sandboxed per-test (tests used to read/write the user's
+    REAL ``HKCU\\Software\\jellytoast`` — the source of the Windows-only
+    cross-worker failures and live-app contamination)."""
+    return QSettings(
+        QSettings.defaultFormat(),
+        QSettings.Scope.UserScope,
+        _QSETTINGS_ORG,
+        _QSETTINGS_APP,
+    )
+
+
 def _pick_richer_downloads_db(legacy_db: Path, new_db: Path) -> Path:
     """Return whichever ``downloads.db`` has more rows in the ``nodes``
     table. On a tie or an unreadable file, prefer the legacy one — it's
@@ -154,7 +173,7 @@ def _recover_nested_appdata():
     Runs INDEPENDENTLY of ``_MIGRATION_MARKER`` — users who already
     "migrated" but hit this bug need recovery anyway. Sets its own
     marker so it's idempotent."""
-    new_qs = QSettings(_QSETTINGS_ORG, _QSETTINGS_APP)
+    new_qs = open_qsettings()
     if new_qs.value(_NESTED_RECOVERY_MARKER, False, type=bool):
         return
     if not IS_LINUX:
@@ -204,7 +223,7 @@ def _migrate_legacy_org_name():
     Linux-only for now — the user base on macOS / Windows is
     effectively zero (the rename pre-dates first ship there). Other
     platforms get a fresh-install experience under the new name."""
-    new_qs = QSettings(_QSETTINGS_ORG, _QSETTINGS_APP)
+    new_qs = open_qsettings()
     if new_qs.value(_MIGRATION_MARKER, False, type=bool):
         return
     if not IS_LINUX:
@@ -215,7 +234,14 @@ def _migrate_legacy_org_name():
         new_qs.sync()
         return
 
-    old_qs = QSettings(_LEGACY_QSETTINGS_ORG, _LEGACY_QSETTINGS_APP)
+    # Same defaultFormat-honoring ctor as open_qsettings, for the same reason
+    # (the tests redirect the store; the two-arg form can't be redirected).
+    old_qs = QSettings(
+        QSettings.defaultFormat(),
+        QSettings.Scope.UserScope,
+        _LEGACY_QSETTINGS_ORG,
+        _LEGACY_QSETTINGS_APP,
+    )
     legacy_keys = old_qs.allKeys()
 
     home = Path.home()

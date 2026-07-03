@@ -62,7 +62,9 @@ def _settings() -> QSettings:
         # here rather than imported to keep this module dependency-free
         # for tests that don't want the full Settings constructor
         # (which runs the legacy-org migration on first build).
-        _qs = QSettings("jellytoast", "jellytoast")
+        from jellytoast.settings_migration import open_qsettings
+
+        _qs = open_qsettings()
     return _qs
 
 

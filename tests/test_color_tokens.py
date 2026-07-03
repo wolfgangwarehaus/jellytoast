@@ -345,10 +345,15 @@ class TestDefaultsTrackLiveTheme:
         for name, token in ct.TOKENS.items():
             if name in self.ACCENT or name in self.BODY:
                 continue
-            if _norm_color(ct.get_default(name), token.kind) != _norm_color(
+            expected = ct.get_default(name)
+            if name == "POPUP_OPAQUE_FILL":
+                # the live value is platform-derived: near-opaque on macOS
+                # (no app-controllable popup blur there); no-op elsewhere
+                expected = uih._popup_fill_opaque_on_macos(expected)
+            if _norm_color(expected, token.kind) != _norm_color(
                 ct.get_current(name), token.kind
             ):
-                drift.append((name, ct.get_default(name), ct.get_current(name)))
+                drift.append((name, expected, ct.get_current(name)))
         assert not drift, f"token defaults drifted from the live theme: {drift}"
 
     def test_body_defaults_match_rgb_with_valid_blur_alpha(

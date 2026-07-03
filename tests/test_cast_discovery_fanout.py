@@ -20,9 +20,9 @@ import sys
 import types
 
 import pytest
-from PySide6.QtCore import QSettings
 
 from jellytoast.cast_manager import CastDevice, CastManager
+from jellytoast.settings_migration import open_qsettings
 
 # ── Backend fakes ──────────────────────────────────────────────────────
 
@@ -161,7 +161,7 @@ def cm(monkeypatch):
 
 
 def _qs():
-    return QSettings("jellytoast", "jellytoast")
+    return open_qsettings()
 
 
 def _clear():

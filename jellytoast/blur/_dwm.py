@@ -260,6 +260,13 @@ def apply(
     if build < _MIN_BUILD_MICA:
         return False
     try:
+        # windowHandle() check BEFORE winId(): winId() force-creates the
+        # native window on a never-shown widget, so the bare int() call both
+        # violated the "returns False when not-yet-shown" contract above and
+        # triggered exactly the premature native-window setup the Qt 6.8 note
+        # warns about. Mirrors the KWin backend's guard.
+        if widget.windowHandle() is None:
+            return False  # never shown — no platform window to blur
         hwnd = int(widget.winId())
         if not hwnd:
             return False  # no native window yet

@@ -11,6 +11,8 @@ dir under a tmp path, never the real downloads.db.
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from jellytoast.offline import index as _index
 from jellytoast.offline import store as _store
 
@@ -71,7 +73,8 @@ class TestCommitBlob:
         assert final.is_file()
         assert final.read_bytes() == b"audio-bytes"
         # Returned rel path round-trips through resolve.
-        assert rel == "/".join((final.parent.name, final.name))
+        # Path(): to_relative uses the native separator (backslash on Windows).
+        assert Path(rel) == Path(final.parent.name) / final.name
 
     def test_commit_blob_is_resolvable(self, offline_db):
         _track_with_blob("t1", size=12)

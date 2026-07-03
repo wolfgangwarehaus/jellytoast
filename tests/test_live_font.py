@@ -8,6 +8,8 @@ broken/illegible pick undoes itself.
 
 from __future__ import annotations
 
+import pytest
+
 from jellytoast import appearance_confirm, ui_helpers
 from jellytoast.appearance_confirm import AppearanceRevertDialog
 
@@ -128,7 +130,10 @@ def test_font_scale_change_applies_live_and_reverts(qapp, monkeypatch):
         dt.refresh_fonts()
 
 
-def test_font_family_change_applies_live_and_reverts(qapp, monkeypatch):
+def test_font_family_change_applies_live_and_reverts(qapp, isolated_settings, monkeypatch):
+    # isolated_settings: without it, a leaked ui/font_family from another test
+    # in the same xdist worker can equal the combo's first family, making
+    # _on_font_family_changed early-bail on new == old.
     ui_helpers.set_boot_default_font(qapp.font())
     from jellytoast.settings_dialog import SettingsDialog
 
@@ -141,6 +146,12 @@ def test_font_family_change_applies_live_and_reverts(qapp, monkeypatch):
         appearance_confirm, "show_appearance_revert", lambda revert, **k: captured.update(revert=revert)
     )
 
+    if d._font_family_combo.count() < 2:
+        # offscreen QPA on Windows has no font database (test_qss_audit sets
+        # QT_QPA_PLATFORM=offscreen at collection, so every xdist worker runs
+        # offscreen) — with zero installed families there's nothing to pick.
+        # Linux offscreen still enumerates via fontconfig, so CI covers this.
+        pytest.skip("no installed font families under this QPA")
     fam = d._font_family_combo.itemData(1)  # first installed family after "System default"
     d._font_family_combo.blockSignals(True)
     d._font_family_combo.setCurrentIndex(1)

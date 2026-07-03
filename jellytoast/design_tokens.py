@@ -43,14 +43,14 @@ _FONT_SCALE_MAP = {
 
 def _load_font_scale() -> float:
     """Read ``ui/font_scale`` from QSettings without requiring a
-    QApplication. `QSettings("jellytoast", "jellytoast")` works
-    standalone as long as the org/app names are supplied explicitly,
-    which is the same handle `jellytoast.settings` uses. Falls back to
+    QApplication. ``settings_migration.open_qsettings()`` works
+    standalone (org/app names are supplied explicitly) and is the same
+    handle `jellytoast.settings` uses. Falls back to
     1.0 on any error so this never breaks the import."""
     try:
-        from PySide6.QtCore import QSettings
+        from jellytoast.settings_migration import open_qsettings
 
-        s = QSettings("jellytoast", "jellytoast")
+        s = open_qsettings()
         key = s.value("ui/font_scale", "default", type=str)
         return _FONT_SCALE_MAP.get(key, 1.0)
     except Exception:
@@ -191,10 +191,10 @@ def _load_square_corners() -> bool:
     into the radius tokens below at import, so (like font_scale) the
     "Square corners" setting takes effect on the next launch."""
     try:
-        from PySide6.QtCore import QSettings
+        from jellytoast.settings_migration import open_qsettings
 
         return bool(
-            QSettings("jellytoast", "jellytoast").value(
+            open_qsettings().value(
                 "ui/square_corners", False, type=bool
             )
         )

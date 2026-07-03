@@ -20,9 +20,9 @@ import socket
 from typing import List
 
 import pytest
-from PySide6.QtCore import QSettings
 
 from jellytoast.cast_manager._common import CastDevice, _AirPlayListener, _type_enabled
+from jellytoast.settings_migration import open_qsettings
 
 # ── _AirPlayListener ───────────────────────────────────────────────────
 
@@ -155,7 +155,7 @@ def test_multiple_devices_accumulate(listener, captured_devices):
 def _clean_cast_settings():
     """Wipe the cast/* QSettings keys before and after each gate test
     so cross-test order can't leak a False through."""
-    qs = QSettings("jellytoast", "jellytoast")
+    qs = open_qsettings()
     for k in (
         "cast/chromecast_enabled",
         "cast/airplay_enabled",
@@ -185,7 +185,7 @@ def test_type_enabled_default_false_when_unset():
 
 
 def test_type_enabled_returns_true_when_enabled():
-    qs = QSettings("jellytoast", "jellytoast")
+    qs = open_qsettings()
     qs.setValue("cast/chromecast_enabled", True)
     qs.sync()
     assert _type_enabled("chromecast") is True
@@ -196,7 +196,7 @@ def test_type_enabled_returns_true_when_enabled():
 def test_type_enabled_reads_kind_specific_key():
     """Each kind gates on its own ``cast/<kind>_enabled`` key — enabling
     one type must not leak to siblings."""
-    qs = QSettings("jellytoast", "jellytoast")
+    qs = open_qsettings()
     qs.setValue("cast/dlna_enabled", True)
     qs.sync()
     assert _type_enabled("dlna") is True
