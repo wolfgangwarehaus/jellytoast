@@ -22,7 +22,7 @@
 - **Offline mode** — cache albums, playlists, or your whole library for offline playback.
 - **Floating mini player** — compact and album-art views.
 - **Desktop features** — media keys, a tray icon, optional notifications, and a start-at-login option.
-- **Frosted glass** — background blur on KDE, macOS, and Windows. Light and dark themes with a choice of accent color.
+- **Frosted glass & theming** — background blur on KDE, macOS, and Windows, plus a full theme picker: light/dark, built-in color presets (Catppuccin, Dracula, Nord, Gruvbox, …), import any base16 scheme, or follow your system accent (and your pywal wallpaper palette on Linux).
 - **And more** — synced lyrics, an audio visualizer, smart playlists, smart shuffle, a sleep timer, ListenBrainz scrobbling, and tag editing (Jellyfin).
 
 ## Install
