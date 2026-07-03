@@ -17,9 +17,9 @@ developer-facing history lives in [`docs/CHANGELOG.md`](docs/CHANGELOG.md).
   `~/.config/jellytoast/themes/` and they show up in the picker. If a file in
   that folder changes while it's your active theme, the app re-themes on the
   spot — so wallpaper-theming tools like matugen can drive jellytoast.
-- **Follow your desktop.** Two new switches: **Follow system accent** adopts
-  your KDE / GNOME accent color live, and **Follow pywal / wallust** re-themes
-  the whole app every time your wallpaper changes.
+- **Follow your desktop.** **Follow system accent** adopts your OS accent color
+  live — on KDE / GNOME, Windows, and macOS. And on Linux, **Follow pywal /
+  wallust** re-themes the whole app every time your wallpaper changes.
 
 ## [0.1.6] — 2026-07-01
 
