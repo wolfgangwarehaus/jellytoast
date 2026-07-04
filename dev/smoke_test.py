@@ -19,7 +19,7 @@ smart-shuffle anti-clustering — which once silently no-op'd on Jellyfin
 because real items carry no scalar ArtistId; this script re-checks it
 against live data so that class of regression can't slip back in).
 
-Covers the "Release sanity checks" in docs/manual_test_plan.md. Exit code
+Covers the release sanity checks (the old manual test plan — git history). Exit code
 is the number of failed checks (0 = clean); skipped live checks don't
 count as failures unless --require-server is passed and the server is down.
 """

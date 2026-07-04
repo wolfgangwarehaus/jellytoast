@@ -32,7 +32,7 @@ Latest builds are on [**Releases**][rel].
 - **Linux** — [.deb][rel] · [AppImage][rel] · AUR *(soon)*
 - **macOS** — [Apple Silicon][rel] · [Intel][rel] · App Store *(soon)*
 - **Windows** — [Microsoft Store][store] · [.exe][rel] · `winget install jellytoast`
-- **Any OS** — `pipx install jellytoast`
+- **Any OS** — `pipx install jellytoast` *(needs libmpv installed, like from-source)*
 
 **From source** (Python 3.11+, Qt 6, libmpv):
 

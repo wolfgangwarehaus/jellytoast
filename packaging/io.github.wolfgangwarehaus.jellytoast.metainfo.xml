@@ -27,6 +27,7 @@
       <li>MPRIS2 + system-tray integration; media-key support</li>
       <li>ListenBrainz scrobbling with offline queue</li>
       <li>Smart shuffle, smart playlists, sleep timer with fade-to-stop, tag editing (Jellyfin)</li>
+      <li>Theming: built-in theme families (Catppuccin, Dracula, Gruvbox, Nord, and more), base16 import, a watched themes folder, pywal/wallust follow, system-accent follow, and a glass-opacity slider</li>
     </ul>
   </description>
 

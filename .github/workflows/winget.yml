@@ -8,7 +8,7 @@ name: winget
 # DORMANT until you activate it (one-time): create a CLASSIC PAT with the
 # `public_repo` scope (fine-grained PATs are unsupported), store it as the repo
 # secret WINGET_TOKEN. The fork (wolfgangwarehaus/winget-pkgs) already exists.
-# See docs/RELEASING.md. Until then the submit step is skipped and you keep using
+# See RELEASING.md in jellytoast-ops (private). Until then the submit step is skipped and you keep using
 # the `wingetcreate` one-liner (the in-repo manifest is already version-stamped
 # by dev/cut_release.sh).
 
@@ -47,4 +47,4 @@ jobs:
         run: |
           echo "WINGET_TOKEN is not set → winget auto-submit is DORMANT (no-op)."
           echo "Activate: add a CLASSIC PAT (public_repo) as WINGET_TOKEN + fork"
-          echo "microsoft/winget-pkgs under wolfgangwarehaus. See docs/RELEASING.md."
+          echo "microsoft/winget-pkgs under wolfgangwarehaus. See RELEASING.md in jellytoast-ops."

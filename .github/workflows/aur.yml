@@ -7,7 +7,7 @@ name: aur
 # DORMANT until BOTH: (a) the AUR reopens new-package registration (frozen after
 # the 2026 malware wave) AND (b) you add the AUR_SSH_PRIVATE_KEY secret (a
 # dedicated AUR deploy keypair; public half on your AUR account). See
-# docs/RELEASING.md. Until then the steps are skipped.
+# the RELEASING.md runbook (jellytoast-ops, private). Until then the steps are skipped.
 
 on:
   release:
@@ -43,4 +43,4 @@ jobs:
         if: env.HAVE_KEY != 'true'
         run: |
           echo "AUR_SSH_PRIVATE_KEY is not set → AUR auto-deploy is DORMANT (no-op)."
-          echo "(AUR new-package registration is also frozen.) See docs/RELEASING.md."
+          echo "(AUR new-package registration is also frozen.) See RELEASING.md in jellytoast-ops."

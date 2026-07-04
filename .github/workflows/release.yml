@@ -124,7 +124,7 @@ jobs:
     # is forward-compatible only — built on the oldest base we support. (A 20.04
     # base would widen reach to Debian 11 / RHEL-8, but the hosted 20.04 runner
     # is retired; building inside an ubuntu:20.04 container is the documented
-    # option — see packaging/appimage/APPIMAGE_WORKLIST.md.)
+    # option — see the AppImage worklist in jellytoast-ops → packaging/appimage/.)
     runs-on: ubuntu-22.04
     permissions:
       contents: read
@@ -195,7 +195,7 @@ jobs:
   build-windows:
     runs-on: windows-latest
     # Azure Artifact Signing activates only once the secrets exist (see
-    # packaging/windows/azure-signing.md); until then SIGN='false' and both
+    # jellytoast-ops → packaging/windows/azure-signing.md); until then SIGN='false' and both
     # signing steps below are skipped, so releases keep building unsigned.
     env:
       SIGN: ${{ secrets.AZURE_CLIENT_ID != '' }}
@@ -321,7 +321,7 @@ jobs:
             min: "15.0"
     runs-on: ${{ matrix.runner }}
     # Signing + notarization activate only once the secrets exist (see
-    # packaging/macos/MACOS_SESSION.md). Until then SIGN/NOTARIZE are 'false'
+    # jellytoast-ops → packaging/macos/MACOS_SESSION.md). Until then SIGN/NOTARIZE are 'false'
     # and those steps are skipped, so releases keep building an UNSIGNED .dmg
     # (locally runnable via right-click → Open; not yet distributable cleanly).
     env:
