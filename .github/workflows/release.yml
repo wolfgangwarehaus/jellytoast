@@ -221,7 +221,7 @@ jobs:
       # Skipped until the Azure secrets are configured.
       - name: Code-sign frozen bundle (Azure Artifact Signing)
         if: env.SIGN == 'true'
-        uses: azure/trusted-signing-action@v2
+        uses: azure/trusted-signing-action@c7ab2a863ab5f9a846ddb8265964877ef296ee82 # v2
         with:
           azure-tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           azure-client-id: ${{ secrets.AZURE_CLIENT_ID }}
@@ -250,7 +250,7 @@ jobs:
       # Sign the installer itself (the bundle inside it was signed above).
       - name: Code-sign installer (Azure Artifact Signing)
         if: env.SIGN == 'true'
-        uses: azure/trusted-signing-action@v2
+        uses: azure/trusted-signing-action@c7ab2a863ab5f9a846ddb8265964877ef296ee82 # v2
         with:
           azure-tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           azure-client-id: ${{ secrets.AZURE_CLIENT_ID }}
@@ -535,8 +535,12 @@ jobs:
           # rented Mac: pkgutil shows the full 3rd Party Mac Developer Installer ->
           # WWDR -> Apple Root chain on the resulting .pkg.
           RC=0.27.0
+          # sha256-pinned: this binary is handed the Apple installer cert +
+          # password, so a swapped release asset must fail loudly, not sign.
+          RC_SHA256=163520079cd6ad1427791c792735a6ddfcb8eca0187bbcf0cc0bebfa4a62153d
           curl -fsSL -o /tmp/rc.tar.gz \
             "https://github.com/indygreg/apple-platform-rs/releases/download/apple-codesign%2F${RC}/apple-codesign-${RC}-aarch64-apple-darwin.tar.gz"
+          echo "${RC_SHA256}  /tmp/rc.tar.gz" | shasum -a 256 -c -
           tar xzf /tmp/rc.tar.gz -C /tmp
           # Known path, not `find /tmp` — /tmp is a symlink to /private/tmp and BSD
           # find won't descend a symlink start point (returns nothing).

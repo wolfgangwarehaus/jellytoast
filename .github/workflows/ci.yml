@@ -162,10 +162,12 @@ jobs:
       - name: Validate the .desktop entry
         run: desktop-file-validate packaging/io.github.wolfgangwarehaus.jellytoast.desktop
       - name: Shellcheck packaging + release scripts
+        # A find-glob, not a hand-list: the old list covered 7 of 16 scripts
+        # and the unchecked ones included the exact file hiding a swallowed
+        # build failure (build_appimage.sh's .zsync miss). New scripts are
+        # covered by default now.
         run: |
-          shellcheck packaging/deb/build_deb.sh packaging/install_icons.sh dev/cut_release.sh \
-            packaging/macos/get_libmpv.sh packaging/macos/sign_app.sh \
-            packaging/macos/build_dmg.sh packaging/macos/notarize.sh
+          find packaging dev -name '*.sh' -print0 | xargs -0 shellcheck
       - name: winget manifests parse
         run: |
           python3 - <<'PY'

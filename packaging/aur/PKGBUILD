@@ -55,9 +55,10 @@ makedepends=('python-build' 'python-installer' 'python-wheel' 'python-setuptools
 # moving branch). `pkgver` is kept in lockstep with pyproject by
 # dev/cut_release.sh and gated by tests/test_version_consistency.py; the digest
 # is refreshed by `updpkgsums` (the aur.yml workflow runs it, as does a manual
-# cut). The value below is the v0.1.2 tag archive.
+# cut). The value below is the v0.1.7 tag archive — matches pkgver, so a
+# direct `makepkg` of this checkout works.
 source=("$pkgname-$pkgver.tar.gz::$url/archive/refs/tags/v$pkgver.tar.gz")
-sha256sums=('8ea68f42b6beb3642440493c064f7b901875e5e20d45ed1c763bdf6a15435f38')
+sha256sums=('6961d6454471de7415c3401aaf4a4a6e4bd193fc4c9edbdc1a2c6e55cc03fca1')
 
 build() {
   cd "$srcdir/$pkgname-$pkgver"
