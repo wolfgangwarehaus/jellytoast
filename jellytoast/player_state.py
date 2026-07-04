@@ -2,6 +2,7 @@
 Player state: NowPlaying dataclass + Qt signal bus + repeat/shuffle modes.
 """
 
+import threading as _threading
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Dict, List, Optional
@@ -13,6 +14,19 @@ class RepeatMode(str, Enum):
     OFF = "off"
     ALL = "all"
     ONE = "one"
+
+
+def queue_can_next_prev(length: int, index: int, repeat: "RepeatMode | str") -> "tuple[bool, bool]":
+    """Repeat-aware (CanGoNext, CanGoPrevious) — THE one implementation,
+    shared by QueueManager and the MPRIS / SMTC media-controls backends.
+    With repeat-all on, Next/Previous wrap, so they're available whenever
+    the queue is non-empty; repeat-one replays on Next the same way.
+    (The OS controls used to re-derive this index-only, greying out Next
+    on the last track even though it would wrap.)"""
+    r = repeat.value if isinstance(repeat, RepeatMode) else str(repeat)
+    has_next = (length > 0) if r in (RepeatMode.ALL.value, RepeatMode.ONE.value) else (index < length - 1)
+    has_prev = (length > 0) if r == RepeatMode.ALL.value else (index > 0)
+    return has_next, has_prev
 
 
 class QueueKind(str, Enum):
@@ -198,10 +212,6 @@ class NowPlaying:
     @property
     def is_audio(self) -> bool:
         return self.item_type == "Audio"
-
-    @property
-    def is_video(self) -> bool:
-        return self.item_type in ("Movie", "Episode")
 
     @property
     def position_ticks(self) -> int:
@@ -553,21 +563,27 @@ class PlayerBus(QObject):
     # ── Scrobble ────────────────────────────────────────────────────────────
     # Fired when the server-side scrobble flags change (e.g. after
     # ``jellytoast.scrobble.refresh_server_scrobble_flags`` re-runs the
-    # double-scrobble detection — LB submission_client inspection —
-    # and persists new values into ``server/scrobbles_lastfm`` /
-    # ``server/scrobbles_listenbrainz``). Subscribers re-read both
-    # ``settings.server_scrobbles_lastfm`` and
-    # ``settings.server_scrobbles_listenbrainz`` and refresh their UI —
-    # primarily the now-playing bar / page scrobble badge. No payload:
+    # double-scrobble detection — LB submission_client inspection — and
+    # persists a new ``server/scrobbles_listenbrainz`` value; nothing
+    # writes ``server_scrobbles_lastfm`` today, its read is always False
+    # until Last.fm-side detection exists). Subscribers re-read the
+    # settings and refresh their UI — primarily the now-playing bar /
+    # page scrobble badge. No payload:
     # the settings are the source of truth, this is just a refresh ping.
     scrobble_status_changed = Signal()
 
     _instance: Optional["PlayerBus"] = None
+    # get() is reached from pool workers (connectivity's failure tracker
+    # emits via the bus) — an unlocked check-then-create racing the GUI
+    # thread would strand all subscribers on an orphaned instance.
+    _instance_lock = _threading.Lock()
 
     @classmethod
     def get(cls) -> "PlayerBus":
         if cls._instance is None:
-            cls._instance = cls()
+            with cls._instance_lock:
+                if cls._instance is None:
+                    cls._instance = cls()
         return cls._instance
 
     # Cached runtime state, mirrored from the latest

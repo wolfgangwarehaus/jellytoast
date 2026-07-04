@@ -5,24 +5,37 @@ distributions bundle third-party components under their own licenses,
 listed here with the written offer for corresponding source that
 GPL-2.0 §3(b) requires.
 
-## libmpv / FFmpeg (Windows installer + portable zip)
+## libmpv / FFmpeg (all binary bundles that vendor them)
 
-The Windows builds bundle `libmpv-2.dll`, a GPL build of mpv that
-statically links FFmpeg (and, depending on the build, x264 and other
-GPL/LGPL components). The DLL is taken, unmodified, from the
-**shinchiro `mpv-winbuild-cmake`** release artifacts
-(<https://github.com/shinchiro/mpv-winbuild-cmake/releases>), fetched by
-`packaging/windows/get_libmpv.ps1`.
+Several distributions bundle libmpv (which statically or dynamically
+links FFmpeg and, depending on the build, x264 and other GPL/LGPL
+components):
 
-**Written offer for source:** the complete corresponding source for the
-bundled `libmpv-2.dll` and the components it statically links is the
-mpv / FFmpeg / x264 source at the versions used by the shinchiro build
-referenced in `get_libmpv.ps1`. It is publicly available at:
+- **Windows installer + portable zip** — `libmpv-2.dll`, taken
+  unmodified from the **shinchiro `mpv-winbuild-cmake`** release
+  artifacts (<https://github.com/shinchiro/mpv-winbuild-cmake/releases>),
+  fetched by `packaging/windows/get_libmpv.ps1`.
+- **Linux AppImage** — the build host's distro libmpv plus its FFmpeg /
+  codec closure, vendored by `packaging/appimage/build_appimage.sh`
+  (source: the distribution packages of the CI build image, and
+  upstream mpv/FFmpeg below).
+- **macOS `.dmg` (Intel + Apple Silicon)** — libmpv and its dylib
+  closure staged by `packaging/macos/get_libmpv.sh` from the build
+  host's package manager (source: those packages, and upstream below).
+- **Mac App Store `.pkg`** — an LGPL-configured, no-Lua libmpv built
+  from source by `packaging/macos/mas/build_libmpv_lgpl.sh` (FFmpeg
+  built without `--enable-gpl`).
+
+**Written offer for source:** the complete corresponding source for
+every bundled libmpv and the components it links is publicly available
+at:
 
 - mpv — <https://github.com/mpv-player/mpv>
 - FFmpeg — <https://github.com/FFmpeg/FFmpeg>
-- the exact build recipe + pinned source revisions —
+- the exact Windows build recipe + pinned source revisions —
   <https://github.com/shinchiro/mpv-winbuild-cmake>
+- the exact MAS build recipe — `packaging/macos/mas/build_libmpv_lgpl.sh`
+  in this repository
 
 For three years from the date of this release, you may also request the
 corresponding source by opening an issue at

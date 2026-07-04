@@ -19,6 +19,7 @@ user-requested root) triggers a reload, and leaf-track noise is ignored.
 
 from __future__ import annotations
 
+import logging
 from typing import Dict
 
 from PySide6.QtCore import Qt, QTimer, Signal
@@ -61,6 +62,8 @@ from jellytoast.ui_helpers import (
     load_image_async,
     screen_dpr,
 )
+
+logger = logging.getLogger(__name__)
 
 # Human-readable node kinds for the row sub-line.
 _KIND_LABEL = {
@@ -657,15 +660,16 @@ class DownloadsView(QWidget):
             )
         )
 
-        # Wi-Fi-only gate.
+        # Wi-Fi-only gate — deliberately NOT added to the layout: the metered
+        # flag it pauses on has no production detector yet (mark_metered has
+        # only test callers), so a visible checkbox would promise a pause that
+        # never happens. The setting, dispatch gate, and this handler stay
+        # wired; when a metered detector lands (e.g. Qt 6.7+
+        # QNetworkInformation.isMetered), re-add the check row here.
         self._wifi_only = QCheckBox("Only download on Wi-Fi")
         self._wifi_only.setChecked(offline.is_wifi_only())
         self._wifi_only.toggled.connect(self._on_wifi_only_toggled)
-        outer.addLayout(
-            self._make_check_row(
-                self._wifi_only, "Pause on metered connections"
-            )
-        )
+        self._wifi_only.setVisible(False)
 
         # Notify-on-complete — slice C of the downloads-progress feature.
         self._notify_complete = QCheckBox("Notify when downloads finish")
@@ -1072,8 +1076,9 @@ class DownloadsView(QWidget):
             settings = get_settings()
             settings.library_download_in_progress = False
             settings.library_download_expected_total = 0
-        except Exception:
-            pass
+        except Exception as e:
+            # Failing to clear = ghost aggregate on next launch.
+            logger.warning("couldn't clear library-download flags: %s", e)
         self._refresh_button_states()
 
     def _on_clear_all_clicked(self) -> None:

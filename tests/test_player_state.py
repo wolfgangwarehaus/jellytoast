@@ -178,11 +178,10 @@ class TestQueueRoundTrip:
 
 
 class TestNowPlaying:
-    def test_audio_video_predicates(self):
+    def test_audio_predicate(self):
+        # is_video is gone — Movie/Episode types have no place in a
+        # music-only app (only is_audio has consumers).
         assert NowPlaying(item_type="Audio").is_audio
-        assert not NowPlaying(item_type="Audio").is_video
-        assert NowPlaying(item_type="Movie").is_video
-        assert NowPlaying(item_type="Episode").is_video
         assert not NowPlaying(item_type="Episode").is_audio
 
     def test_ticks_conversion(self):
@@ -190,3 +189,21 @@ class TestNowPlaying:
         np = NowPlaying(position=1500, duration=240_000)
         assert np.position_ticks == 15_000_000
         assert np.duration_ticks == 2_400_000_000
+
+
+def test_queue_can_next_prev_repeat_aware():
+    # The one shared implementation behind QueueManager.has_next/has_previous
+    # and the MPRIS/SMTC CanGoNext handlers — the OS controls used to
+    # re-derive this index-only and grey out Next on the last track even
+    # though repeat-all would wrap.
+    from jellytoast.player_state import RepeatMode, queue_can_next_prev
+
+    assert queue_can_next_prev(5, 4, RepeatMode.OFF) == (False, True)
+    assert queue_can_next_prev(5, 4, RepeatMode.ALL) == (True, True)
+    assert queue_can_next_prev(5, 0, RepeatMode.ALL) == (True, True)
+    # Repeat-one: Next replays/advances; Previous stays index-bound.
+    assert queue_can_next_prev(5, 0, RepeatMode.ONE) == (True, False)
+    # Empty queue disables both whatever the mode.
+    assert queue_can_next_prev(0, -1, RepeatMode.ALL) == (False, False)
+    # The bus signal carries the plain string form.
+    assert queue_can_next_prev(3, 2, "all") == (True, True)

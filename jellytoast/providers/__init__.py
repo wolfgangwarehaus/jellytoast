@@ -12,6 +12,8 @@ for now — the abstraction at this layer is the auth boundary, which is
 where provider-switching matters first.
 """
 
+import threading
+
 from jellytoast.providers.base import (
     AuthResult,
     MediaProvider,
@@ -21,6 +23,12 @@ from jellytoast.providers.jellyfin import JellyfinProvider
 from jellytoast.providers.subsonic import SubsonicProvider
 
 _PROVIDER: "MediaProvider | None" = None
+# get_provider is called from pool workers (e.g. offline.library_sync runs
+# ON the pool) — after reset_provider() a worker racing the GUI thread
+# could construct two providers with an unlocked check-then-create (one
+# leaks its requests.Session, callers split across instances). Same
+# double-checked pattern as offline/db.py.
+_PROVIDER_LOCK = threading.Lock()
 
 
 def get_provider() -> MediaProvider:
@@ -35,11 +43,13 @@ def get_provider() -> MediaProvider:
         return _PROVIDER
     from jellytoast.settings import get_settings
 
-    kind = (get_settings().provider_kind or "jellyfin").lower()
-    if kind == "subsonic":
-        _PROVIDER = SubsonicProvider()
-    else:
-        _PROVIDER = JellyfinProvider()
+    with _PROVIDER_LOCK:
+        if _PROVIDER is None:
+            kind = (get_settings().provider_kind or "jellyfin").lower()
+            if kind == "subsonic":
+                _PROVIDER = SubsonicProvider()
+            else:
+                _PROVIDER = JellyfinProvider()
     return _PROVIDER
 
 

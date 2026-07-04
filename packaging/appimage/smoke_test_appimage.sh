@@ -33,7 +33,7 @@ export APPIMAGE_EXTRACT_AND_RUN=1
 cp "$APPIMAGE" /tmp/jt.AppImage
 chmod +x /tmp/jt.AppImage
 
-echo "Booting the AppImage under Xvfb (xcb) in a clean container ($(cat /etc/os-release | sed -n 's/^PRETTY_NAME=//p'))…"
+echo "Booting the AppImage under Xvfb (xcb) in a clean container ($(sed -n 's/^PRETTY_NAME=//p' /etc/os-release))…"
 set +e
 QT_DEBUG_PLUGINS=1 QT_QPA_PLATFORM=xcb xvfb-run -a timeout 25 /tmp/jt.AppImage \
   >/tmp/jt-appimage-boot.log 2>&1

@@ -208,7 +208,6 @@ from PySide6.QtWidgets import (
 from jellytoast.cast_dispatcher import _CastDispatcherMixin
 from jellytoast.cast_manager import CastManager
 from jellytoast.design_tokens import RADIUS_WINDOW, rad
-from jellytoast.jellyfin_api import get_api
 from jellytoast.library_selection_controller import _LibrarySelectionMixin
 from jellytoast.media_controls import MediaControlsService
 from jellytoast.mini_player import FloatingMiniPlayer
@@ -758,13 +757,13 @@ class JellytoastWindow(_NavMixin, _SessionMixin, _CastDispatcherMixin, _ShuffleP
             self._blur_settle.setInterval(120)
             self._blur_settle.timeout.connect(self._apply_blur)
 
-        self.api = get_api()
-        # Provider abstraction — wraps the api with a backend-agnostic
-        # interface so a future Subsonic / Navidrome provider can plug
-        # in without touching the host. For now both the api and the
-        # provider point at the same Jellyfin instance; phase-2 work
-        # will migrate the heavier call sites (browse / playback) and
-        # add the SubsonicProvider alongside.
+        # Provider abstraction — the backend-agnostic interface every
+        # surface talks to (JellyfinProvider or SubsonicProvider, per the
+        # provider_kind setting). The window deliberately does NOT keep a
+        # raw JellyfinAPI as `self.api`: several widgets use the name
+        # `self.api` for the PROVIDER, so a window attribute meaning
+        # something different was a trap (the sign-out token wipe, its one
+        # consumer, takes a get_api() local instead).
         self.provider = get_provider()
         self.bus = PlayerBus.get()
         self.cast_manager = CastManager()

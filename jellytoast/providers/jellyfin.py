@@ -324,8 +324,10 @@ class JellyfinProvider(MediaProvider):
     def get_artist_albums(self, artist_id: str) -> List[Dict[str, Any]]:
         return self.api.get_artist_albums(artist_id)
 
-    def get_artists(self, limit: int = 200, start_index: int = 0) -> List[Dict[str, Any]]:
-        return self.api.get_artists(limit, start_index)
+    def get_artists(
+        self, limit: int = 200, start_index: int = 0, parent_id: str = ""
+    ) -> List[Dict[str, Any]]:
+        return self.api.get_artists(limit, start_index, parent_id)
 
     def get_playlist_items(self, playlist_id: str) -> List[Dict[str, Any]]:
         return self.api.get_playlist_items(playlist_id)

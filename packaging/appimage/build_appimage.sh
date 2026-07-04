@@ -145,11 +145,22 @@ fi
 
 OUT="$ROOT/dist/jellytoast-${VERSION}-x86_64.AppImage"
 export APPIMAGE_EXTRACT_AND_RUN=1
-# -u embeds gh-releases zsync update-info so AppImageUpdate can do delta updates;
-# appimagetool also emits the companion .AppImage.zsync next to the output.
+# -u embeds gh-releases zsync update-info so AppImageUpdate can do delta updates.
 ARCH=x86_64 "$TOOL" \
   --updateinformation "gh-releases-zsync|wolfgangwarehaus|jellytoast|latest|jellytoast-*-x86_64.AppImage.zsync" \
   "$APPDIR" "$OUT"
 
+# appimagetool emits the companion .zsync into the CURRENT directory, not next
+# to the output path — collect it into dist/ and fail hard if it's missing,
+# otherwise every shipped AppImage advertises an update feed that 404s.
+ZSYNC_NAME="$(basename "$OUT").zsync"
+if [ -f "$ZSYNC_NAME" ] && [ ! -f "${OUT}.zsync" ]; then
+  mv "$ZSYNC_NAME" "${OUT}.zsync"
+fi
+if [ ! -f "${OUT}.zsync" ]; then
+  echo "ERROR: ${OUT}.zsync was not produced — the embedded update-info would point at a missing release asset" >&2
+  exit 1
+fi
+
 echo "✓ built $OUT"
-ls -lh "$OUT" "${OUT}.zsync" 2>/dev/null || true
+ls -lh "$OUT" "${OUT}.zsync"

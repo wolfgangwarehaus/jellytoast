@@ -116,17 +116,23 @@ def main() -> int:
     # ── 3. The jellytoast package + entry point ──────────────────────────
     section("Package + entry point")
     try:
-        import jellytoast  # the root entry module
+        import importlib.util
+
+        import jellytoast  # noqa: F401 - the root package must import
 
         critical("`import jellytoast` succeeds", True)
+        # The gui-script entry point is jellytoast.app:main (pyproject
+        # [project.gui-scripts]); jellytoast/__init__.py is deliberately
+        # import-light, so probe the module spec instead of importing
+        # jellytoast.app here (that would pull Qt in before step 7).
         critical(
-            "entry point target `jellytoast:main` exists",
-            callable(getattr(jellytoast, "main", None)),
+            "entry-point module `jellytoast.app` resolves (target of `jellytoast.app:main`)",
+            importlib.util.find_spec("jellytoast.app") is not None,
             "the `jellytoast` command won't launch without it — reinstall the wheel.",
         )
     except Exception as e:  # noqa: BLE001 - any import-time failure is a real blocker
         critical("`import jellytoast` succeeds", False, f"{type(e).__name__}: {e}")
-        critical("entry point target `jellytoast:main` exists", False, "package failed to import (see above)")
+        critical("entry-point module `jellytoast.app` resolves", False, "package failed to import (see above)")
 
     # ── 4. Bundled asset (icon) ──────────────────────────────────────────
     section("Bundled assets")
@@ -152,27 +158,28 @@ def main() -> int:
             critical(f"`import {mod}`", False, f"{type(e).__name__}: {e}")
 
     # ── 6. Optional / platform features (info only — never a failure) ────
-    # (import-name, what it powers, pip-extra to enable it | None, expect-present)
+    # (import-name, what it powers, expect-present). numpy / async_upnp_client
+    # / soco are BASE deps now (the per-feature extras were removed when the
+    # backends were promoted — pyproject keeps only the `dev` extra), so their
+    # absence is a warn, not an "enable with an extra" hint.
     section("Optional features (degraded-but-fine if absent)")
     optional = [
-        ("requests", "server HTTP", None, True),
-        ("PySide6.QtSvg", "SVG icon rendering", None, True),
-        ("numpy", "audio visualizer", "visualizer", False),
-        ("async_upnp_client", "DLNA casting", "dlna", False),
-        ("soco", "Sonos casting", "sonos", False),
-        ("dbus_next", "MPRIS / media keys", None, not (is_win or is_mac)),
-        ("pyatv", "AirPlay 2 casting", None, not is_win),
-        ("Xlib", "media-key hotkeys", None, not (is_win or is_mac)),
+        ("requests", "server HTTP", True),
+        ("PySide6.QtSvg", "SVG icon rendering", True),
+        ("numpy", "audio visualizer", True),
+        ("async_upnp_client", "DLNA casting", True),
+        ("soco", "Sonos casting", True),
+        ("dbus_next", "MPRIS / media keys", not (is_win or is_mac)),
+        ("pyatv", "AirPlay 2 casting", not is_win),
+        ("Xlib", "media-key hotkeys", not (is_win or is_mac)),
     ]
-    for mod, what, extra, expect in optional:
+    for mod, what, expect in optional:
         try:
             __import__(mod)
             info(mod, what)
         except Exception:  # noqa: BLE001
-            if extra:  # opt-in extra — show how to turn it on
-                info(f"{mod} absent", f"{what} off — enable with:  pip install 'jellytoast[{extra}]'")
-            elif expect:  # a base dep we DID expect on this platform
-                warn(f"{mod} absent", f"{what} unavailable")
+            if expect:  # a base dep we DID expect on this platform
+                warn(f"{mod} absent", f"{what} unavailable — reinstall the wheel / `pip install --force-reinstall jellytoast`")
             else:  # platform feature that's expected-absent here
                 info(f"{mod} absent", f"{what} not supported on this platform (expected)")
 
@@ -203,9 +210,9 @@ def main() -> int:
     # ("Frosted dark renders see-through on the new laptop").
     section("Frosted-theme blur backdrop (cosmetic — Frosted degrades gracefully)")
     if is_win:
-        info("Windows", "Frosted paints a near-opaque body for now (Mica backdrop pending); no action needed.")
+        info("Windows", "Frosted uses native Acrylic blur-behind on Win 11 (22000+); Win 10 paints near-opaque. No action needed.")
     elif is_mac:
-        info("macOS", "Frosted paints a near-opaque body for now (vibrancy pending); no action needed.")
+        info("macOS", "Frosted uses native NSVisualEffectView vibrancy (honors Reduce Transparency). No action needed.")
     else:
         import ctypes
 

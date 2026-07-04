@@ -230,11 +230,3 @@ def delete_files(rel_paths: "list[str]") -> int:
         except OSError:
             pass
     return removed
-
-
-def pin_cover(image_id: str) -> None:
-    """Mark an ``image_id``'s cover as download-pinned so
-    ``image_cache.py`` eviction can't reclaim it while a download that
-    needs it exists. Covers already persist on disk (design doc §2/§3);
-    downloads just protect the relevant ones. Phase 3."""
-    raise NotImplementedError("offline.store.pin_cover — Phase 3")

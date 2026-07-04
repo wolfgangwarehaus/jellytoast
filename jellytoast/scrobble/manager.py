@@ -629,26 +629,19 @@ def _extract_mbid(np: NowPlaying) -> str:
     surface this when their server has the tag, but neither guarantees
     it — empty string is the common outcome."""
     raw = np.raw or {}
-    # Jellyfin: ``ProviderIds.MusicBrainzTrack`` (recording-level on
-    # most installs; ``MusicBrainzRecording`` on newer ones).
+    # ONE path for both backends: Jellyfin sets ProviderIds natively
+    # (recording-level ``MusicBrainzTrack`` on most installs,
+    # ``MusicBrainzRecording`` on newer ones) and the Subsonic adapter
+    # projects Navidrome's ``musicBrainzId`` into the same shape
+    # (subsonic._adapt_song) — no provider-private stash peeking here.
     pids = raw.get("ProviderIds") or {}
     if isinstance(pids, dict):
         for key in ("MusicBrainzRecording", "MusicBrainzTrack"):
             v = pids.get(key)
             if isinstance(v, str) and v:
                 return v
-    # Subsonic: ``musicBrainzId`` straight on the normalized dict (rare).
+    # Legacy fallback: ``musicBrainzId`` straight on the dict (rare).
     v = raw.get("musicBrainzId")
     if isinstance(v, str) and v:
         return v
-    # ... but Navidrome/OpenSubsonic actually surface it on the RAW
-    # Subsonic song, which the provider stashes under ``_subsonic_raw``
-    # (the normalized dict drops it). This is the real Subsonic path —
-    # without it MBIDs are dropped on the backend most likely to carry
-    # them, degrading server-side scrobble matching.
-    subsonic_raw = raw.get("_subsonic_raw")
-    if isinstance(subsonic_raw, dict):
-        v = subsonic_raw.get("musicBrainzId")
-        if isinstance(v, str) and v:
-            return v
     return ""

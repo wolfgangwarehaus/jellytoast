@@ -239,12 +239,12 @@ class _AirplayMixin:
             # the pairing dialog ships in a follow-up.
             logger.warning("AirPlay 2 cast: pairing required for %s", dev.name)
         else:
+            # exc_info instead of a raw stderr dump: every sibling failure
+            # path here logs, and on the Windows GUI-subsystem exe stderr
+            # is None so print_exception was lost anyway.
             logger.warning(
-                "AirPlay 2 cast: %s: %s", type(err).__name__, err
+                "AirPlay 2 cast: %s: %s", type(err).__name__, err, exc_info=err
             )
-            import traceback
-
-            traceback.print_exception(type(err), err, err.__traceback__)
         return False
 
     def airplay_stop(self):

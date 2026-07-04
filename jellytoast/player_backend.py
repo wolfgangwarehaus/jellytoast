@@ -1345,8 +1345,9 @@ class MpvController(_CastTransportMixin, QObject):
         self._abort_crossfade()
         try:
             self._mpv.seek(ms / 1000.0, reference="absolute")
-        except Exception:
-            pass
+        except Exception as e:
+            # A user-gesture no-op must at least be diagnosable.
+            logger.debug("absolute seek failed: %s", e)
 
     @Slot(int)
     def seek_relative(self, ms: int):
@@ -1360,8 +1361,8 @@ class MpvController(_CastTransportMixin, QObject):
             return
         try:
             self._mpv.seek(ms / 1000.0, reference="relative")
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug("relative seek failed: %s", e)
 
     @Slot(int)
     def set_volume(self, vol: int):
@@ -2005,8 +2006,8 @@ class MpvController(_CastTransportMixin, QObject):
                     self._muted_volume = None
                     self._cast_manager.cast_set_volume(restored)
                     self.bus.mute_state.emit(False)
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning("cast mute/volume failed: %s", e)
             return
         if self._mpv is None:
             return
@@ -2252,8 +2253,8 @@ class MpvController(_CastTransportMixin, QObject):
         if self._cast_active():
             try:
                 self._cast_manager.cast_toggle_pause()
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning("cast pause relay failed: %s", e)
             return
         if self._mpv is None:
             return

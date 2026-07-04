@@ -19,10 +19,11 @@ store/index/view separation already used by ``image_cache.py`` /
     locations.py     path resolution — the only per-OS file
 
 ``__init__`` is the public API surface every other part of the app
-imports. Phase 1 (scaffold): ``db`` and ``locations`` are functional;
-the rest are honest skeletons that raise ``NotImplementedError`` so the
-call sites can be wired incrementally without behaviour changes. See the
-phased rollout in the design doc §10.
+imports. All phases (1–6) are SHIPPED — explicit downloads, the SQLite
+node graph, offline playback, connectivity, and the UI are live (source
+of truth: SPEC §5). One deliberate exception: ``repair()`` below is
+implemented + tested but wired to no UI yet (a future Settings →
+Downloads "Repair downloads" button).
 """
 
 from __future__ import annotations
@@ -346,7 +347,9 @@ def repair() -> Dict[str, int]:
             "errors":              provider fetches that raised,
         }
 
-    Drives the future Settings → Downloads → "Repair downloads" button.
+    INTENTIONALLY UNWIRED: implemented + tested, but no UI calls it yet —
+    it's the backend for a future Settings → Downloads → "Repair
+    downloads" button (only the per-item ``resync`` is wired today).
     The blob files themselves are **never** touched here — surfacing
     drift is the goal, not garbage collection; the user gets the final
     call. Provider round-trips happen serially on the calling thread

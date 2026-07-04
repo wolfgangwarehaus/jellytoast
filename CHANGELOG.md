@@ -5,6 +5,11 @@ developer-facing history lives in [`docs/CHANGELOG.md`](docs/CHANGELOG.md).
 
 ## [Unreleased]
 
+<!-- Voice: short, plain, a little casual — what's new for a *user*, not a press
+     release. Specs right (versions/platforms); drop the gloss + the internals.
+     This block becomes the GitHub release notes; cut_release.sh stamps it into a
+     dated version on release. One line per change where you can. -->
+
 ## [0.1.7] — 2026-07-03
 
 - **Themes.** Settings → Display now has a proper theme picker: Catppuccin
@@ -49,11 +54,6 @@ developer-facing history lives in [`docs/CHANGELOG.md`](docs/CHANGELOG.md).
   RAM the longer you scroll.
 
 ## [0.1.5] — 2026-06-29
-
-<!-- Voice: short, plain, a little casual — what's new for a *user*, not a press
-     release. Specs right (versions/platforms); drop the gloss + the internals.
-     This block becomes the GitHub release notes; cut_release.sh stamps it into a
-     dated version on release. One line per change where you can. -->
 
 - **Intel Mac support.** A native Intel (x86_64) `.dmg` now ships alongside the
   Apple Silicon one — grab the build for your chip. Both are signed + notarized.

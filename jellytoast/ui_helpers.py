@@ -5,7 +5,6 @@ Shared UI helpers: theme, async image loader, formatting, common widgets.
 import contextlib
 import shutil
 import subprocess
-import threading
 from collections import OrderedDict
 from typing import Callable, Optional
 
@@ -297,19 +296,6 @@ def _hex_to_rgb_safe(hex_value: str) -> tuple[int, int, int]:
         return _hex_to_rgb(hex_value)
     except Exception:
         return (128, 128, 128)
-
-
-def _tooltip_qcolor() -> "QColor":
-    """``QColor`` form of ``_tooltip_fill_opaque()`` for the QPalette
-    ToolTipBase role. Parses the same opaque rgb/rgba string we hand
-    to QSS so palette + stylesheet agree on the tooltip backdrop."""
-    s = _tooltip_fill_opaque()
-    try:
-        inner = s[s.index("(") + 1 : s.index(")")]
-        parts = [p.strip() for p in inner.split(",")]
-        return QColor(int(parts[0]), int(parts[1]), int(parts[2]))
-    except Exception:
-        return QColor(28, 30, 34)
 
 
 def _tooltip_fill_opaque() -> str:
@@ -831,28 +817,29 @@ def skip_taskbar_x11(widget: QWidget):
         return
 
     def _run():
-        try:
-            subprocess.run(
-                [
-                    "xprop",
-                    "-id",
-                    str(wid),
-                    "-f",
-                    "_NET_WM_STATE",
-                    "32a",
-                    "-set",
-                    "_NET_WM_STATE",
-                    "_NET_WM_STATE_SKIP_TASKBAR,_NET_WM_STATE_SKIP_PAGER,_NET_WM_STATE_ABOVE",
-                ],
-                check=False,
-                timeout=2,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-            )
-        except Exception:
-            pass
+        subprocess.run(
+            [
+                "xprop",
+                "-id",
+                str(wid),
+                "-f",
+                "_NET_WM_STATE",
+                "32a",
+                "-set",
+                "_NET_WM_STATE",
+                "_NET_WM_STATE_SKIP_TASKBAR,_NET_WM_STATE_SKIP_PAGER,_NET_WM_STATE_ABOVE",
+            ],
+            check=False,
+            timeout=2,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
 
-    threading.Thread(target=_run, daemon=True).start()
+    # One-shot blocking subprocess — exactly what the shared pool is for
+    # (this was the one raw threading.Thread with no structural excuse).
+    from jellytoast.async_io import run_async
+
+    run_async(_run, on_error=lambda _e: None)
 
 
 # ── HiDPI helpers ───────────────────────────────────────────────────────────
