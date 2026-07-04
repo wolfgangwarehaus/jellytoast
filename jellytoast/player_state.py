@@ -2,6 +2,7 @@
 Player state: NowPlaying dataclass + Qt signal bus + repeat/shuffle modes.
 """
 
+import threading as _threading
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Dict, List, Optional
@@ -563,11 +564,17 @@ class PlayerBus(QObject):
     scrobble_status_changed = Signal()
 
     _instance: Optional["PlayerBus"] = None
+    # get() is reached from pool workers (connectivity's failure tracker
+    # emits via the bus) — an unlocked check-then-create racing the GUI
+    # thread would strand all subscribers on an orphaned instance.
+    _instance_lock = _threading.Lock()
 
     @classmethod
     def get(cls) -> "PlayerBus":
         if cls._instance is None:
-            cls._instance = cls()
+            with cls._instance_lock:
+                if cls._instance is None:
+                    cls._instance = cls()
         return cls._instance
 
     # Cached runtime state, mirrored from the latest

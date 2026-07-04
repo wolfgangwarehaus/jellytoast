@@ -1166,8 +1166,13 @@ class SubsonicProvider(MediaProvider):
                     "submission": "true",
                 },
             )
-        except Exception:
-            pass
+        except Exception as e:
+            # No-throw contract, but never log-free: on Subsonic this call
+            # IS the play-count write and the server-side Last.fm /
+            # ListenBrainz forward (in-app LB is gated off when the server
+            # scrobbles) — a swallowed failure is an unrecoverable, invisible
+            # lost scrobble with no queue/retry behind it.
+            logger.warning("scrobble submission failed for %s: %s", item_id, e)
 
     def mark_played(self, item_id: str) -> None:
         """Subsonic auto-marks played from the scrobble report; no
@@ -1183,8 +1188,10 @@ class SubsonicProvider(MediaProvider):
         op = "star" if favorite else "unstar"
         try:
             self._request(op, {"id": item_id})
-        except Exception:
-            pass
+        except Exception as e:
+            # The heart flips optimistically in the UI — a silent miss
+            # leaves it diverged from the server with nothing in the log.
+            logger.warning("%s failed for %s: %s", op, item_id, e)
 
     def get_lyrics(self, item_id: str) -> Optional[Dict[str, Any]]:
         """Fetch lyrics via OpenSubsonic's getLyricsBySongId, projected

@@ -19,6 +19,7 @@ user-requested root) triggers a reload, and leaf-track noise is ignored.
 
 from __future__ import annotations
 
+import logging
 from typing import Dict
 
 from PySide6.QtCore import Qt, QTimer, Signal
@@ -61,6 +62,8 @@ from jellytoast.ui_helpers import (
     load_image_async,
     screen_dpr,
 )
+
+logger = logging.getLogger(__name__)
 
 # Human-readable node kinds for the row sub-line.
 _KIND_LABEL = {
@@ -1073,8 +1076,9 @@ class DownloadsView(QWidget):
             settings = get_settings()
             settings.library_download_in_progress = False
             settings.library_download_expected_total = 0
-        except Exception:
-            pass
+        except Exception as e:
+            # Failing to clear = ghost aggregate on next launch.
+            logger.warning("couldn't clear library-download flags: %s", e)
         self._refresh_button_states()
 
     def _on_clear_all_clicked(self) -> None:

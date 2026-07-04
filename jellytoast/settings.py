@@ -25,6 +25,7 @@ the first read.
 import json
 import logging
 import os
+import threading
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Optional
 
@@ -2127,7 +2128,10 @@ class Settings:
             with open(tmp, "w", encoding="utf-8") as f:
                 json.dump(payload, f)
             os.replace(tmp, path)
-        except Exception:
+        except Exception as e:
+            # A silent miss here means the user's queue quietly fails to
+            # restore next launch with nothing in the log to explain it.
+            logger.warning("queue persistence failed: %s", e)
             try:
                 tmp.unlink(missing_ok=True)
             except Exception:
@@ -2172,12 +2176,18 @@ class Settings:
         self._s.clear()
 
 
-# Module-level singleton
+# Module-level singleton. Constructed under a lock: get_settings is called
+# from pool workers (offline.library_sync et al.), and an unlocked
+# check-then-create racing the GUI thread would build two Settings stores
+# (double-checked pattern, same as offline/db.py).
 _settings: Optional[Settings] = None
+_settings_lock = threading.Lock()
 
 
 def get_settings() -> Settings:
     global _settings
     if _settings is None:
-        _settings = Settings()
+        with _settings_lock:
+            if _settings is None:
+                _settings = Settings()
     return _settings
