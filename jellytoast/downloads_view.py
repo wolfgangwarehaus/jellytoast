@@ -657,15 +657,16 @@ class DownloadsView(QWidget):
             )
         )
 
-        # Wi-Fi-only gate.
+        # Wi-Fi-only gate — deliberately NOT added to the layout: the metered
+        # flag it pauses on has no production detector yet (mark_metered has
+        # only test callers), so a visible checkbox would promise a pause that
+        # never happens. The setting, dispatch gate, and this handler stay
+        # wired; when a metered detector lands (e.g. Qt 6.7+
+        # QNetworkInformation.isMetered), re-add the check row here.
         self._wifi_only = QCheckBox("Only download on Wi-Fi")
         self._wifi_only.setChecked(offline.is_wifi_only())
         self._wifi_only.toggled.connect(self._on_wifi_only_toggled)
-        outer.addLayout(
-            self._make_check_row(
-                self._wifi_only, "Pause on metered connections"
-            )
-        )
+        self._wifi_only.setVisible(False)
 
         # Notify-on-complete — slice C of the downloads-progress feature.
         self._notify_complete = QCheckBox("Notify when downloads finish")
