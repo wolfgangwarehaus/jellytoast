@@ -111,6 +111,11 @@ class SubsonicProvider(MediaProvider):
     # to keep the all/both case a single unfiltered round-trip.
     scopes_music_by_library = False
 
+    # The all-songs feed (search3, see _get_songs) has no sort parameter —
+    # get_items' sort_by/sort_order never reach the wire, so the songs
+    # surface must sort client-side across pages.
+    sorts_songs_server_side = False
+
     def __init__(self):
         self.settings = get_settings()
         self.session = requests.Session()

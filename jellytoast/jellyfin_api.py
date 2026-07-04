@@ -392,7 +392,7 @@ class JellyfinAPI:
 
     # ── Music ───────────────────────────────────────────────────────────────
 
-    def get_artists(self, limit: int = 200, start_index: int = 0) -> List[Dict]:
+    def get_artists(self, limit: int = 200, start_index: int = 0, parent_id: str = "") -> List[Dict]:
         params = {
             "UserId": self.user_id,
             "Limit": limit,
@@ -401,6 +401,10 @@ class JellyfinAPI:
             "SortOrder": "Ascending",
             "Fields": "PrimaryImageAspectRatio",
         }
+        if parent_id:
+            # Scope to one library — parity with the Subsonic provider's
+            # musicFolderId handling in get_artists.
+            params["ParentId"] = parent_id
         return self._get("/Artists/AlbumArtists", params).get("Items", [])
 
     def get_artist_albums(self, artist_id: str) -> List[Dict]:

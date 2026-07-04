@@ -84,6 +84,13 @@ class MediaProvider(ABC):
     # parent_id represents "all libraries" for the active provider.
     scopes_music_by_library: bool = True
 
+    # Whether get_items(item_type="Audio") honours sort_by/sort_order on
+    # the wire (True: Jellyfin). Subsonic's all-songs feed (search3) has no
+    # sort parameter and returns its own fixed order, so pages arrive
+    # unsorted (False) — the songs surface compensates with a full
+    # client-side re-sort on each appended page.
+    sorts_songs_server_side: bool = True
+
     # ── Identity ──────────────────────────────────────────────────────
 
     @property
@@ -196,7 +203,12 @@ class MediaProvider(ABC):
     def get_artist_albums(self, artist_id: str) -> List[Dict[str, Any]]: ...
 
     @abstractmethod
-    def get_artists(self, limit: int = 200, start_index: int = 0) -> List[Dict[str, Any]]: ...
+    def get_artists(
+        self, limit: int = 200, start_index: int = 0, parent_id: str = ""
+    ) -> List[Dict[str, Any]]:
+        """List album artists; ``parent_id`` scopes to one library (Jellyfin
+        ParentId / Subsonic musicFolderId), "" = all libraries."""
+        ...
 
     @abstractmethod
     def get_playlist_items(self, playlist_id: str) -> List[Dict[str, Any]]: ...
