@@ -10,6 +10,25 @@ developer-facing history lives in [`docs/CHANGELOG.md`](docs/CHANGELOG.md).
      This block becomes the GitHub release notes; cut_release.sh stamps it into a
      dated version on release. One line per change where you can. -->
 
+- **AppImage self-updates actually work now.** Every AppImage shipped an
+  update feed pointing at a file we never uploaded, so AppImageUpdate always
+  failed. Fixed from this release on — and since the feed watches the *latest*
+  release, AppImages you already have start updating too.
+- **Songs sorting fixed on Navidrome / Subsonic.** On big libraries your
+  chosen sort only held within each 500-track chunk; it now applies to the
+  whole list.
+- **Repeat-all un-greys Next.** With repeat on, the OS media controls (KDE
+  widget, Windows flyout / lock screen) no longer disable Next on the last
+  track — it wraps, like it always did in-app.
+- **Smart playlists are honest on Subsonic.** "Rating" and "Last played"
+  rules can't match on Subsonic / Navidrome (the server doesn't send that
+  data) — the editor now says so instead of quietly building a playlist
+  that stays empty forever.
+- **Small stuff.** Selecting several libraries (but not all) now tells you
+  the filter isn't applied yet; the "Only download on Wi-Fi" checkbox is
+  gone until it can actually pause anything; failed favorites / scrobbles
+  now leave a trace in the log instead of vanishing.
+
 ## [0.1.7] — 2026-07-03
 
 - **Themes.** Settings → Display now has a proper theme picker: Catppuccin
