@@ -3871,11 +3871,10 @@ class SettingsDialog(QDialog):
             f"border-radius: {rad(8)}px; background: {bg};"
         )
 
-    # ── Page: Scrobbling (placeholder) ─────────────────────────────────
-    # Stub for the future Last.fm + ListenBrainz integration. Most
-    # surveyed players have a Scrobbling settings page; we put the
-    # nav slot in now so it's discoverable and so adding the actual
-    # forms later doesn't require navigation churn.
+    # ── Page: Scrobbling ────────────────────────────────────────────────
+    # ListenBrainz is fully live (token validate, server-scrobble
+    # detection, offline queue). The Last.fm section is built but hidden
+    # until an API key ships (lastfm.is_configured() gates it).
     def _build_scrobbling(self) -> QWidget:
         from jellytoast.scrobble import lastfm as _lastfm
 

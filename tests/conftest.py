@@ -5,7 +5,7 @@ Goals:
   root or from inside `tests/`.
 - Redirect QSettings + QStandardPaths to a temp dir so the user's real
   ~/.config/jellytoast/ is never touched by a test run.
-- Avoid pulling in heavy Qt subsystems (QApplication, QtWebEngine) — the
+- Avoid pulling in heavy Qt subsystems (a full QApplication) where the
   modules under test don't need them.
 """
 
@@ -382,3 +382,33 @@ def force_sync_render(grid):
         except (RuntimeError, TypeError):
             pass
         sig.connect(slot, Qt.ConnectionType.DirectConnection)
+
+
+@pytest.fixture
+def clean_theme_settings():
+    """Wipe every theme axis get_active_theme() reads before AND after the
+    test so it sees a clean slate (defaults re-derive from QSettings).
+    ONE canonical copy — this used to live in two test files with
+    independently-maintained (diverging) key lists, so a new theme axis
+    had to be added twice or one file's tests saw stale state. Reads/writes
+    through the get_settings()._s handle: a write from any OTHER QSettings
+    handle isn't visible to it until sync() (per-instance file caching)."""
+    from jellytoast.settings import get_settings
+
+    def _wipe():
+        s = get_settings()._s
+        for k in (
+            "ui/theme_mode",
+            "ui/accent_color",
+            "ui/frosted",
+            "ui/theme_family",
+            "ui/imported_scheme_json",
+            "ui/preset_glass_alpha",
+            "ui/jellytoast_glass_alpha",
+        ):
+            s.remove(k)
+        s.sync()
+
+    _wipe()
+    yield
+    _wipe()

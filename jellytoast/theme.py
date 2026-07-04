@@ -898,16 +898,16 @@ def contrast_ink(bg) -> "QColor":
     Uses WCAG relative luminance, so it actually clears the contrast bar on the
     mid-luminance accent presets (green/teal/orange) where a hardcoded white
     arrow went sub-AA (~2.4–2.8:1). White only wins on quite dark fills
-    (luminance < ~0.18); everything else gets near-black."""
+    (luminance < ~0.18); everything else gets near-black.
+
+    Delegates to external_theme._rel_luminance — the codebase used to carry
+    the same WCAG linearization twice with mismatched sRGB thresholds
+    (0.03928 here vs the spec's 0.04045 there), so a contrast fix would
+    land in one and miss the other.
+    """
     from PySide6.QtGui import QColor
 
-    def _lin(c: float) -> float:
-        cs = c / 255.0
-        return cs / 12.92 if cs <= 0.03928 else ((cs + 0.055) / 1.055) ** 2.4
+    from jellytoast.external_theme import _rel_luminance
 
-    lum = (
-        0.2126 * _lin(bg.red())
-        + 0.7152 * _lin(bg.green())
-        + 0.0722 * _lin(bg.blue())
-    )
+    lum = _rel_luminance(f"#{bg.red():02x}{bg.green():02x}{bg.blue():02x}")
     return QColor("#ffffff") if lum < 0.179 else QColor("#1a1a1a")

@@ -2,8 +2,9 @@
 # jellytoast — DEV install helper (Arch Linux).
 #
 # This is the manual git-clone install path. For end-user installs
-# prefer the AUR package (`jellytoast`) or the `.deb` — both handle
-# their own deps without --break-system-packages.
+# prefer the `.deb` / AppImage from GitHub Releases, or `pipx install
+# jellytoast` — all handle their own deps without --break-system-packages.
+# (No AUR package yet — registration is frozen upstream.)
 #
 # This script installs runtime deps system-wide via pacman where
 # available, then falls back to `pip --break-system-packages` for the
@@ -53,5 +54,5 @@ pip install --user --break-system-packages -e ".[dev]"
 echo ""
 echo "Done. Run with:"
 echo "  python3 -m jellytoast             (from repo root)"
-echo "  bash dev/run.sh                   (with libmpv env vars set)"
+echo "  bash dev/run.sh                   (dev launch: locale + Qt logging set up)"
 echo "  bash dev/create_desktop_entry.sh  (register in app menu)"
