@@ -177,9 +177,15 @@ jobs:
       - uses: actions/upload-artifact@v7
         with:
           name: appimage
-          path: |
-            dist/*.AppImage
-            dist/*.AppImage.zsync
+          path: dist/*.AppImage
+          if-no-files-found: error
+      # Separate entry so a missing .zsync fails loudly instead of shipping an
+      # AppImage whose embedded update feed 404s (build_appimage.sh also gates).
+      - uses: actions/upload-artifact@v7
+        with:
+          name: appimage-zsync
+          path: dist/*.AppImage.zsync
+          if-no-files-found: error
       - name: Attest AppImage provenance
         if: github.event_name == 'push'
         uses: actions/attest-build-provenance@v4
