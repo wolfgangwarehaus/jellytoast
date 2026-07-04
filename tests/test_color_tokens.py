@@ -25,10 +25,10 @@ def restore_tokens():
     debug/colors/* QSettings entries before AND after the test.
     QSettings test-mode shares one file process-wide, so isolation
     has to be explicit."""
-    from PySide6.QtCore import QSettings
+    from jellytoast.settings_migration import open_qsettings
 
     def _wipe_qs():
-        s = QSettings()
+        s = open_qsettings()
         for name in ct.TOKENS:
             s.remove(f"debug/colors/{name}")
 
@@ -146,10 +146,10 @@ class TestApplyOverride:
             assert ui_helpers.ACCENT_DEEP == _t._darken(hexv), hexv
 
     def test_apply_persists_to_qsettings(self, restore_tokens, isolated_settings):
-        from PySide6.QtCore import QSettings
+        from jellytoast.settings_migration import open_qsettings
 
         ct.apply_override("ACCENT", "#ff0000")
-        s = QSettings()
+        s = open_qsettings()
         assert s.contains("debug/colors/ACCENT")
         # Stored as JSON.
         import json
@@ -168,14 +168,14 @@ class TestApplyOverride:
     def test_apply_persist_false_skips_qsettings_write(
         self, restore_tokens, isolated_settings
     ):
-        from PySide6.QtCore import QSettings
+        from jellytoast.settings_migration import open_qsettings
 
         ct.apply_override("ACCENT", "#ff0000", persist=False)
         # Module global still updated.
         from jellytoast import ui_helpers
         assert ui_helpers.ACCENT == "#ff0000"
         # But QSettings entry NOT written.
-        assert not QSettings().contains("debug/colors/ACCENT")
+        assert not open_qsettings().contains("debug/colors/ACCENT")
 
     def test_apply_tuple_value_round_trips(self, restore_tokens, isolated_settings):
         from jellytoast import ui_helpers
@@ -197,23 +197,23 @@ class TestReset:
         assert ui_helpers.ACCENT == ct.get_default("ACCENT")
 
     def test_reset_removes_qsettings_entry(self, restore_tokens, isolated_settings):
-        from PySide6.QtCore import QSettings
+        from jellytoast.settings_migration import open_qsettings
 
         ct.apply_override("ACCENT", "#ff0000")
-        assert QSettings().contains("debug/colors/ACCENT")
+        assert open_qsettings().contains("debug/colors/ACCENT")
         ct.reset("ACCENT")
-        assert not QSettings().contains("debug/colors/ACCENT")
+        assert not open_qsettings().contains("debug/colors/ACCENT")
 
     def test_reset_all_clears_every_override(
         self, restore_tokens, isolated_settings
     ):
-        from PySide6.QtCore import QSettings
+        from jellytoast.settings_migration import open_qsettings
 
         ct.apply_override("ACCENT", "#ff0000")
         ct.apply_override("TEXT", "#aabbcc")
         ct.apply_override("WASH_HOVER", "rgba(1,2,3,0.5)")
         ct.reset_all()
-        s = QSettings()
+        s = open_qsettings()
         for name in ("ACCENT", "TEXT", "WASH_HOVER"):
             assert not s.contains(f"debug/colors/{name}"), (
                 f"{name} override should have been cleared"
@@ -250,10 +250,10 @@ class TestLoadPersistedOverrides:
     def test_loads_string_override(self, restore_tokens, isolated_settings):
         import json
 
-        from PySide6.QtCore import QSettings
+        from jellytoast.settings_migration import open_qsettings
 
         # Seed QSettings as if a previous run had set an override.
-        s = QSettings()
+        s = open_qsettings()
         s.setValue("debug/colors/ACCENT", json.dumps("#deadbe"))
         ct.load_persisted_overrides()
         from jellytoast import ui_helpers
@@ -263,9 +263,9 @@ class TestLoadPersistedOverrides:
     def test_loads_tuple_override(self, restore_tokens, isolated_settings):
         import json
 
-        from PySide6.QtCore import QSettings
+        from jellytoast.settings_migration import open_qsettings
 
-        s = QSettings()
+        s = open_qsettings()
         s.setValue(
             "debug/colors/BODY_COLOR", json.dumps([99, 88, 77, 240])
         )
@@ -277,9 +277,9 @@ class TestLoadPersistedOverrides:
     def test_malformed_override_skipped_silently(
         self, restore_tokens, isolated_settings
     ):
-        from PySide6.QtCore import QSettings
+        from jellytoast.settings_migration import open_qsettings
 
-        s = QSettings()
+        s = open_qsettings()
         s.setValue("debug/colors/ACCENT", "{not json")
         # Should not raise. ACCENT should be untouched.
         from jellytoast import ui_helpers

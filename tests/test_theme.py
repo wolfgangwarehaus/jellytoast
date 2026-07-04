@@ -35,28 +35,7 @@ def _settings_handle():
     return get_settings()._s
 
 
-@pytest.fixture
-def clean_theme_settings():
-    """Wipe every theme axis get_active_theme() reads before AND after the
-    test so it sees a clean slate (defaults re-derive from QSettings)."""
-
-    def _wipe():
-        s = _settings_handle()
-        for k in (
-            "ui/theme_mode",
-            "ui/accent_color",
-            "ui/frosted",
-            "ui/theme_family",
-            "ui/imported_scheme_json",
-            "ui/preset_glass_alpha",
-            "ui/jellytoast_glass_alpha",
-        ):
-            s.remove(k)
-        s.sync()
-
-    _wipe()
-    yield
-    _wipe()
+# clean_theme_settings now lives in conftest.py (one canonical copy).
 
 
 def _set_theme_settings(theme_mode=None, accent_color=None, frosted=None, theme_family=None):

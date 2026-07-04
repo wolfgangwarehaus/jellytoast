@@ -392,7 +392,7 @@ class JellyfinAPI:
 
     # ── Music ───────────────────────────────────────────────────────────────
 
-    def get_artists(self, limit: int = 200, start_index: int = 0) -> List[Dict]:
+    def get_artists(self, limit: int = 200, start_index: int = 0, parent_id: str = "") -> List[Dict]:
         params = {
             "UserId": self.user_id,
             "Limit": limit,
@@ -401,6 +401,10 @@ class JellyfinAPI:
             "SortOrder": "Ascending",
             "Fields": "PrimaryImageAspectRatio",
         }
+        if parent_id:
+            # Scope to one library — parity with the Subsonic provider's
+            # musicFolderId handling in get_artists.
+            params["ParentId"] = parent_id
         return self._get("/Artists/AlbumArtists", params).get("Items", [])
 
     def get_artist_albums(self, artist_id: str) -> List[Dict]:
@@ -620,15 +624,33 @@ class JellyfinAPI:
         # is now stale (mirrors toggle_favorite's invalidation).
         self.invalidate_meta_cache(item_id)
 
-    def mark_unplayed(self, item_id: str):
+    def _delete(self, path: str, what: str) -> None:
+        """Best-effort DELETE with the same reachability semantics as
+        _get/_post: network failures feed the offline tracker and get a
+        warning line (the UI has already flipped optimistically — a
+        silent miss leaves local state diverged from the server with no
+        trace), while the no-throw contract is preserved."""
+        import requests
+
+        from jellytoast import offline as _offline
+
         try:
             self.session.delete(
-                f"{self.server_url}/Users/{self.user_id}/PlayedItems/{item_id}",
+                f"{self.server_url}{path}",
                 headers=self._headers(),
                 timeout=5,
             )
-        except Exception:
-            pass
+        except requests.exceptions.RequestException as e:
+            _offline.note_request_failure()
+            logger.warning("%s failed (server unreachable?): %s", what, e)
+            return
+        except Exception as e:
+            logger.warning("%s failed: %s", what, e)
+            return
+        _offline.note_request_success()
+
+    def mark_unplayed(self, item_id: str):
+        self._delete(f"/Users/{self.user_id}/PlayedItems/{item_id}", "mark-unplayed")
         # Invalidate unconditionally (like toggle_favorite's unfavorite
         # branch) so the local cache is dropped even if the best-effort
         # DELETE silently failed.
@@ -638,14 +660,7 @@ class JellyfinAPI:
         if favorite:
             self._post(f"/Users/{self.user_id}/FavoriteItems/{item_id}")
         else:
-            try:
-                self.session.delete(
-                    f"{self.server_url}/Users/{self.user_id}/FavoriteItems/{item_id}",
-                    headers=self._headers(),
-                    timeout=5,
-                )
-            except Exception:
-                pass
+            self._delete(f"/Users/{self.user_id}/FavoriteItems/{item_id}", "unfavorite")
         # The cached `get_item` snapshot for this id carries a stale
         # `UserData.IsFavorite` until we drop it.
         self.invalidate_meta_cache(item_id)

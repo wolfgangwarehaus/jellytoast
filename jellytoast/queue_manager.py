@@ -191,15 +191,15 @@ class QueueManager(QObject):
 
     @property
     def has_next(self) -> bool:
-        if self._repeat == RepeatMode.ALL or self._repeat == RepeatMode.ONE:
-            return self._q.length > 0
-        return self._q.current_index < self._q.length - 1
+        from jellytoast.player_state import queue_can_next_prev
+
+        return queue_can_next_prev(self._q.length, self._q.current_index, self._repeat)[0]
 
     @property
     def has_previous(self) -> bool:
-        if self._repeat == RepeatMode.ALL:
-            return self._q.length > 0
-        return self._q.current_index > 0
+        from jellytoast.player_state import queue_can_next_prev
+
+        return queue_can_next_prev(self._q.length, self._q.current_index, self._repeat)[1]
 
     @property
     def repeat_mode(self) -> RepeatMode:

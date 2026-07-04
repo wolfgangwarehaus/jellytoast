@@ -77,6 +77,18 @@ _FIELD_LABELS: Dict[str, str] = {
     "last_played": "Last played",
 }
 
+def _unsupported_fields() -> frozenset:
+    """Rule fields the ACTIVE provider can never match (e.g. rating /
+    last_played on Subsonic — the adapted items carry no data for them).
+    Empty set when no provider is up (tests, early boot)."""
+    try:
+        from jellytoast.providers import get_provider
+
+        return getattr(get_provider(), "unsupported_smart_fields", frozenset())
+    except Exception:
+        return frozenset()
+
+
 # Friendly operator labels — kept identical to the schema op keys for
 # data shape, but rendered nicer in the combo.
 _OP_LABELS: Dict[str, str] = {
@@ -195,8 +207,22 @@ class _RuleChip(QFrame):
         # labels so AdjustToContents isn't needed.
         self._field = Selector()
         self._field.setMinimumWidth(120)
+        # Fields the active provider has no data for stay selectable (a
+        # playlist may have been built against the other backend) but say
+        # so in place, so nobody builds a permanently-empty rule blind.
+        unsupported = _unsupported_fields()
         for k in FIELDS:
-            self._field.addItem(_FIELD_LABELS.get(k, k), k)
+            label = _FIELD_LABELS.get(k, k)
+            if k in unsupported:
+                label += " — not on this server"
+            self._field.addItem(label, k)
+            if k in unsupported:
+                self._field.setItemData(
+                    self._field.count() - 1,
+                    "Your server doesn't provide this data, so this rule "
+                    "never matches anything here.",
+                    Qt.ItemDataRole.ToolTipRole,
+                )
         row.addWidget(self._field)
 
         self._op = Selector()
@@ -754,7 +780,19 @@ class SmartPlaylistEditorDialog(QDialog):
             return
         self._preview_list.clear()
         if not items:
-            self._preview_status.setText("0 matches")
+            # Explain a permanently-empty result instead of a bare zero:
+            # rules on fields this backend has no data for can never match.
+            bad = sorted(
+                {r.get("field") for r in self.rules_dict().get("rules", [])}
+                & _unsupported_fields()
+            )
+            if bad:
+                labels = ", ".join(_FIELD_LABELS.get(f, f) for f in bad)
+                self._preview_status.setText(
+                    f"0 matches — {labels} can't match on this server"
+                )
+            else:
+                self._preview_status.setText("0 matches")
             return
         for it in items:
             title = it.get("Name") or it.get("Title") or "(untitled)"

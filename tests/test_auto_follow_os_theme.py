@@ -18,8 +18,6 @@ test that resolves `get_active_theme()`.
 
 from __future__ import annotations
 
-import pytest
-
 from jellytoast import blur
 from jellytoast import theme as th
 from jellytoast.theme import THEMES
@@ -31,17 +29,7 @@ def _settings_handle():
     return get_settings()._s
 
 
-@pytest.fixture
-def clean_theme_settings():
-    def _wipe():
-        s = _settings_handle()
-        for k in ("ui/theme_mode", "ui/accent_color", "ui/frosted", "ui/theme_family"):
-            s.remove(k)
-        s.sync()
-
-    _wipe()
-    yield
-    _wipe()
+# clean_theme_settings now lives in conftest.py (one canonical copy).
 
 
 def _set_theme_mode(mode: str):

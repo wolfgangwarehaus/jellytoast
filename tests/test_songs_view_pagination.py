@@ -254,3 +254,75 @@ def test_refresh_match_does_not_reload(qapp, monkeypatch):
     monkeypatch.setattr(sv, "load_songs", lambda *a, **k: reloads.append(1))
     sv._on_refresh_loaded({"Items": [{"Id": "a"}, {"Id": "b"}], "_load_gen": sv._load_gen})
     assert reloads == []
+
+
+# ── Cross-page client sort (Subsonic parity) ────────────────────────────────
+# Subsonic's all-songs feed (search3) has no sort parameter, so pages arrive
+# in server-fixed order: the old page-local re-sort made the user's sort hold
+# only WITHIN each page. When the provider reports
+# sorts_songs_server_side=False, _on_page_loaded must merge + re-sort the
+# full accumulated list instead of tail-appending.
+
+
+class _UnsortedFeedProvider:
+    sorts_songs_server_side = False
+
+
+def _make_unsorted_view(monkeypatch):
+    sv = SongsView()
+    monkeypatch.setattr(sv, "_save_cache_async", lambda *a, **k: None)
+    monkeypatch.setattr(sv, "_load_next_page", lambda: None)
+    monkeypatch.setattr(sv, "_load_visible_covers", lambda: None)
+    sv.api = _UnsortedFeedProvider()
+    sv._sort_by = "SortName"
+    sv._sort_order = "Ascending"
+    sv._refresh_scope = {"sort_by": "SortName"}
+    return sv
+
+
+def test_unsorted_feed_page_resorts_full_list(qapp, monkeypatch):
+    sv = _make_unsorted_view(monkeypatch)
+    sv._model.set_items([{"Id": "s1", "Name": "Beta"}, {"Id": "s2", "Name": "Delta"}])
+    # The next page interleaves alphabetically with rows already shown —
+    # a tail-append would render B, D, A, C.
+    sv._on_page_loaded(
+        {"Items": [{"Id": "s3", "Name": "Alpha"}, {"Id": "s4", "Name": "Charlie"}]},
+        sv._load_gen,
+    )
+    assert [it["Name"] for it in sv._model.items()] == [
+        "Alpha",
+        "Beta",
+        "Charlie",
+        "Delta",
+    ]
+
+
+def test_unsorted_feed_respects_descending(qapp, monkeypatch):
+    sv = _make_unsorted_view(monkeypatch)
+    sv._sort_order = "Descending"
+    sv._model.set_items([{"Id": "s1", "Name": "Beta"}])
+    sv._on_page_loaded({"Items": [{"Id": "s2", "Name": "Alpha"}]}, sv._load_gen)
+    assert [it["Name"] for it in sv._model.items()] == ["Beta", "Alpha"]
+
+
+def test_client_sort_handles_date_created(qapp, monkeypatch):
+    # _resort_items_by_article passes date sorts through (server-order
+    # trust); the client sorter used on unsorted feeds must handle them.
+    sv = _make_unsorted_view(monkeypatch)
+    sv._sort_by = "DateCreated,SortName"
+    sv._model.set_items([{"Id": "s1", "Name": "New", "DateCreated": "2026-06-01T00:00:00Z"}])
+    sv._on_page_loaded(
+        {"Items": [{"Id": "s2", "Name": "Old", "DateCreated": "2025-01-01T00:00:00Z"}]},
+        sv._load_gen,
+    )
+    assert [it["Name"] for it in sv._model.items()] == ["Old", "New"]
+
+
+def test_unsorted_feed_dedup_still_applies(qapp, monkeypatch):
+    sv = _make_unsorted_view(monkeypatch)
+    sv._model.set_items([{"Id": "s1", "Name": "Beta"}])
+    sv._on_page_loaded(
+        {"Items": [{"Id": "s1", "Name": "Beta"}, {"Id": "s2", "Name": "Alpha"}]},
+        sv._load_gen,
+    )
+    assert [it["Name"] for it in sv._model.items()] == ["Alpha", "Beta"]

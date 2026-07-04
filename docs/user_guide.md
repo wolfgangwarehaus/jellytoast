@@ -52,15 +52,26 @@ at the cast position.
 
 ## Settings
 
-- **General** — autostart at login (Linux), home destination, minimize-to-tray, mini-player keep-above.
-- **Account** — server URL, username, sign in / sign out, switch backend.
-- **Playback** — ReplayGain mode, smart shuffle, audio output device, bit-perfect options.
-- **Library** — page size, cover prefetch, tile fade animation.
-- **Lyrics** — font size.
-- **Casting** — per-protocol toggles, discovery timing (startup vs on-demand), cast-stream routing.
-- **Downloads** — download root, offline-mode toggle.
-- **Appearance** — theme (dark / light), accent color, blur opacity.
-- **Scrobbling** — ListenBrainz account hookup.
+- **General** — server account (URL, Jellyfin/Navidrome backend, sign in / out),
+  launch at login (Linux / Windows / macOS), mini-player startup + keep-on-top,
+  hide to tray on close, track-change notifications, home page, update checks.
+- **Playback** — streaming quality, ReplayGain / normalization, crossfade,
+  parametric EQ + AutoEQ presets, audio output device, bit-perfect mode +
+  exclusive output + the PipeWire sample-rate config, OS media-key integration.
+- **Casting** — per-protocol toggles (Chromecast / AirPlay / DLNA / Sonos),
+  discovery timing (startup vs on-cast), cast-stream routing.
+- **Downloads** — offline mode, always-stream-from-server preference,
+  completion notifications, library sync, download quality.
+- **Display** — theme family + preset picker, glass opacity, accent color
+  (incl. follow system / pywal), base16 import + watched themes folder, the
+  per-token Colors editor, font family / size, square corners, native window
+  border, tooltips, now-playing info pills.
+- **Hotkeys** — rebindable in-app shortcuts + media keys.
+- **Scrobbling** — ListenBrainz hookup (auto-detects when your server already
+  scrobbles and steps aside).
+
+(Shuffle is always "smart" — the old toggle is gone; there's nothing to
+configure.)
 
 Window geometry, sort order, view mode (grid / list), shuffle / repeat all
 persist automatically.
@@ -109,7 +120,8 @@ panel instead of glass.
 | GNOME, Cinnamon, XFCE, MATE | ❌ no app-controllable blur | near-opaque panel |
 | Hyprland / SwayFX / Wayfire | 〰️ user-configured (see below) | near-opaque unless you add a rule |
 | Windows 11 (22000+) | ✅ Acrylic blur-behind | true frosted glass (`JT_NO_WIN_BLUR` → Mica) |
-| Windows 10 / macOS | ❌ / not yet implemented | near-opaque panel |
+| macOS | ✅ NSVisualEffectView vibrancy | true frosted glass (honors Reduce Transparency) |
+| Windows 10 | ❌ | near-opaque panel |
 
 The boot log and **Settings → Display** explain why on your machine. To force an
 opaque body regardless, launch with `JT_OPAQUE=1` or pick the **Solid dark**
@@ -144,8 +156,8 @@ Beyond the presets:
 
 - **Import…** any base16 `.yaml` scheme (~250 community themes). Mislabeled or
   unreadable schemes are caught at import.
-- **Follow system accent** (jellytoast family, KDE Plasma / GNOME 47+) adopts
-  your desktop accent color, live.
+- **Follow system accent** (jellytoast family; KDE Plasma / GNOME 47+,
+  Windows, macOS) adopts your desktop accent color, live.
 - **Follow pywal / wallust** re-themes jellytoast from `~/.cache/wal/colors.json`
   on every wallpaper change.
 - **`~/.config/jellytoast/themes/`** is a watched drop-folder: any base16

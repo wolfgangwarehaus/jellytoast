@@ -29,6 +29,9 @@ APP="${1:?usage: sign_mas.sh <path-to.app>}"
 IDENTITY="${APPLE_DIST_IDENTITY:?APPLE_DIST_IDENTITY not set}"
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ENT_APP="${DIR}/entitlements.mas.plist"
+# shellcheck disable=SC2034  # kept: pairs with entitlements.child.plist for a
+# future child-process (helper) signing pass; the validated MAS pipeline signs
+# everything with ENT_APP today.
 ENT_CHILD="${DIR}/entitlements.child.plist"
 
 [ -d "${APP}" ] || { echo "error: ${APP} is not a .app bundle" >&2; exit 1; }

@@ -124,7 +124,7 @@ jobs:
     # is forward-compatible only — built on the oldest base we support. (A 20.04
     # base would widen reach to Debian 11 / RHEL-8, but the hosted 20.04 runner
     # is retired; building inside an ubuntu:20.04 container is the documented
-    # option — see packaging/appimage/APPIMAGE_WORKLIST.md.)
+    # option — see the AppImage worklist in jellytoast-ops → packaging/appimage/.)
     runs-on: ubuntu-22.04
     permissions:
       contents: read
@@ -177,9 +177,15 @@ jobs:
       - uses: actions/upload-artifact@v7
         with:
           name: appimage
-          path: |
-            dist/*.AppImage
-            dist/*.AppImage.zsync
+          path: dist/*.AppImage
+          if-no-files-found: error
+      # Separate entry so a missing .zsync fails loudly instead of shipping an
+      # AppImage whose embedded update feed 404s (build_appimage.sh also gates).
+      - uses: actions/upload-artifact@v7
+        with:
+          name: appimage-zsync
+          path: dist/*.AppImage.zsync
+          if-no-files-found: error
       - name: Attest AppImage provenance
         if: github.event_name == 'push'
         uses: actions/attest-build-provenance@v4
@@ -189,7 +195,7 @@ jobs:
   build-windows:
     runs-on: windows-latest
     # Azure Artifact Signing activates only once the secrets exist (see
-    # packaging/windows/azure-signing.md); until then SIGN='false' and both
+    # jellytoast-ops → packaging/windows/azure-signing.md); until then SIGN='false' and both
     # signing steps below are skipped, so releases keep building unsigned.
     env:
       SIGN: ${{ secrets.AZURE_CLIENT_ID != '' }}
@@ -215,7 +221,7 @@ jobs:
       # Skipped until the Azure secrets are configured.
       - name: Code-sign frozen bundle (Azure Artifact Signing)
         if: env.SIGN == 'true'
-        uses: azure/trusted-signing-action@v2
+        uses: azure/trusted-signing-action@c7ab2a863ab5f9a846ddb8265964877ef296ee82 # v2
         with:
           azure-tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           azure-client-id: ${{ secrets.AZURE_CLIENT_ID }}
@@ -244,7 +250,7 @@ jobs:
       # Sign the installer itself (the bundle inside it was signed above).
       - name: Code-sign installer (Azure Artifact Signing)
         if: env.SIGN == 'true'
-        uses: azure/trusted-signing-action@v2
+        uses: azure/trusted-signing-action@c7ab2a863ab5f9a846ddb8265964877ef296ee82 # v2
         with:
           azure-tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           azure-client-id: ${{ secrets.AZURE_CLIENT_ID }}
@@ -315,7 +321,7 @@ jobs:
             min: "15.0"
     runs-on: ${{ matrix.runner }}
     # Signing + notarization activate only once the secrets exist (see
-    # packaging/macos/MACOS_SESSION.md). Until then SIGN/NOTARIZE are 'false'
+    # jellytoast-ops → packaging/macos/MACOS_SESSION.md). Until then SIGN/NOTARIZE are 'false'
     # and those steps are skipped, so releases keep building an UNSIGNED .dmg
     # (locally runnable via right-click → Open; not yet distributable cleanly).
     env:
@@ -529,8 +535,12 @@ jobs:
           # rented Mac: pkgutil shows the full 3rd Party Mac Developer Installer ->
           # WWDR -> Apple Root chain on the resulting .pkg.
           RC=0.27.0
+          # sha256-pinned: this binary is handed the Apple installer cert +
+          # password, so a swapped release asset must fail loudly, not sign.
+          RC_SHA256=163520079cd6ad1427791c792735a6ddfcb8eca0187bbcf0cc0bebfa4a62153d
           curl -fsSL -o /tmp/rc.tar.gz \
             "https://github.com/indygreg/apple-platform-rs/releases/download/apple-codesign%2F${RC}/apple-codesign-${RC}-aarch64-apple-darwin.tar.gz"
+          echo "${RC_SHA256}  /tmp/rc.tar.gz" | shasum -a 256 -c -
           tar xzf /tmp/rc.tar.gz -C /tmp
           # Known path, not `find /tmp` — /tmp is a symlink to /private/tmp and BSD
           # find won't descend a symlink start point (returns nothing).

@@ -27,7 +27,9 @@ make it incompatible with the Qt binding it cannot run without. Keep the
 | Dependency | License |
 | --- | --- |
 | pyatv, soco, pychromecast, keyring, dbus-next, ifaddr | MIT |
+| jeepney, comtypes, windows-toasts, winrt-* (PyWinRT set), pyobjc (macos extra) | MIT |
 | requests, async-upnp-client | Apache-2.0 |
+| aiohttp | Apache-2.0 |
 | cryptography | Apache-2.0 OR BSD-3-Clause |
 | numpy | BSD-3-Clause |
 | zeroconf | LGPL-2.1-or-later |

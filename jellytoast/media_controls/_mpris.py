@@ -337,8 +337,17 @@ class MprisService(QObject):
         self._player: Optional["MprisPlayer"] = None
         self._dbus = None
         self._ready = threading.Event()
+        # Cached queue shape + repeat mode so CanGoNext/CanGoPrevious can
+        # be repeat-aware (queue_can_next_prev) — either signal firing
+        # recomputes from the pair.
+        self._queue_len = 0
+        self._queue_index = -1
+        self._repeat_mode = "off"
 
     def start(self, window=None):
+        # Sanctioned raw-thread exception (see cast/dlna/_loop.py): this
+        # hosts a long-lived D-Bus asyncio loop, not a blocking one-shot —
+        # it can't be a pool job.
         self._thread = threading.Thread(target=self._run_loop, daemon=True)
         self._thread.start()
         # Wait briefly for setup
@@ -436,15 +445,28 @@ class MprisService(QObject):
 
     @Slot(str)
     def _on_repeat(self, mode: str):
+        self._repeat_mode = mode
         if self._player:
             self._schedule(lambda: self._player.update_loop_status(mode))
+            # Repeat affects CanGoNext/CanGoPrevious too (repeat-all wraps),
+            # so recompute against the cached queue shape.
+            self._push_can_next_prev()
 
     @Slot(list, int)
     def _on_queue_changed(self, queue: list, index: int):
-        if self._player:
-            has_next = index < len(queue) - 1
-            has_prev = index > 0
-            self._schedule(lambda: self._player.update_can_next_prev(has_next, has_prev))
+        self._queue_len = len(queue)
+        self._queue_index = index
+        self._push_can_next_prev()
+
+    def _push_can_next_prev(self):
+        if not self._player:
+            return
+        from jellytoast.player_state import queue_can_next_prev
+
+        has_next, has_prev = queue_can_next_prev(
+            self._queue_len, self._queue_index, self._repeat_mode
+        )
+        self._schedule(lambda: self._player.update_can_next_prev(has_next, has_prev))
 
     def stop(self):
         if self._loop:

@@ -71,6 +71,13 @@ Most of these exist to dodge a specific footgun, so please stick to them:
 
 - `docs/SPEC.md` — what the app does today.
 - `packaging/` — build recipes for every platform (AUR, `.deb`, the Windows installer, winget).
+- **Historical design docs:** code comments cite `docs/research/*.md`,
+  `docs/manual_test_plan.md`, and a few sibling design docs that were
+  deliberately removed from the public tree (2026-06 docs trim). They still
+  resolve from git history — e.g.
+  `git show adf1e2e^:docs/research/eq_dsp_v2.md` — and the citations are
+  kept because they carry load-bearing rationale. Don't re-create the
+  files; read them from history.
 
 ## Reporting bugs & requesting features
 

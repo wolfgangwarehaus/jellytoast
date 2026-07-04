@@ -168,15 +168,14 @@ def apply_accent_now(hex_color: str) -> None:
     if not hex_color:
         return
     try:
-        from PySide6.QtCore import QSettings
-
         from jellytoast import icons as _icons
         from jellytoast import ui_helpers as _uih
         from jellytoast.player_state import PlayerBus
         from jellytoast.settings import get_settings
+        from jellytoast.settings_migration import open_qsettings
 
         get_settings().accent_color = hex_color
-        qs = QSettings()
+        qs = open_qsettings()
         for tok in ("ACCENT", "ACCENT_DEEP", "BORDER_ACCENT"):
             qs.remove(f"debug/colors/{tok}")
         _uih.refresh_theme()

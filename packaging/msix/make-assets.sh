@@ -56,4 +56,4 @@ render 600 600 _splash_src2.png
 magick "$out/_splash_src2.png" -background none -gravity center -extent 1240x600 "$out/SplashScreen.scale-200.png"
 rm -f "$out/_splash_src.png" "$out/_splash_src2.png"
 
-echo "Rendered $(ls -1 "$out" | wc -l) assets into $out"
+echo "Rendered $(find "$out" -maxdepth 1 -type f | wc -l) assets into $out"

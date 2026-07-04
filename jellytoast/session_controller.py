@@ -5,7 +5,7 @@ auth-failure, hotkey reinstall, host-switch, session-verify, and
 native-sign-in glue, extracted from ``jellytoast/app.py``.
 
 ``_SessionMixin`` is mixed into ``JellytoastWindow`` — not standalone. Its
-methods reference window state (``self.provider``, ``self.api``,
+methods reference window state (``self.provider``,
 ``self.queue_mgr``, ``self._hotkey_shortcuts``, ``self._library_ids`` …, the
 widget roster in ``_refresh_provider_refs``) and call into the Nav core
 (``self._route_home``) and the LibrarySelection mixin
@@ -194,11 +194,13 @@ class _SessionMixin:
         # from cached _username + _password fields. JellyfinAPI's
         # credentials get cleared too because get_api()'s singleton
         # re-reads settings on next access through any new code path.
+        from jellytoast.jellyfin_api import get_api
         from jellytoast.providers import reset_provider
 
         try:
-            self.api.token = ""
-            self.api.user_id = ""
+            api = get_api()
+            api.token = ""
+            api.user_id = ""
         except Exception:
             pass
         reset_provider()

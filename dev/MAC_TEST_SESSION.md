@@ -1,10 +1,10 @@
 # macOS test session — mission brief (for a Claude running ON the Mac)
 
-You are a Claude Code session running on **august's real Intel MacBook Pro
-(macOS Sequoia 15)**, in the `jellytoast` repo, on branch
-**`feat/macos-native-blur`**. The primary-machine session (on Linux) prepared
-this brief because local memory doesn't sync across machines — everything you
-need is here.
+You are a Claude Code session running on **august's real Intel MacBook Pro**,
+in the `jellytoast` repo, on **whatever branch the delegating PR names**
+(default: `main` — `git checkout main && git pull` first). The primary-machine
+session (on Linux) prepared this brief because local memory doesn't sync
+across machines — everything you need is here.
 
 **jellytoast** is a native PySide6/Qt6 **music-only** client for Jellyfin +
 Subsonic/Navidrome. Branding is always lowercase **jellytoast**. Run with
@@ -49,15 +49,18 @@ TMPDIR=/tmp JT_TEST_BRIDGE=1 python3 -m jellytoast &
 #    wait until the window is up + the library has loaded, then:
 
 # 2) run the harness in the SAME shell:
-TMPDIR=/tmp python3 dev/mac_test_harness.py          # add --dialogs for modal capture
+TMPDIR=/tmp python3 dev/qa_harness.py                # add --dialogs for modal capture
 ```
-Output lands in `/tmp/jt_mac_gallery/` — `manifest.md` plus one PNG per surface.
+Output lands in `/tmp/jt_qa_gallery/` — `manifest.md` plus one PNG per surface.
+(The old `dev/mac_test_harness.py` was deleted — it was a superseded
+near-duplicate still carrying the icon-tint bug qa_harness fixed; qa_harness
+auto-detects macOS `screencapture`.)
 **Read every PNG** and assess against the checklist below. The harness saves +
 restores `theme_mode`, but if you Ctrl-C it mid-run, restore it (see its
 docstring).
 
 If a surface logs `nav … failed`, the navigation call in `SURFACES`
-(`dev/mac_test_harness.py`) is slightly off for this build — open
+(`dev/qa_harness.py`) is slightly off for this build — open
 `jellytoast/nav_controller.py`, find the right `_show_*` method, fix the call,
 re-run. You're fast on real hardware; iterate.
 

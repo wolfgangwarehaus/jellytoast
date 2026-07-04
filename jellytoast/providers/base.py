@@ -84,6 +84,20 @@ class MediaProvider(ABC):
     # parent_id represents "all libraries" for the active provider.
     scopes_music_by_library: bool = True
 
+    # Smart-playlist rule fields whose data this backend can never carry —
+    # a rule on one of these fields can't match a single item, whatever the
+    # operator/value. The rule editor reads this to warn instead of letting
+    # the user build a permanently-empty playlist. (Subsonic: no numeric
+    # rating, no last-played date on adapted items.)
+    unsupported_smart_fields: frozenset = frozenset()
+
+    # Whether get_items(item_type="Audio") honours sort_by/sort_order on
+    # the wire (True: Jellyfin). Subsonic's all-songs feed (search3) has no
+    # sort parameter and returns its own fixed order, so pages arrive
+    # unsorted (False) — the songs surface compensates with a full
+    # client-side re-sort on each appended page.
+    sorts_songs_server_side: bool = True
+
     # ── Identity ──────────────────────────────────────────────────────
 
     @property
@@ -196,7 +210,12 @@ class MediaProvider(ABC):
     def get_artist_albums(self, artist_id: str) -> List[Dict[str, Any]]: ...
 
     @abstractmethod
-    def get_artists(self, limit: int = 200, start_index: int = 0) -> List[Dict[str, Any]]: ...
+    def get_artists(
+        self, limit: int = 200, start_index: int = 0, parent_id: str = ""
+    ) -> List[Dict[str, Any]]:
+        """List album artists; ``parent_id`` scopes to one library (Jellyfin
+        ParentId / Subsonic musicFolderId), "" = all libraries."""
+        ...
 
     @abstractmethod
     def get_playlist_items(self, playlist_id: str) -> List[Dict[str, Any]]: ...

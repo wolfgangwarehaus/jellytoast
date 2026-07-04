@@ -152,13 +152,20 @@ def get_stored_credentials(identifier: str) -> str:
 def store_credentials(identifier: str, credentials: str) -> None:
     from jellytoast.settings import _encrypt_token, get_settings
 
-    get_settings()._s.setValue(_credentials_key(identifier), _encrypt_token(credentials or ""))
+    s = get_settings()
+    s._s.setValue(_credentials_key(identifier), _encrypt_token(credentials or ""))
+    # Credential writes flush immediately: KDE tray-Quit skips the
+    # QSettings destructor flush, and losing a HAP pairing forces the
+    # user back through the whole multi-step PIN flow.
+    s.flush()
 
 
 def forget_credentials(identifier: str) -> None:
     from jellytoast.settings import get_settings
 
-    get_settings()._s.remove(_credentials_key(identifier))
+    s = get_settings()
+    s._s.remove(_credentials_key(identifier))
+    s.flush()
 
 
 # ── Async bridge ─────────────────────────────────────────────────────────

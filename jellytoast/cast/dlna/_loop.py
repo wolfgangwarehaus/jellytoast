@@ -1,13 +1,17 @@
 """Asyncio loop worker thread for the DLNA backend.
 
 ``_DlnaLoopThread`` owns a private ``asyncio`` loop on a dedicated
-daemon thread. This is the codebase's *only* ``threading.Thread``
-exception to the "no raw threads, use ``jellytoast.async_io``" rule:
-the worker isn't blocking the Qt thread, it's hosting an asyncio loop
-the rest of the DLNA module submits work to. ``async-upnp-client`` is
-asyncio-native and jellytoast uses no asyncio elsewhere, so the
-controller carves out one long-lived loop here. See the package
-docstring (``__init__.py``) for the full rationale.
+daemon thread — a sanctioned exception to the "no raw threads, use
+``jellytoast.async_io``" rule: the worker isn't blocking the Qt thread,
+it's hosting an asyncio loop the rest of the DLNA module submits work
+to. ``async-upnp-client`` is asyncio-native and jellytoast uses no
+asyncio elsewhere, so the controller carves out one long-lived loop
+here. The other sanctioned ``threading.Thread`` sites (each structurally
+unable to be a pool job) are: ``media_controls/_mpris.py`` (long-lived
+D-Bus asyncio loop, same shape as this one), ``cast_proxy.py``
+(``serve_forever`` HTTP loop), ``autostart/_msix.py`` (COM MTA apartment
+thread), and ``credentials.py`` (keyring warm — rationale in place).
+See the package docstring (``__init__.py``) for the full rationale.
 """
 
 from __future__ import annotations

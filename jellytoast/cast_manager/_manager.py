@@ -168,7 +168,14 @@ class CastManager(_ChromecastMixin, _AirplayMixin, _OtherProtocolsMixin):
     def _run_off_thread(self, fn):
         from jellytoast.async_io import run_async
 
-        run_async(fn)
+        # run_async with no on_error swallows a raised SOAP failure
+        # silently — "I turned the volume knob and nothing happened" must
+        # at least leave a trace (cast_toggle_pause routes through
+        # _run_off_thread_result and already handles its outcome).
+        run_async(
+            fn,
+            on_error=lambda e: logger.warning("cast transport call failed: %s", e),
+        )
 
     def sync_cast_paused(self, paused: bool) -> None:
         """Track an externally-observed pause state — e.g. the user paused

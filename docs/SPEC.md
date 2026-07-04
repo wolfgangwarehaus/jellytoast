@@ -198,14 +198,20 @@ All under `jellytoast/jellytoast.conf` via `QSettings`.
 | `ui/autostart` | Mirror of XDG `~/.config/autostart/jellytoast.desktop` |
 | `ui/home_destination` | Top-bar Home destination |
 | `ui/mini_player_keep_above` | KWin-rule "always on top" for the mini player (Wayland-only, opt-in) |
-| `ui/theme_mode` | Theme — dark and light families both ship (`_LIGHT_TOKENS`). Theme mode and accent color both **live-apply** via `PlayerBus.theme_changed`; only `font_scale` needs a restart |
+| `ui/theme_mode` | Theme — dark and light families both ship (`_LIGHT_TOKENS`). Theme mode, accent, and fonts all **live-apply** via `PlayerBus.theme_changed`; only `ui/square_corners` needs a restart |
 | `ui/accent_color` | Hex accent override (`#967de1` default) — live-applied via `PlayerBus.theme_changed` |
+| `ui/theme_family` | Active theme family/preset (Catppuccin, Dracula, Gruvbox, Nord, … or a base16/folder import) — 0.1.7 theme picker |
+| `ui/preset_glass_alpha` | Per-family glass-opacity override (0 = preset default; preset-aware caps on Windows/macOS) |
+| `ui/follow_system_accent` | Adopt the desktop accent color live (KDE / GNOME 47+ / Windows / macOS) |
+| `ui/follow_pywal` | Re-theme from `~/.cache/wal/colors.json` (pywal / wallust, Linux) |
+| `ui/square_corners` | Square-corner chrome toggle (restart-required) |
+| `ui/font_family` | UI font override — live-applies with a 10 s revert dialog (0.1.6) |
 | `ui/shuffle_queue_size` | Tracks pulled by "Shuffle library" (default 100, clamped 10–1000) |
 | `ui/library_cover_prefetch` | Background-fetch covers after render (default on) |
 | `ui/library_view_mode` | `grid` or `list` |
 | `ui/library_tile_fade` | 180 ms cover fade-in (default on) |
 | `ui/library_sort_by`, `ui/library_sort_order` | Library sort key + direction |
-| `ui/lyrics_font_size`, `ui/font_scale` | `small / default / large / largest` (font_scale needs restart) |
+| `ui/lyrics_font_size`, `ui/font_scale` | `small / default / large / largest` (both live-apply since 0.1.6) |
 | `playback/volume`, `playback/repeat`, `playback/shuffle` | Transport state |
 | `playback/audio_quality` | `original` or kbps string |
 | `playback/download_quality` | Quality for downloaded copies (independent) |
@@ -242,14 +248,27 @@ autostart (`autostart/_windows.py`), toast notifications
 (`taskbar.py`), prevent-sleep-during-playback (`power/`, cross-platform),
 and single-instance window foregrounding.
 
+**Working today (macOS, shipped 0.1.4–0.1.7):** signed + notarized `.dmg`
+for Apple Silicon (Sonoma 14+) and Intel (Ventura 13+); a Mac App Store
+build auto-uploads to App Store Connect on every release.
+- Native frosted glass via `NSVisualEffectView` vibrancy
+  (`blur/_macos.py`, honors Reduce Transparency), integrated titlebar,
+  native menu bar + Dock menu.
+- Now Playing / hardware media keys via `MPNowPlayingInfoCenter`
+  (`media_controls/_macos.py`), Notification Center notifications,
+  launch-at-login (`autostart/_macos.py`; SMAppService in the sandboxed
+  MAS build), Keychain credentials, system-accent follow (0.1.7).
+
 **Scaffolded but not implemented:**
 - Windows `keep_above` for the mini player falls back to Qt's native
   `WindowStaysOnTopHint` (no OS-level rule needed off KDE Wayland).
-- macOS OS-integration backends (NowPlaying via pyobjc).
 - Custom Cast receiver app (would surface "jellytoast" instead of "Default Media Receiver") — deferred.
-- Packaging is **published-pending**: the deb, Windows installer, AUR
-  `PKGBUILD`, and winget manifests all exist in `packaging/`; AUR/winget/PyPI
-  submissions are post-release manual steps.
+
+**Packaging is LIVE and automated:** one `dev/cut_release.sh X.Y.Z --push`
+builds a draft GitHub release (`.deb`, AppImage, Windows setup + portable,
+macOS `.dmg` ×2, MAS `.pkg`, wheel/sdist, SHA256SUMS); publishing fans out
+automatically to PyPI, winget, and the Microsoft Store (AUR dormant
+pending registration).
 
 > **Shipped since this list was last accurate (corrected 2026-05-28 audit):**
 > the items that used to sit under an "engine built, no UI" caveat all now
@@ -266,5 +285,5 @@ and single-instance window foregrounding.
 > - **Hotkey rebinding** — Settings → Hotkeys is a live `QKeySequenceEdit`
 >   per row with per-row reset + conflict warning (no longer read-only).
 > - **Light theme** — a full `_LIGHT_TOKENS` family ships alongside the dark
->   themes; theme mode and accent both **live-apply** (only `font_scale`
->   still needs a restart).
+>   themes; theme mode, accent, and fonts (family + size, 0.1.6) all
+>   **live-apply** — only the square-corners toggle needs a restart.

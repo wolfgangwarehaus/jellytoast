@@ -85,6 +85,12 @@ class _LibrarySelectionMixin:
                 "loading all music for now",
                 len(ids),
             )
+            # The checkboxes claim a filter that isn't applied — say so in
+            # the UI too, not just the log. (getattr: tests drive this
+            # resolver on bare stubs without the window surface.)
+            warn = getattr(self, "_warn_multi_subset_degrade", None)
+            if warn is not None:
+                warn(len(ids))
         # 'all' (or the not-yet-merged subset): whole music library.
         if not getattr(self.provider, "scopes_music_by_library", True):
             return ""  # Subsonic: empty parent = union of all folders
@@ -92,6 +98,28 @@ class _LibrarySelectionMixin:
         # this is only the FIRST view (no union parent) — see the docstring;
         # the multi-view union is the Phase 2 follow-up.
         return self._resolve_library_id("music")
+
+    def _warn_multi_subset_degrade(self, n: int) -> None:
+        """Transient toast when a partial multi-library selection degrades
+        to 'all', once per distinct subset per session — the dropdown's
+        checkboxes otherwise silently lie about what's on screen."""
+        from jellytoast import library_selection as _ls
+
+        key = frozenset(_ls.selected_ids())
+        seen = getattr(self, "_multi_subset_warned", None)
+        if seen is None:
+            seen = self._multi_subset_warned = set()
+        if key in seen or not getattr(self, "isVisible", lambda: False)():
+            return
+        seen.add(key)
+        from jellytoast.toast import show_toast
+
+        show_toast(
+            self,
+            f"Showing all libraries — filtering to {n} selected libraries "
+            "isn't supported yet.",
+            bottom_margin=128,
+        )
 
     def _refresh_library_selection(self):
         """Re-read the server's music libraries into the selection state

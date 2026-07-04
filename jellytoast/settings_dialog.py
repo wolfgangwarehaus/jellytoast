@@ -3871,11 +3871,10 @@ class SettingsDialog(QDialog):
             f"border-radius: {rad(8)}px; background: {bg};"
         )
 
-    # ── Page: Scrobbling (placeholder) ─────────────────────────────────
-    # Stub for the future Last.fm + ListenBrainz integration. Most
-    # surveyed players have a Scrobbling settings page; we put the
-    # nav slot in now so it's discoverable and so adding the actual
-    # forms later doesn't require navigation churn.
+    # ── Page: Scrobbling ────────────────────────────────────────────────
+    # ListenBrainz is fully live (token validate, server-scrobble
+    # detection, offline queue). The Last.fm section is built but hidden
+    # until an API key ships (lastfm.is_configured() gates it).
     def _build_scrobbling(self) -> QWidget:
         from jellytoast.scrobble import lastfm as _lastfm
 
@@ -4897,9 +4896,9 @@ class SettingsDialog(QDialog):
         #     checkbox fills + focus rings stay at the previously-
         #     saved override (green) because refresh_theme's
         #     load_persisted_overlays re-applies them.
-        from PySide6.QtCore import QSettings
+        from jellytoast.settings_migration import open_qsettings
 
-        _qs = QSettings()
+        _qs = open_qsettings()
         for _tok in ("ACCENT", "ACCENT_DEEP", "BORDER_ACCENT"):
             _qs.remove(f"debug/colors/{_tok}")
         # 2. Refresh module-level theme constants (the ACCENT family) +

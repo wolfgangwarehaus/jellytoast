@@ -29,12 +29,15 @@ truncating to junk JSON.
 from __future__ import annotations
 
 import json
+import logging
 import os
 import threading
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 from PySide6.QtCore import QStandardPaths
+
+logger = logging.getLogger(__name__)
 
 _QUEUE_FILE = "scrobble_queue.json"
 
@@ -53,13 +56,28 @@ def _path() -> Path:
 
 
 def _load_raw() -> List[Dict[str, Any]]:
+    items = _load_for_update()
+    return items if items is not None else []
+
+
+def _load_for_update() -> Optional[List[Dict[str, Any]]]:
+    """Load for a read-modify-write cycle. Returns ``None`` when the file
+    EXISTS but can't be READ (transient I/O) — mutators must skip their
+    rewrite in that case, or a momentary read failure turns into
+    ``_save_raw([])`` and wipes every pending scrobble (the exact loss
+    this queue exists to prevent). Corrupt JSON still returns ``[]``:
+    that data is already gone, so overwriting loses nothing."""
     p = _path()
     if not p.exists():
         return []
     try:
         with open(p, encoding="utf-8") as f:
             data = json.load(f)
-    except Exception:
+    except OSError as e:
+        logger.warning("scrobble queue unreadable (transient?) — skipping update: %s", e)
+        return None
+    except Exception as e:
+        logger.warning("scrobble queue corrupt — resetting: %s", e)
         return []
     if not isinstance(data, list):
         return []
@@ -73,7 +91,10 @@ def _save_raw(items: List[Dict[str, Any]]) -> None:
         with open(tmp, "w", encoding="utf-8") as f:
             json.dump(items, f)
         os.replace(tmp, p)
-    except Exception:
+    except Exception as e:
+        # A failed write silently drops queued offline scrobbles — the
+        # one thing this file exists to prevent — so it always logs.
+        logger.warning("scrobble queue write failed: %s", e)
         try:
             tmp.unlink(missing_ok=True)
         except Exception:
@@ -90,7 +111,9 @@ def add(service: str, record: Dict[str, Any]) -> None:
         return
     entry = {"service": service, **record}
     with _lock:
-        items = _load_raw()
+        items = _load_for_update()
+        if items is None:
+            return  # unreadable queue file — don't rewrite it from empty
         items.append(entry)
         _save_raw(items)
 
@@ -129,7 +152,9 @@ def remove(service: str, count: int = 0, records: "List[Dict[str, Any]] | None" 
 
         want = Counter(json.dumps(r, sort_keys=True, default=str) for r in records)
         with _lock:
-            items = _load_raw()
+            items = _load_for_update()
+            if items is None:
+                return  # unreadable — retry next flush rather than wipe
             kept: List[Dict[str, Any]] = []
             removed = False
             for it in items:
@@ -146,7 +171,9 @@ def remove(service: str, count: int = 0, records: "List[Dict[str, Any]] | None" 
     if count <= 0:
         return
     with _lock:
-        items = _load_raw()
+        items = _load_for_update()
+        if items is None:
+            return  # unreadable — retry next flush rather than wipe
         kept: List[Dict[str, Any]] = []
         dropped = 0
         for it in items:

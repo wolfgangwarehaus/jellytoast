@@ -56,6 +56,11 @@ class WindowsMediaControlsService(QObject):
         self._token = None
         self._duration_ms = 0
         self._last_timeline_ms = -10_000
+        # Queue shape + repeat mode cache for repeat-aware Next/Prev
+        # (queue_can_next_prev) — either signal recomputes from the pair.
+        self._queue_len = 0
+        self._queue_index = -1
+        self._repeat_mode = "off"
         self._button_pressed.connect(
             self._on_button, Qt.ConnectionType.QueuedConnection
         )
@@ -147,6 +152,9 @@ class WindowsMediaControlsService(QObject):
         bus.position_updated.connect(self._on_position)
         bus.duration_set.connect(self._on_duration)
         bus.queue_changed.connect(self._on_queue_changed)
+        # Repeat affects Next/Prev availability (repeat-all wraps), so
+        # track it alongside the queue shape — mirrors _mpris.
+        bus.repeat_changed.connect(self._on_repeat_changed)
 
     @Slot(object)
     def _on_started(self, np):
@@ -247,14 +255,29 @@ class WindowsMediaControlsService(QObject):
         """Grey out the flyout / lock-screen Next/Prev buttons at the queue
         boundaries. Without this they stay hard-enabled (set once at init),
         so the OS shows them active on a single-track queue or at either end.
-        Index-based, mirroring the MPRIS CanGoNext/CanGoPrevious handler
-        (_mpris._on_queue_changed) for cross-platform parity; an empty queue
-        (index < 0) disables both."""
+        Repeat-aware via queue_can_next_prev (mirrors _mpris) — with
+        repeat-all on, Next wraps from the last track, so it stays enabled;
+        an empty queue (index < 0) disables both."""
+        self._queue_len = len(queue)
+        self._queue_index = index
+        self._push_can_next_prev()
+
+    @Slot(str)
+    def _on_repeat_changed(self, mode: str):
+        self._repeat_mode = mode
+        self._push_can_next_prev()
+
+    def _push_can_next_prev(self):
         if self._smtc is None:
             return
+        from jellytoast.player_state import queue_can_next_prev
+
+        has_next, has_prev = queue_can_next_prev(
+            self._queue_len, self._queue_index, self._repeat_mode
+        )
         try:
-            self._smtc.is_next_enabled = index < len(queue) - 1
-            self._smtc.is_previous_enabled = index > 0
+            self._smtc.is_next_enabled = has_next
+            self._smtc.is_previous_enabled = has_prev
         except Exception as e:  # pragma: no cover — Windows-only
             logger.debug("SMTC queue-position update failed: %s", e)
 

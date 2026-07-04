@@ -111,6 +111,18 @@ class SubsonicProvider(MediaProvider):
     # to keep the all/both case a single unfiltered round-trip.
     scopes_music_by_library = False
 
+    # The all-songs feed (search3, see _get_songs) has no sort parameter —
+    # get_items' sort_by/sort_order never reach the wire, so the songs
+    # surface must sort client-side across pages.
+    sorts_songs_server_side = False
+
+    # Smart-playlist fields with no data on this backend: adapted items
+    # carry no CommunityRating (Subsonic ratings are the binary star —
+    # smart_rule_eval treats None as non-matching) and _adapt_song
+    # deliberately omits LastPlayedDate. Rules on these fields would build
+    # permanently-empty playlists; the editor warns.
+    unsupported_smart_fields = frozenset({"rating", "last_played"})
+
     def __init__(self):
         self.settings = get_settings()
         self.session = requests.Session()
@@ -523,6 +535,15 @@ class SubsonicProvider(MediaProvider):
             # deliberately absent — a `last_played` rule simply never
             # matches on Subsonic (documented in smart_rule_schema).
             "DateCreated": s.get("created"),
+            # MusicBrainz recording id (Navidrome/OpenSubsonic surface it on
+            # the raw song), projected into the Jellyfin ProviderIds shape so
+            # consumers (scrobble MBID lookup) read ONE path on both backends
+            # instead of peeking into the private _subsonic_raw stash.
+            "ProviderIds": (
+                {"MusicBrainzTrack": s["musicBrainzId"]}
+                if isinstance(s.get("musicBrainzId"), str) and s.get("musicBrainzId")
+                else {}
+            ),
             "UserData": {
                 "IsFavorite": bool(s.get("starred")),
                 "PlayCount": s.get("playCount", 0),
@@ -1145,8 +1166,13 @@ class SubsonicProvider(MediaProvider):
                     "submission": "true",
                 },
             )
-        except Exception:
-            pass
+        except Exception as e:
+            # No-throw contract, but never log-free: on Subsonic this call
+            # IS the play-count write and the server-side Last.fm /
+            # ListenBrainz forward (in-app LB is gated off when the server
+            # scrobbles) — a swallowed failure is an unrecoverable, invisible
+            # lost scrobble with no queue/retry behind it.
+            logger.warning("scrobble submission failed for %s: %s", item_id, e)
 
     def mark_played(self, item_id: str) -> None:
         """Subsonic auto-marks played from the scrobble report; no
@@ -1162,8 +1188,10 @@ class SubsonicProvider(MediaProvider):
         op = "star" if favorite else "unstar"
         try:
             self._request(op, {"id": item_id})
-        except Exception:
-            pass
+        except Exception as e:
+            # The heart flips optimistically in the UI — a silent miss
+            # leaves it diverged from the server with nothing in the log.
+            logger.warning("%s failed for %s: %s", op, item_id, e)
 
     def get_lyrics(self, item_id: str) -> Optional[Dict[str, Any]]:
         """Fetch lyrics via OpenSubsonic's getLyricsBySongId, projected

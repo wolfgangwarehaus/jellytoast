@@ -24,7 +24,7 @@ import logging
 import threading
 from typing import Any, Callable, Optional
 
-from PySide6.QtCore import QObject, QRunnable, QThreadPool, Signal
+from PySide6.QtCore import QCoreApplication, QObject, QRunnable, QThread, QThreadPool, Signal
 from PySide6.QtNetwork import QNetworkAccessManager
 
 logger = logging.getLogger(__name__)
@@ -46,6 +46,7 @@ cold_import_lock = threading.Lock()
 # ── QNetworkAccessManager singleton ─────────────────────────────────────────
 
 _qnam: Optional[QNetworkAccessManager] = None
+_qnam_lock = threading.Lock()
 
 
 def get_qnam() -> QNetworkAccessManager:
@@ -61,13 +62,26 @@ def get_qnam() -> QNetworkAccessManager:
     """
     global _qnam
     if _qnam is None:
-        _qnam = QNetworkAccessManager()
+        with _qnam_lock:
+            if _qnam is None:
+                app = QCoreApplication.instance()
+                if app is not None and QThread.currentThread() is not app.thread():
+                    # Nothing enforces the GUI-thread-only contract above —
+                    # a worker-thread first call would give QNAM worker
+                    # affinity and every later GUI-thread use becomes a
+                    # cross-thread hazard. Loud trace, not a crash.
+                    logger.warning(
+                        "get_qnam() first called OFF the GUI thread — QNAM "
+                        "affinity will be wrong (see docstring)"
+                    )
+                _qnam = QNetworkAccessManager()
     return _qnam
 
 
 # ── Shared thread pool for blocking work ────────────────────────────────────
 
 _pool: Optional[QThreadPool] = None
+_pool_lock = threading.Lock()
 
 
 def get_thread_pool() -> QThreadPool:
@@ -89,8 +103,11 @@ def get_thread_pool() -> QThreadPool:
     """
     global _pool
     if _pool is None:
-        _pool = QThreadPool()
-        _pool.setMaxThreadCount(8)
+        with _pool_lock:
+            if _pool is None:
+                pool = QThreadPool()
+                pool.setMaxThreadCount(8)
+                _pool = pool
     return _pool
 
 

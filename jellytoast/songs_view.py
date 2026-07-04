@@ -40,6 +40,7 @@ from PySide6.QtGui import (
 )
 from PySide6.QtWidgets import (
     QAbstractItemView,
+    QApplication,
     QFrame,
     QListView,
     QStackedWidget,
@@ -983,12 +984,29 @@ class SongsView(QWidget):
             self._tail_reached = True
             self._save_cache_async(self._model.items(), True)
             return
-        # Per-page article-strip cluster fix. Mild cross-page artifact
-        # possible (an article-stripped "The X" in page N could sort
-        # before items in page N-1) but corrected on next launch's
-        # full-list re-sort from the cache.
-        items = self._resort_items_by_article(items)
-        self._model.append_items(items)
+        if getattr(self.api, "sorts_songs_server_side", True):
+            # Per-page article-strip cluster fix. Mild cross-page artifact
+            # possible (an article-stripped "The X" in page N could sort
+            # before items in page N-1) but corrected on next launch's
+            # full-list re-sort from the cache.
+            items = self._resort_items_by_article(items)
+            self._model.append_items(items)
+        else:
+            # The provider's song feed arrives in ITS OWN fixed order
+            # (Subsonic search3 has no sort parameter), so a page-local
+            # sort can only ever be right within one page — the user's
+            # sort held per 500-track chunk, not globally. Merge and
+            # re-sort the full accumulated list. The model reset shifts
+            # row numbers, so the row-keyed cover bookkeeping resets with
+            # it; the scroll offset is restored so a background page
+            # landing mid-scroll doesn't yank the viewport.
+            merged = self._client_sort_items(self._model.items() + items)
+            bar = self._view.verticalScrollBar()
+            pos = bar.value()
+            self._model.set_items(merged)
+            self._covers_loaded.clear()
+            bar.setValue(pos)
+            self._invalidate_smooth_scroll()
         # Tail = the SERVER returned a short page. Measured on the raw count,
         # not the post-dedup count, so a full page with a few incidental
         # overlaps still schedules the next fetch (and Jellyfin, whose pages
@@ -1141,6 +1159,61 @@ class SongsView(QWidget):
             return sorted(items, key=key2, reverse=descending)
         return items
 
+    def _client_sort_items(self, items: "List[Dict]") -> "List[Dict]":
+        """Full client-side sort for providers whose song feed can't be
+        server-sorted (``sorts_songs_server_side`` False — Subsonic's
+        search3 returns a fixed order). Unlike ``_resort_items_by_article``
+        (which passes date sorts through, trusting the server's order),
+        this must handle EVERY ``LIBRARY_SORT_OPTIONS`` key itself. Items
+        missing the key cluster together in stable (feed) order —
+        notably "Recently played": Subsonic items carry no last-played
+        date, so that sort can't be honoured and the list stays in feed
+        order rather than pretending."""
+        first_key = (self._sort_by or "").split(",", 1)[0]
+        if first_key in ("", "SortName", "AlbumArtist"):
+            return self._resort_items_by_article(items)
+        descending = self._sort_order == "Descending"
+        if first_key == "PremiereDate":
+
+            def key(it: dict):
+                return (
+                    it.get("ProductionYear") or 0,
+                    article_stripped_key(it.get("Album", "") or ""),
+                    it.get("ParentIndexNumber") or 0,
+                    it.get("IndexNumber") or 0,
+                )
+
+        elif first_key == "DateCreated":
+
+            def key(it: dict):
+                # ISO-8601 strings — lexical order IS chronological order.
+                return (
+                    it.get("DateCreated") or "",
+                    article_stripped_key(it.get("SortName") or it.get("Name") or ""),
+                )
+
+        elif first_key == "DatePlayed":
+
+            def key(it: dict):
+                ud = it.get("UserData") or {}
+                return (
+                    ud.get("LastPlayedDate") or "",
+                    article_stripped_key(it.get("SortName") or it.get("Name") or ""),
+                )
+
+        else:
+            return items
+        return sorted(items, key=key, reverse=descending)
+
+    def _invalidate_smooth_scroll(self):
+        """Programmatic scroll jump → drop the wheel filter's cached
+        target for our bar, or the next wheel notch snaps the view back
+        (the SmoothScrollFilter invariant)."""
+        app = QApplication.instance()
+        sf = getattr(app, "_smooth_scroll", None)
+        if sf is not None:
+            sf.invalidate(self._view.verticalScrollBar())
+
     @staticmethod
     def _safe_sort(sort_by: str) -> str:
         """Wire-side sort key. We ask the server for the PRIMARY key only
@@ -1168,7 +1241,11 @@ class SongsView(QWidget):
         if gen is not None and gen != self._load_gen:
             return
         items = (resp or {}).get("Items") or []
-        items = self._resort_items_by_article(items)
+        if getattr(self.api, "sorts_songs_server_side", True):
+            items = self._resort_items_by_article(items)
+        else:
+            # Server can't sort the feed — apply the user's sort in full.
+            items = self._client_sort_items(items)
         # The big perf win: single model reset replaces the chunked
         # widget-build the old implementation did over ~20 ticks.
         self._model.set_items(items)

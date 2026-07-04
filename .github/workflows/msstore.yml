@@ -82,11 +82,25 @@ jobs:
       # --- OPTION B: attach the .msix to the release for a manual Partner Center upload ---
       - name: Attach MSIX to the release
         run: gh release upload "${{ steps.pack.outputs.tag }}" "${{ steps.pack.outputs.msix }}" --clobber
+      # This job runs AFTER the release published (and after draft-release
+      # generated SHA256SUMS), so the .msix was the one asset users couldn't
+      # verify — append its hash to the existing SHA256SUMS and re-upload.
+      - name: Add the MSIX hash to SHA256SUMS
+        shell: pwsh
+        run: |
+          $tag = "${{ steps.pack.outputs.tag }}"
+          $msix = "${{ steps.pack.outputs.msix }}"
+          gh release download $tag --pattern SHA256SUMS --output SHA256SUMS --clobber
+          $hash = (Get-FileHash $msix -Algorithm SHA256).Hash.ToLower()
+          # Idempotent: drop any prior line for this file, then append.
+          $lines = Get-Content SHA256SUMS | Where-Object { $_ -notmatch [regex]::Escape($msix) }
+          $lines + "$hash  $msix" | Set-Content SHA256SUMS -Encoding ascii
+          gh release upload $tag SHA256SUMS --clobber
 
       # --- OPTION A: auto-submit, only once the Company-account secrets exist ---
       - name: Configure Microsoft Store CLI
         if: env.HAVE_CREDS == 'true'
-        uses: microsoft/microsoft-store-apppublisher@v1.3
+        uses: microsoft/microsoft-store-apppublisher@b76227f539d68e6465f79bbbc82ed92f61081aa4 # v1.3
       - name: Submit package update to the Store
         if: env.HAVE_CREDS == 'true'
         shell: pwsh

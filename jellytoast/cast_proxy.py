@@ -461,6 +461,9 @@ class CastProxy:
             )
         self._server = server
         self._bound_ip = bound
+        # Sanctioned raw-thread exception (see cast/dlna/_loop.py): a
+        # serve_forever HTTP loop lives for the app's lifetime — parking it
+        # on the 8-slot shared pool would permanently eat a slot.
         self._thread = threading.Thread(
             target=server.serve_forever, name="cast-proxy", daemon=True
         )

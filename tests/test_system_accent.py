@@ -24,8 +24,11 @@ def test_unset_or_malformed_returns_none(qapp):
 
 def test_apply_accent_now_sets_accent_and_cascades(qapp, isolated_settings):
     import jellytoast.color_tokens as ct
+    from jellytoast import icons as _icons
+    from jellytoast import ui_helpers as _uih
     from jellytoast.system_accent import apply_accent_now
 
+    prev_accent = isolated_settings.accent_color
     try:
         apply_accent_now("#ff8800")
         assert ct.get_current("ACCENT") == "#ff8800"
@@ -33,7 +36,15 @@ def test_apply_accent_now_sets_accent_and_cascades(qapp, isolated_settings):
         assert ct.get_current("ACCENT_DEEP").startswith("#")
         assert isolated_settings.accent_color == "#ff8800"
     finally:
+        # apply_accent_now mutates the ui_helpers/icons module constants
+        # via refresh_theme; reset_all alone leaves them at #ff8800 for
+        # the rest of the worker (the order-dependent
+        # test_no_override_for_token_leaves_default flake). Restore the
+        # setting, then re-derive the constants from it.
         ct.reset_all()
+        isolated_settings.accent_color = prev_accent
+        _uih.refresh_theme()
+        _icons.refresh_theme()
 
 
 def test_follower_start_is_safe_without_portal(qapp, isolated_settings):

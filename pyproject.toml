@@ -75,7 +75,8 @@ dependencies = [
     # low-level network primitives that don't ship there. macOS / Linux
     # only.
     # pyatv>=0.17 ships the modern API the LG-webOS compat shim assumes
-    # (per docs/research/airplay2.md). Older 0.14.x is broken for our use.
+    # (per the AirPlay 2 research note — git show adf1e2e^:docs/research/airplay2.md).
+    # Older 0.14.x is broken for our use.
     # Upper-capped at <1.0: jellytoast/airplay2.py drives the PRIVATE
     # `pyatv.support.rtsp.RtspSession` API (the LG /setProperty + /rate
     # error-tolerance patch), which has no stability guarantee — a 1.x
@@ -208,7 +209,7 @@ jellytoast = "jellytoast.app:main"
 Homepage = "https://github.com/wolfgangwarehaus/jellytoast"
 Repository = "https://github.com/wolfgangwarehaus/jellytoast"
 Issues = "https://github.com/wolfgangwarehaus/jellytoast/issues"
-Changelog = "https://github.com/wolfgangwarehaus/jellytoast/blob/main/docs/CHANGELOG.md"
+Changelog = "https://github.com/wolfgangwarehaus/jellytoast/blob/main/CHANGELOG.md"
 
 # Flat layout: everything (including the app entry, jellytoast/app.py)
 # lives in the single `jellytoast` package tree, so the wheel ships ONE

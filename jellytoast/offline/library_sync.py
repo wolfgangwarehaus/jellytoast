@@ -134,8 +134,10 @@ def sync_library(
         try:
             from jellytoast.settings import get_settings
             get_settings().library_download_expected_total = expected_tracks
-        except Exception:
-            pass
+        except Exception as e:
+            # A silent miss re-creates the exact ghost "downloading X of Y"
+            # stale-state bug this flag exists to prevent — always log.
+            logger.warning("couldn't persist library-download total: %s", e)
 
     # Phase 2: enqueue. Backpressured against
     # ``manager._planning_in_flight`` so the planning queue never grows
@@ -190,8 +192,9 @@ def sync_library(
                 _gs = get_settings()
                 _gs.library_download_in_progress = False
                 _gs.library_download_expected_total = 0
-            except Exception:
-                pass
+            except Exception as e:
+                # Failing to clear = ghost aggregate on next launch.
+                logger.warning("couldn't clear library-download flags: %s", e)
 
     if on_progress is not None:
         try:

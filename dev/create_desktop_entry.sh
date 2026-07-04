@@ -32,8 +32,8 @@ EOF
 cat > "$DESKTOP_FILE" << EOF
 [Desktop Entry]
 Name=jellytoast (dev)
-GenericName=Jellyfin Media Player
-Comment=Audio-first Jellyfin desktop client with mini player and casting
+GenericName=Jellyfin / Subsonic Music Player
+Comment=Music player for Jellyfin and Subsonic with mini player and casting
 # Launch under ghostty so the dev terminal shows the live log stream
 # ([jellytoast] connectivity / boot-auth / etc). --wait-after-command
 # keeps the terminal open after jellytoast quits so any final error
@@ -45,8 +45,8 @@ Path=$SCRIPT_DIR
 Icon=jellytoast
 Terminal=false
 Type=Application
-Categories=AudioVideo;Audio;Video;Player;
-Keywords=jellyfin;music;media;player;chromecast;airplay;
+Categories=AudioVideo;Audio;Player;
+Keywords=jellyfin;subsonic;navidrome;music;media;player;chromecast;airplay;
 StartupNotify=true
 # StartupWMClass intentionally omitted: KDE uses it to auto-associate a
 # running window with the bounce sequence, which stops the bounce the
@@ -56,7 +56,9 @@ StartupNotify=true
 # instead, and call _send_startup_notification_remove() (in
 # jellytoast/app.py) once the first content is shown so the bounce
 # lasts the entire load.
-MimeType=audio/mpeg;audio/flac;audio/ogg;audio/x-vorbis+ogg;
+# MimeType intentionally omitted (matches the production .desktop):
+# advertising audio/* made double-clicking a file launch the app and
+# silently ignore the file — jellytoast has no file-open handler.
 EOF
 
 echo "✅ Desktop entry: $DESKTOP_FILE"

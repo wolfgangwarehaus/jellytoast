@@ -70,6 +70,7 @@ TODAY="$(date -u +%Y-%m-%d)"
 NEW_VERSION="$NEW_VERSION" RELEASE_DATE="$TODAY" python3 - <<'PY'
 import os
 import re
+import sys
 from pathlib import Path
 
 new = os.environ["NEW_VERSION"]
@@ -125,7 +126,21 @@ m = re.search(r"\n## \[", rest)  # next version header
 cut = m.start() if m else len(rest)
 body = rest[:cut].strip("\n")
 tail = rest[cut:]
-out = [text[:after], "\n\n", f"## [{new}] — {date}\n"]
+# HTML comments (the release-notes voice guidance) stay under the fresh
+# [Unreleased] heading instead of being snipped into the dated block —
+# 0.1.5 shipped the guidance inside its release-notes body.
+comments = re.findall(r"<!--.*?-->", body, flags=re.S)
+body = re.sub(r"<!--.*?-->\n*", "", body, flags=re.S).strip("\n")
+if not body and os.environ.get("JT_ALLOW_EMPTY_CHANGELOG") != "1":
+    sys.exit(
+        "CHANGELOG [Unreleased] is EMPTY — the GitHub release would silently "
+        "fall back to auto-generated notes. Write the block first, or re-run "
+        "with JT_ALLOW_EMPTY_CHANGELOG=1 to cut anyway."
+    )
+out = [text[:after], "\n"]
+for c in comments:
+    out.append("\n" + c + "\n")
+out.append("\n" + f"## [{new}] — {date}\n")
 if body:
     out.append("\n" + body + "\n")
 out.append(tail if tail.startswith("\n") else "\n" + tail)
@@ -210,11 +225,11 @@ print(f"✓ pyproject, version.py, metainfo, winget, and AUR all agree at {pyv}"
 PY
 
 # ── Commit + annotated tag ──────────────────────────────────────────────
+# winget via the same glob the stamping pass uses — a hand-list here let a
+# stamped-but-uncommitted 4th manifest leave the tree dirty after commit.
 git add pyproject.toml jellytoast/version.py \
   packaging/io.github.wolfgangwarehaus.jellytoast.metainfo.xml CHANGELOG.md \
-  packaging/winget/wolfgangwarehaus.jellytoast.yaml \
-  packaging/winget/wolfgangwarehaus.jellytoast.installer.yaml \
-  packaging/winget/wolfgangwarehaus.jellytoast.locale.en-US.yaml \
+  packaging/winget/*.yaml \
   packaging/aur/PKGBUILD
 git commit -q -m "release: v$NEW_VERSION"
 git tag -a "v$NEW_VERSION" -m "jellytoast v$NEW_VERSION"
