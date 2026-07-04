@@ -595,8 +595,9 @@ class TestCastHandoffNoDoubleScrobble:
 
 class TestMBIDExtraction:
     """#587: _extract_mbid must recover the MusicBrainz recording id from
-    both providers. Jellyfin carries it in ProviderIds; Subsonic surfaces
-    it on the RAW song under _subsonic_raw (the normalized dict drops it)."""
+    both providers through ONE path: ProviderIds. Jellyfin sets it
+    natively; the Subsonic adapter projects Navidrome's ``musicBrainzId``
+    into the same shape (no ``_subsonic_raw`` peeking — parity guard)."""
 
     def test_jellyfin_provider_ids(self):
         np = NowPlaying(item_id="j", raw={"ProviderIds": {"MusicBrainzRecording": "rec-1"}})
@@ -606,12 +607,17 @@ class TestMBIDExtraction:
         np = NowPlaying(item_id="j", raw={"ProviderIds": {"MusicBrainzTrack": "trk-2"}})
         assert mgr_mod._extract_mbid(np) == "trk-2"
 
-    def test_subsonic_from_subsonic_raw(self):
-        # The real Subsonic/Navidrome case: mbid nested under _subsonic_raw.
-        np = NowPlaying(
-            item_id="s",
-            raw={"Id": "s", "_subsonic_raw": {"id": "s", "musicBrainzId": "mb-3"}},
+    def test_subsonic_adapter_projects_provider_ids(self):
+        # The real Subsonic/Navidrome case end-to-end: the adapter lifts the
+        # raw song's musicBrainzId into ProviderIds, and _extract_mbid reads
+        # the SAME path it reads for Jellyfin.
+        from jellytoast.providers.subsonic import SubsonicProvider
+
+        adapted = SubsonicProvider._adapt_song(
+            {"id": "s", "title": "T", "musicBrainzId": "mb-3"}
         )
+        assert adapted["ProviderIds"] == {"MusicBrainzTrack": "mb-3"}
+        np = NowPlaying(item_id="s", raw=adapted)
         assert mgr_mod._extract_mbid(np) == "mb-3"
 
     def test_missing_is_empty(self):

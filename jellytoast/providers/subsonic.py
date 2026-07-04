@@ -116,6 +116,13 @@ class SubsonicProvider(MediaProvider):
     # surface must sort client-side across pages.
     sorts_songs_server_side = False
 
+    # Smart-playlist fields with no data on this backend: adapted items
+    # carry no CommunityRating (Subsonic ratings are the binary star —
+    # smart_rule_eval treats None as non-matching) and _adapt_song
+    # deliberately omits LastPlayedDate. Rules on these fields would build
+    # permanently-empty playlists; the editor warns.
+    unsupported_smart_fields = frozenset({"rating", "last_played"})
+
     def __init__(self):
         self.settings = get_settings()
         self.session = requests.Session()
@@ -528,6 +535,15 @@ class SubsonicProvider(MediaProvider):
             # deliberately absent — a `last_played` rule simply never
             # matches on Subsonic (documented in smart_rule_schema).
             "DateCreated": s.get("created"),
+            # MusicBrainz recording id (Navidrome/OpenSubsonic surface it on
+            # the raw song), projected into the Jellyfin ProviderIds shape so
+            # consumers (scrobble MBID lookup) read ONE path on both backends
+            # instead of peeking into the private _subsonic_raw stash.
+            "ProviderIds": (
+                {"MusicBrainzTrack": s["musicBrainzId"]}
+                if isinstance(s.get("musicBrainzId"), str) and s.get("musicBrainzId")
+                else {}
+            ),
             "UserData": {
                 "IsFavorite": bool(s.get("starred")),
                 "PlayCount": s.get("playCount", 0),

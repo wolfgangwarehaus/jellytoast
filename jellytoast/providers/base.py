@@ -84,6 +84,13 @@ class MediaProvider(ABC):
     # parent_id represents "all libraries" for the active provider.
     scopes_music_by_library: bool = True
 
+    # Smart-playlist rule fields whose data this backend can never carry —
+    # a rule on one of these fields can't match a single item, whatever the
+    # operator/value. The rule editor reads this to warn instead of letting
+    # the user build a permanently-empty playlist. (Subsonic: no numeric
+    # rating, no last-played date on adapted items.)
+    unsupported_smart_fields: frozenset = frozenset()
+
     # Whether get_items(item_type="Audio") honours sort_by/sort_order on
     # the wire (True: Jellyfin). Subsonic's all-songs feed (search3) has no
     # sort parameter and returns its own fixed order, so pages arrive
