@@ -4897,9 +4897,9 @@ class SettingsDialog(QDialog):
         #     checkbox fills + focus rings stay at the previously-
         #     saved override (green) because refresh_theme's
         #     load_persisted_overlays re-applies them.
-        from PySide6.QtCore import QSettings
+        from jellytoast.settings_migration import open_qsettings
 
-        _qs = QSettings()
+        _qs = open_qsettings()
         for _tok in ("ACCENT", "ACCENT_DEEP", "BORDER_ACCENT"):
             _qs.remove(f"debug/colors/{_tok}")
         # 2. Refresh module-level theme constants (the ACCENT family) +

@@ -692,9 +692,9 @@ def _persisted_body_rgb(token: str) -> tuple[int, int, int] | None:
     try:
         import json
 
-        from PySide6.QtCore import QSettings
+        from jellytoast.settings_migration import open_qsettings
 
-        raw = QSettings().value(f"debug/colors/{token}", type=str)
+        raw = open_qsettings().value(f"debug/colors/{token}", type=str)
         if not raw:
             return None
         parsed = json.loads(raw)

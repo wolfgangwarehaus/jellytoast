@@ -387,9 +387,9 @@ def apply_override(name: str, value: Any, *, persist: bool = True) -> None:
     setattr(module, name, value)
     # 2. Persist if requested.
     if persist:
-        from PySide6.QtCore import QSettings
+        from jellytoast.settings_migration import open_qsettings
 
-        QSettings().setValue(_qs_key(name), _serialize(value, token.kind))
+        open_qsettings().setValue(_qs_key(name), _serialize(value, token.kind))
     # 3. Cascade-derive accent-family followers when ACCENT changes.
     if name == "ACCENT":
         _cascade_accent_family(value, persist=persist)
@@ -437,9 +437,9 @@ def _cascade_accent_family(accent_value: Any, *, persist: bool) -> None:
         derived_module = importlib.import_module(derived_token.module)
         setattr(derived_module, derived_name, derived_value)
         if persist:
-            from PySide6.QtCore import QSettings
+            from jellytoast.settings_migration import open_qsettings
 
-            QSettings().setValue(
+            open_qsettings().setValue(
                 _qs_key(derived_name),
                 _serialize(derived_value, derived_token.kind),
             )
@@ -463,10 +463,10 @@ def _reapply_platform_adjustments() -> None:
 
 def reset(name: str) -> None:
     """Remove the override; restore the shipped default."""
-    from PySide6.QtCore import QSettings
+    from jellytoast.settings_migration import open_qsettings
 
     token = TOKENS[name]
-    QSettings().remove(_qs_key(name))
+    open_qsettings().remove(_qs_key(name))
     module = importlib.import_module(token.module)
     setattr(module, name, token.default)
     _reapply_platform_adjustments()
@@ -475,9 +475,9 @@ def reset(name: str) -> None:
 
 def reset_all() -> None:
     """Wipe every override; restore every default."""
-    from PySide6.QtCore import QSettings
+    from jellytoast.settings_migration import open_qsettings
 
-    s = QSettings()
+    s = open_qsettings()
     for name, token in TOKENS.items():
         s.remove(_qs_key(name))
         module = importlib.import_module(token.module)
@@ -490,9 +490,9 @@ def load_persisted_overrides() -> None:
     """Apply every override saved in QSettings. Called once at app
     startup (before any widget is constructed, so its first stylesheet
     sees the overridden values)."""
-    from PySide6.QtCore import QSettings
+    from jellytoast.settings_migration import open_qsettings
 
-    s = QSettings()
+    s = open_qsettings()
     for name, token in TOKENS.items():
         key = _qs_key(name)
         if not s.contains(key):
@@ -602,10 +602,10 @@ def save_palette(name: str) -> None:
     (non-empty, no slashes that would split the QSettings path)."""
     import json as _json
 
-    from PySide6.QtCore import QSettings
+    from jellytoast.settings_migration import open_qsettings
 
     palette = export_palette(name=name)
-    QSettings().setValue(_palette_qs_key(name), _json.dumps(palette))
+    open_qsettings().setValue(_palette_qs_key(name), _json.dumps(palette))
 
 
 def load_palette(name: str) -> int:
@@ -613,9 +613,9 @@ def load_palette(name: str) -> int:
     tokens; raises KeyError if the palette doesn't exist."""
     import json as _json
 
-    from PySide6.QtCore import QSettings
+    from jellytoast.settings_migration import open_qsettings
 
-    s = QSettings()
+    s = open_qsettings()
     key = _palette_qs_key(name)
     if not s.contains(key):
         raise KeyError(name)
@@ -625,9 +625,9 @@ def load_palette(name: str) -> int:
 
 def list_palettes() -> list[str]:
     """Return the names of all saved palettes, sorted."""
-    from PySide6.QtCore import QSettings
+    from jellytoast.settings_migration import open_qsettings
 
-    s = QSettings()
+    s = open_qsettings()
     prefix = "debug/color_palettes/"
     return sorted(
         k[len(prefix):] for k in s.allKeys() if k.startswith(prefix)
@@ -636,9 +636,9 @@ def list_palettes() -> list[str]:
 
 def delete_palette(name: str) -> None:
     """Remove a saved palette. No-op if it doesn't exist."""
-    from PySide6.QtCore import QSettings
+    from jellytoast.settings_migration import open_qsettings
 
-    QSettings().remove(_palette_qs_key(name))
+    open_qsettings().remove(_palette_qs_key(name))
 
 
 # ── Internals ──────────────────────────────────────────────────────────────

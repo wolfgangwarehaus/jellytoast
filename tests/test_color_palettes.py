@@ -24,10 +24,10 @@ def restore_palettes(isolated_settings):
     """Wipe per-token overrides AND named palettes before + after the
     test. Also snapshot every token's live module value and restore
     it so a test that mutates ``ui_helpers.ACCENT`` doesn't leak."""
-    from PySide6.QtCore import QSettings
+    from jellytoast.settings_migration import open_qsettings
 
     def _wipe():
-        s = QSettings()
+        s = open_qsettings()
         # Per-token override store.
         for name in ct.TOKENS:
             s.remove(f"debug/colors/{name}")

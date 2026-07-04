@@ -1528,6 +1528,10 @@ class Settings:
             "scrobble/listenbrainz_token",
             _encrypt_token(v or ""),
         )
+        # Credential writes flush immediately — KDE tray-Quit skips the
+        # QSettings destructor flush (see Settings.flush), and a lost
+        # token silently signs the user out of scrobbling.
+        self.flush()
 
     @property
     def listenbrainz_url(self) -> str:
@@ -1582,6 +1586,8 @@ class Settings:
             "scrobble/lastfm_session_key",
             _encrypt_token(v or ""),
         )
+        # Credential write → immediate flush (tray-Quit loss class).
+        self.flush()
 
     @property
     def lastfm_username(self) -> str:
