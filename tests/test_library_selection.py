@@ -193,7 +193,23 @@ def test_all_libraries_parent_id_jellyfin_uses_first_view(isolated_settings):
     _seed("Music", "Discover")  # ids: lmusic, ldiscover
     prov = _FakeProvider(scopes_by_library=True)  # Jellyfin-like
     assert ls.all_libraries_parent_id(prov) == "lmusic"
+
+
+def test_fetch_plan_all_jellyfin_single_view_scopes_to_it(isolated_settings):
+    _reset()
+    _seed("Music")  # one music view
+    prov = _FakeProvider(scopes_by_library=True)
     assert ls.fetch_plan(prov) == ["lmusic"]
+
+
+def test_fetch_plan_all_jellyfin_multi_view_plans_every_view(isolated_settings):
+    # A 2+-music-view Jellyfin server has no single union parent, so
+    # 'all' must plan every view for a client-side merge — the Phase-1
+    # gap where 'all' silently showed only the first view.
+    _reset()
+    _seed("Music", "Discover")
+    prov = _FakeProvider(scopes_by_library=True)
+    assert ls.fetch_plan(prov) == ["lmusic", "ldiscover"]
 
 
 def test_fetch_plan_single_selection_ignores_provider(isolated_settings):
@@ -205,7 +221,7 @@ def test_fetch_plan_single_selection_ignores_provider(isolated_settings):
     assert ls.fetch_plan(_FakeProvider(False)) == ["ldiscover"]
 
 
-# ── Merge helper (the 3+-library partial-subset path) ──────────────────────
+# ── Union fetch (the multi-folder plan path) ───────────────────────────────
 
 
 def _library_rows():
@@ -216,129 +232,94 @@ def _library_rows():
     return {"la": folder_a, "lb": folder_b}
 
 
-def _make_fetch(data):
+def _make_fetch(data, calls=None):
     def fetch(parent_id, offset, count):
+        if calls is not None:
+            calls.append((parent_id, offset, count))
         rows = data.get(parent_id, [])
         return rows[offset : offset + count]
 
     return fetch
 
 
-def test_merge_paged_globally_sorted_window():
-    data = _library_rows()
-    fetch = _make_fetch(data)
-    key = lambda it: it["Name"]  # noqa: E731
-    page = ls.merge_paged(
-        fetch, ["la", "lb"], start_index=0, limit=4, sort_key=key
+def test_fetch_union_globally_sorted(isolated_settings):
+    fetch = _make_fetch(_library_rows())
+    out = ls.fetch_union(fetch, ["la", "lb"], sort_key=lambda it: it["Name"])
+    assert [it["Name"] for it in out] == [
+        "Apple", "Banana", "Cherry", "Date", "Elder", "Fig",
+    ]
+
+
+def test_fetch_union_reverse(isolated_settings):
+    fetch = _make_fetch(_library_rows())
+    out = ls.fetch_union(
+        fetch, ["la", "lb"], sort_key=lambda it: it["Name"], reverse=True
     )
-    assert [it["Name"] for it in page] == ["Apple", "Banana", "Cherry", "Date"]
-    # Next window continues without gaps or repeats.
-    page2 = ls.merge_paged(
-        fetch, ["la", "lb"], start_index=4, limit=4, sort_key=key
-    )
-    assert [it["Name"] for it in page2] == ["Elder", "Fig"]
+    assert [it["Name"] for it in out] == [
+        "Fig", "Elder", "Date", "Cherry", "Banana", "Apple",
+    ]
 
 
-def test_merge_paged_full_union_no_dupes_no_gaps():
-    data = _library_rows()
-    fetch = _make_fetch(data)
-    key = lambda it: it["Name"]  # noqa: E731
-    collected = []
-    offset = 0
-    # Walk the whole union one page at a time, as the grid cascade would.
-    while True:
-        page = ls.merge_paged(
-            fetch, ["la", "lb"], start_index=offset, limit=2, sort_key=key
-        )
-        if not page:
-            break
-        collected.extend(page)
-        offset += 2
-    names = [it["Name"] for it in collected]
-    assert names == ["Apple", "Banana", "Cherry", "Date", "Elder", "Fig"]
-    assert len(names) == len(set(names))  # no dupes
-
-
-def test_merge_paged_dedupes_shared_ids():
-    # The same album id present in two folders must appear once.
+def test_fetch_union_dedupes_shared_ids(isolated_settings):
     data = {
         "la": [{"Id": "x", "Name": "Shared"}, {"Id": "a1", "Name": "Alpha"}],
         "lb": [{"Id": "x", "Name": "Shared"}, {"Id": "b1", "Name": "Beta"}],
     }
-    fetch = _make_fetch(data)
-    key = lambda it: it["Name"]  # noqa: E731
-    page = ls.merge_paged(fetch, ["la", "lb"], start_index=0, limit=10, sort_key=key)
-    ids = [it["Id"] for it in page]
-    assert ids.count("x") == 1
-    assert [it["Name"] for it in page] == ["Alpha", "Beta", "Shared"]
+    out = ls.fetch_union(_make_fetch(data), ["la", "lb"], sort_key=lambda it: it["Name"])
+    assert [it["Id"] for it in out].count("x") == 1
+    assert [it["Name"] for it in out] == ["Alpha", "Beta", "Shared"]
 
 
-def test_merge_paged_reverse():
-    data = _library_rows()
-    fetch = _make_fetch(data)
-    key = lambda it: it["Name"]  # noqa: E731
-    page = ls.merge_paged(
-        fetch, ["la", "lb"], start_index=0, limit=3, sort_key=key, reverse=True
+def test_fetch_union_drains_multi_page_folders(isolated_settings):
+    # A folder bigger than page_size must be drained page by page until
+    # its short tail page — not truncated at one page.
+    big = [{"Id": f"a{i}", "Name": f"N{i:04d}"} for i in range(7)]
+    data = {"la": big, "lb": [{"Id": "b0", "Name": "N9999"}]}
+    calls: list = []
+    out = ls.fetch_union(
+        _make_fetch(data, calls),
+        ["la", "lb"],
+        sort_key=lambda it: it["Name"],
+        page_size=3,
     )
-    assert [it["Name"] for it in page] == ["Fig", "Elder", "Date"]
-
-
-def test_merge_paged_reverse_overfetch():
-    # Folders LARGER than the page window, so the head/tail split matters.
-    # Pre-fix the reverse over-fetch pulled each folder's HEAD, returning
-    # ["Fig","Elder","Date"] for page 0 — the wrong rows. The tail fetch
-    # returns the true global descending top.
-    data = {
-        "la": [
-            {"Id": f"a{i}", "Name": n}
-            for i, n in enumerate(["Apple", "Cherry", "Elder", "Grape", "Iris"])
-        ],
-        "lb": [
-            {"Id": f"b{i}", "Name": n}
-            for i, n in enumerate(["Banana", "Date", "Fig", "Hazel", "Juniper"])
-        ],
-    }
-    fetch = _make_fetch(data)
-    key = lambda it: it["Name"]  # noqa: E731
-
-    # Ascending still works (head prefix).
-    asc = ls.merge_paged(fetch, ["la", "lb"], start_index=0, limit=3, sort_key=key)
-    assert [it["Name"] for it in asc] == ["Apple", "Banana", "Cherry"]
-
-    # Descending page 0 — the global top, not the per-folder heads.
-    page0 = ls.merge_paged(
-        fetch, ["la", "lb"], start_index=0, limit=3, sort_key=key, reverse=True
-    )
-    assert [it["Name"] for it in page0] == ["Juniper", "Iris", "Hazel"]
-
-    # Descending page 1 — gap-free continuation.
-    page1 = ls.merge_paged(
-        fetch, ["la", "lb"], start_index=3, limit=3, sort_key=key, reverse=True
-    )
-    assert [it["Name"] for it in page1] == ["Grape", "Fig", "Elder"]
-
-    # Full descending walk: no dupes, no gaps.
-    collected: list = []
-    off = 0
-    while True:
-        pg = ls.merge_paged(
-            fetch, ["la", "lb"], start_index=off, limit=3, sort_key=key, reverse=True
-        )
-        if not pg:
-            break
-        collected.extend(it["Name"] for it in pg)
-        off += 3
-    assert collected == [
-        "Juniper", "Iris", "Hazel", "Grape", "Fig",
-        "Elder", "Date", "Cherry", "Banana", "Apple",
+    assert len(out) == 8
+    # la: offsets 0,3,6 (page 6 is short → stop); lb: offset 0 only.
+    assert [(p, o) for p, o, _c in calls] == [
+        ("la", 0), ("la", 3), ("la", 6), ("lb", 0),
     ]
-    assert len(collected) == len(set(collected))
 
 
-def test_merge_paged_single_folder_passthrough():
-    data = _library_rows()
-    fetch = _make_fetch(data)
-    key = lambda it: it["Name"]  # noqa: E731
-    # One folder → direct paging, no merge.
-    page = ls.merge_paged(fetch, ["la"], start_index=1, limit=2, sort_key=key)
-    assert [it["Name"] for it in page] == ["Cherry", "Elder"]
+def test_union_sort_key_matches_grid_collation(isolated_settings):
+    # Article stripping — "The Weeknd" sorts under W, as the grids do.
+    key = ls.union_sort_key("SortName")
+    items = [
+        {"Id": "1", "Name": "The Weeknd"},
+        {"Id": "2", "Name": "Aphex Twin"},
+    ]
+    assert [it["Name"] for it in sorted(items, key=key)] == [
+        "Aphex Twin", "The Weeknd",
+    ]
+
+
+def test_union_sort_key_composite_and_missing_fields(isolated_settings):
+    # Composite "AlbumArtist,SortName" breaks ties by name, and a
+    # missing AlbumArtist (None) must not raise against a str.
+    key = ls.union_sort_key("AlbumArtist,SortName")
+    items = [
+        {"Id": "1", "AlbumArtist": "Zed", "Name": "A"},
+        {"Id": "2", "AlbumArtist": None, "Name": "B"},
+        {"Id": "3", "AlbumArtist": "Zed", "Name": "B"},
+    ]
+    out = [it["Id"] for it in sorted(items, key=key)]
+    assert out == ["2", "1", "3"]
+
+
+def test_union_sort_key_playcount_numeric(isolated_settings):
+    key = ls.union_sort_key("PlayCount,SortName")
+    items = [
+        {"Id": "1", "Name": "A", "UserData": {"PlayCount": 2}},
+        {"Id": "2", "Name": "B"},  # no UserData at all
+        {"Id": "3", "Name": "C", "UserData": {"PlayCount": 10}},
+    ]
+    out = [it["Id"] for it in sorted(items, key=key, reverse=True)]
+    assert out == ["3", "1", "2"]

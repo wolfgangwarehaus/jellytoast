@@ -15,7 +15,7 @@ from jellytoast.library_selection_controller import _LibrarySelectionMixin
 
 MOVED = [
     "_resolve_library_id",
-    "_music_parent_id",
+    "_music_fetch_plan",
     "_refresh_library_selection",
     "_on_libraries_listed",
     "_on_libraries_list_failed",

@@ -36,12 +36,26 @@ class _PaginatorMixin:
 
     # ── Public API ────────────────────────────────────────────────────
 
-    def load_items(self, parent_id: str = "", genre_id: str = "", year: str = ""):
+    def load_items(self, parent_id="", genre_id: str = "", year: str = ""):
         """Async-fetch items of this grid's ``kind``. Two-phase: if a
         disk cache matches the current scope, render from it instantly
         and verify against the server in the background. On a true
-        cold load, fire the regular fetch and persist on success."""
-        self._parent_id = parent_id
+        cold load, fire the regular fetch and persist on success.
+
+        ``parent_id`` is a single library id (``str``, the classic path)
+        OR a multi-library fetch plan (``list[str]`` from
+        ``_music_fetch_plan()``). A 2+-entry plan takes the union path:
+        one background worker drains every folder via
+        ``library_selection.fetch_union`` and renders the merged result
+        as a complete list — no incremental pagination (the guards on
+        the paging cascades below), because the union is only correct
+        as a whole."""
+        plan = list(parent_id) if isinstance(parent_id, (list, tuple)) else [parent_id]
+        multi = len(plan) > 1
+        # Keep the raw scope so set_sort / offline-toggle reloads replay
+        # it verbatim (str or list) through this same normalization.
+        self._parent_id = parent_id if multi else plan[0]
+        self._parent_ids = plan
         self._genre_id = genre_id
         self._year = year
         # Bump the load generation FIRST — before the offline short-circuit
@@ -92,7 +106,9 @@ class _PaginatorMixin:
         sort_by = self._sort_for_kind(self._sort_by, self.kind)
         scope = {
             "kind": self.kind,
-            "parent_id": parent_id,
+            # Order-independent for a plan: the same subset picked in a
+            # different order must hit the same cache.
+            "parent_id": "|".join(sorted(plan)) if multi else plan[0],
             "genre_id": genre_id,
             "year": year,
             "sort_by": sort_by,
@@ -109,6 +125,12 @@ class _PaginatorMixin:
         }
         self._refresh_scope = scope
         cached = disk_cache.load(self._cache_name, scope)
+        if multi:
+            self._multi_load(cached, item_type, sort_by, gen)
+            return
+        # Single-parent path below: unwrap a 1-entry plan so the fetch
+        # sites receive the plain string the provider API expects.
+        parent_id = plan[0]
         if cached:
             # Cache payload is either the legacy bare list (page 1
             # only — written by old versions) or the new envelope dict
@@ -288,6 +310,91 @@ class _PaginatorMixin:
             complete = len(items) < self.PAGE_SIZE
             self._save_cache_async(items, complete)
 
+    # ── Multi-library union path ──────────────────────────────────────
+
+    def _multi_load(self, cached, item_type: str, sort_by: str, gen: int):
+        """Load a 2+-folder plan. Cache-first like the single path, but
+        the whole union always renders as one complete list: a cache hit
+        paints instantly and a background union re-fetch refreshes the
+        cache for next launch; a cold load fetches the union up front.
+        The incremental cascades (auto-paginate, silent fill, tail probe,
+        rebuild) never run here — their offset arithmetic is per-folder
+        and means nothing against a merged list."""
+        if cached:
+            cached_items = (
+                cached.get("items") or [] if isinstance(cached, dict) else cached
+            )
+            self._cache_was_complete = True
+            self._items_loaded.emit(
+                {"Items": cached_items, "_complete": True, "_load_gen": gen}
+            )
+            run_async(
+                self._fetch_union_sync,
+                item_type,
+                sort_by,
+                on_result=lambda items, g=gen: self._on_union_refresh(items, g),
+                on_error=lambda _e: None,
+            )
+            return
+        self._clear()
+        run_async(
+            self._fetch_union_sync,
+            item_type,
+            sort_by,
+            on_result=lambda items, g=gen: self._on_union_loaded(items, g),
+            on_error=lambda _e, g=gen: self._items_loaded.emit(
+                {"Items": [], "_complete": True, "_load_gen": g}
+            ),
+        )
+
+    def _fetch_union_sync(self, item_type: str, sort_by: str) -> List[Dict]:
+        """Drain + merge every folder in the plan. Blocking — runs on the
+        run_async worker, never the GUI thread."""
+        from jellytoast import library_selection as _ls
+
+        def _page(pid: str, offset: int, count: int) -> List[Dict]:
+            resp = self.api.get_items(
+                pid,
+                item_type,
+                count,
+                offset,
+                sort_by,
+                self._sort_order,
+                True,
+                self._genre_id,
+                years=self._year,
+            )
+            return (resp or {}).get("Items") or []
+
+        return _ls.fetch_union(
+            _page,
+            self._parent_ids,
+            sort_key=_ls.union_sort_key(sort_by),
+            reverse=self._sort_order == "Descending",
+        )
+
+    def _on_union_loaded(self, items: List[Dict], gen=None):
+        if gen is not None and gen != self._load_gen:
+            return
+        self._items_loaded.emit(
+            {"Items": items or [], "_complete": True, "_load_gen": gen}
+        )
+        if items and self._refresh_scope:
+            self._save_cache_async(items, True)
+
+    def _on_union_refresh(self, items: List[Dict], gen=None):
+        """Background union re-fetch after a cache-hit paint. Unlike the
+        single path's page-1 probe + rebuild cascade, the worker already
+        holds the complete fresh union — so a signature diff just saves
+        it for the next launch (same keep-the-smooth-view contract)."""
+        if gen is not None and gen != self._load_gen:
+            return
+        items = items or []
+        if self._items_signature(items) == self._items_signature(self._model.items()):
+            return
+        if items and self._refresh_scope:
+            self._save_cache_async(items, True)
+
     def _save_cache_async(self, items: List[Dict], complete: bool):
         """Persist the cache off the GUI thread. A multi-page cache
         (hundreds to thousands of items) serializes to a non-trivial
@@ -366,6 +473,8 @@ class _PaginatorMixin:
         # we don't fetch into, or persist under, the wrong scope.
         if gen is not None and gen != self._load_gen:
             return
+        if len(getattr(self, "_parent_ids", [""])) > 1:
+            return  # union scope renders complete; per-folder offsets don't apply
         if not self._refresh_scope:
             return
         if self._silent_fetch_in_flight:
@@ -448,6 +557,8 @@ class _PaginatorMixin:
         callers pass no gen — they never race a fresh load."""
         if gen is not None and gen != self._load_gen:
             return
+        if len(getattr(self, "_parent_ids", [""])) > 1:
+            return  # union scope renders complete; per-folder offsets don't apply
         # Hard re-entrancy guard: one page fetch in flight at a time.
         # Without it, two overlapping callers (a stale cascade tick, or a
         # scroll-near-bottom fetch landing on an auto-paginate tick) both
@@ -680,6 +791,8 @@ class _PaginatorMixin:
         album hid behind the stale 'complete' cache.)"""
         if gen is not None and gen != self._load_gen:
             return
+        if len(getattr(self, "_parent_ids", [""])) > 1:
+            return  # union scope renders complete; per-folder offsets don't apply
         cached_count = len(self._model.items())
         if cached_count < self.PAGE_SIZE:
             # Whole library fit in page 1; its signature already covers
@@ -722,6 +835,8 @@ class _PaginatorMixin:
         off (top-up)."""
         if gen is not None and gen != self._load_gen:
             return  # superseded by a newer load_items()
+        if len(getattr(self, "_parent_ids", [""])) > 1:
+            return  # union scope renders complete; per-folder offsets don't apply
         if not self._refresh_scope:
             return
         if self._silent_fetch_in_flight and len(self._partial_cache_buffer) == 0:

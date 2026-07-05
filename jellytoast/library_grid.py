@@ -1913,7 +1913,11 @@ class LibraryGrid(_PaginatorMixin, QWidget):
         from jellytoast.settings import get_settings
 
         s = get_settings()
-        self._parent_id: str = ""
+        # Raw scope as given to load_items — a single parent id (str) or
+        # a multi-library fetch plan (list[str]); _parent_ids holds the
+        # normalized plan (see _PaginatorMixin.load_items).
+        self._parent_id = ""
+        self._parent_ids: list = [""]
         self._genre_id: str = ""
         self._year: str = ""
         self._sort_by: str = s.library_sort_by or "SortName"

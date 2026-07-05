@@ -56,70 +56,29 @@ class _LibrarySelectionMixin:
             self._library_ids[collection_type] = lib_id
         return lib_id or ""
 
-    def _music_parent_id(self) -> str:
-        """The ``parent_id`` the music browse surfaces should load right
-        now, honouring the multi-library selection (top-bar dropdown).
+    def _music_fetch_plan(self) -> list:
+        """The ``parent_id`` values the music browse surfaces should load
+        right now, honouring the multi-library selection (top-bar
+        dropdown). Thin window-side wrapper over
+        ``library_selection.fetch_plan``:
 
-        Phase 1 resolves the *single-parent* cases:
-          * 'all' / nothing selected → the whole music library (``""`` on
-            Subsonic = every folder; the music view id on Jellyfin).
-          * exactly one library selected → that library's id.
-        A partial subset of 3+ libraries would need the client-side
-        ``library_selection.merge_paged`` merge wired through the grid's
-        async pagination (Phase 2, GUI-gated); until then it degrades to
-        'all' and logs, rather than silently showing a wrong subset.
+          * ``[one_id]`` — 'all' or a single selection: today's battle-
+            tested single-parent fetch, unchanged.
+          * ``[id, id, …]`` — a partial subset (or 'all' on a multi-music-
+            view Jellyfin server, which has no union parent): the surface
+            fetches each folder and merges client-side (Phase 2).
 
-        Known Phase-1 gap (Phase 2): on a *Jellyfin* server with 2+ music
-        collection folders there is no single union parent — the 'all' case
-        below resolves to the FIRST music view only, so 'all' shows just
-        that view's content. Subsonic ('' = union of all folders) and the
-        common single-music-view Jellyfin server are unaffected."""
+        The one thing added over fetch_plan itself: when the plan's 'all'
+        entry comes back as ``""`` on a provider that scopes music by
+        library (Jellyfin before ``set_available_libraries`` has run,
+        e.g. first paint on a cold boot), substitute the resolver's music
+        view id so an unscoped query can't pull non-music items."""
         from jellytoast import library_selection as _ls
 
-        ids = _ls.selected_ids()
-        if len(ids) == 1:
-            return ids[0]
-        if len(ids) >= 2:
-            logger.info(
-                "multi-library subset (%d) selected; grid merge is Phase 2 — "
-                "loading all music for now",
-                len(ids),
-            )
-            # The checkboxes claim a filter that isn't applied — say so in
-            # the UI too, not just the log. (getattr: tests drive this
-            # resolver on bare stubs without the window surface.)
-            warn = getattr(self, "_warn_multi_subset_degrade", None)
-            if warn is not None:
-                warn(len(ids))
-        # 'all' (or the not-yet-merged subset): whole music library.
-        if not getattr(self.provider, "scopes_music_by_library", True):
-            return ""  # Subsonic: empty parent = union of all folders
-        # Jellyfin: scope to the music view id. On a 2+-music-view server
-        # this is only the FIRST view (no union parent) — see the docstring;
-        # the multi-view union is the Phase 2 follow-up.
-        return self._resolve_library_id("music")
-
-    def _warn_multi_subset_degrade(self, n: int) -> None:
-        """Transient toast when a partial multi-library selection degrades
-        to 'all', once per distinct subset per session — the dropdown's
-        checkboxes otherwise silently lie about what's on screen."""
-        from jellytoast import library_selection as _ls
-
-        key = frozenset(_ls.selected_ids())
-        seen = getattr(self, "_multi_subset_warned", None)
-        if seen is None:
-            seen = self._multi_subset_warned = set()
-        if key in seen or not getattr(self, "isVisible", lambda: False)():
-            return
-        seen.add(key)
-        from jellytoast.toast import show_toast
-
-        show_toast(
-            self,
-            f"Showing all libraries — filtering to {n} selected libraries "
-            "isn't supported yet.",
-            bottom_margin=128,
-        )
+        plan = _ls.fetch_plan(self.provider)
+        if plan == [""] and getattr(self.provider, "scopes_music_by_library", True):
+            return [self._resolve_library_id("music")]
+        return plan
 
     def _refresh_library_selection(self):
         """Re-read the server's music libraries into the selection state
@@ -205,19 +164,19 @@ class _LibrarySelectionMixin:
 
     def _reload_music_surfaces(self):
         """Force every built music browse surface to reload against the
-        current ``_music_parent_id()`` scope. Mirrors the
+        current ``_music_fetch_plan()`` scope. Mirrors the
         offline_mode_changed reload pattern — force-reload (not
         just-if-empty) so a selection change always re-scopes, and each
         grid's ``_load_gen`` guard makes the re-issue safe (no double-load)."""
-        pid = self._music_parent_id()
+        plan = self._music_fetch_plan()
         # Albums + Artists grids: clear cached scope so load_items re-fetches.
         for grid in (self.album_grid, self.artist_grid):
             if grid is not None:
-                grid.load_items(pid, "")
+                grid.load_items(plan, "")
         if self.songs_view is not None:
-            self.songs_view.load_songs(pid)
+            self.songs_view.load_songs(plan)
         if self.suggestions_view is not None:
-            self.suggestions_view.load(pid)
+            self.suggestions_view.load(plan)
         # Genres list is server-global on Subsonic; its drill-down already
-        # scopes by genre. Search scoping + the 3+-library grid merge are
-        # the documented Phase 2 follow-ups (see library_selection).
+        # scopes by genre. Search scoping is a documented follow-up (see
+        # library_selection).

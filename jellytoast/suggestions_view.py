@@ -67,7 +67,11 @@ class SuggestionsView(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.api = get_provider()
+        # Raw scope as given to load() — a single parent id (str) or a
+        # multi-library fetch plan (list[str]); _parent_ids is the
+        # normalized plan.
         self._parent_id = ""
+        self._parent_ids: list = [""]
 
         self.setObjectName("suggestionsView")
         # StrongFocus so the view itself receives keyboard focus when
@@ -211,18 +215,39 @@ class SuggestionsView(QWidget):
             except Exception:
                 pass
 
-    def load(self, parent_id: str = ""):
-        """Async-fetch all five rails. Parent_id scopes to the music
-        library so non-music collections don't pollute the
-        recommendations. Empty parent_id falls back to the user's
-        whole library — acceptable when library resolution is still
-        pending but should be rare in practice.
+    # Per-rail fetch parameters: (cache_name attr, signal attr, sort_by
+    # for the multi-folder client merge, reverse). The random rail has no
+    # sort — a merged union is shuffled instead. Cache name None = never
+    # disk-cached (random must re-roll every visit).
+    _RAIL_SPECS = (
+        ("latest", "CACHE_LATEST", "_latest_loaded", "DateCreated", True),
+        ("favorites", "CACHE_FAVORITES", "_favorites_loaded", "SortName", False),
+        ("recent", "CACHE_RECENT", "_recent_loaded", "DatePlayed,SortName", True),
+        ("frequent", "CACHE_FREQUENT", "_frequent_loaded", "PlayCount,SortName", True),
+        ("random", None, "_random_loaded", "", False),
+    )
+
+    def load(self, parent_id=""):
+        """Async-fetch all five rails. ``parent_id`` scopes to the music
+        library — a single id (str) or a multi-library fetch plan
+        (list[str] from ``_music_fetch_plan()``) — so non-music
+        collections don't pollute the recommendations. Empty parent_id
+        falls back to the user's whole library — acceptable when library
+        resolution is still pending but should be rare in practice.
 
         Each rail tries the disk cache first so a cold launch shows
         rails populated immediately, then refreshes from the server
-        in the background and replaces if the rail's items changed."""
-        self._parent_id = parent_id
-        scope = {"parent_id": parent_id}
+        in the background and replaces if the rail's items changed.
+        A 2+-folder plan fetches each rail from every folder on the
+        worker and merges client-side (rail-sized fetches, so the
+        union stays cheap)."""
+        plan = list(parent_id) if isinstance(parent_id, (list, tuple)) else [parent_id]
+        multi = len(plan) > 1
+        self._parent_id = parent_id if multi else plan[0]
+        self._parent_ids = plan
+        # Order-independent for a plan: the same subset picked in a
+        # different order must hit the same cache.
+        scope = {"parent_id": "|".join(sorted(plan)) if multi else plan[0]}
 
         # Reset the completion tracker and show the loading state.
         # If a cache hit lands a non-empty rail before any network
@@ -239,137 +264,83 @@ class SuggestionsView(QWidget):
         )
         self._status.setVisible(True)
 
-        for cache_name, signal, rail_key in (
-            (self.CACHE_LATEST, self._latest_loaded, "latest"),
-            (self.CACHE_FAVORITES, self._favorites_loaded, "favorites"),
-            (self.CACHE_RECENT, self._recent_loaded, "recent"),
-            (self.CACHE_FREQUENT, self._frequent_loaded, "frequent"),
-        ):
-            cached = disk_cache.load(cache_name, scope)
+        for rail_key, cache_attr, signal_attr, _sort, _rev in self._RAIL_SPECS:
+            if cache_attr is None:
+                continue
+            cached = disk_cache.load(getattr(self, cache_attr), scope)
             if cached:
-                signal.emit(cached)
+                getattr(self, signal_attr).emit(cached)
                 # Treat a cache hit as a tentative "loaded" — the live
                 # fetch below will overwrite this state when it lands.
                 self._mark_rail_done(rail_key, items=cached, errored=False)
 
-        # Latest — Jellyfin's /Users/{id}/Items/Latest, Subsonic's
-        # getAlbumList2?type=newest.
-        run_async(
-            self.api.get_latest_media,
-            parent_id,
-            RAIL_LIMIT,
-            on_result=lambda items: self._on_rail_loaded(
-                "latest",
-                self.CACHE_LATEST,
-                scope,
-                self._latest_loaded,
-                items or [],
-            ),
-            on_error=lambda _e: self._on_rail_error(
-                "latest",
-                self._latest_loaded,
-            ),
-        )
+        for rail_key, cache_attr, signal_attr, _sort, _rev in self._RAIL_SPECS:
+            cache_name = getattr(self, cache_attr) if cache_attr else None
+            signal = getattr(self, signal_attr)
+            run_async(
+                self._fetch_rail_sync,
+                rail_key,
+                on_result=lambda items, k=rail_key, c=cache_name, s=signal: (
+                    self._on_rail_loaded(k, c, scope, s, items or [])
+                ),
+                on_error=lambda _e, k=rail_key, s=signal: self._on_rail_error(k, s),
+            )
 
-        # Favorites — IsFavorite filter.
-        run_async(
-            self.api.get_items,
-            parent_id,
+    def _fetch_rail_sync(self, rail_key: str):
+        """One rail across every folder in the plan. Blocking — runs on
+        the run_async worker. Single-folder plans return the server's
+        rail verbatim (today's behaviour); multi-folder plans fetch the
+        rail from each folder, dedupe, re-apply the rail's own order
+        client-side (shuffle, for random), and trim back to RAIL_LIMIT."""
+        merged: list = []
+        seen: set = set()
+        for pid in self._parent_ids:
+            for it in self._fetch_rail_folder(rail_key, pid):
+                iid = str(it.get("Id") or "")
+                if iid and iid in seen:
+                    continue
+                if iid:
+                    seen.add(iid)
+                merged.append(it)
+        if len(self._parent_ids) > 1:
+            spec = next(s for s in self._RAIL_SPECS if s[0] == rail_key)
+            _key, _cache, _signal, sort_by, reverse = spec
+            if rail_key == "random":
+                import random
+
+                random.shuffle(merged)
+            else:
+                from jellytoast import library_selection as _ls
+
+                merged.sort(key=_ls.union_sort_key(sort_by), reverse=reverse)
+        return merged[:RAIL_LIMIT]
+
+    def _fetch_rail_folder(self, rail_key: str, pid: str) -> list:
+        """One rail, one folder — the exact per-rail server queries the
+        pre-plan implementation issued."""
+        if rail_key == "latest":
+            # Jellyfin's /Users/{id}/Items/Latest, Subsonic's
+            # getAlbumList2?type=newest.
+            return self.api.get_latest_media(pid, RAIL_LIMIT) or []
+        params = {
+            "favorites": ("SortName", "Ascending", "IsFavorite"),
+            "recent": ("DatePlayed,SortName", "Descending", "IsPlayed"),
+            "frequent": ("PlayCount,SortName", "Descending", "IsPlayed"),
+            "random": ("Random", "Ascending", ""),
+        }[rail_key]
+        sort_by, sort_order, filters = params
+        resp = self.api.get_items(
+            pid,
             "MusicAlbum",
             RAIL_LIMIT,
             0,
-            "SortName",
-            "Ascending",
+            sort_by,
+            sort_order,
             True,
             "",
-            "IsFavorite",
-            on_result=lambda resp: self._on_rail_loaded(
-                "favorites",
-                self.CACHE_FAVORITES,
-                scope,
-                self._favorites_loaded,
-                (resp or {}).get("Items") or [],
-            ),
-            on_error=lambda _e: self._on_rail_error(
-                "favorites",
-                self._favorites_loaded,
-            ),
+            filters,
         )
-
-        # Recently played — DatePlayed desc, IsPlayed filter.
-        run_async(
-            self.api.get_items,
-            parent_id,
-            "MusicAlbum",
-            RAIL_LIMIT,
-            0,
-            "DatePlayed,SortName",
-            "Descending",
-            True,
-            "",
-            "IsPlayed",
-            on_result=lambda resp: self._on_rail_loaded(
-                "recent",
-                self.CACHE_RECENT,
-                scope,
-                self._recent_loaded,
-                (resp or {}).get("Items") or [],
-            ),
-            on_error=lambda _e: self._on_rail_error(
-                "recent",
-                self._recent_loaded,
-            ),
-        )
-
-        # Frequently played — PlayCount desc, IsPlayed filter.
-        run_async(
-            self.api.get_items,
-            parent_id,
-            "MusicAlbum",
-            RAIL_LIMIT,
-            0,
-            "PlayCount,SortName",
-            "Descending",
-            True,
-            "",
-            "IsPlayed",
-            on_result=lambda resp: self._on_rail_loaded(
-                "frequent",
-                self.CACHE_FREQUENT,
-                scope,
-                self._frequent_loaded,
-                (resp or {}).get("Items") or [],
-            ),
-            on_error=lambda _e: self._on_rail_error(
-                "frequent",
-                self._frequent_loaded,
-            ),
-        )
-
-        # Random — fresh shuffle every visit, no disk cache.
-        run_async(
-            self.api.get_items,
-            parent_id,
-            "MusicAlbum",
-            RAIL_LIMIT,
-            0,
-            "Random",
-            "Ascending",
-            True,
-            "",
-            "",
-            on_result=lambda resp: self._on_rail_loaded(
-                "random",
-                None,
-                scope,
-                self._random_loaded,
-                (resp or {}).get("Items") or [],
-            ),
-            on_error=lambda _e: self._on_rail_error(
-                "random",
-                self._random_loaded,
-            ),
-        )
+        return (resp or {}).get("Items") or []
 
     def focus_first_item(self):
         """Drop keyboard focus on the first visible rail's first tile.
