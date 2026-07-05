@@ -1323,9 +1323,12 @@ class SubsonicProvider(MediaProvider):
         Python refinement pass (``jellytoast.providers.smart_rule_eval``)
         to apply everything else. If no rule maps to a server query
         (e.g. only ``play_count`` / ``rating`` / ``artist`` /
-        ``album``), fall back to a broad ``getAlbumList2`` fetch of
-        up to ``_BROAD_FETCH_CAP`` albums plus per-album ``getAlbum``
-        calls, then refine in Python.
+        ``album``), fall back to a broad fetch — an empty-query
+        ``search3`` sweep of the whole library (up to
+        ``_BROAD_FETCH_SONG_CAP`` songs), or on legacy servers without
+        that convention, ``getAlbumList2`` capped at
+        ``_BROAD_FETCH_CAP`` albums expanded via parallel ``getAlbum``
+        calls — then refine in Python.
 
         Server-native legs::
 
@@ -1451,6 +1454,8 @@ class SubsonicProvider(MediaProvider):
     # this so power users with a 10 000+ album library know to keep
     # at least one server-mappable rule in the set.
     _BROAD_FETCH_CAP = 500
+    _BROAD_FETCH_PAGE = 500
+    _BROAD_FETCH_SONG_CAP = 20_000
 
     def _query_single_native(self, rule: Dict[str, Any]) -> List[Dict[str, Any]]:
         """Translate one server-mappable rule into a Subsonic call and
@@ -1485,12 +1490,7 @@ class SubsonicProvider(MediaProvider):
             except Exception:
                 return []
             albums = (resp.get("albumList2") or {}).get("album") or []
-            tracks: List[Dict[str, Any]] = []
-            for album in albums:
-                try:
-                    tracks.extend(self.get_album_tracks(album.get("id", "")))
-                except Exception:
-                    continue
+            tracks = self._album_tracks_many([a.get("id", "") for a in albums])
             # getAlbumList2 byYear filters by ALBUM year, but a track's own
             # ProductionYear can differ (re-releases, compilations) — drop
             # tracks whose known year falls outside the rule's bounds. Tracks
@@ -1524,14 +1524,86 @@ class SubsonicProvider(MediaProvider):
         # The mappable check should have prevented us getting here.
         return []
 
-    def _broad_fetch(self) -> List[Dict[str, Any]]:
-        """Pull up to ``_BROAD_FETCH_CAP`` albums and expand to tracks.
+    def _album_tracks_many(self, album_ids: List[str]) -> List[Dict[str, Any]]:
+        """Fetch tracks for many albums with a bounded worker pool.
 
-        Used when no rule maps to a Subsonic endpoint. The cap keeps
-        the request bounded to a single round-trip plus N per-album
-        fetches; larger libraries lose tail matches. Documented in
-        ``query_items``' docstring as a v1 limit.
+        One ``getAlbum`` round-trip per album is unavoidable on this
+        API, but doing them serially made a broad smart-playlist
+        resolve take tens of seconds (one LAN round-trip × hundreds of
+        albums). ``ThreadPoolExecutor.map`` preserves album order so
+        results stay deterministic; ``get_album_tracks`` already maps
+        per-album failure to ``[]``. This runs on an async_io worker
+        (never the GUI thread), and the pool stays below requests'
+        default 10-connection per-host limit.
         """
+        ids = [a for a in album_ids if a]
+        if not ids:
+            return []
+        if len(ids) == 1:
+            return list(self.get_album_tracks(ids[0]))
+        from concurrent.futures import ThreadPoolExecutor
+
+        with ThreadPoolExecutor(max_workers=min(8, len(ids))) as pool:
+            batches = list(pool.map(self.get_album_tracks, ids))
+        return [t for batch in batches for t in batch]
+
+    def _broad_fetch(self) -> List[Dict[str, Any]]:
+        """Full-library candidate sweep for rules with no native leg.
+
+        Primary path: paginate ``search3`` with an empty query — the
+        Navidrome / OpenSubsonic match-all convention already used by
+        the Songs view (``_get_songs``). Each song row carries every
+        field the refine pass reads (year / genre / playCount /
+        starred / created), so no per-album expansion is needed:
+        ~N/500 round-trips instead of one per album, and no 500-album
+        tail loss. ``_BROAD_FETCH_SONG_CAP`` bounds pathological
+        libraries; hitting it is logged (matches beyond it are missed).
+
+        Legacy servers (Airsonic, old Subsonic) that don't treat an
+        empty query as match-all return nothing on the first page —
+        those fall back to the old album walk, now parallelised.
+        """
+        songs: List[Dict[str, Any]] = []
+        offset = 0
+        while offset < self._BROAD_FETCH_SONG_CAP:
+            params = {
+                "query": "",
+                "songCount": self._BROAD_FETCH_PAGE,
+                "songOffset": offset,
+                "albumCount": 0,
+                "artistCount": 0,
+            }
+            try:
+                resp = self._request("search3", params)
+            except Exception:
+                if offset == 0:
+                    return self._broad_fetch_albums()
+                logger.warning(
+                    "smart-playlist broad fetch aborted mid-sweep at offset %d; "
+                    "refining over the %d songs fetched so far",
+                    offset,
+                    len(songs),
+                )
+                return songs
+            page = (resp.get("searchResult3") or {}).get("song") or []
+            if not page and offset == 0:
+                return self._broad_fetch_albums()
+            songs.extend(self._adapt_song(s) for s in page)
+            if len(page) < self._BROAD_FETCH_PAGE:
+                return songs
+            offset += self._BROAD_FETCH_PAGE
+        logger.warning(
+            "smart-playlist broad fetch hit the %d-song cap; "
+            "matches beyond it are not considered",
+            self._BROAD_FETCH_SONG_CAP,
+        )
+        return songs
+
+    def _broad_fetch_albums(self) -> List[Dict[str, Any]]:
+        """Album-walk fallback sweep: up to ``_BROAD_FETCH_CAP`` albums
+        expanded to tracks (parallelised). Larger libraries lose tail
+        matches — the pre-search3 v1 limit, now only reachable on
+        servers without empty-query ``search3``."""
         params = {
             "type": "alphabeticalByArtist",
             "size": self._BROAD_FETCH_CAP,
@@ -1542,13 +1614,7 @@ class SubsonicProvider(MediaProvider):
         except Exception:
             return []
         albums = (resp.get("albumList2") or {}).get("album") or []
-        songs: List[Dict[str, Any]] = []
-        for album in albums:
-            try:
-                songs.extend(self.get_album_tracks(album.get("id", "")))
-            except Exception:
-                continue
-        return songs
+        return self._album_tracks_many([a.get("id", "") for a in albums])
 
     # ── Metadata editing ───────────────────────────────────────────────
 
