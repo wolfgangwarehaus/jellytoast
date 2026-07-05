@@ -10,6 +10,12 @@ developer-facing history lives in [`docs/CHANGELOG.md`](docs/CHANGELOG.md).
      This block becomes the GitHub release notes; cut_release.sh stamps it into a
      dated version on release. One line per change where you can. -->
 
+- **Picking a few libraries now actually filters.** With 3+ libraries on
+  the server, checking a subset in the Music dropdown used to quietly show
+  everything (with an apologetic toast). Now Albums, Artists, Songs, and
+  Suggestions really show just the libraries you picked — and on a Jellyfin
+  server with several music libraries, "all" finally means all of them, not
+  just the first one.
 - **Smart playlists start much faster on Navidrome / Subsonic.** Hitting
   Play on a smart playlist could sit there for 10+ seconds while we fetched
   the library one album at a time; it now grabs songs in bulk (and in

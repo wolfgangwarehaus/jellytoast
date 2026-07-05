@@ -86,19 +86,19 @@ class _SessionMixin:
         """Re-trigger the load for any native surface that exists but
         has no items. Called after fresh credentials arrive — the
         prior fetch likely 401'd against a stale persisted token."""
-        pid = self._music_parent_id()
+        plan = self._music_fetch_plan()
         if self.songs_view is not None and not self.songs_view._items:
-            self.songs_view.load_songs(pid)
+            self.songs_view.load_songs(plan)
         if self.suggestions_view is not None:
             # SuggestionsView always reloads cleanly (rails handle
             # empty payloads themselves).
-            self.suggestions_view.load(pid)
+            self.suggestions_view.load(plan)
         if self.album_grid is not None and not self.album_grid._tiles:
-            self.album_grid.load_items(pid, "")
+            self.album_grid.load_items(plan, "")
         if self.playlist_grid is not None and not self.playlist_grid._tiles:
             self.playlist_grid.load_items("", "")
         if self.artist_grid is not None and not self.artist_grid._tiles:
-            self.artist_grid.load_items(pid, "")
+            self.artist_grid.load_items(plan, "")
         if self.genres_view is not None and not self.genres_view._tiles:
             self.genres_view.load_genres()
 

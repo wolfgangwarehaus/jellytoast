@@ -1,4 +1,4 @@
-"""Host glue for multi-library selection: ``_music_parent_id`` resolution
+"""Host glue for multi-library selection: ``_music_fetch_plan`` resolution
 and ``_on_libraries_selected`` persist+emit.
 
 These bind the unbound ``JellytoastWindow`` methods to a tiny stub ``self``
@@ -44,33 +44,55 @@ def _seed_two():
     )
 
 
-def test_music_parent_id_all_subsonic_is_empty(isolated_settings):
+def test_music_fetch_plan_all_subsonic_is_empty(isolated_settings):
     ls.reset_after_server_change()
     _seed_two()
     stub = _stub(_Provider(scopes_by_library=False))
-    # 'all' on a music-only server → empty parent (union of folders).
-    assert jellytoast.app.JellytoastWindow._music_parent_id(stub) == ""
+    # 'all' on a music-only server → one empty parent (union of folders).
+    assert jellytoast.app.JellytoastWindow._music_fetch_plan(stub) == [""]
 
 
-def test_music_parent_id_all_jellyfin_uses_music_view(isolated_settings):
+def test_music_fetch_plan_all_jellyfin_plans_every_music_view(isolated_settings):
     ls.reset_after_server_change()
     _seed_two()
     stub = _stub(_Provider(scopes_by_library=True))
-    # 'all' on a mixed-content server → scope to the music view id.
-    assert jellytoast.app.JellytoastWindow._music_parent_id(stub) == "music-view"
+    # 'all' on a 2-music-view mixed-content server: no union parent →
+    # plan both views for the client-side merge (the old Phase-1 gap
+    # showed only the first view here).
+    assert jellytoast.app.JellytoastWindow._music_fetch_plan(stub) == [
+        "music-view",
+        "disc",
+    ]
 
 
-def test_music_parent_id_single_selection(isolated_settings):
+def test_music_fetch_plan_all_jellyfin_single_view_resolves_it(isolated_settings):
+    # One music view (the common Jellyfin server) → classic single-parent
+    # scope via the resolver, not an unscoped "" that would pull non-music.
+    ls.reset_after_server_change()
+    ls.set_available_libraries([{"Id": "music-view", "Name": "Music"}])
+    stub = _stub(_Provider(scopes_by_library=True))
+    assert jellytoast.app.JellytoastWindow._music_fetch_plan(stub) == ["music-view"]
+
+
+def test_music_fetch_plan_all_jellyfin_before_libraries_known(isolated_settings):
+    # Boot race: libraries not listed yet → fall back to the resolver's
+    # music id rather than issuing an unscoped query.
+    ls.reset_after_server_change()
+    stub = _stub(_Provider(scopes_by_library=True))
+    assert jellytoast.app.JellytoastWindow._music_fetch_plan(stub) == ["music-view"]
+
+
+def test_music_fetch_plan_single_selection(isolated_settings):
     ls.reset_after_server_change()
     _seed_two()
     ls.set_selected_ids(["disc"])
     stub = _stub(_Provider(scopes_by_library=False))
-    assert jellytoast.app.JellytoastWindow._music_parent_id(stub) == "disc"
+    assert jellytoast.app.JellytoastWindow._music_fetch_plan(stub) == ["disc"]
 
 
-def test_music_parent_id_partial_subset_degrades_to_all(isolated_settings):
-    # A 3+-library partial subset (no merge wired yet) → loads all music,
-    # not a wrong subset.
+def test_music_fetch_plan_partial_subset_lists_each_folder(isolated_settings):
+    # Phase 2: a 2-of-3 subset plans exactly those folders — no more
+    # degrade-to-'all' (and no toast).
     ls.reset_after_server_change()
     ls.set_available_libraries(
         [
@@ -81,7 +103,7 @@ def test_music_parent_id_partial_subset_degrades_to_all(isolated_settings):
     )
     ls.set_selected_ids(["disc", "live"])  # 2 of 3 → partial
     stub = _stub(_Provider(scopes_by_library=False))
-    assert jellytoast.app.JellytoastWindow._music_parent_id(stub) == ""
+    assert jellytoast.app.JellytoastWindow._music_fetch_plan(stub) == ["disc", "live"]
 
 
 def test_on_libraries_selected_emits_only_on_change(isolated_settings):
@@ -156,17 +178,17 @@ def test_on_libraries_changed_reloads_built_surfaces(isolated_settings):
     # Bind the real resolver + the reload helper so the parent id is the
     # live selection (no top_bar attr on the stub → the normalized push-back
     # is skipped, which is fine for the reload assertion).
-    stub._music_parent_id = lambda: jellytoast.app.JellytoastWindow._music_parent_id(stub)
+    stub._music_fetch_plan = lambda: jellytoast.app.JellytoastWindow._music_fetch_plan(stub)
     stub._reload_music_surfaces = lambda: jellytoast.app.JellytoastWindow._reload_music_surfaces(
         stub
     )
 
     jellytoast.app.JellytoastWindow._on_libraries_changed(stub)
 
-    album.load_items.assert_called_once_with("disc", "")
-    artist.load_items.assert_called_once_with("disc", "")
-    songs.load_songs.assert_called_once_with("disc")
-    suggestions.load.assert_called_once_with("disc")
+    album.load_items.assert_called_once_with(["disc"], "")
+    artist.load_items.assert_called_once_with(["disc"], "")
+    songs.load_songs.assert_called_once_with(["disc"])
+    suggestions.load.assert_called_once_with(["disc"])
 
 
 def test_on_libraries_selected_flushes_on_change(isolated_settings, monkeypatch):
