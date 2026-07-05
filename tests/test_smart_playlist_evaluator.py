@@ -728,7 +728,9 @@ class TestSubsonicMultiRule:
         subsonic_provider,
     ):
         # play_count + rating have no Subsonic server mapping; the
-        # broad alphabeticalByArtist fetch is taken instead.
+        # broad fetch is taken instead — empty-query search3 first,
+        # and since this stub returns no search3 songs (a legacy
+        # server), the alphabeticalByArtist album walk after it.
         p = subsonic_provider
         p.responses["getAlbumList2"] = {
             "albumList2": {
@@ -752,9 +754,10 @@ class TestSubsonicMultiRule:
                 ],
             }
         )
-        # Broad fetch type=alphabeticalByArtist.
-        assert p.calls[0][0] == "getAlbumList2"
-        assert p.calls[0][1]["type"] == "alphabeticalByArtist"
+        # search3 sweep attempted first, then the album-walk fallback.
+        assert p.calls[0][0] == "search3"
+        assert p.calls[1][0] == "getAlbumList2"
+        assert p.calls[1][1]["type"] == "alphabeticalByArtist"
         # Refine keeps only play_count > 5.
         assert [it["Id"] for it in out] == ["s1"]
 

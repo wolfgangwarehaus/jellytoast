@@ -10,6 +10,12 @@ developer-facing history lives in [`docs/CHANGELOG.md`](docs/CHANGELOG.md).
      This block becomes the GitHub release notes; cut_release.sh stamps it into a
      dated version on release. One line per change where you can. -->
 
+- **Smart playlists start much faster on Navidrome / Subsonic.** Hitting
+  Play on a smart playlist could sit there for 10+ seconds while we fetched
+  the library one album at a time; it now grabs songs in bulk (and in
+  parallel where it can't). Bonus: playlists built on play count, rating,
+  or artist/album text used to only see the first 500 albums of a big
+  library — that limit is gone on Navidrome.
 - **AppImage self-updates actually work now.** Every AppImage shipped an
   update feed pointing at a file we never uploaded, so AppImageUpdate always
   failed. Fixed from this release on — and since the feed watches the *latest*
