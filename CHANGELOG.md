@@ -36,6 +36,9 @@ developer-facing history lives in [`docs/CHANGELOG.md`](docs/CHANGELOG.md).
   rules can't match on Subsonic / Navidrome (the server doesn't send that
   data) — the editor now says so instead of quietly building a playlist
   that stays empty forever.
+- **Tab works on the sign-in form.** Tab now moves server type → URL →
+  username → password → Sign in, and keyboard focus is visible on every
+  stop — it used to detour invisibly through a text link mid-form.
 - **Small stuff.** Selecting several libraries (but not all) now tells you
   the filter isn't applied yet; the "Only download on Wi-Fi" checkbox is
   gone until it can actually pause anything; failed favorites / scrobbles
