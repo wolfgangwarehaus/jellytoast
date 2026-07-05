@@ -488,7 +488,11 @@ class SongsView(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.api = get_provider()
-        self._parent_id: str = ""
+        # Raw scope as given to load_songs — a single parent id (str) or
+        # a multi-library fetch plan (list[str]); _parent_ids holds the
+        # normalized plan.
+        self._parent_id = ""
+        self._parent_ids: list = [""]
         # Rows for which we've already fired cover loads, so a scroll
         # signal storm doesn't re-issue identical network requests.
         self._covers_loaded: set = set()
@@ -823,12 +827,23 @@ class SongsView(QWidget):
     PAGE_SIZE = 500
     FETCH_TIMEOUT_S = 30
 
-    def load_songs(self, parent_id: str = ""):
+    def load_songs(self, parent_id=""):
         """Render songs under ``parent_id``. Cache-first: if a complete
         cache exists, render it instantly and refresh page 1 in the
         background. Otherwise fetch page 1 + cascade silent background
-        pages until the tail is reached."""
-        self._parent_id = parent_id
+        pages until the tail is reached.
+
+        ``parent_id`` is a single library id (``str``) OR a multi-library
+        fetch plan (``list[str]`` from ``_music_fetch_plan()``). A
+        2+-entry plan takes the union path: one worker drains every
+        folder and the merged list renders complete in one paint —
+        the page cascade never runs (its offsets are per-folder)."""
+        plan = list(parent_id) if isinstance(parent_id, (list, tuple)) else [parent_id]
+        multi = len(plan) > 1
+        # Keep the raw scope so sort/offline/showEvent reloads replay it
+        # verbatim (str or list) through this same normalization.
+        self._parent_id = parent_id if multi else plan[0]
+        self._parent_ids = plan
         # Invalidate any in-flight background page fetch from a prior load:
         # both the offline short-circuit and the server path below re-seed
         # the model, so a fetch that resolves after this point must not
@@ -849,7 +864,9 @@ class SongsView(QWidget):
             return
         sort_by = self._safe_sort(self._sort_by)
         scope = {
-            "parent_id": parent_id,
+            # Order-independent for a plan: the same subset picked in a
+            # different order must hit the same cache.
+            "parent_id": "|".join(sorted(plan)) if multi else plan[0],
             "sort_by": sort_by,
             "sort_order": self._sort_order,
             # Bumped when item Fields= changed in jellyfin_api.get_items
@@ -857,13 +874,21 @@ class SongsView(QWidget):
             # Old caches don't carry Genres (added 2026-05-28); a scope
             # bump forces a one-shot re-fetch so smart-playlist
             # seeding from a right-clicked track works.
-            "_item_schema": 2,
+            # Bumped to 3 on 2026-07-05: DateCreated added to Fields for
+            # the multi-library union merges.
+            "_item_schema": 3,
         }
         cached = disk_cache.load(self.CACHE_NAME, scope)
         self._refresh_scope = scope
         # Reset pagination state.
         self._page_fetch_in_flight = False
         self._tail_reached = False
+        if multi:
+            self._multi_load(cached, sort_by, gen)
+            return
+        # Single-parent path below: unwrap a 1-entry plan so the fetch
+        # sites receive the plain string the provider API expects.
+        parent_id = plan[0]
         if cached:
             # Cache shape is either the legacy bare list (page 1 only,
             # written by pre-pagination versions) or the new envelope
@@ -936,6 +961,8 @@ class SongsView(QWidget):
             return
         if not self._refresh_scope:
             return
+        if len(self._parent_ids) > 1:
+            return  # union scope renders complete; per-folder offsets don't apply
         offset = self._model.rowCount()
         if offset == 0:
             return
@@ -1089,6 +1116,97 @@ class SongsView(QWidget):
         if not self._tail_reached:
             QTimer.singleShot(200, self._load_next_page)
 
+    # ── Multi-library union path ──────────────────────────────────────
+
+    def _multi_load(self, cached, sort_by: str, gen: int):
+        """Load a 2+-folder plan. Cache-first like the single path, but
+        the union always renders as one complete list; the page cascade
+        never runs (per-folder offsets mean nothing against a merged
+        list). A cache hit paints instantly and a background union
+        re-fetch replaces the render + cache if the set of songs
+        changed."""
+        self._tail_reached = True  # no incremental pages on this path
+        if cached:
+            cached_items = (
+                cached.get("items") or [] if isinstance(cached, dict) else cached
+            )
+            self._items_loaded.emit({"Items": cached_items, "_load_gen": gen})
+            run_async(
+                self._fetch_union_sync,
+                sort_by,
+                on_result=lambda items, g=gen: self._on_union_refresh(items, g),
+                on_error=lambda e: logger.warning("songs union refresh failed: %r", e),
+            )
+            return
+        self._clear()
+        # _clear() bumps _load_gen — re-sync or this fetch is born stale
+        # (same footgun the single cold path documents).
+        gen = self._load_gen
+        self._tail_reached = True
+        self._content_stack.setCurrentIndex(0)
+        self._page_fetch_in_flight = True
+        run_async(
+            self._fetch_union_sync,
+            sort_by,
+            on_result=lambda items, g=gen: self._on_union_loaded(items, g),
+            on_error=lambda e: self._on_cold_error(e),
+        )
+
+    def _fetch_union_sync(self, sort_by: str) -> "List[Dict]":
+        """Drain + merge every folder in the plan. Blocking — runs on
+        the run_async worker, never the GUI thread. The union key gives
+        a stable global order for the merge; the render pass re-sorts
+        with the full iTunes cascade (``_client_sort_items``) either
+        way, so the final order matches the single-folder path."""
+        from jellytoast import library_selection as _ls
+
+        def _page(pid: str, offset: int, count: int) -> "List[Dict]":
+            resp = self.api.get_items(
+                pid,
+                self.ITEM_TYPE,
+                count,
+                offset,
+                sort_by,
+                self._sort_order,
+                True,
+                timeout=self.FETCH_TIMEOUT_S,
+            )
+            return (resp or {}).get("Items") or []
+
+        return _ls.fetch_union(
+            _page,
+            self._parent_ids,
+            sort_key=_ls.union_sort_key(sort_by),
+            reverse=self._sort_order == "Descending",
+            page_size=self.PAGE_SIZE,
+        )
+
+    def _on_union_loaded(self, items, gen=None):
+        if gen is not None and gen != self._load_gen:
+            return
+        self._page_fetch_in_flight = False
+        items = items or []
+        if items and self._refresh_scope:
+            self._save_cache_async(items, True)
+        self._items_loaded.emit({"Items": items, "_load_gen": gen})
+
+    def _on_union_refresh(self, items, gen=None):
+        """Background union re-fetch after a cache-hit paint. Compare as
+        ID SETS, not ordered tuples — the union's pre-render order is a
+        merge artifact and an order-only diff must not re-render forever
+        (the single path's ``_last_refresh_sig`` guard, solved
+        structurally)."""
+        if gen is not None and gen != self._load_gen:
+            return
+        items = items or []
+        fresh = frozenset(it.get("Id", "") for it in items)
+        have = frozenset(it.get("Id", "") for it in self._model.items())
+        if fresh == have:
+            return
+        if items and self._refresh_scope:
+            self._save_cache_async(items, True)
+        self._items_loaded.emit({"Items": items, "_load_gen": gen})
+
     def _render_offline_songs(self):
         """Render every playable downloaded track. ``list_complete_items``
         spans both explicitly-requested tracks and the children pulled
@@ -1241,11 +1359,15 @@ class SongsView(QWidget):
         if gen is not None and gen != self._load_gen:
             return
         items = (resp or {}).get("Items") or []
-        if getattr(self.api, "sorts_songs_server_side", True):
-            items = self._resort_items_by_article(items)
-        else:
-            # Server can't sort the feed — apply the user's sort in full.
+        if len(self._parent_ids) > 1 or not getattr(
+            self.api, "sorts_songs_server_side", True
+        ):
+            # A merged union has no server order to trust (each folder was
+            # sorted independently), and Subsonic's feed can't be server-
+            # sorted at all — apply the user's sort in full client-side.
             items = self._client_sort_items(items)
+        else:
+            items = self._resort_items_by_article(items)
         # The big perf win: single model reset replaces the chunked
         # widget-build the old implementation did over ~20 ticks.
         self._model.set_items(items)

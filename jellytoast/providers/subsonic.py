@@ -479,9 +479,18 @@ class SubsonicProvider(MediaProvider):
             "ChildCount": s.get("songCount", 0),
             "Genres": [s.get("genre")] if s.get("genre") else [],
             "ImageTags": ({"Primary": s.get("coverArt")} if s.get("coverArt") else {}),
+            # `created` / `played` (ISO 8601) map onto Jellyfin's
+            # DateCreated / UserData.LastPlayedDate — same projection
+            # _adapt_song does for created — so date-keyed consumers
+            # (the multi-library rail/union merges sort on these) read
+            # ONE path on both backends. Songs deliberately have no
+            # LastPlayedDate (Subsonic doesn't expose it per track);
+            # albums DO carry `played`.
+            "DateCreated": s.get("created"),
             "UserData": {
                 "IsFavorite": bool(s.get("starred")),
                 "PlayCount": s.get("playCount", 0),
+                "LastPlayedDate": s.get("played"),
             },
             "_subsonic_raw": s,
         }

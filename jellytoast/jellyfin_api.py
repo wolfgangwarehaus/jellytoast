@@ -317,7 +317,13 @@ class JellyfinAPI:
         return self._get(f"/Users/{self.user_id}/Items/Resume", params).get("Items", [])
 
     def get_latest_media(self, library_id: str = "", limit: int = 16) -> List[Dict]:
-        params = {"Limit": limit, "Fields": "PrimaryImageAspectRatio,BasicSyncInfo"}
+        # DateCreated: the multi-library Latest-rail merge sorts the
+        # per-folder unions on it — without the field every item keys ""
+        # and the smaller folder's newest albums fall off the trim.
+        params = {
+            "Limit": limit,
+            "Fields": "PrimaryImageAspectRatio,BasicSyncInfo,DateCreated",
+        }
         if library_id:
             params["ParentId"] = library_id
         # /Items/Latest returns a bare array, but _get() is typed to return a
@@ -349,7 +355,10 @@ class JellyfinAPI:
             # the album/track's primary genre off the item dict to
             # build a genre+year-window rule — without it the recipe
             # silently degrades to year-only).
-            "Fields": "PrimaryImageAspectRatio,BasicSyncInfo,ProductionYear,RunTimeTicks,Genres",
+            # DateCreated added 2026-07-05 for the multi-library union
+            # merges ("Recently added" sorts client-side across folders);
+            # cache schema bumped in library_paginator/songs_view.
+            "Fields": "PrimaryImageAspectRatio,BasicSyncInfo,ProductionYear,RunTimeTicks,Genres,DateCreated",
             "SortBy": sort_by,
             "SortOrder": sort_order,
             "Recursive": recursive,

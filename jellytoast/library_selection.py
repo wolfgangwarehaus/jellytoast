@@ -28,16 +28,17 @@ Design (all browse surfaces, provider-agnostic — see the session memory):
   (cheap, single-query) cases; the merge path is for 3+-library servers.
 
 .. note::
-   The fetch-plan / merge flow above is **unwired Phase-2 scaffolding**,
-   NOT the production browse path. Today the grids resolve the active
-   scope through ``library_selection_controller._music_parent_id()``,
-   which reads :func:`selected_ids` directly and degrades a 3+-library
-   partial subset to 'all' (logging, never a wrong subset). The
-   ``fetch_plan`` / ``merge_paged`` / ``all_libraries_parent_id`` helpers
-   (and ``selection_cache_key`` / ``is_filtered``) exist and are tested
-   but are not yet called from any browse surface; wiring them into the
-   grid's async pagination is the Phase-2 follow-up. Don't assume a
-   reader's selection flows through them.
+   Phase 2 (2026-07-05): the plan IS the production browse path now.
+   The grids, Songs view, and Suggestions rails resolve scope through
+   ``library_selection_controller._music_fetch_plan()`` → :func:`fetch_plan`,
+   and a 2+-folder plan fetches every folder and merges client-side via
+   :func:`fetch_union` (grids/songs) or a per-rail bounded merge
+   (suggestions). The old degrade-to-'all' toast is gone. The windowed
+   ``merge_paged`` helper this module used to carry was dropped in the
+   same change: every browse surface background-loads its *entire* scope
+   anyway (auto-paginate / silent fill), so a windowed union re-fetching
+   ``start+limit`` rows per folder per page was strictly worse than
+   draining each folder once.
 
 The selection state is a process-global (mirrors the provider singleton
 and the connectivity module) reset on sign-out / server change so a stale
@@ -245,9 +246,9 @@ def all_libraries_parent_id(provider: Any) -> str:
     rather than branching on kind, keeping the call site provider-
     agnostic. Returns ``""`` if no music library is known yet.
 
-    Unwired Phase-2 scaffolding — only :func:`fetch_plan` calls this, and
-    fetch_plan is itself not on the browse path (tests only); see the
-    module docstring."""
+    Only meaningful for the 0-or-1 music-library case — a *multi*-view
+    Jellyfin server has no single union parent, which is why
+    :func:`fetch_plan` returns every view id there instead of this."""
     if not getattr(provider, "scopes_music_by_library", True):
         return ""
     libs = _available or []
@@ -256,108 +257,145 @@ def all_libraries_parent_id(provider: Any) -> str:
 
 def fetch_plan(provider: Any = None) -> List[str]:
     """Resolve the active selection to the list of ``parent_id`` values a
-    browse surface should query and merge.
+    browse surface should query and merge. THE production scope resolver
+    (via ``library_selection_controller._music_fetch_plan()``).
 
     * ``[<all-id>]`` — one query for "all libraries". ``<all-id>`` is
-      ``""`` on Subsonic (empty parent = whole server) and the music
-      view id on Jellyfin (so non-music isn't pulled in). When
-      ``provider`` is None the legacy empty-parent is used (callers that
-      already resolve their own music id, e.g. via ``_resolve_library_id``,
+      ``""`` on Subsonic (empty parent = whole server already unions
+      every folder) and the music view id on a single-music-view
+      Jellyfin server (so non-music isn't pulled in). When ``provider``
+      is None the legacy empty-parent is used (callers that already
+      resolve their own music id, e.g. via ``_resolve_library_id``,
       pass None and substitute it themselves).
+    * ``[id, id, …]`` for 'all' on a **multi**-music-view Jellyfin
+      server — there is no single parent that unions the views, so the
+      plan lists every view and the surfaces merge (this was the
+      documented Phase-1 gap where 'all' silently showed only the
+      first view).
     * ``[id]`` — one folder-scoped query (single selection).
     * ``[id, id, …]`` — fetch each + merge client-side (partial subset).
-
-    Unwired Phase-2 scaffolding — NOT on the browse path (tests only). The
-    live grids resolve scope via
-    ``library_selection_controller._music_parent_id()`` instead; see the
-    module docstring.
     """
     key = _effective_key(selected_ids())
     if not key:
-        return [all_libraries_parent_id(provider) if provider is not None else ""]
+        if provider is None:
+            return [""]
+        if getattr(provider, "scopes_music_by_library", True):
+            # Jellyfin-style: 'all' must not leak non-music items, so it
+            # scopes to the music view(s). 2+ views have no union parent
+            # → plan them all and let the surface merge.
+            libs = _available or []
+            if len(libs) >= 2:
+                return [lib["Id"] for lib in libs]
+        return [all_libraries_parent_id(provider)]
     return list(selected_ids())
 
 
-# ── Merge helper for the multi-folder (3+) partial-subset case ─────────────
+# ── Union fetch for the multi-folder plan ──────────────────────────────────
 
 
-def merge_paged(
+def union_sort_key(sort_by: str) -> Callable[[Dict[str, Any]], Any]:
+    """A client-side sort key matching the server sort ``sort_by`` would
+    have produced, for re-sorting a merged multi-folder union.
+
+    ``sort_by`` is the grids' comma-composite server sort string (e.g.
+    ``"AlbumArtist,SortName"``). Name-ish fields use the same
+    article-stripped collation the grids' own client resort uses, so a
+    merged list is indistinguishable from a single globally-sorted
+    query. Numeric fields coerce to float, date fields compare as ISO
+    strings (both with missing-value defaults so a sparse field can't
+    raise on None < str). Unknown fields fall back to SortName so the
+    result is always *some* stable global order — never a folder-
+    concatenation artifact. ``Random`` deliberately maps to SortName
+    too: callers that want a shuffled union shuffle after the merge.
+    """
+    from jellytoast.sort_utils import article_stripped_key
+
+    def _name(it: Dict[str, Any]) -> str:
+        return article_stripped_key(str(it.get("SortName") or it.get("Name") or ""))
+
+    def _field_key(field: str) -> Callable[[Dict[str, Any]], Any]:
+        if field == "AlbumArtist":
+
+            def k(it):
+                v = it.get("AlbumArtist", "") or ""
+                if isinstance(v, list):
+                    v = v[0] if v else ""
+                return article_stripped_key(str(v))
+
+            return k
+        if field == "Name":
+            return lambda it: article_stripped_key(str(it.get("Name") or ""))
+        if field == "Album":
+            return lambda it: article_stripped_key(str(it.get("Album") or ""))
+        if field in ("PremiereDate", "DateCreated", "DatePlayed"):
+            user_key = {"DatePlayed": "LastPlayedDate"}.get(field)
+
+            def k2(it, f=field, uk=user_key):
+                v = it.get(f)
+                if v is None and uk:
+                    v = (it.get("UserData") or {}).get(uk)
+                if v is None and f == "PremiereDate":
+                    y = it.get("ProductionYear")
+                    v = f"{y:04d}" if isinstance(y, int) else ""
+                return str(v or "")
+
+            return k2
+        if field == "ProductionYear":
+            return lambda it: float(it.get("ProductionYear") or 0)
+        if field == "PlayCount":
+            return lambda it: float((it.get("UserData") or {}).get("PlayCount") or 0)
+        if field == "RunTimeTicks":
+            return lambda it: float(it.get("RunTimeTicks") or 0)
+        # SortName, Random, and anything unrecognised.
+        return _name
+
+    fields = [f for f in (sort_by or "").split(",") if f] or ["SortName"]
+    keys = [_field_key(f) for f in fields]
+    if len(keys) == 1:
+        return keys[0]
+    return lambda it: tuple(k(it) for k in keys)
+
+
+def fetch_union(
     fetch: Callable[[str, int, int], List[Dict[str, Any]]],
     parent_ids: List[str],
     *,
-    start_index: int,
-    limit: int,
     sort_key: Callable[[Dict[str, Any]], Any],
     reverse: bool = False,
     id_key: str = "Id",
+    page_size: int = 500,
 ) -> List[Dict[str, Any]]:
-    """Merge a page across several library folders, preserving a global
-    sort and correct pagination across the union.
+    """Fetch EVERY row of every folder in ``parent_ids``, merge, dedupe
+    by id, and return the union globally sorted.
 
-    The problem: each folder paginates independently, but the UI wants one
-    globally-sorted, gap-free, dupe-free stream. We can't just concatenate
-    per-folder pages (the boundaries wouldn't interleave by sort key) or
-    request ``start_index`` from each folder (that skips the wrong rows).
+    Runs synchronously — call it from an ``async_io.run_async`` worker,
+    never the GUI thread. ``fetch(parent_id, offset, count)`` returns
+    one adapted-item page for that folder; each folder is drained with
+    sequential ``page_size`` pages until a short page signals its tail
+    (the same tail-stop every paginating surface uses).
 
-    The approach for a bounded number of folders: over-fetch enough rows
-    from each folder to cover the requested window (``start_index + limit``
-    rows globally can't require more than that many from any single
-    folder), merge, sort, dedupe by id, then slice the requested window.
-    The over-fetch is DIRECTION-AWARE: ascending order takes each folder's
-    HEAD prefix, but descending order takes each folder's TAIL (the window's
-    rows are then the globally largest, which rank at the end of each
-    ascending folder), so ``reverse=True`` drains the folder to keep its
-    last ``need`` rows. This is O((start+limit) · folders) per page — fine
-    for a handful of folders and the human-scale windows the grid asks for,
-    and it keeps the result identical to what a single globally-sorted
-    query would return.
-
-    ``fetch(parent_id, offset, count)`` returns adapted item dicts for that
-    folder's page. ``sort_key`` / ``reverse`` define the global order
-    (the same article-stripped key the grid re-sorts by). Returns the
-    requested window; an empty return signals the tail (no more rows),
-    which the grid's ``len < PAGE_SIZE`` stop already understands.
-
-    Unwired Phase-2 scaffolding — NOT on the browse path (tests only).
-    Wiring this into the grid's async pagination is the Phase-2
-    follow-up; see the module docstring.
+    Drain-everything is deliberate, not lazy: every browse surface
+    already background-loads its entire scope (grid auto-paginate,
+    songs silent fill), so a windowed merge that re-fetched
+    ``start+limit`` rows per folder on every page would do strictly
+    more I/O for the same end state. The result renders as one
+    complete, cache-ready list.
     """
-    if not parent_ids:
-        return []
-    if len(parent_ids) == 1:
-        # Degenerate: a single folder needs no merge — page it directly.
-        return fetch(parent_ids[0], start_index, limit)
-
-    need = start_index + limit
-    pooled: List[Dict[str, Any]] = []
+    merged: List[Dict[str, Any]] = []
     seen: set = set()
     for pid in parent_ids:
-        if reverse:
-            # Descending: the window's rows are the globally LARGEST, which
-            # rank at the TAIL of each ascending folder — NOT its head. The
-            # head prefix would return the wrong rows. fetch() pages a
-            # folder in ascending order with no length signal, so drain it
-            # in `need`-sized chunks and keep the last `need` rows (its
-            # tail) — one fetch for small folders, chunked only on big ones.
-            rows: List[Dict[str, Any]] = []
-            off = 0
-            while True:
-                chunk = fetch(pid, off, need)
-                rows = (rows + chunk)[-need:]
-                if len(chunk) < need:
-                    break
-                off += need
-        else:
-            # Ascending: any row in the window [start, start+limit) ranks
-            # within the first `need` rows of its own folder, so a single
-            # head prefix is sufficient.
-            rows = fetch(pid, 0, need)
-        for it in rows:
-            iid = str(it.get(id_key) or "")
-            if iid and iid in seen:
-                continue
-            if iid:
-                seen.add(iid)
-            pooled.append(it)
-    pooled.sort(key=sort_key, reverse=reverse)
-    return pooled[start_index : start_index + limit]
+        offset = 0
+        while True:
+            page = fetch(pid, offset, page_size)
+            for it in page:
+                iid = str(it.get(id_key) or "")
+                if iid and iid in seen:
+                    continue
+                if iid:
+                    seen.add(iid)
+                merged.append(it)
+            if len(page) < page_size:
+                break
+            offset += page_size
+    merged.sort(key=sort_key, reverse=reverse)
+    return merged

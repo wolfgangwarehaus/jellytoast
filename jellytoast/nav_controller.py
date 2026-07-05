@@ -10,7 +10,7 @@ reference window state/widgets (``self.content_stack``, ``self.top_bar``, the
 lazy ``self.*_view`` / ``*_grid`` / ``np_page`` / ``artist_page`` refs,
 ``self._nav_history`` / ``self._nav_pos`` / ``self._suppress_nav_push``,
 ``self._NAV_HISTORY_CAP``) and call into sibling mixins / window core
-(``self._music_parent_id``, ``self._kick_load_when_ready``,
+(``self._music_fetch_plan``, ``self._kick_load_when_ready``,
 ``self._apply_music_chrome``); all resolve on the combined instance. The view
 classes are imported in-method (lazy) exactly as before — no view-module ↔ host
 cycle, and the boot import stays light. ``keyPressEvent`` and the
@@ -138,7 +138,7 @@ class _NavMixin:
         if kind == "playlist":
             parent_id = ""
         else:
-            parent_id = self._music_parent_id()
+            parent_id = self._music_fetch_plan()
         self._show_library_grid(kind, parent_id)
 
     @Slot()
@@ -361,7 +361,7 @@ class _NavMixin:
             self.songs_view.album_browse_requested.connect(self._browse_album)
             self.content_stack.addWidget(self.songs_view)
             self._kick_load_when_ready(
-                lambda: self.songs_view.load_songs(self._music_parent_id())
+                lambda: self.songs_view.load_songs(self._music_fetch_plan())
             )
         self.content_stack.setCurrentWidget(self.songs_view)
         self.np_bar.set_left_cluster_visible(True)
@@ -410,7 +410,7 @@ class _NavMixin:
             self.suggestions_view.artist_browse_requested.connect(self._show_artist_page)
             self.content_stack.addWidget(self.suggestions_view)
             self._kick_load_when_ready(
-                lambda: self.suggestions_view.load(self._music_parent_id())
+                lambda: self.suggestions_view.load(self._music_fetch_plan())
             )
         self.content_stack.setCurrentWidget(self.suggestions_view)
 
