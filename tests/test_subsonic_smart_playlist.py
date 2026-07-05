@@ -144,7 +144,9 @@ class TestYearOps:
 class TestUnsupportedCombos:
     def test_play_count_rule_falls_back_to_broad_fetch(self, provider):
         # play_count has no Subsonic server mapping; the evaluator
-        # falls back to a broad alphabeticalByArtist fetch and then
+        # falls back to a broad fetch — empty-query search3 first, then
+        # (on this stub, which returns no search3 songs, simulating a
+        # legacy server) the alphabeticalByArtist album walk — and
         # refines client-side. Stub returns no albums so the query
         # still returns []; we only assert the broad fetch path was
         # taken.
@@ -158,9 +160,11 @@ class TestUnsupportedCombos:
             }
         )
         assert out == []
-        # Broad fetch hits alphabeticalByArtist.
-        assert provider.calls[0][0] == "getAlbumList2"
-        assert provider.calls[0][1]["type"] == "alphabeticalByArtist"
+        # search3 sweep attempted first, then the album-walk fallback.
+        assert provider.calls[0][0] == "search3"
+        assert provider.calls[0][1]["query"] == ""
+        assert provider.calls[1][0] == "getAlbumList2"
+        assert provider.calls[1][1]["type"] == "alphabeticalByArtist"
 
     def test_invalid_rule_raises_valueerror(self, provider):
         # Validator runs first; an unknown field surfaces as ValueError
@@ -229,8 +233,154 @@ class TestIsFavorite:
             }
         )
         assert out == []
-        assert provider.calls[0][0] == "getAlbumList2"
-        assert provider.calls[0][1]["type"] == "alphabeticalByArtist"
+        assert provider.calls[0][0] == "search3"
+        assert provider.calls[1][0] == "getAlbumList2"
+        assert provider.calls[1][1]["type"] == "alphabeticalByArtist"
+
+
+class TestBroadFetchSearch3:
+    """The broad-fetch sweep: empty-query search3 pagination with the
+    album-walk fallback for legacy servers (see _broad_fetch)."""
+
+    @staticmethod
+    def _rules(**extra):
+        return {
+            "match": "all",
+            "rules": [{"field": "play_count", "op": "greater_than", "value": 5}],
+            **extra,
+        }
+
+    def test_short_first_page_is_single_roundtrip(self, provider):
+        provider.responses["search3"] = {
+            "searchResult3": {
+                "song": [
+                    dict(_song("s1"), playCount=9),
+                    dict(_song("s2"), playCount=1),
+                ],
+            },
+        }
+        out = provider.query_items(self._rules())
+        # Refine kept only the playCount > 5 song.
+        assert [it["Id"] for it in out] == ["s1"]
+        # One search3 call, no album expansion.
+        assert [c[0] for c in provider.calls] == ["search3"]
+        params = provider.calls[0][1]
+        assert params["query"] == ""
+        assert params["songCount"] == 500
+        assert params["albumCount"] == 0
+        assert params["artistCount"] == 0
+
+    def test_paginates_until_short_page(self, provider, monkeypatch):
+        def _fake_request(path, params=None, server_url=None):
+            provider.calls.append((path, dict(params or {})))
+            assert path == "search3"
+            if params["songOffset"] == 0:
+                songs = [dict(_song(f"s{i}"), playCount=9) for i in range(500)]
+            else:
+                songs = [dict(_song("tail"), playCount=9)]
+            return {"searchResult3": {"song": songs}}
+
+        monkeypatch.setattr(provider, "_request", _fake_request)
+        out = provider.query_items(self._rules())
+        assert len(out) == 501
+        assert [c[1]["songOffset"] for c in provider.calls] == [0, 500]
+
+    def test_song_cap_bounds_the_sweep(self, provider):
+        # Every page comes back full → without the cap this would loop
+        # forever. Shrink the cap so two pages hit it.
+        provider._BROAD_FETCH_SONG_CAP = 1000
+        provider.responses["search3"] = {
+            "searchResult3": {
+                "song": [dict(_song(f"s{i}"), playCount=9) for i in range(500)],
+            },
+        }
+        out = provider.query_items(self._rules())
+        assert len(provider.calls) == 2
+        assert len(out) == 1000
+
+    def test_midsweep_error_refines_partial_results(self, provider, monkeypatch):
+        # A failure after the first page must not discard the songs
+        # already fetched (and must not fall back to the album walk,
+        # which would double-fetch).
+        def _fake_request(path, params=None, server_url=None):
+            provider.calls.append((path, dict(params or {})))
+            if params["songOffset"] >= 500:
+                raise ConnectionError("boom")
+            songs = [dict(_song(f"s{i}"), playCount=9) for i in range(500)]
+            return {"searchResult3": {"song": songs}}
+
+        monkeypatch.setattr(provider, "_request", _fake_request)
+        out = provider.query_items(self._rules())
+        assert len(out) == 500
+        assert [c[0] for c in provider.calls] == ["search3", "search3"]
+
+    def test_first_page_error_falls_back_to_album_walk(self, provider, monkeypatch):
+        def _fake_request(path, params=None, server_url=None):
+            provider.calls.append((path, dict(params or {})))
+            if path == "search3":
+                raise ConnectionError("no search3 here")
+            if path == "getAlbumList2":
+                return {"albumList2": {"album": [{"id": "alb1"}]}}
+            if path == "getAlbum":
+                return {"album": {"id": "alb1", "song": [dict(_song("s1"), playCount=9)]}}
+            return {}
+
+        monkeypatch.setattr(provider, "_request", _fake_request)
+        out = provider.query_items(self._rules())
+        assert [it["Id"] for it in out] == ["s1"]
+        assert [c[0] for c in provider.calls] == ["search3", "getAlbumList2", "getAlbum"]
+
+
+class TestParallelAlbumExpansion:
+    """_album_tracks_many fans getAlbum calls onto a bounded pool but
+    must keep results in album order and survive per-album failures."""
+
+    def test_year_rule_expands_all_albums_in_order(self, provider, monkeypatch):
+        albums = [{"id": f"alb{i}"} for i in range(3)]
+
+        def _fake_request(path, params=None, server_url=None):
+            provider.calls.append((path, dict(params or {})))
+            if path == "getAlbumList2":
+                return {"albumList2": {"album": albums}}
+            if path == "getAlbum":
+                aid = params["id"]
+                return {"album": {"id": aid, "song": [_song(f"song-{aid}", year=2007)]}}
+            return {}
+
+        monkeypatch.setattr(provider, "_request", _fake_request)
+        out = provider.query_items(
+            {
+                "match": "all",
+                "rules": [{"field": "year", "op": "equals", "value": 2007}],
+            }
+        )
+        # Album order preserved despite the parallel fan-out.
+        assert [it["Id"] for it in out] == ["song-alb0", "song-alb1", "song-alb2"]
+
+    def test_failed_album_fetch_drops_only_that_album(self, provider, monkeypatch):
+        def _fake_request(path, params=None, server_url=None):
+            provider.calls.append((path, dict(params or {})))
+            if path == "getAlbumList2":
+                return {"albumList2": {"album": [{"id": "good"}, {"id": "bad"}]}}
+            if path == "getAlbum":
+                if params["id"] == "bad":
+                    raise ConnectionError("boom")
+                return {"album": {"id": "good", "song": [_song("s-good", year=2007)]}}
+            return {}
+
+        monkeypatch.setattr(provider, "_request", _fake_request)
+        out = provider.query_items(
+            {
+                "match": "all",
+                "rules": [{"field": "year", "op": "equals", "value": 2007}],
+            }
+        )
+        assert [it["Id"] for it in out] == ["s-good"]
+
+    def test_empty_and_missing_ids_short_circuit(self, provider):
+        assert provider._album_tracks_many([]) == []
+        assert provider._album_tracks_many(["", ""]) == []
+        assert provider.calls == []
 
 
 class TestStartsEndsWithRefine:
