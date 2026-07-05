@@ -405,10 +405,12 @@ class LoginView(QWidget):
         # failover-list manager; the label reflects how many are set.
         self._alt_urls_btn = QPushButton(self._alt_urls_label())
         self._alt_urls_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        # :focus mirrors :hover — these flat links are in the tab chain,
+        # and without a visible focus state Tab appears to swallow a stop.
         self._alt_urls_btn.setStyleSheet(
             f"QPushButton {{ background: transparent; border: none; "
             f"color: {TEXT_DIM}; {type_qss(TYPE_CAPTION)} text-align: left; }} "
-            f"QPushButton:hover {{ color: {ACCENT}; }}"
+            f"QPushButton:hover, QPushButton:focus {{ color: {ACCENT}; }}"
         )
         self._alt_urls_btn.clicked.connect(self._open_alt_urls)
         card_layout.addWidget(self._alt_urls_btn, 0, Qt.AlignmentFlag.AlignLeft)
@@ -442,7 +444,7 @@ class LoginView(QWidget):
         self._demo_btn.setStyleSheet(
             f"QPushButton {{ background: transparent; border: none; "
             f"color: {TEXT_DIM}; {type_qss(TYPE_CAPTION)} }} "
-            f"QPushButton:hover {{ color: {ACCENT}; }}"
+            f"QPushButton:hover, QPushButton:focus {{ color: {ACCENT}; }}"
         )
         self._demo_btn.clicked.connect(self._try_demo)
         card_layout.addWidget(self._demo_btn, 0, Qt.AlignmentFlag.AlignHCenter)
@@ -459,6 +461,19 @@ class LoginView(QWidget):
         center_row.addStretch(1)
         outer.addLayout(center_row)
         outer.addStretch(1)
+
+        # Explicit tab order: type → URL → username → password → Sign in,
+        # with the secondary text links (demo, alternate URLs) after the
+        # primary path. The default chain follows construction order, which
+        # detours through "+ Add alternate URL" between the URL and
+        # username fields — with no visible focus on that flat link, Tab
+        # appeared to go nowhere.
+        QWidget.setTabOrder(self._kind_combo, self._server_field)
+        QWidget.setTabOrder(self._server_field, self._username_field)
+        QWidget.setTabOrder(self._username_field, self._password_field)
+        QWidget.setTabOrder(self._password_field, self._submit_btn)
+        QWidget.setTabOrder(self._submit_btn, self._demo_btn)
+        QWidget.setTabOrder(self._demo_btn, self._alt_urls_btn)
 
         # Initial focus: password if username is already filled in,
         # username if not, server URL if neither — first empty field.
@@ -487,6 +502,7 @@ class LoginView(QWidget):
             }}
             QPushButton:hover {{ background: {_ACCENT}; opacity: 0.92; }}
             QPushButton:pressed {{ background: {_ACCENT}; }}
+            QPushButton:focus {{ border: 2px solid {ink_alpha(0.45)}; }}
             QPushButton:disabled {{
                 background: {ink_alpha(0.10)};
                 color: {ink_alpha(0.50)};
