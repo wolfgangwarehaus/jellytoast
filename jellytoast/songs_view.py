@@ -874,7 +874,9 @@ class SongsView(QWidget):
             # Old caches don't carry Genres (added 2026-05-28); a scope
             # bump forces a one-shot re-fetch so smart-playlist
             # seeding from a right-clicked track works.
-            "_item_schema": 2,
+            # Bumped to 3 on 2026-07-05: DateCreated added to Fields for
+            # the multi-library union merges.
+            "_item_schema": 3,
         }
         cached = disk_cache.load(self.CACHE_NAME, scope)
         self._refresh_scope = scope

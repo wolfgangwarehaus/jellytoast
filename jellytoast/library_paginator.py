@@ -121,7 +121,9 @@ class _PaginatorMixin:
             # Bumped to 3 on 2026-05-31: the login double-load bug could
             # persist a doubled/truncated album list to disk; a schema bump
             # discards any such poisoned cache and forces one clean re-fetch.
-            "_item_schema": 3,
+            # Bumped to 4 on 2026-07-05: DateCreated added to Fields (+ the
+            # Subsonic album adapter) for the multi-library union merges.
+            "_item_schema": 4,
         }
         self._refresh_scope = scope
         cached = disk_cache.load(self._cache_name, scope)

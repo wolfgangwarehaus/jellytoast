@@ -320,3 +320,56 @@ def test_rails_dedupe_shared_album_across_folders(qapp, monkeypatch):
     view._latest_loaded.connect(lambda items: landed.setdefault("latest", items))
     view.load(["fa", "fb"])
     assert [it["Id"] for it in landed["latest"]] == ["shared"]
+
+
+def test_rails_latest_merge_keys_on_date_created(qapp, monkeypatch):
+    """Regression (found live 2026-07-05): without DateCreated on the
+    adapted items every album keyed "" in the union sort, the merge kept
+    feed order, and the RAIL_LIMIT trim dropped the smaller folder's
+    newest albums entirely. The merged Latest rail must rank the
+    genuinely newest item first regardless of which folder it lives in
+    or how many items the bigger folder contributed."""
+    monkeypatch.setattr(_disk_cache, "load", lambda *a, **k: None)
+    monkeypatch.setattr(_disk_cache, "save", lambda *a, **k: None)
+    monkeypatch.setattr(sug_mod, "run_async", _inline_run_async)
+    view = SuggestionsView()
+    api = MagicMock()
+
+    def _latest(pid, limit):
+        if pid == "big":
+            return [
+                {"Id": f"big-{i}", "DateCreated": f"2026-06-{i + 1:02d}T00:00:00Z"}
+                for i in range(RAIL_LIMIT)
+            ]
+        return [{"Id": "tiny-new", "DateCreated": "2026-07-05T00:00:00Z"}]
+
+    api.get_latest_media.side_effect = _latest
+    api.get_items.side_effect = lambda *a, **k: {"Items": []}
+    view.api = api
+    landed = {}
+    view._latest_loaded.connect(lambda items: landed.setdefault("latest", items))
+    view.load(["big", "tiny"])
+    ids = [it["Id"] for it in landed["latest"]]
+    assert len(ids) == RAIL_LIMIT
+    assert ids[0] == "tiny-new", "newest-overall album must survive the trim and rank first"
+
+
+def test_subsonic_album_adapter_maps_created_and_played():
+    """The union/rail merges key on DateCreated / UserData.LastPlayedDate;
+    the Subsonic album adapter must project the raw `created` / `played`
+    timestamps onto those Jellyfin-shaped paths (parity with _adapt_song's
+    created mapping)."""
+    from jellytoast.providers.subsonic import SubsonicProvider
+
+    adapted = SubsonicProvider._adapt_album(
+        {
+            "id": "al1",
+            "name": "A",
+            "created": "2026-07-05T15:22:43Z",
+            "played": "2026-07-05T16:00:00Z",
+            "playCount": 3,
+        }
+    )
+    assert adapted["DateCreated"] == "2026-07-05T15:22:43Z"
+    assert adapted["UserData"]["LastPlayedDate"] == "2026-07-05T16:00:00Z"
+    assert adapted["UserData"]["PlayCount"] == 3
