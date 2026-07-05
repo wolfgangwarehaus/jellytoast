@@ -244,7 +244,7 @@ class TestAutoAdvanceHandoff:
         # Simulate the post-handoff state: mpv has advanced gaplessly
         # to the prefetched entry, so its `path` matches what we
         # prefetched (URL_v1).
-        prefetched_url = "stream://B?u=avtips&t=v1_token&s=v1_salt"
+        prefetched_url = "stream://B?u=qauser&t=v1_token&s=v1_salt"
         controller._mpv.path = prefetched_url
         controller._mpv.idle_active = False
         controller._mpv.core_idle = False
@@ -252,7 +252,7 @@ class TestAutoAdvanceHandoff:
         controller._prefetched_item_id = "B"
 
         # play() is called with a freshly-built URL (rotated salt).
-        np = _np(item_id="B", url="stream://B?u=avtips&t=v2_token&s=v2_salt")
+        np = _np(item_id="B", url="stream://B?u=qauser&t=v2_token&s=v2_salt")
         plays_before = len(controller._mpv.play_calls)
         controller.play(np)
         assert len(controller._mpv.play_calls) == plays_before

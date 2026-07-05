@@ -1,7 +1,7 @@
 # jellytoast 0.1.7 (PR #219) — macOS QA pass (findings + evidence)
 
 **Box:** Intel MacBookPro12,1 (Broadwell Iris 6100), macOS Sequoia **15.7.7** via **OCLP 2.4.1** root patches, Retina 2560×1600.
-**Server:** live Subsonic/Navidrome (`http://192.168.50.100:4533`, signed in as `avtips`).
+**Server:** live Subsonic/Navidrome (`http://<lan-ip>:4533`, signed in as `<qa-user>`).
 **App:** source run (`.venv/bin/python -m jellytoast`, PySide6), driven via the test bridge (`JT_TEST_BRIDGE=1` + `dev/jt_ctl.py`) against the real Settings widgets.
 **Date:** 2026-07-02 → 2026-07-03. Autonomous pass + august's hands for OCLP/System Settings.
 
@@ -48,7 +48,7 @@ Commit `df4453b`, mirroring the Windows isolation pass:
 
 ### ⚠️ Collateral damage on this box (pre-fix runs, now impossible to repeat)
 Before the isolation fix landed, the earlier `pytest -n auto` runs **cleared the real preferences domain and overwrote the real Keychain token** (the stored token is now an 8-char test value; `boot-auth: is_auth=False`). Recovered what I could:
-- Server URL restored to `http://192.168.50.100:8096` ("piserver", reachable — found via dev docs + LAN probe).
+- Server URL restored to `http://<lan-ip>:8096` (the QA server, reachable — found via dev docs + LAN probe).
 - Covers cache and downloads DB were untouched.
 - **august: one re-login needed** (Settings → server) — user id + token are gone. Sorry; the conftest fix makes this class of damage impossible going forward.
 - Everything I changed during QA was restored: builtin family + default accent, follow off, system accent key deleted, Reduce Transparency back ON, test scheme file removed, no app instances left running.
@@ -60,7 +60,7 @@ Before the isolation fix landed, the earlier `pytest -n auto` runs **cleared the
 
 ### July 2 follow-ups — the "needs august's eyes" items are now ✅
 - **Live accent flip (the one unverifiable link above)**: verified with a *real* System Settings accent change while the app ran with Follow on — the app followed live, no one-behind. Closed.
-- Re-verified on the current server config (now Navidrome/subsonic `http://192.168.50.100:4533`, user avtips, after the re-login): preset glass caps numerically (jt 110 / preset 150 / slider verbatim), base16 import refusal, watched-folder live re-theme.
+- Re-verified on the current server config (now Navidrome/subsonic `http://<lan-ip>:4533`, user <qa-user>, after the re-login): preset glass caps numerically (jt 110 / preset 150 / slider verbatim), base16 import refusal, watched-folder live re-theme.
 - Suite still green: `3152 passed, 16 skipped` (`df4453b`, pushed).
 
 ### July 3 addendum — the frost saga is CLOSED: dead vibrancy is this box's hardware, not the PR

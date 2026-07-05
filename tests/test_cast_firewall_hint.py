@@ -36,13 +36,13 @@ class TestLanCidrs:
         _patch_adapters(
             monkeypatch,
             [
-                _FakeAdapter([_FakeIP("192.168.50.210", 24)]),
+                _FakeAdapter([_FakeIP("192.168.1.210", 24)]),
                 _FakeAdapter([_FakeIP("100.71.43.71", 32)]),  # Tailscale CGNAT
                 _FakeAdapter([_FakeIP("127.0.0.1", 8)]),  # loopback
                 _FakeAdapter([_FakeIP("169.254.1.2", 16)]),  # link-local
             ],
         )
-        assert _lan_cidrs() == ["192.168.50.0/24"]
+        assert _lan_cidrs() == ["192.168.1.0/24"]
 
     def test_dedupes_same_network_keeps_distinct(self, monkeypatch):
         from jellytoast.cast_manager import _lan_cidrs
@@ -51,12 +51,12 @@ class TestLanCidrs:
             monkeypatch,
             [
                 _FakeAdapter(
-                    [_FakeIP("192.168.50.210", 24), _FakeIP("192.168.50.50", 24)]
+                    [_FakeIP("192.168.1.210", 24), _FakeIP("192.168.1.50", 24)]
                 ),
                 _FakeAdapter([_FakeIP("10.0.0.7", 24)]),
             ],
         )
-        assert _lan_cidrs() == ["192.168.50.0/24", "10.0.0.0/24"]
+        assert _lan_cidrs() == ["192.168.1.0/24", "10.0.0.0/24"]
 
     def test_skips_non_ipv4(self, monkeypatch):
         from jellytoast.cast_manager import _lan_cidrs
@@ -95,12 +95,12 @@ class TestFirewallHelpText:
         import jellytoast.cast_manager as cm
         from jellytoast.settings_dialog import SettingsDialog
 
-        monkeypatch.setattr(cm, "_lan_cidrs", lambda: ["192.168.50.0/24"])
+        monkeypatch.setattr(cm, "_lan_cidrs", lambda: ["192.168.1.0/24"])
         monkeypatch.setattr("jellytoast.platform_compat.IS_WINDOWS", False)
         monkeypatch.setattr("jellytoast.platform_compat.IS_MACOS", False)
         text = SettingsDialog._firewall_help_text(object())
-        assert "sudo ufw allow from 192.168.50.0/24" in text
-        assert "192.168.50.0/24" in text  # also in the firewalld rich-rule
+        assert "sudo ufw allow from 192.168.1.0/24" in text
+        assert "192.168.1.0/24" in text  # also in the firewalld rich-rule
         assert "5353" in text and "1900" in text  # port reference line
 
     def test_falls_back_when_subnet_unknown(self, monkeypatch):
@@ -117,7 +117,7 @@ class TestFirewallHelpText:
         import jellytoast.cast_manager as cm
         from jellytoast.settings_dialog import SettingsDialog
 
-        monkeypatch.setattr(cm, "_lan_cidrs", lambda: ["192.168.50.0/24"])
+        monkeypatch.setattr(cm, "_lan_cidrs", lambda: ["192.168.1.0/24"])
         monkeypatch.setattr("jellytoast.platform_compat.IS_WINDOWS", True)
         text = SettingsDialog._firewall_help_text(object())
         assert "Windows" in text
