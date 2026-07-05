@@ -1,7 +1,7 @@
 # jellytoast 0.1.5 — Windows 11 QA pass (findings + evidence)
 
 **Box:** Windows 11, build **26200**, single display @ **125%** scale, non-admin.
-**Server:** live Subsonic/Navidrome (`http://192.168.50.100:4533`, signed in as `avtips`).
+**Server:** live Subsonic/Navidrome (`http://<lan-ip>:4533`, signed in as `<qa-user>`).
 **App:** source run (`python -m jellytoast`, venv PySide6 6.11.1, libmpv-2.dll present) **and** a frozen PyInstaller onedir build.
 **Driver:** `dev/qa_harness.py` over the test bridge (isolated `JT_INSTANCE_KEY=jt-qa`), full composited-screen capture, dark + light, + per-surface bridge introspection + a frozen-exe launch test.
 **Date:** 2026-06-28. Autonomous pass.
@@ -19,7 +19,7 @@ Acrylic is genuinely active here: `blur/_dwm.is_supported()=True`, build `26200`
 - **Every surface** (Albums, Artists, Songs, Genres, Suggestions, Radio, Downloads, Smart Playlists, Search, Now Playing) — translucent frosted glass, dark **and** light; titles/subtitles/track-lists legible over body **and** busy album art; rounded top corners intact; accent (purple) + focus rings + selection borders consistent.
 - **Window states** — maximized + fullscreen fill the work area edge-to-edge (square corners correct for those states), no blank/black/mis-draw on the state sweep.
 - **Mini player** — frosted card (album art + title/subtitle + prev/pause/next), rounded corners, frost over the desktop; matches the main body. ✓
-- **Settings dialog** — frosted acrylic panel, album art ghosts faintly through, all text legible ("Signed in to Navidrome as avtips", server URL + green online dot), accent consistent, rounded corners, modal scrim — in **dark and light**. ✓
+- **Settings dialog** — frosted acrylic panel, album art ghosts faintly through, all text legible ("Signed in to Navidrome as <qa-user>", server URL + green online dot), accent consistent, rounded corners, modal scrim — in **dark and light**. ✓
 - **Now-playing visualizer** — `VisualizerWidget` renders as a soft purple ambient glow (intended; see artifact #4 below).
 
 ## B. Windows-native — PASS (code present + runtime-confirmed)

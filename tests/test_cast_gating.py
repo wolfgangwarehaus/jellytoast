@@ -620,9 +620,9 @@ class TestDiscoveryInterfaces:
         monkeypatch.setitem(
             sys.modules,
             "ifaddr",
-            _fake_ifaddr([("192.168.50.20", True), ("100.94.220.31", True), ("127.0.0.1", True)]),
+            _fake_ifaddr([("192.168.1.20", True), ("100.94.220.31", True), ("127.0.0.1", True)]),
         )
-        assert _cm_mod._discovery_interfaces() == ["192.168.50.20"]
+        assert _cm_mod._discovery_interfaces() == ["192.168.1.20"]
 
     def test_excludes_loopback_and_link_local(self, monkeypatch):
         import sys
