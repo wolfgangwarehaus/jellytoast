@@ -178,7 +178,7 @@ def _discovery_interfaces() -> Optional[list]:
 
 
 def _lan_cidrs() -> list:
-    """Human-facing LAN network CIDR(s) (e.g. ``192.168.50.0/24``) for the
+    """Human-facing LAN network CIDR(s) (e.g. ``192.168.1.0/24``) for the
     non-overlay interfaces — used by the Casting-page firewall hint to build a
     copy-paste ``allow from <subnet>`` rule. Mirrors _discovery_interfaces'
     interface selection but returns the network rather than the host address.

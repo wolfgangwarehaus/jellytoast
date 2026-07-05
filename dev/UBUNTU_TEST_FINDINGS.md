@@ -2,7 +2,7 @@
 
 **Box:** Ubuntu **26.04 LTS** (Resolute Raccoon), GNOME **49**, **Wayland** session
 (XWayland present at `:0`); single display.
-**Server:** live Subsonic/Navidrome (`http://192.168.50.100:4533`, signed in as `avtips`),
+**Server:** live Subsonic/Navidrome (`http://<lan-ip>:4533`, signed in as `<qa-user>`),
 bit-perfect mode on.
 **App:** source run (`python3 -m jellytoast`, `jt-build-venv` PySide6 **6.11.1** +
 python-mpv, host **libmpv.so.2** + **libxcb-cursor.so.0** present), in **both** a
@@ -56,7 +56,7 @@ see-through on X11") is handled correctly.
 - **Mini player** — compact card (art + title/subtitle + prev/play/next), rounded corners,
   body matches main, in dark **and** light.
 - **Settings dialog** — correct body, rounded corners, all legible ("Signed in to
-  Navidrome as avtips", server URL + green online dot), in dark **and** light.
+  Navidrome as <qa-user>", server URL + green online dot), in dark **and** light.
 - **Light theme** — the F6 icon-tint harness fix is in: light-theme top-bar glyphs render
   correctly (not the "invisible icons" artifact the Windows pass diagnosed).
 

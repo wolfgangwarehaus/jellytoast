@@ -43,7 +43,7 @@ def _patch_get(monkeypatch, resp):
 
 def test_detects_navidrome_alongside_jellytoast(monkeypatch):
     _patch_get(monkeypatch, _Resp(200, _listens("navidrome", "jellytoast", "navidrome")))
-    res = ssd.detect("https://api.listenbrainz.org", "avtips", "tok")
+    res = ssd.detect("https://api.listenbrainz.org", "qauser", "tok")
     assert res.checked
     assert res.foreign_clients == ("navidrome",)  # de-duped, jellytoast excluded
     assert res.server_scrobbles is True
@@ -51,7 +51,7 @@ def test_detects_navidrome_alongside_jellytoast(monkeypatch):
 
 def test_only_jellytoast_means_no_second_scrobbler(monkeypatch):
     _patch_get(monkeypatch, _Resp(200, _listens("jellytoast", "jellytoast")))
-    res = ssd.detect("https://api.listenbrainz.org", "avtips", "tok")
+    res = ssd.detect("https://api.listenbrainz.org", "qauser", "tok")
     assert res.checked
     assert res.foreign_clients == ()
     assert res.server_scrobbles is False
@@ -59,20 +59,20 @@ def test_only_jellytoast_means_no_second_scrobbler(monkeypatch):
 
 def test_case_insensitive_and_ignores_blank_client(monkeypatch):
     _patch_get(monkeypatch, _Resp(200, _listens("JellyToast", None, "Navidrome")))
-    res = ssd.detect("https://api.listenbrainz.org", "avtips")
+    res = ssd.detect("https://api.listenbrainz.org", "qauser")
     assert res.foreign_clients == ("navidrome",)  # JellyToast == ours; None skipped
 
 
 def test_empty_account_checked_but_no_foreign(monkeypatch):
     _patch_get(monkeypatch, _Resp(200, {"payload": {"listens": []}}))
-    res = ssd.detect("https://api.listenbrainz.org", "avtips")
+    res = ssd.detect("https://api.listenbrainz.org", "qauser")
     assert res.checked is True
     assert res.server_scrobbles is False
 
 
 def test_non_200_is_not_checked(monkeypatch):
     _patch_get(monkeypatch, _Resp(500, None))
-    res = ssd.detect("https://api.listenbrainz.org", "avtips")
+    res = ssd.detect("https://api.listenbrainz.org", "qauser")
     assert res.checked is False
     assert res.server_scrobbles is False
 
@@ -81,13 +81,13 @@ def test_network_error_is_not_checked(monkeypatch):
     def boom(*a, **k):
         raise requests.RequestException("down")
     monkeypatch.setattr(requests, "get", boom)
-    res = ssd.detect("https://api.listenbrainz.org", "avtips")
+    res = ssd.detect("https://api.listenbrainz.org", "qauser")
     assert res.checked is False
 
 
 def test_bad_json_is_not_checked(monkeypatch):
     _patch_get(monkeypatch, _Resp(200, None, raises=True))
-    res = ssd.detect("https://api.listenbrainz.org", "avtips")
+    res = ssd.detect("https://api.listenbrainz.org", "qauser")
     assert res.checked is False
 
 
@@ -112,7 +112,7 @@ class TestRefreshServerScrobbleFlags:
         from jellytoast import scrobble as scr
 
         isolated_settings.listenbrainz_enabled = True
-        isolated_settings.listenbrainz_username = "avtips"
+        isolated_settings.listenbrainz_username = "qauser"
         isolated_settings.listenbrainz_token = "tok"
         isolated_settings.server_is_navidrome = True  # current server is Navidrome
         isolated_settings.server_scrobbles_listenbrainz = False
@@ -139,7 +139,7 @@ class TestRefreshServerScrobbleFlags:
         from jellytoast import scrobble as scr
 
         isolated_settings.listenbrainz_enabled = True
-        isolated_settings.listenbrainz_username = "avtips"
+        isolated_settings.listenbrainz_username = "qauser"
         isolated_settings.server_is_navidrome = False  # now on Jellyfin
         isolated_settings.server_scrobbles_listenbrainz = True  # stale from Navidrome
         monkeypatch.setattr(
