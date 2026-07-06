@@ -41,6 +41,8 @@ _CHANGELOG = """\
 - **AppImage self-updates actually work now.** Linux packaging fix.
 - **Better on Windows and macOS.** Cross-platform but Store-relevant.
 - **A `code` fix** with a [link](https://example.com) inside.
+- **Small stuff.** A pile of tiny fixes nobody needs itemized in a store.
+- A bullet without a bold lead. Its second sentence is dropped.
 
 ## [9.9.8] - 2098-01-01
 
@@ -67,21 +69,39 @@ def test_mac_platform_profile_filters_for_mas():
     assert "Better on Windows and macOS" in text  # mentions macOS → kept
 
 
+def test_store_lines_are_titles_only():
+    # The Store field wants a glance-able list: the bold lead, no prose,
+    # no trailing period (august, 2026-07-06 — full bullets read too long).
+    text = wn.whats_new(_CHANGELOG, "9.9.9")
+    assert "• Faster everything" in text
+    assert "big libraries" not in text  # the prose stays in the changelog
+    assert "• Faster everything." not in text
+
+
+def test_generic_catchall_bullets_are_skipped():
+    text = wn.whats_new(_CHANGELOG, "9.9.9")
+    assert "Small stuff" not in text
+
+
+def test_boldless_bullet_falls_back_to_first_sentence():
+    text = wn.whats_new(_CHANGELOG, "9.9.9")
+    assert "• A bullet without a bold lead" in text
+    assert "second sentence" not in text
+
+
 def test_renders_plain_text_bullets():
     text = wn.whats_new(_CHANGELOG, "9.9.9")
     assert "**" not in text and "`" not in text and "](" not in text
     assert text.startswith("• ")
-    # Continuation lines are joined into one bullet.
-    assert "faster on big libraries" in text
 
 
 def test_caps_on_bullet_boundary():
     long_changelog = "## [1.0.0]\n\n" + "\n".join(
-        f"- **Item {i}.** " + "x" * 400 for i in range(6)
+        f"- **Item {i} " + "x" * 400 + ".** prose." for i in range(6)
     )
     text = wn.whats_new(long_changelog, "1.0.0")
     assert len(text) <= wn.STORE_LIMIT
-    assert text.endswith("x")  # a whole bullet, not a mid-sentence cut
+    assert text.endswith("x")  # a whole line, not a mid-title cut
 
 
 def test_missing_version_returns_none():
