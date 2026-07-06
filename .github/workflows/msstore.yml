@@ -101,6 +101,22 @@ jobs:
       - name: Configure Microsoft Store CLI
         if: env.HAVE_CREDS == 'true'
         uses: microsoft/microsoft-store-apppublisher@b76227f539d68e6465f79bbbc82ed92f61081aa4 # v1.3
+      # "What's new" text comes from the tag's CHANGELOG block (same voice,
+      # curated to Windows-relevant bullets) — `msstore publish` alone carries
+      # the PREVIOUS submission's notes forward forever (ops#3; 0.1.5 shipped
+      # with stale notes and was hand-edited in Partner Center).
+      - name: Extract "What's new" from CHANGELOG
+        if: env.HAVE_CREDS == 'true'
+        id: notes
+        shell: pwsh
+        run: |
+          $ver = "${{ steps.pack.outputs.tag }}".TrimStart('v')
+          python dev/store_whats_new.py $ver | Set-Content whats_new.txt -Encoding utf8
+          Write-Host "--- What's new ($ver) ---"
+          Get-Content whats_new.txt | Write-Host
+          "## Store What's new" >> $env:GITHUB_STEP_SUMMARY
+          Get-Content whats_new.txt >> $env:GITHUB_STEP_SUMMARY
+
       - name: Submit package update to the Store
         if: env.HAVE_CREDS == 'true'
         shell: pwsh
@@ -110,6 +126,22 @@ jobs:
             --sellerId ${{ secrets.SELLER_ID }} `
             --clientId ${{ secrets.AZURE_AD_APPLICATION_CLIENT_ID }} `
             --clientSecret ${{ secrets.AZURE_AD_APPLICATION_SECRET }}
+
+          # Granular flow: fetch the pending submission, stamp releaseNotes on
+          # every listing, push the metadata back, THEN attach + publish the
+          # package. Metadata failures fall back to the old one-shot publish
+          # (stale notes, loud warning) so a Store API hiccup never blocks the
+          # release train.
+          try {
+            msstore submission get 9PNLTPXGHN79 | Set-Content submission.json -Encoding utf8
+            python dev/store_patch_release_notes.py submission.json whats_new.txt patched.json
+            $meta = Get-Content patched.json -Raw
+            msstore submission updateMetadata 9PNLTPXGHN79 $meta
+            if ($LASTEXITCODE -ne 0) { throw "updateMetadata exited $LASTEXITCODE" }
+            Write-Host "Release notes stamped on the pending submission."
+          } catch {
+            Write-Warning "What's-new stamping failed ($_) — publishing with carried-forward notes; fix them in Partner Center."
+          }
           msstore publish "${{ steps.pack.outputs.msix }}" -id 9PNLTPXGHN79
 
       - name: Manual-upload reminder (no submission secrets)
