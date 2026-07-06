@@ -137,21 +137,45 @@ def _update_titlebar_tint(window, nswin) -> None:
         if host is None:
             return
         frame = nswin.frame()
-        # Whether Qt's view reaches the top of the frame is BISTABLE across
-        # launches (cocoa geometry negotiation vs FullSizeContentView timing):
-        # some runs QNSView spans the full frame — Qt's own glass already
-        # covers the titlebar band and an extra tint would double-darken it —
-        # other runs it stops at the content-layout height, leaving the band
-        # bare. So tint exactly the UNCOVERED gap, and nothing when there is
-        # none. (Fullscreen also lands in the no-gap branch: no titlebar.)
-        qt_h = float(qt_view.frame().size.height)
-        tb_h = float(frame.size.height) - qt_h
+        # Whether Qt's PAINT reaches the top of the frame is BISTABLE across
+        # launches and can flip on resize: sometimes Qt renders directly into
+        # a full-frame QNSView (its glass tint covers the titlebar band — an
+        # extra tint would double-darken), sometimes the actual rendering
+        # lives in a NESTED child QNSView that starts below the titlebar,
+        # leaving the band unpainted (bare vibrancy) while the OUTER view
+        # still reports full height. So measure the topmost edge covered by
+        # LEAF QNSViews (the ones Qt actually paints into) in window coords,
+        # and tint exactly the uncovered gap — nothing when there is none.
+        # (Fullscreen also lands in the no-gap branch: no titlebar.)
+        def _leaf_paint_top(v) -> float:
+            try:
+                if v.isHidden():
+                    return 0.0
+                kids = [
+                    sv
+                    for sv in (v.subviews() or [])
+                    if "QNSView" in type(sv).__name__
+                ]
+                if kids:
+                    return max((_leaf_paint_top(sv) for sv in kids), default=0.0)
+                r = v.convertRect_toView_(v.bounds(), None)
+                return float(r.origin.y + r.size.height)
+            except Exception:
+                return 0.0
+
+        qt_top = _leaf_paint_top(qt_view)
+        tb_h = float(frame.size.height) - qt_top
         tint = getattr(window, "_jt_titlebar_tint", None)
-        if tb_h <= 0.5:  # Qt covers the full frame (or fullscreen) — no band
+        # No gap (Qt paints to the top / fullscreen) → nothing to tint. An
+        # implausibly TALL gap means Qt's views haven't been laid out yet
+        # (boot runs apply() before the first real geometry pass — a
+        # full-window "band" here would veil ALL content); hide and let the
+        # post-boot/resize/theme refreshes re-derive it once geometry is real.
+        if tb_h <= 0.5 or tb_h > 40.0:
             if tint is not None:
                 tint.setHidden_(True)
             return
-        rect = AppKit.NSMakeRect(0, qt_h, frame.size.width, tb_h)
+        rect = AppKit.NSMakeRect(0, qt_top, frame.size.width, tb_h)
         if tint is None:
             tint = AppKit.NSView.alloc().initWithFrame_(rect)
             # Width follows the window; MinY margin keeps it pinned to the top.

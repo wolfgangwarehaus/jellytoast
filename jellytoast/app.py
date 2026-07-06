@@ -2406,6 +2406,11 @@ def main():
 
         macos_menubar.install(win)
         macos_window.apply(win)
+        # apply() runs before Qt's first real layout pass, so the titlebar
+        # tint band can't be derived yet (its geometry probe sees unrealized
+        # views and hides the tint). Re-derive once the boot paint settles;
+        # afterwards the resize/fullscreen/theme_changed hooks keep it live.
+        QTimer.singleShot(1500, lambda: macos_window.refresh_titlebar_tint(win))
         _boot_mark("macOS menu bar + native chrome")
 
     # Dev-only remote-control bridge for live end-to-end testing. OFF
