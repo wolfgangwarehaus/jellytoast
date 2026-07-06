@@ -61,6 +61,12 @@ def test_drops_non_windows_bullets_keeps_mixed_ones():
     assert "Better on Windows and macOS" in text  # mentions Windows → kept
 
 
+def test_mac_platform_profile_filters_for_mas():
+    text = wn.whats_new(_CHANGELOG, "9.9.9", platform="mac")
+    assert "AppImage" not in text
+    assert "Better on Windows and macOS" in text  # mentions macOS → kept
+
+
 def test_renders_plain_text_bullets():
     text = wn.whats_new(_CHANGELOG, "9.9.9")
     assert "**" not in text and "`" not in text and "](" not in text
