@@ -110,6 +110,10 @@ def main() -> int:
     ap.add_argument("version", help="release version, e.g. 0.1.8 (no leading v)")
     ap.add_argument("--changelog", default="CHANGELOG.md", type=Path)
     ap.add_argument("--platform", default="windows", choices=sorted(_PROFILES))
+    # Write the file ourselves: piping stdout through PowerShell's
+    # Set-Content re-encodes via the console codepage and mangles •/— on
+    # the Windows runners (seen live on the 0.1.8 run).
+    ap.add_argument("--out", type=Path, help="write UTF-8 to this file instead of stdout")
     args = ap.parse_args()
 
     text = whats_new(
@@ -121,7 +125,10 @@ def main() -> int:
             file=sys.stderr,
         )
         return 1
-    print(text)
+    if args.out:
+        args.out.write_text(text + "\n", encoding="utf-8")
+    else:
+        print(text)
     return 0
 
 

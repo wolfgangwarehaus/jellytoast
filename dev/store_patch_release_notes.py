@@ -49,9 +49,26 @@ def patch(submission: dict, notes: str) -> int:
     return stamped
 
 
+def extract_json(raw: str) -> dict:
+    """The submission object from `msstore submission get` output.
+
+    The CLI prints the JSON via AnsiConsole AFTER its status spinner has
+    already written progress lines to the same stream (seen live on the
+    0.1.8 run: 'Retrieving Submission' chatter ahead of the payload), so
+    a bare json.loads fails. Parse the outermost brace span instead.
+    """
+    try:
+        return json.loads(raw)
+    except ValueError:
+        start, end = raw.find("{"), raw.rfind("}")
+        if start == -1 or end <= start:
+            raise ValueError("no JSON object found in the CLI output") from None
+        return json.loads(raw[start : end + 1])
+
+
 def main() -> int:
     sub_path, notes_path, out_path = (Path(p) for p in sys.argv[1:4])
-    submission = json.loads(sub_path.read_text(encoding="utf-8"))
+    submission = extract_json(sub_path.read_text(encoding="utf-8"))
     notes = notes_path.read_text(encoding="utf-8").strip()
     if not notes:
         print("error: empty what's-new text", file=sys.stderr)
