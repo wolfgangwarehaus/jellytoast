@@ -619,7 +619,8 @@ class TestPlatformActiveAlpha:
         s.setValue("ui/jellytoast_glass_alpha", 0)
         s.sync()
         assert th._platform_active_alpha(172, mac=False) == 96
-        assert th._platform_active_alpha(172, mac=True) == 110
+        # 110 → 80: the 0.1.8 more-transparent-mac-baseline pass.
+        assert th._platform_active_alpha(172, mac=True) == 80
 
     def test_preset_default_gets_deeper_cap(self, clean_theme_settings):
         s = _settings_handle()
@@ -627,7 +628,8 @@ class TestPlatformActiveAlpha:
         s.setValue("ui/preset_glass_alpha", 0)
         s.sync()
         assert th._platform_active_alpha(205, mac=False) == 128
-        assert th._platform_active_alpha(205, mac=True) == 150
+        # 150 → 120: dropped alongside the builtin cap (same spread).
+        assert th._platform_active_alpha(205, mac=True) == 120
 
     def test_explicit_slider_value_wins_over_cap(self, clean_theme_settings):
         s = _settings_handle()

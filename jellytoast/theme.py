@@ -69,9 +69,12 @@ def _win_glass_alpha() -> int:
 # macOS NSVisualEffectView vibrancy veils heavier than KWin's blur, so the
 # shared ~67% glass body (172) reads noticeably more opaque on macOS than on
 # Linux — same number, denser backdrop. Cap the macOS body alpha lower so the
-# vibrancy reads through and the window matches the KWin glass feel; 110 (~43%)
-# was tuned by eye against KDE Plasma's blur. Tune live with JT_MAC_GLASS_ALPHA.
-_MAC_BODY_DEFAULT_ALPHA = 110
+# vibrancy reads through and the window matches the KWin glass feel. 110 (~43%)
+# was the PR219 eye-tune against KDE Plasma's blur; august's 0.1.8 screenshot
+# pass judged the airiest reachable glass (120, the old slider floor) "looks
+# the best" and asked for a much more transparent baseline, so the default
+# drops to 80 (~31%). Tune live with JT_MAC_GLASS_ALPHA.
+_MAC_BODY_DEFAULT_ALPHA = 80
 
 
 def _mac_glass_alpha() -> int:
@@ -96,7 +99,10 @@ def _mac_glass_alpha() -> int:
 # vibrancy read through. PROVISIONAL until eyeballed on the needs:windows box;
 # tune live with the env knobs, then bake.
 _WIN_PRESET_DEFAULT_ALPHA = 128
-_MAC_PRESET_DEFAULT_ALPHA = 150
+# 150 shipped with PR219; dropped alongside _MAC_BODY_DEFAULT_ALPHA (110→80)
+# in the 0.1.8 more-transparent-baseline pass, keeping the same
+# preset-deeper-than-jellytoast spread.
+_MAC_PRESET_DEFAULT_ALPHA = 120
 
 
 def _win_preset_glass_alpha() -> int:

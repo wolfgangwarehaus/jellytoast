@@ -43,6 +43,8 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from jellytoast.platform_compat import IS_MACOS
+
 
 class _AccentSwatch(QPushButton):
     """Circular accent-picker swatch painted by hand.
@@ -3289,8 +3291,11 @@ class SettingsDialog(QDialog):
 
     # Glass-opacity slider range — spans the airy jellytoast light default (140)
     # up to near-opaque. Wider than the preset-only band so every family's
-    # default is reachable/displayable.
-    _GLASS_MIN = 120
+    # default is reachable/displayable. macOS gets a much lower floor: vibrancy
+    # keeps even a faint tint legible there, the mac family default (80) sits
+    # BELOW the old 120 floor (which made "Default" unreachable on the slider),
+    # and august's 0.1.8 screenshot pass wanted the glass dialable well past it.
+    _GLASS_MIN = 60 if IS_MACOS else 120
     _GLASS_MAX = 245
     # Fixed width for the family dropdown (stable right edge). The Mode combo and
     # the glass slider match it so their right edges line up, and Import + the

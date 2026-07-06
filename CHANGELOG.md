@@ -10,6 +10,13 @@ developer-facing history lives in [`docs/CHANGELOG.md`](docs/CHANGELOG.md).
      This block becomes the GitHub release notes; cut_release.sh stamps it into a
      dated version on release. One line per change where you can. -->
 
+- **macOS frosted glass is airier.** The default glass is much more
+  transparent on Mac, and the Glass-opacity slider now dials all the way
+  down to 24% (it used to stop at 47%).
+- **macOS: the top of the window stays frosted after fullscreen.** Leaving
+  native fullscreen used to bring back an opaque strip behind the traffic
+  lights; the glass now flows to the top corners again like at launch.
+
 ## [0.1.8] — 2026-07-06
 
 - **Picking a few libraries now actually filters.** With 3+ libraries on

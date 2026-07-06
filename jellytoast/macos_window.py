@@ -76,6 +76,7 @@ def apply(window) -> bool:
         except Exception:
             pass
         _install_position_sync(window, nswin)
+        _install_fullscreen_restore(window, nswin)
         logger.info("macOS native chrome: transparent titlebar + full-size content")
         return True
     except Exception as e:  # pragma: no cover — macOS-only
@@ -83,7 +84,49 @@ def apply(window) -> bool:
         return False
 
 
+def _install_fullscreen_restore(window, nswin) -> None:
+    """Re-assert the transparent-titlebar chrome after every native
+    fullscreen EXIT.
+
+    AppKit restores the window's pre-fullscreen styleMask when leaving
+    fullscreen, wiping ``FullSizeContentView`` + ``titlebarAppearsTransparent``
+    (observed styleMask 15 after one round-trip on the 0.1.8 MAS screenshot
+    pass) — the titlebar regrows its own opaque material band and the top of
+    the window stops blending into the glass. A Qt-side re-apply on
+    ``WindowStateChange`` fires DURING the exit transition and gets clobbered
+    by AppKit's own restore, so hook AppKit's authoritative
+    ``NSWindowDidExitFullScreenNotification`` instead — by then the transition
+    is done and the re-asserted mask sticks. Idempotent; best-effort; never
+    raises."""
+    if getattr(window, "_jt_macos_fs_observer", None) is not None:
+        return
+    try:
+        from AppKit import NSWindowDidExitFullScreenNotification
+        from Foundation import NSNotificationCenter
+
+        def _on_exit_fullscreen(_note):
+            try:
+                apply(window)
+            except Exception as e:  # pragma: no cover — macOS-only
+                logger.info("post-fullscreen chrome restore failed: %s", e)
+
+        token = NSNotificationCenter.defaultCenter().addObserverForName_object_queue_usingBlock_(
+            NSWindowDidExitFullScreenNotification, nswin, None, _on_exit_fullscreen
+        )
+        # Retain the token + closure for the window's lifetime (mirrors
+        # _install_position_sync).
+        window._jt_macos_fs_observer = token
+        window._jt_macos_fs_cb = _on_exit_fullscreen
+    except Exception as e:  # pragma: no cover — macOS-only
+        logger.info("macOS fullscreen-restore install failed: %s", e)
+
+
 def _install_position_sync(window, nswin) -> None:
+    # apply() re-runs on every fullscreen exit (_install_fullscreen_restore) —
+    # one observer per window is enough; stacking a fresh one each pass would
+    # leak observers + timers for the window's whole lifetime.
+    if getattr(window, "_jt_macos_move_observer", None) is not None:
+        return
     """Keep Qt's window position synced with the real NSWindow — **debounced**.
 
     ``setMovableByWindowBackground_`` lets the user drag the window by its
