@@ -1,13 +1,13 @@
 # yaml-language-server: $schema=https://aka.ms/winget-manifest.installer.1.6.0.schema.json
 PackageIdentifier: wolfgangwarehaus.jellytoast
-PackageVersion: 0.1.7
+PackageVersion: 0.1.8
 InstallerLocale: en-US
 InstallerType: inno
 Scope: user
 UpgradeBehavior: install
 Installers:
   - Architecture: x64
-    InstallerUrl: https://github.com/wolfgangwarehaus/jellytoast/releases/download/v0.1.7/jellytoast-0.1.7-windows-x64-setup.exe
+    InstallerUrl: https://github.com/wolfgangwarehaus/jellytoast/releases/download/v0.1.8/jellytoast-0.1.8-windows-x64-setup.exe
     # NOTE: winget-releaser recomputes this at publish — the winget repo, not
     # this file, is authoritative. Backfilled from the release's SHA256SUMS so
     # a direct `winget install --manifest` of this checkout works.
