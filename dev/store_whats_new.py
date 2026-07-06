@@ -31,14 +31,28 @@ from pathlib import Path
 # Partner Center's "What's new in this version" hard cap.
 STORE_LIMIT = 1500
 
-# A bullet mentioning any of these is not for the Windows Store listing —
-# unless it also mentions Windows (e.g. "on Windows and macOS").
-_NON_WINDOWS = re.compile(
-    r"\b(macos|mac app store|\.dmg\b|appimage|aur\b|\.deb\b|flatpak|"
-    r"linux|kde|plasma|wayland|pipx|homebrew)\b",
-    re.IGNORECASE,
-)
-_WINDOWS = re.compile(r"\bwindows|microsoft store|msix|winget\b", re.IGNORECASE)
+# A bullet mentioning another platform's packaging/desktop is not for this
+# store's listing — unless it also mentions the store's own platform
+# (e.g. "on Windows and macOS" stays everywhere). One profile per store;
+# the MAS auto-submit (ops#2) reuses this with --platform mac.
+_PROFILES = {
+    "windows": {
+        "drop": re.compile(
+            r"\b(macos|mac app store|\.dmg\b|appimage|aur\b|\.deb\b|flatpak|"
+            r"linux|kde|plasma|wayland|pipx|homebrew)\b",
+            re.IGNORECASE,
+        ),
+        "keep": re.compile(r"\bwindows|microsoft store|msix|winget\b", re.IGNORECASE),
+    },
+    "mac": {
+        "drop": re.compile(
+            r"\b(windows|microsoft store|msix|winget|\.exe\b|wasapi|"
+            r"appimage|aur\b|\.deb\b|flatpak|linux|kde|plasma|wayland|pipx)\b",
+            re.IGNORECASE,
+        ),
+        "keep": re.compile(r"\bmacos|mac app store|\.dmg\b|airplay\b", re.IGNORECASE),
+    },
+}
 
 
 def version_block(changelog: str, version: str) -> str | None:
@@ -71,15 +85,16 @@ def plain(text: str) -> str:
     return re.sub(r"\s+", " ", text).strip()
 
 
-def windows_relevant(bullet: str) -> bool:
-    return bool(_WINDOWS.search(bullet)) or not _NON_WINDOWS.search(bullet)
+def relevant(bullet: str, platform: str) -> bool:
+    prof = _PROFILES[platform]
+    return bool(prof["keep"].search(bullet)) or not prof["drop"].search(bullet)
 
 
-def whats_new(changelog: str, version: str) -> str | None:
+def whats_new(changelog: str, version: str, platform: str = "windows") -> str | None:
     block = version_block(changelog, version)
     if block is None:
         return None
-    lines = [f"• {plain(b)}" for b in bullets(block) if windows_relevant(plain(b))]
+    lines = [f"• {plain(b)}" for b in bullets(block) if relevant(plain(b), platform)]
     out: list[str] = []
     used = 0
     for line in lines:
@@ -94,9 +109,12 @@ def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("version", help="release version, e.g. 0.1.8 (no leading v)")
     ap.add_argument("--changelog", default="CHANGELOG.md", type=Path)
+    ap.add_argument("--platform", default="windows", choices=sorted(_PROFILES))
     args = ap.parse_args()
 
-    text = whats_new(args.changelog.read_text(encoding="utf-8"), args.version)
+    text = whats_new(
+        args.changelog.read_text(encoding="utf-8"), args.version, args.platform
+    )
     if not text:
         print(
             f"error: no usable [{args.version}] block in {args.changelog}",
