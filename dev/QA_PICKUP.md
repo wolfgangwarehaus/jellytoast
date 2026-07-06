@@ -60,6 +60,18 @@ main window, `app` the QApplication. Full-surface screenshot walks:
   ordinal 131 (`DwmSetColorizationParameters`) — DWM repaints and broadcasts
   the real `WM_DWMCOLORIZATIONCOLORCHANGED`. Save the params (ordinal 127)
   first and restore after.
+- **Modal dialogs PARK the bridge.** The bridge refuses re-entrant RPCs by
+  design, so an exec that opens a modal (`QDialog.exec`, a delete-confirm, a
+  blocking QMenu) blocks every later call — including `ping` — until the
+  dialog closes on screen. Pre-arm the interaction in the SAME exec before
+  triggering it: `QTimer.singleShot(1500, lambda: <click confirm / close>)`,
+  then fire the thing that blocks.
+- **Theme flips: use `theme_presets.apply_theme_family(family, mode, frosted)`.**
+  The 0.1.7 axis split made `theme_mode` luminance-only (`auto/dark/light`,
+  strays self-heal to dark) with `frosted` + `theme_family` beside it; setting
+  `theme_mode` + `refresh_theme()` by hand no longer restyles the live window
+  (the harness docstring's old `theme_mode='frosted_dark'` restore snippet
+  predates this).
 - **Run `pytest -n auto -q` from the repo root** (some tests are
   cwd-sensitive), and not while you're mid-QA in the live app.
 
