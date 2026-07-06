@@ -91,26 +91,40 @@ def relevant(bullet: str, platform: str) -> bool:
     return bool(prof["keep"].search(bullet)) or not prof["drop"].search(bullet)
 
 
-# Catch-all bullet titles that mean nothing without their prose — the Store
-# line would just read "Small stuff." Skip them; the changelog keeps them.
+# Catch-all bullet titles (grab-bags of unrelated fixes) — their first
+# sentence covers only one item, which misleads. Skip; the changelog keeps them.
 _GENERIC_TITLES = re.compile(r"^(small stuff|small polish|fixes|misc\w*)\W*$", re.IGNORECASE)
+
+# Per-line budget for title + one prose sentence. A line that would blow
+# past this stays title-only — "a sentence or two, never a paragraph".
+MAX_LINE = 300
 
 
 def title_line(bullet: str) -> str | None:
-    """The bullet's short Store line: its bold lead sentence.
+    """The bullet's Store line: bold title + first prose sentence.
 
-    Changelog entries open with a `**Title.**` lead followed by prose;
-    the Store's "What's new" wants ONLY the title (august, 2026-07-06 —
-    the full bullets read far too long there). Bullets without a bold
-    lead fall back to their first sentence; generic catch-alls are
-    skipped entirely.
+    Changelog entries open with a `**Title.**` lead followed by prose.
+    The Store's "What's new" wants that title plus at most one sentence
+    of the slightly-more-technical detail (august, 2026-07-06 — full
+    bullets read like paragraphs there, bare titles were too thin).
+    Bullets without a bold lead fall back to their first sentence;
+    generic catch-alls are skipped entirely.
     """
-    m = re.match(r"\*\*(.+?)\*\*", bullet)
-    lead = m.group(1) if m else re.split(r"(?<=[.!?]) ", plain(bullet), maxsplit=1)[0]
-    lead = plain(lead).rstrip(".!").strip()
-    if not lead or _GENERIC_TITLES.match(lead):
+    m = re.match(r"\*\*(.+?)\*\*\s*(.*)", bullet, re.DOTALL)
+    if m:
+        title, rest = plain(m.group(1)), plain(m.group(2))
+    else:
+        parts = re.split(r"(?<=[.!?]) ", plain(bullet), maxsplit=1)
+        title, rest = parts[0], parts[1] if len(parts) > 1 else ""
+    title = title.strip()
+    if not title or _GENERIC_TITLES.match(title.rstrip(".!")):
         return None
-    return lead
+    if not title.endswith((".", "!", "?")):
+        title += "."
+    detail = re.split(r"(?<=[.!?]) ", rest, maxsplit=1)[0].strip() if rest else ""
+    if detail and len(title) + len(detail) + 1 <= MAX_LINE:
+        return f"{title} {detail}"
+    return title
 
 
 def whats_new(changelog: str, version: str, platform: str = "windows") -> str | None:
