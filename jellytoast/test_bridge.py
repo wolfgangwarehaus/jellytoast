@@ -86,6 +86,13 @@ class TestBridge(QObject):
         # when the outer handler unwinds. A loop-spinning command thus
         # won't get a nested RPC serviced until it returns — by design.
         self._handling = False
+        # Sockets whose client disconnected while a handler was parked in
+        # a nested event loop (a modal opened by eval'd code). Torn down
+        # only after the outer drain unwinds — deleteLater() from inside
+        # the nested loop destroys the C++ socket under the parked frame,
+        # which is exactly the use-after-free this guard exists to stop
+        # (live-crash 2026-07-05: delete-confirm modal + timed-out client).
+        self._doomed: list = []
 
     def start(self) -> bool:
         QLocalServer.removeServer(self._socket_name)
@@ -121,6 +128,11 @@ class TestBridge(QObject):
     def _on_disconnected(self, sock):
         self._buffers.pop(id(sock), None)
         self._socks.pop(id(sock), None)
+        if self._handling:
+            # A handler further up this stack may still hold `sock`; park
+            # it and let the drain tail sweep it once the stack is clear.
+            self._doomed.append(sock)
+            return
         sock.deleteLater()
 
     def _on_ready_read(self, sock):
@@ -138,6 +150,9 @@ class TestBridge(QObject):
             self._drain()
         finally:
             self._handling = False
+            for doomed in self._doomed:
+                doomed.deleteLater()
+            self._doomed.clear()
 
     def _drain(self):
         """Process every buffered complete line across all live sockets,
@@ -158,6 +173,10 @@ class TestBridge(QObject):
 
     def _handle_line(self, sock, raw: bytes):
         resp = self._evaluate(raw)
+        if id(sock) not in self._socks:
+            # Client gave up while the handler was parked (modal / slow
+            # eval) — nobody is listening for this response.
+            return
         try:
             sock.write((json.dumps(resp) + "\n").encode())
             sock.flush()
