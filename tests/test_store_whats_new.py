@@ -102,3 +102,17 @@ def test_patch_stamps_camel_and_pascal_casings():
 
 def test_patch_refuses_unknown_shapes():
     assert pn.patch({"nothing": "here"}, "new") == 0
+
+
+def test_extract_json_tolerates_cli_chatter():
+    # `msstore submission get` writes status-spinner lines to stdout before
+    # the JSON payload (seen live on the 0.1.8 run) — the extractor must
+    # find the object anyway, and still take clean JSON as-is.
+    wrapped = 'Retrieving Submission...\n✅ done\n{"listings": {"en-us": {"baseListing": {}}}}\n'
+    assert "listings" in pn.extract_json(wrapped)
+    assert pn.extract_json('{"a": 1}') == {"a": 1}
+
+    import pytest
+
+    with pytest.raises(ValueError):
+        pn.extract_json("no json here at all")

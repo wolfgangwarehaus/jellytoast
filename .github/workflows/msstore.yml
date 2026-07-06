@@ -35,6 +35,9 @@ jobs:
       # account type — Individual works; see the header note).
       HAVE_CREDS: ${{ secrets.AZURE_AD_TENANT_ID != '' }}
       GH_TOKEN: ${{ github.token }}
+      # UTF-8 python I/O on the Windows runner — the What's-new text carries
+      # •/— that the default OEM codepage mangles.
+      PYTHONUTF8: "1"
     steps:
       - uses: actions/checkout@v7
         with:
@@ -110,12 +113,15 @@ jobs:
         id: notes
         shell: pwsh
         run: |
+          # The script writes the file itself — piping through Set-Content
+          # re-encodes via the console codepage and mangles •/— (0.1.8 run).
           $ver = "${{ steps.pack.outputs.tag }}".TrimStart('v')
-          python dev/store_whats_new.py $ver | Set-Content whats_new.txt -Encoding utf8
+          python dev/store_whats_new.py $ver --out whats_new.txt
+          if ($LASTEXITCODE -ne 0) { throw "store_whats_new.py exited $LASTEXITCODE" }
           Write-Host "--- What's new ($ver) ---"
-          Get-Content whats_new.txt | Write-Host
+          Get-Content whats_new.txt -Encoding utf8 | Write-Host
           "## Store What's new" >> $env:GITHUB_STEP_SUMMARY
-          Get-Content whats_new.txt >> $env:GITHUB_STEP_SUMMARY
+          Get-Content whats_new.txt -Encoding utf8 >> $env:GITHUB_STEP_SUMMARY
 
       - name: Submit package update to the Store
         if: env.HAVE_CREDS == 'true'
@@ -133,14 +139,22 @@ jobs:
           # (stale notes, loud warning) so a Store API hiccup never blocks the
           # release train.
           try {
+            # UTF-8 end to end: the CLI emits UTF-8; without this pwsh decodes
+            # the pipe via the OEM codepage and corrupts non-ASCII listing text
+            # (which we'd then PUT straight back to the Store).
+            [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
             msstore submission get 9PNLTPXGHN79 | Set-Content submission.json -Encoding utf8
+            if ($LASTEXITCODE -ne 0) { throw "submission get exited $LASTEXITCODE" }
             python dev/store_patch_release_notes.py submission.json whats_new.txt patched.json
-            $meta = Get-Content patched.json -Raw
+            if ($LASTEXITCODE -ne 0) { throw "store_patch_release_notes.py exited $LASTEXITCODE" }
+            $meta = Get-Content patched.json -Raw -Encoding utf8
             msstore submission updateMetadata 9PNLTPXGHN79 $meta
             if ($LASTEXITCODE -ne 0) { throw "updateMetadata exited $LASTEXITCODE" }
             Write-Host "Release notes stamped on the pending submission."
           } catch {
             Write-Warning "What's-new stamping failed ($_) — publishing with carried-forward notes; fix them in Partner Center."
+            Write-Host "--- head of submission.json for diagnosis ---"
+            if (Test-Path submission.json) { Get-Content submission.json -TotalCount 20 | Write-Host }
           }
           msstore publish "${{ steps.pack.outputs.msix }}" -id 9PNLTPXGHN79
 
