@@ -57,7 +57,9 @@ Want to contribute? [`CONTRIBUTING.md`](.github/CONTRIBUTING.md) has the dev set
 
 ## License
 
-GPL-2.0-or-later. See [`LICENSE`](LICENSE).
+GPL-2.0-or-later, with an App Store distribution exception so store
+builds stay unambiguously legal. See [`LICENSE`](LICENSE) and
+[`LICENSING.md`](LICENSING.md).
 
 ## Support
 
