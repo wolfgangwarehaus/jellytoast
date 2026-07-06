@@ -182,6 +182,10 @@ class Selector(QPushButton):
         # dot_color (e.g. the theme-preset picker shows each scheme's colour
         # palette). Shown BOTH in the popup rows and on the closed button.
         self._icons: dict[int, "QIcon"] = {}
+        # Optional per-row tooltip, keyed by index — set via the QComboBox-
+        # compatible setItemData(i, text, ToolTipRole) (the smart-playlist
+        # editor annotates provider-unsupported rule fields this way).
+        self._tooltips: dict[int, str] = {}
         self._current_index = -1
         self.clicked.connect(self._show_menu)
 
@@ -212,10 +216,29 @@ class Selector(QPushButton):
     def count(self) -> int:
         return len(self._items)
 
-    def itemData(self, i: int):
+    def itemData(self, i: int, role=None):
+        """``role`` mirrors QComboBox.itemData: UserRole/None returns the
+        item's data value, ToolTipRole the tooltip set via setItemData."""
+        if role == Qt.ItemDataRole.ToolTipRole:
+            return self._tooltips.get(i)
         if 0 <= i < len(self._items):
             return self._items[i][1]
         return None
+
+    def setItemData(self, i: int, value, role=None) -> None:
+        """QComboBox-compatible per-item data write. UserRole/None replaces
+        the item's data value; ToolTipRole sets the row's popup tooltip.
+        Other roles are ignored (nothing stores them). Grew out of the
+        smart-playlist editor calling the QComboBox API on the row-field
+        Selector — which only ever happens on Subsonic (unsupported-field
+        tooltips), so a missing method here broke rule-add on Navidrome
+        while Jellyfin sailed by."""
+        if not 0 <= i < len(self._items):
+            return
+        if role == Qt.ItemDataRole.ToolTipRole:
+            self._tooltips[i] = str(value)
+        elif role is None or role == Qt.ItemDataRole.UserRole:
+            self._items[i] = (self._items[i][0], value)
 
     def itemText(self, i: int) -> str:
         if 0 <= i < len(self._items):
@@ -323,8 +346,14 @@ class Selector(QPushButton):
         if not long_list:
             # No checkmark on the current item — the selector button shows the
             # current value already, so a left check just shoves labels right.
+            if self._tooltips:
+                # QMenu suppresses action tooltips unless asked.
+                menu.setToolTipsVisible(True)
             for i, (label, _data) in enumerate(self._items):
                 action = menu.addAction(label)
+                tip = self._tooltips.get(i)
+                if tip:
+                    action.setToolTip(tip)
                 custom_icon = self._icons.get(i)
                 dot = self._dot_colors.get(i)
                 if custom_icon is not None:
@@ -433,6 +462,9 @@ class Selector(QPushButton):
         )
         for i, (label, _data) in enumerate(self._items):
             it = QListWidgetItem(label)
+            tip = self._tooltips.get(i)
+            if tip:
+                it.setToolTip(tip)
             row_font = self._fonts.get(i)
             if row_font is not None:
                 f = QFont(row_font)
