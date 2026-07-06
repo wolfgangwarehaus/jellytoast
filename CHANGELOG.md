@@ -10,6 +10,8 @@ developer-facing history lives in [`docs/CHANGELOG.md`](docs/CHANGELOG.md).
      This block becomes the GitHub release notes; cut_release.sh stamps it into a
      dated version on release. One line per change where you can. -->
 
+## [0.1.8] — 2026-07-06
+
 - **Picking a few libraries now actually filters.** With 3+ libraries on
   the server, checking a subset in the Music dropdown used to quietly show
   everything (with an apologetic toast). Now Albums, Artists, Songs, and
