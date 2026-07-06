@@ -16,6 +16,10 @@ developer-facing history lives in [`docs/CHANGELOG.md`](docs/CHANGELOG.md).
 - **macOS: the top of the window stays frosted after fullscreen.** Leaving
   native fullscreen used to bring back an opaque strip behind the traffic
   lights; the glass now flows to the top corners again like at launch.
+- **macOS: the strip behind the traffic lights now always matches the
+  glass.** Some launches it rendered lighter than the rest of the window
+  (and ignored the Glass-opacity slider); it now carries the same tint as
+  the body and follows the slider and theme changes.
 
 ## [0.1.8] — 2026-07-06
 

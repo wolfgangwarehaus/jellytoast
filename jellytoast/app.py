@@ -64,6 +64,7 @@ os.environ.setdefault("PULSE_PROP_application.icon_name", "jellytoast")
 
 from jellytoast.platform_compat import (  # noqa: E402
     IS_LINUX,
+    IS_MACOS,
     IS_WINDOWS,
     is_kde_wayland,
     is_linux_wayland,
@@ -947,6 +948,14 @@ class JellytoastWindow(_NavMixin, _SessionMixin, _CastDispatcherMixin, _ShuffleP
         # refresh_theme() before theme_changed.emit().
         self.bus.theme_changed.connect(self._refresh_body_color)
         self.bus.theme_changed.connect(self._apply_blur)
+        # macOS: the native titlebar tint band carries the frosted body
+        # colour (see macos_window._update_titlebar_tint) — re-sync it on
+        # every re-stamp so it follows theme/mode/accent swaps AND the
+        # Glass-opacity slider (whose settle commit emits theme_changed).
+        if IS_MACOS:
+            from jellytoast import macos_window as _macwin
+
+            self.bus.theme_changed.connect(lambda: _macwin.refresh_titlebar_tint(self))
         # "Auto (follow OS)" theme: track the OS light/dark setting live.
         # QStyleHints.colorSchemeChanged fires on a system theme toggle —
         # but Windows emits it several times per toggle (multiple

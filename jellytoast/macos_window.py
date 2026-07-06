@@ -29,6 +29,18 @@ logger = logging.getLogger(__name__)
 # transparent titlebar so the traffic lights float over glass.
 TITLEBAR_INSET = 0
 
+def _ns_view(widget):
+    """The widget's backing NSView (Qt's winId IS the NSView on macOS) —
+    mirrors jellytoast.blur._macos._ns_view. None when unrealized."""
+    try:
+        import objc
+
+        wid = int(widget.winId())
+        return objc.objc_object(c_void_p=wid) if wid else None
+    except Exception:  # pragma: no cover — macOS-only
+        return None
+
+
 # AppKit constants (stable ABI)
 _NSWindowStyleMaskFullSizeContentView = 1 << 15
 _NSWindowTitleHidden = 1
@@ -77,11 +89,126 @@ def apply(window) -> bool:
             pass
         _install_position_sync(window, nswin)
         _install_fullscreen_restore(window, nswin)
+        _install_resize_tint_sync(window, nswin)
+        _update_titlebar_tint(window, nswin)
         logger.info("macOS native chrome: transparent titlebar + full-size content")
         return True
     except Exception as e:  # pragma: no cover — macOS-only
         logger.info("macOS native chrome failed: %s", e)
         return False
+
+
+def refresh_titlebar_tint(window) -> None:
+    """Re-sync the titlebar tint band to the CURRENT frosted body colour.
+    Call on ``theme_changed`` (covers theme/mode/accent swaps and the
+    Glass-opacity slider's settle commit). Best-effort; never raises."""
+    try:
+        qt_view = _ns_view(window)
+        if qt_view is None:
+            return
+        nswin = qt_view.window()
+        if nswin is not None:
+            _update_titlebar_tint(window, nswin)
+    except Exception as e:  # pragma: no cover — macOS-only
+        logger.debug("titlebar tint refresh failed: %s", e)
+
+
+def _update_titlebar_tint(window, nswin) -> None:
+    """Paint the titlebar band with the SAME frosted body colour Qt paints
+    the window with, so the top of the window blends seamlessly.
+
+    With ``FullSizeContentView`` the vibrancy backdrop reaches the native top
+    corners, but Qt's content view still stops BELOW the titlebar — that
+    ~28 pt band showed bare (untinted) vibrancy, visibly lighter than the
+    glass body under it, and it could never follow the Glass-opacity slider
+    (found on the 0.1.8 MAS screenshot pass). A layer-backed NSView pinned
+    over the band — above Qt's view, below the titlebar controls — carries
+    ``theme.body_color_for(...)`` verbatim, so the strip composites exactly
+    like the body and tracks the slider/theme via refresh_titlebar_tint().
+    Hidden in fullscreen (no titlebar). Best-effort; never raises."""
+    try:
+        import AppKit
+        from AppKit import NSColor, NSViewMinYMargin, NSViewWidthSizable, NSWindowAbove
+
+        qt_view = _ns_view(window)
+        if qt_view is None:
+            return
+        host = qt_view.superview()
+        if host is None:
+            return
+        frame = nswin.frame()
+        # Whether Qt's view reaches the top of the frame is BISTABLE across
+        # launches (cocoa geometry negotiation vs FullSizeContentView timing):
+        # some runs QNSView spans the full frame — Qt's own glass already
+        # covers the titlebar band and an extra tint would double-darken it —
+        # other runs it stops at the content-layout height, leaving the band
+        # bare. So tint exactly the UNCOVERED gap, and nothing when there is
+        # none. (Fullscreen also lands in the no-gap branch: no titlebar.)
+        qt_h = float(qt_view.frame().size.height)
+        tb_h = float(frame.size.height) - qt_h
+        tint = getattr(window, "_jt_titlebar_tint", None)
+        if tb_h <= 0.5:  # Qt covers the full frame (or fullscreen) — no band
+            if tint is not None:
+                tint.setHidden_(True)
+            return
+        rect = AppKit.NSMakeRect(0, qt_h, frame.size.width, tb_h)
+        if tint is None:
+            tint = AppKit.NSView.alloc().initWithFrame_(rect)
+            # Width follows the window; MinY margin keeps it pinned to the top.
+            tint.setAutoresizingMask_(NSViewWidthSizable | NSViewMinYMargin)
+            tint.setWantsLayer_(True)
+            # Above Qt's view (which never covers this band), below the
+            # NSTitlebarContainerView holding the traffic lights — so the
+            # buttons stay visible and clickable.
+            host.addSubview_positioned_relativeTo_(tint, NSWindowAbove, qt_view)
+            window._jt_titlebar_tint = tint
+        else:
+            tint.setHidden_(False)
+            tint.setFrame_(rect)
+        from jellytoast import blur as _blur
+        from jellytoast import theme as _theme
+
+        r, g, b, a = _theme.body_color_for(
+            _theme.get_active_theme(), _blur.status(), "main"
+        )
+        layer = tint.layer()
+        if layer is not None:
+            layer.setBackgroundColor_(
+                NSColor.colorWithSRGBRed_green_blue_alpha_(
+                    r / 255.0, g / 255.0, b / 255.0, a / 255.0
+                ).CGColor()
+            )
+    except Exception as e:  # pragma: no cover — macOS-only
+        logger.debug("titlebar tint update failed: %s", e)
+
+
+def _install_resize_tint_sync(window, nswin) -> None:
+    """Keep the titlebar tint band sized/positioned through window resizes.
+
+    The band is derived from the LIVE gap between the frame and Qt's view
+    (see _update_titlebar_tint) — a resize renegotiates both, and whether
+    Qt covers the band can flip mid-session, so recompute on every
+    ``NSWindowDidResizeNotification`` (cheap: frame math + one layer colour).
+    Install-once guarded like the sibling observers. Never raises."""
+    if getattr(window, "_jt_macos_resize_observer", None) is not None:
+        return
+    try:
+        from AppKit import NSWindowDidResizeNotification
+        from Foundation import NSNotificationCenter
+
+        def _on_resize(_note):
+            try:
+                _update_titlebar_tint(window, nswin)
+            except Exception:
+                pass
+
+        token = NSNotificationCenter.defaultCenter().addObserverForName_object_queue_usingBlock_(
+            NSWindowDidResizeNotification, nswin, None, _on_resize
+        )
+        window._jt_macos_resize_observer = token
+        window._jt_macos_resize_cb = _on_resize
+    except Exception as e:  # pragma: no cover — macOS-only
+        logger.info("macOS resize-tint-sync install failed: %s", e)
 
 
 def _install_fullscreen_restore(window, nswin) -> None:
