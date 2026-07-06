@@ -3,9 +3,10 @@
 
 Usage: python dev/store_whats_new.py 0.1.8 [--changelog CHANGELOG.md]
 
-Prints plain text to stdout: one "• " bullet per changelog entry, in the
-changelog's own voice (short, plain, casual — the [Unreleased] block's
-voice note is the canon). Curated for the STORE audience:
+Prints plain text to stdout: one SHORT "• " line per changelog entry —
+just each bullet's bold lead ("• Tab works on the sign-in form"), not
+its prose; the Store field wants a glance-able list, the changelog keeps
+the detail. Curated for the STORE audience:
 
 - Bullets about platforms the Store build isn't (macOS / Linux packaging)
   are dropped, unless the bullet also says Windows. The MSIX user never
@@ -90,11 +91,34 @@ def relevant(bullet: str, platform: str) -> bool:
     return bool(prof["keep"].search(bullet)) or not prof["drop"].search(bullet)
 
 
+# Catch-all bullet titles that mean nothing without their prose — the Store
+# line would just read "Small stuff." Skip them; the changelog keeps them.
+_GENERIC_TITLES = re.compile(r"^(small stuff|small polish|fixes|misc\w*)\W*$", re.IGNORECASE)
+
+
+def title_line(bullet: str) -> str | None:
+    """The bullet's short Store line: its bold lead sentence.
+
+    Changelog entries open with a `**Title.**` lead followed by prose;
+    the Store's "What's new" wants ONLY the title (august, 2026-07-06 —
+    the full bullets read far too long there). Bullets without a bold
+    lead fall back to their first sentence; generic catch-alls are
+    skipped entirely.
+    """
+    m = re.match(r"\*\*(.+?)\*\*", bullet)
+    lead = m.group(1) if m else re.split(r"(?<=[.!?]) ", plain(bullet), maxsplit=1)[0]
+    lead = plain(lead).rstrip(".!").strip()
+    if not lead or _GENERIC_TITLES.match(lead):
+        return None
+    return lead
+
+
 def whats_new(changelog: str, version: str, platform: str = "windows") -> str | None:
     block = version_block(changelog, version)
     if block is None:
         return None
-    lines = [f"• {plain(b)}" for b in bullets(block) if relevant(plain(b), platform)]
+    titles = (title_line(b) for b in bullets(block) if relevant(plain(b), platform))
+    lines = [f"• {t}" for t in titles if t]
     out: list[str] = []
     used = 0
     for line in lines:
