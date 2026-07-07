@@ -71,11 +71,18 @@ def test_mac_platform_profile_filters_for_mas():
     assert "Better on Windows and macOS" in text  # mentions macOS → kept
 
 
-def test_store_lines_are_title_plus_one_sentence():
-    # A sentence or two per item, never a paragraph (august, 2026-07-06):
-    # the bold lead + the FIRST prose sentence; later sentences stay in
-    # the changelog.
+def test_default_lines_are_titles_only():
+    # Titles only by default (august, 2026-07-06 — settled after trying
+    # both: full bullets and title+sentence both read too long in the
+    # Store field).
     text = wn.whats_new(_CHANGELOG, "9.9.9")
+    assert "• Faster everything" in text
+    assert "big libraries" not in text
+    assert "• Faster everything." not in text  # no trailing period
+
+
+def test_detail_mode_appends_first_sentence():
+    text = wn.whats_new(_CHANGELOG, "9.9.9", detail=True)
     assert "• Faster everything. The app is now faster on big libraries." in text
     assert "• Two-sentence entry. First detail sentence." in text
     assert "Second detail sentence" not in text
@@ -83,7 +90,7 @@ def test_store_lines_are_title_plus_one_sentence():
 
 def test_overlong_detail_stays_title_only():
     long_changelog = "## [1.0.0]\n\n- **Tiny title.** " + "y" * 400 + "."
-    text = wn.whats_new(long_changelog, "1.0.0")
+    text = wn.whats_new(long_changelog, "1.0.0", detail=True)
     assert text == "• Tiny title."
 
 
@@ -94,7 +101,10 @@ def test_generic_catchall_bullets_are_skipped():
 
 def test_boldless_bullet_falls_back_to_first_sentence():
     text = wn.whats_new(_CHANGELOG, "9.9.9")
-    assert "• A bullet without a bold lead. Its second sentence is dropped." in text
+    assert "• A bullet without a bold lead" in text
+    assert "Its second sentence" not in text  # titles-only default
+    detailed = wn.whats_new(_CHANGELOG, "9.9.9", detail=True)
+    assert "• A bullet without a bold lead. Its second sentence is dropped." in detailed
 
 
 def test_renders_plain_text_bullets():
@@ -109,7 +119,7 @@ def test_caps_on_bullet_boundary():
     )
     text = wn.whats_new(long_changelog, "1.0.0")
     assert len(text) <= wn.STORE_LIMIT
-    assert text.endswith("x.")  # a whole line, not a mid-title cut
+    assert text.endswith("x")  # a whole line, not a mid-title cut
 
 
 def test_missing_version_returns_none():

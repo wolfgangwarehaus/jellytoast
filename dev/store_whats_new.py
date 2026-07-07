@@ -100,13 +100,14 @@ _GENERIC_TITLES = re.compile(r"^(small stuff|small polish|fixes|misc\w*)\W*$", r
 MAX_LINE = 300
 
 
-def title_line(bullet: str) -> str | None:
-    """The bullet's Store line: bold title + first prose sentence.
+def title_line(bullet: str, detail: bool = False) -> str | None:
+    """The bullet's Store line — TITLES ONLY by default.
 
     Changelog entries open with a `**Title.**` lead followed by prose.
-    The Store's "What's new" wants that title plus at most one sentence
-    of the slightly-more-technical detail (august, 2026-07-06 — full
-    bullets read like paragraphs there, bare titles were too thin).
+    The Store's "What's new" wants just that terse title per line
+    (august, 2026-07-06 — settled after trying both: full bullets read
+    like paragraphs, title+sentence was still too long). ``detail=True``
+    appends the first prose sentence for contexts with more room.
     Bullets without a bold lead fall back to their first sentence;
     generic catch-alls are skipped entirely.
     """
@@ -116,22 +117,27 @@ def title_line(bullet: str) -> str | None:
     else:
         parts = re.split(r"(?<=[.!?]) ", plain(bullet), maxsplit=1)
         title, rest = parts[0], parts[1] if len(parts) > 1 else ""
-    title = title.strip()
-    if not title or _GENERIC_TITLES.match(title.rstrip(".!")):
+    title = title.strip().rstrip(".!")
+    if not title or _GENERIC_TITLES.match(title):
         return None
-    if not title.endswith((".", "!", "?")):
-        title += "."
-    detail = re.split(r"(?<=[.!?]) ", rest, maxsplit=1)[0].strip() if rest else ""
-    if detail and len(title) + len(detail) + 1 <= MAX_LINE:
-        return f"{title} {detail}"
+    if not detail:
+        return title
+    title += "."
+    sentence = re.split(r"(?<=[.!?]) ", rest, maxsplit=1)[0].strip() if rest else ""
+    if sentence and len(title) + len(sentence) + 1 <= MAX_LINE:
+        return f"{title} {sentence}"
     return title
 
 
-def whats_new(changelog: str, version: str, platform: str = "windows") -> str | None:
+def whats_new(
+    changelog: str, version: str, platform: str = "windows", detail: bool = False
+) -> str | None:
     block = version_block(changelog, version)
     if block is None:
         return None
-    titles = (title_line(b) for b in bullets(block) if relevant(plain(b), platform))
+    titles = (
+        title_line(b, detail) for b in bullets(block) if relevant(plain(b), platform)
+    )
     lines = [f"• {t}" for t in titles if t]
     out: list[str] = []
     used = 0
@@ -148,6 +154,11 @@ def main() -> int:
     ap.add_argument("version", help="release version, e.g. 0.1.8 (no leading v)")
     ap.add_argument("--changelog", default="CHANGELOG.md", type=Path)
     ap.add_argument("--platform", default="windows", choices=sorted(_PROFILES))
+    ap.add_argument(
+        "--detail",
+        action="store_true",
+        help="append each bullet's first prose sentence (default: titles only)",
+    )
     # Write the file ourselves: piping stdout through PowerShell's
     # Set-Content re-encodes via the console codepage and mangles •/— on
     # the Windows runners (seen live on the 0.1.8 run).
@@ -155,7 +166,10 @@ def main() -> int:
     args = ap.parse_args()
 
     text = whats_new(
-        args.changelog.read_text(encoding="utf-8"), args.version, args.platform
+        args.changelog.read_text(encoding="utf-8"),
+        args.version,
+        args.platform,
+        args.detail,
     )
     if not text:
         print(
