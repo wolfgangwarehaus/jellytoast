@@ -436,6 +436,42 @@ class MediaProvider(ABC):
         """
         raise NotImplementedError("query_items is not implemented on this provider")
 
+    def _smart_folder_plan(self) -> List[str]:
+        """The library-selection fetch plan for smart-playlist server
+        legs — the same resolver the browse surfaces use, so a smart
+        playlist can't preview/play tracks from a deselected library
+        (#226). ``[""]`` = unscoped. Defensive: an exploding selection
+        layer must degrade to the whole-server behaviour, never break
+        evaluation."""
+        try:
+            from jellytoast.library_selection import fetch_plan
+
+            return fetch_plan(self) or [""]
+        except Exception:
+            return [""]
+
+    @staticmethod
+    def _merge_folder_results(
+        batches: List[List[Dict[str, Any]]],
+    ) -> List[Dict[str, Any]]:
+        """Union per-folder result batches, deduped by Id (a track can't
+        be in two folders, but paranoia is cheap and order stays stable).
+        Callers re-sort/limit via ``refine_items``, so concatenation
+        order doesn't matter beyond stability."""
+        if len(batches) == 1:
+            return batches[0]
+        seen: set = set()
+        merged: List[Dict[str, Any]] = []
+        for batch in batches:
+            for item in batch:
+                iid = item.get("Id")
+                if iid and iid in seen:
+                    continue
+                if iid:
+                    seen.add(iid)
+                merged.append(item)
+        return merged
+
     # ── Metadata editing ───────────────────────────────────────────────
     #
     # Server-side tag editing is a Jellyfin-admin-only capability today

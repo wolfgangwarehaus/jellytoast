@@ -1388,12 +1388,22 @@ class SubsonicProvider(MediaProvider):
         match = rules.get("match", "all")
         mappable = [r for r in raw_rules if _is_server_mappable(r)]
 
+        # Scope every server leg to the user's library selection — the
+        # same fetch plan the browse surfaces resolve (#226: without
+        # this, a smart playlist previewed/played tracks from libraries
+        # the picker had deselected). [""] = unscoped whole server.
+        folders = self._smart_folder_plan()
+
         if match == "any" and len(raw_rules) > 1:
-            return self._evaluate_any(raw_rules, mappable, rules)
-        return self._evaluate_all(raw_rules, mappable, rules)
+            return self._evaluate_any(raw_rules, mappable, rules, folders)
+        return self._evaluate_all(raw_rules, mappable, rules, folders)
 
     def _evaluate_all(
-        self, raw_rules: List[Dict[str, Any]], mappable: List[Dict[str, Any]], rules: Dict[str, Any]
+        self,
+        raw_rules: List[Dict[str, Any]],
+        mappable: List[Dict[str, Any]],
+        rules: Dict[str, Any],
+        folders: List[str],
     ) -> List[Dict[str, Any]]:
         """AND semantics. Pick the most selective server-mappable rule
         (first wins — rule order is the user's selectivity hint), fetch
@@ -1402,11 +1412,11 @@ class SubsonicProvider(MediaProvider):
 
         if mappable:
             server_rule = mappable[0]
-            candidates = self._query_single_native(server_rule)
+            candidates = self._query_single_native(server_rule, folders)
             # Server query already enforced server_rule; refine the rest.
             remaining = [r for r in raw_rules if r is not server_rule]
         else:
-            candidates = self._broad_fetch()
+            candidates = self._broad_fetch(folders)
             remaining = raw_rules
 
         refine_rules = dict(rules)
@@ -1414,7 +1424,11 @@ class SubsonicProvider(MediaProvider):
         return refine_items(candidates, refine_rules)
 
     def _evaluate_any(
-        self, raw_rules: List[Dict[str, Any]], mappable: List[Dict[str, Any]], rules: Dict[str, Any]
+        self,
+        raw_rules: List[Dict[str, Any]],
+        mappable: List[Dict[str, Any]],
+        rules: Dict[str, Any],
+        folders: List[str],
     ) -> List[Dict[str, Any]]:
         """OR semantics. Each mappable rule contributes its server-
         fetched matches; non-mappable rules drive a broad fetch and a
@@ -1434,12 +1448,12 @@ class SubsonicProvider(MediaProvider):
                 merged.append(item)
 
         for rule in mappable:
-            for item in self._query_single_native(rule):
+            for item in self._query_single_native(rule, folders):
                 _accept(item)
 
         non_mappable = [r for r in raw_rules if r not in mappable]
         if non_mappable:
-            broad = self._broad_fetch()
+            broad = self._broad_fetch(folders)
             for item in broad:
                 if any(matches_rule(item, r) for r in non_mappable):
                     _accept(item)
@@ -1466,20 +1480,29 @@ class SubsonicProvider(MediaProvider):
     _BROAD_FETCH_PAGE = 500
     _BROAD_FETCH_SONG_CAP = 20_000
 
-    def _query_single_native(self, rule: Dict[str, Any]) -> List[Dict[str, Any]]:
-        """Translate one server-mappable rule into a Subsonic call and
-        return the adapted item list. Caller is responsible for
+    def _query_single_native(
+        self, rule: Dict[str, Any], folders: List[str]
+    ) -> List[Dict[str, Any]]:
+        """Translate one server-mappable rule into a Subsonic call —
+        one per selected library folder (``""`` = unscoped) — and
+        return the merged adapted item list. Caller is responsible for
         applying the remaining refines via ``refine_items``."""
         field, op, value = rule["field"], rule["op"], rule["value"]
 
+        def _scoped(params: Dict[str, Any], fid: str) -> Dict[str, Any]:
+            return {**params, "musicFolderId": fid} if fid else params
+
         if field == "genre" and op == "equals":
-            params = {"genre": value, "count": 500, "offset": 0}
-            try:
-                resp = self._request("getSongsByGenre", params)
-            except Exception:
-                return []
-            songs = (resp.get("songsByGenre") or {}).get("song") or []
-            return [self._adapt_song(s) for s in songs]
+            batches: List[List[Dict[str, Any]]] = []
+            for fid in folders:
+                params = _scoped({"genre": value, "count": 500, "offset": 0}, fid)
+                try:
+                    resp = self._request("getSongsByGenre", params)
+                except Exception:
+                    continue
+                songs = (resp.get("songsByGenre") or {}).get("song") or []
+                batches.append([self._adapt_song(s) for s in songs])
+            return self._merge_folder_results(batches or [[]])
 
         if field == "year" and op in (
             "equals",
@@ -1488,18 +1511,26 @@ class SubsonicProvider(MediaProvider):
             "between",
         ):
             from_year, to_year = _year_bounds(op, value)
-            params = {
-                "type": "byYear",
-                "size": 500,
-                "fromYear": from_year,
-                "toYear": to_year,
-            }
-            try:
-                resp = self._request("getAlbumList2", params)
-            except Exception:
-                return []
-            albums = (resp.get("albumList2") or {}).get("album") or []
-            tracks = self._album_tracks_many([a.get("id", "") for a in albums])
+            album_ids: List[str] = []
+            for fid in folders:
+                params = _scoped(
+                    {
+                        "type": "byYear",
+                        "size": 500,
+                        "fromYear": from_year,
+                        "toYear": to_year,
+                    },
+                    fid,
+                )
+                try:
+                    resp = self._request("getAlbumList2", params)
+                except Exception:
+                    continue
+                albums = (resp.get("albumList2") or {}).get("album") or []
+                album_ids += [a.get("id", "") for a in albums]
+            # An album can't live in two folders; keep order, drop dupes.
+            album_ids = list(dict.fromkeys(a for a in album_ids if a))
+            tracks = self._album_tracks_many(album_ids)
             # getAlbumList2 byYear filters by ALBUM year, but a track's own
             # ProductionYear can differ (re-releases, compilations) — drop
             # tracks whose known year falls outside the rule's bounds. Tracks
@@ -1514,21 +1545,24 @@ class SubsonicProvider(MediaProvider):
             # getStarred2 returns the user's starred songs directly.
             # Only `equals True` reaches here (see _is_server_mappable);
             # `equals False` is a broad-fetch + Python refine.
-            try:
-                resp = self._request("getStarred2", {})
-            except Exception:
-                return []
-            songs = (resp.get("starred2") or {}).get("song") or []
-            adapted: List[Dict[str, Any]] = []
-            for s in songs:
-                item = self._adapt_song(s)
-                # Every song in the getStarred2 payload is a favorite by
-                # construction; some servers omit the per-song `starred`
-                # timestamp in this response, so force the flag on so a
-                # downstream refine on is_favorite doesn't drop them.
-                item.setdefault("UserData", {})["IsFavorite"] = True
-                adapted.append(item)
-            return adapted
+            batches = []
+            for fid in folders:
+                try:
+                    resp = self._request("getStarred2", _scoped({}, fid))
+                except Exception:
+                    continue
+                songs = (resp.get("starred2") or {}).get("song") or []
+                adapted: List[Dict[str, Any]] = []
+                for s in songs:
+                    item = self._adapt_song(s)
+                    # Every song in the getStarred2 payload is a favorite by
+                    # construction; some servers omit the per-song `starred`
+                    # timestamp in this response, so force the flag on so a
+                    # downstream refine on is_favorite doesn't drop them.
+                    item.setdefault("UserData", {})["IsFavorite"] = True
+                    adapted.append(item)
+                batches.append(adapted)
+            return self._merge_folder_results(batches or [[]])
 
         # The mappable check should have prevented us getting here.
         return []
@@ -1556,8 +1590,15 @@ class SubsonicProvider(MediaProvider):
             batches = list(pool.map(self.get_album_tracks, ids))
         return [t for batch in batches for t in batch]
 
-    def _broad_fetch(self) -> List[Dict[str, Any]]:
-        """Full-library candidate sweep for rules with no native leg.
+    def _broad_fetch(self, folders: List[str]) -> List[Dict[str, Any]]:
+        """Candidate sweep for rules with no native leg, one sweep per
+        selected library folder (``""`` = whole server), merged."""
+        return self._merge_folder_results(
+            [self._broad_fetch_one(fid) for fid in folders] or [[]]
+        )
+
+    def _broad_fetch_one(self, folder_id: str) -> List[Dict[str, Any]]:
+        """Full sweep of one folder (or the whole server for ``""``).
 
         Primary path: paginate ``search3`` with an empty query — the
         Navidrome / OpenSubsonic match-all convention already used by
@@ -1582,11 +1623,13 @@ class SubsonicProvider(MediaProvider):
                 "albumCount": 0,
                 "artistCount": 0,
             }
+            if folder_id:
+                params["musicFolderId"] = folder_id
             try:
                 resp = self._request("search3", params)
             except Exception:
                 if offset == 0:
-                    return self._broad_fetch_albums()
+                    return self._broad_fetch_albums(folder_id)
                 logger.warning(
                     "smart-playlist broad fetch aborted mid-sweep at offset %d; "
                     "refining over the %d songs fetched so far",
@@ -1596,7 +1639,7 @@ class SubsonicProvider(MediaProvider):
                 return songs
             page = (resp.get("searchResult3") or {}).get("song") or []
             if not page and offset == 0:
-                return self._broad_fetch_albums()
+                return self._broad_fetch_albums(folder_id)
             songs.extend(self._adapt_song(s) for s in page)
             if len(page) < self._BROAD_FETCH_PAGE:
                 return songs
@@ -1608,7 +1651,7 @@ class SubsonicProvider(MediaProvider):
         )
         return songs
 
-    def _broad_fetch_albums(self) -> List[Dict[str, Any]]:
+    def _broad_fetch_albums(self, folder_id: str = "") -> List[Dict[str, Any]]:
         """Album-walk fallback sweep: up to ``_BROAD_FETCH_CAP`` albums
         expanded to tracks (parallelised). Larger libraries lose tail
         matches — the pre-search3 v1 limit, now only reachable on
@@ -1618,6 +1661,8 @@ class SubsonicProvider(MediaProvider):
             "size": self._BROAD_FETCH_CAP,
             "offset": 0,
         }
+        if folder_id:
+            params["musicFolderId"] = folder_id
         try:
             resp = self._request("getAlbumList2", params)
         except Exception:

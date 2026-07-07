@@ -787,46 +787,57 @@ class JellyfinProvider(MediaProvider):
         )
         needs_refine = len(satisfied) < len(raw_rules)
 
+        # Scope to the library selection (#226): one /Items pass per
+        # planned ParentId (the music view(s) / selected libraries),
+        # merged. refine_items re-sorts and re-limits the union, so a
+        # per-folder server Limit stays a valid upper bound.
+        batches: List[List[Dict[str, Any]]] = []
         try:
-            if needs_refine:
-                # A rule the server can't filter (date_added /
-                # last_played, artist/album substring, …) means every
-                # item must be refined in Python, so the whole
-                # server-filtered set has to come back. Fetching it in
-                # one unbounded request makes Jellyfin spend long
-                # enough building the payload that the 15s HTTP timeout
-                # trips on a non-trivial library — page it so each
-                # request stays small and fast.
-                #
-                # When a date rule bounds the result to recent items
-                # ("in the last N days" / "after D"), sort the fetch by
-                # that date descending and stop paging the moment a
-                # page falls before the cutoff: the rest of the library
-                # can't match, so there's no point dragging it across.
-                # refine_items re-sorts to the playlist's own sort
-                # afterwards, so overriding SortBy here is invisible.
-                bound = _recent_date_bound(raw_rules)
-                if bound is not None:
-                    _field, jf_key, cutoff = bound
-                    params["SortBy"] = jf_key
-                    params["SortOrder"] = "Descending"
-                    items = self._fetch_paged(
-                        params, stop_field=_field, stop_cutoff=cutoff
-                    )
+            for fid in self._smart_folder_plan():
+                fparams = dict(params)
+                if fid:
+                    fparams["ParentId"] = fid
+                if needs_refine:
+                    # A rule the server can't filter (date_added /
+                    # last_played, artist/album substring, …) means every
+                    # item must be refined in Python, so the whole
+                    # server-filtered set has to come back. Fetching it in
+                    # one unbounded request makes Jellyfin spend long
+                    # enough building the payload that the 15s HTTP timeout
+                    # trips on a non-trivial library — page it so each
+                    # request stays small and fast.
+                    #
+                    # When a date rule bounds the result to recent items
+                    # ("in the last N days" / "after D"), sort the fetch by
+                    # that date descending and stop paging the moment a
+                    # page falls before the cutoff: the rest of the library
+                    # can't match, so there's no point dragging it across.
+                    # refine_items re-sorts to the playlist's own sort
+                    # afterwards, so overriding SortBy here is invisible.
+                    bound = _recent_date_bound(raw_rules)
+                    if bound is not None:
+                        _field, jf_key, cutoff = bound
+                        fparams["SortBy"] = jf_key
+                        fparams["SortOrder"] = "Descending"
+                        batches.append(self._fetch_paged(
+                            fparams, stop_field=_field, stop_cutoff=cutoff
+                        ))
+                    else:
+                        batches.append(self._fetch_paged(fparams))
                 else:
-                    items = self._fetch_paged(params)
-            else:
-                # Every rule is satisfied server-side — Jellyfin can
-                # cap the payload directly.
-                if isinstance(limit, int) and limit > 0:
-                    params["Limit"] = limit
-                resp = self.api._get(
-                    f"/Users/{self.api.user_id}/Items",
-                    params,
-                )
-                items = resp.get("Items") or []
+                    # Every rule is satisfied server-side — Jellyfin can
+                    # cap the payload directly.
+                    if isinstance(limit, int) and limit > 0:
+                        fparams["Limit"] = limit
+                    resp = self.api._get(
+                        f"/Users/{self.api.user_id}/Items",
+                        fparams,
+                    )
+                    batches.append(resp.get("Items") or [])
         except Exception:
-            return []
+            if not batches:
+                return []
+        items = self._merge_folder_results(batches or [[]])
 
         remaining = [r for r in raw_rules if r not in satisfied]
         refine_rules = dict(rules)

@@ -8,7 +8,13 @@ developer-facing history lives in [`docs/CHANGELOG.md`](docs/CHANGELOG.md).
 <!-- Voice: short, plain, a little casual — what's new for a *user*, not a press
      release. Specs right (versions/platforms); drop the gloss + the internals.
      This block becomes the GitHub release notes; cut_release.sh stamps it into a
-     dated version on release. One line per change where you can. -->
+     dated version on release. One line per change where you can. Bold titles
+     should stand alone: the Store "What's new" shows just the title (+ first
+     sentence in --detail mode). -->
+
+- **Smart playlists respect your library picker.** With only some libraries
+  selected, previews and Save & Play no longer sneak in tracks from the
+  ones you deselected — fixed on both Jellyfin and Navidrome / Subsonic.
 
 ## [0.1.8] — 2026-07-06
 
