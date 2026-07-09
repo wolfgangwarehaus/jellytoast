@@ -33,8 +33,8 @@ Then run this harness in the SAME shell (so TMPDIR matches on mac/linux):
 SAFETY: this writes REAL settings (theme_mode) through the bridge, so it SAVES
 your current theme_mode up front and RESTORES it (+ the window to Normal) in a
 finally block. If killed mid-run, restore with:
-    python3 dev/jt_ctl.py exec "get_settings().theme_mode='frosted_dark'; \
-        __import__('jellytoast.ui_helpers',fromlist=['x']).refresh_theme()"
+    python3 dev/jt_ctl.py exec "from jellytoast.theme_presets import \
+        apply_theme_family; apply_theme_family('', 'dark', True)"
 """
 
 from __future__ import annotations
@@ -68,7 +68,9 @@ SURFACES = [
     ("now_playing", "win._show_now_playing()"),
 ]
 
-DEFAULT_THEMES = ["frosted_dark", "frosted_light"]
+# mode:frosted combos — the 0.1.7 axis split made theme_mode luminance-only
+# (auto/dark/light) with a separate `frosted` bool; see theme_presets.
+DEFAULT_THEMES = ["dark:frosted", "light:frosted"]
 
 
 # ── capture backend ──────────────────────────────────────────────────────
@@ -141,24 +143,27 @@ def raise_window(b: Bridge) -> None:
         pass
 
 
-def set_theme(b: Bridge, mode: str) -> None:
-    # Emit theme_changed too — refresh_theme() updates the palette tokens but the
-    # per-surface QSS re-stamp + the blur/vibrancy re-apply only fire on
-    # theme_changed (the live-apply contract). Without it the light-theme
-    # captures show stale frost (surfaced by the macOS test pass, issue #197/F6).
-    # icons.refresh_theme() MUST run between refresh_theme() and the
-    # theme_changed emit — the real app does exactly this (settings_dialog
-    # _on_theme_changed / app._on_os_scheme_changed) so the icon-tint globals
-    # (ICON_DIM / ICON_BRIGHT) are fresh before subscribers like the top bar
-    # re-issue their glyphs on theme_changed. Omitting it left the captured
-    # light-theme toolbar glyphs one switch behind (stale dark tint → invisible
-    # on the light frost) — a capture artifact, not an app bug (Windows pass,
-    # 2026-06-28).
+def set_theme(b: Bridge, combo: str) -> None:
+    """Apply a "mode:frosted" combo (e.g. "dark:frosted", "light:opaque").
+
+    Goes through ``theme_presets.apply_theme_family`` — the single live
+    entry point since the 0.1.7 theme-axis split. Hand-setting
+    ``theme_mode`` + ``refresh_theme()`` no longer restyles the live
+    window (its swap guard + QSS push live inside apply_theme_family);
+    that stale recipe silently shot every theme in the same look
+    (surfaced by the 2026-07-05 Linux QA round). Accepts the legacy
+    4-name values ("frosted_dark", …) so old command lines keep working.
+    """
+    legacy = {"frosted_dark": ("dark", True), "frosted_light": ("light", True),
+              "dark": ("dark", False), "light": ("light", False)}
+    if combo in legacy and ":" not in combo:
+        mode, frosted = legacy[combo]
+    else:
+        mode, _, frost_word = combo.partition(":")
+        frosted = frost_word != "opaque"
     b.x(
-        f"get_settings().theme_mode = {mode!r}; "
-        "from jellytoast import ui_helpers as _u, icons as _ic; "
-        "_u.refresh_theme(); _ic.refresh_theme(); "
-        "bus.theme_changed.emit()"
+        "from jellytoast.theme_presets import apply_theme_family; "
+        f"apply_theme_family(get_settings().theme_family or '', {mode!r}, {frosted})"
     )
 
 
@@ -311,7 +316,7 @@ def main() -> int:
         )
         return 2
 
-    orig_mode = b.e("get_settings().theme_mode")
+    orig_mode = b.e("get_settings().theme_mode + (':frosted' if get_settings().frosted else ':opaque')")
     print(f"Saved theme_mode = {orig_mode!r} (will restore). Gallery -> {out}\n")
     manifest: list = []
     try:
