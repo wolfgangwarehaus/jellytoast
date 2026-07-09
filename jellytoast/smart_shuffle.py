@@ -87,10 +87,6 @@ def artist_key(item: Mapping) -> str:
     return "__unknown__"
 
 
-# Backwards-compatible internal alias (was the sole name pre-2026-05-29).
-_artist_id = artist_key
-
-
 def _weight_for(
     artist: str,
     output_artists: List[str],

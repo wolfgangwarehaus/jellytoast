@@ -320,10 +320,10 @@ jobs:
             arch: x86_64
             min: "15.0"
     runs-on: ${{ matrix.runner }}
-    # Signing + notarization activate only once the secrets exist (see
-    # jellytoast-ops → packaging/macos/MACOS_SESSION.md). Until then SIGN/NOTARIZE are 'false'
-    # and those steps are skipped, so releases keep building an UNSIGNED .dmg
-    # (locally runnable via right-click → Open; not yet distributable cleanly).
+    # Signing + notarization are gated on the Apple secrets, which are set —
+    # releases ship a signed, notarized .dmg. The gate stays so a fork or a
+    # secrets-less run still produces a local-testable unsigned build instead
+    # of failing (see jellytoast-ops → packaging/macos/MACOS_SESSION.md).
     env:
       SIGN: ${{ secrets.APPLE_SIGNING_IDENTITY != '' }}
       NOTARIZE: ${{ secrets.APPLE_API_KEY_ID != '' }}
@@ -567,9 +567,9 @@ jobs:
           # release tag push (every release auto-stages a build for submission) or
           # when a manual dispatch asks (mas_action=upload); a plain dispatch stays
           # validate-only — a check, not a surprise upload.
-          # NOTE: the build number is CFBundleVersion (= the pyproject version), so
-          # ASC rejects re-uploading an already-seen build number — re-running the
-          # SAME release tag would need a CFBundleVersion bump.
+          # NOTE: CFBundleVersion = GITHUB_RUN_NUMBER (see jellytoast.spec) —
+          # monotonic per run, so re-running the same release tag re-uploads
+          # cleanly under a fresh build number.
           xcrun altool --validate-app -t macos -f "$PKG" \
             --apiKey "$APPLE_API_KEY_ID" --apiIssuer "$APPLE_API_ISSUER"
           if [ "${{ github.event_name }}" = "push" ] || [ "${{ github.event.inputs.mas_action }}" = "upload" ]; then

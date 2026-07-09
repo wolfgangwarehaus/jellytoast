@@ -1900,7 +1900,7 @@ class MpvController(_CastTransportMixin, QObject):
         from jellytoast.eq_presets import (
             BAND_COUNT,
             format_anequalizer_parametric,
-            format_anequalizer_string,
+            format_eq_filter_string,
             format_firequalizer_parametric,
             format_firequalizer_string,
         )
@@ -1928,7 +1928,7 @@ class MpvController(_CastTransportMixin, QObject):
             if autoeq_bands:
                 chain = format_anequalizer_parametric(autoeq_bands, channel_count=channel_count)
             else:
-                chain = format_anequalizer_string(list(normalised), channel_count=channel_count)
+                chain = format_eq_filter_string(list(normalised), channel_count=channel_count)
         effective_preamp = preamp + autoeq_preamp_db
         if abs(effective_preamp) > 1e-9:
             if float(effective_preamp).is_integer():

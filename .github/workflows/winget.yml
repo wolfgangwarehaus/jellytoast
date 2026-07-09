@@ -5,12 +5,11 @@ name: winget
 # It runs on a PUBLISHED release (NOT the tag) because winget-releaser needs the
 # installer asset to be publicly downloadable — a draft 404s its validation.
 #
-# DORMANT until you activate it (one-time): create a CLASSIC PAT with the
-# `public_repo` scope (fine-grained PATs are unsupported), store it as the repo
-# secret WINGET_TOKEN. The fork (wolfgangwarehaus/winget-pkgs) already exists.
-# See RELEASING.md in jellytoast-ops (private). Until then the submit step is skipped and you keep using
-# the `wingetcreate` one-liner (the in-repo manifest is already version-stamped
-# by dev/cut_release.sh).
+# ACTIVE — WINGET_TOKEN is set (classic PAT, `public_repo` scope; fine-grained
+# PATs are unsupported) and auto-publishing has been live since 0.1.4. The
+# secret gate below stays so a fork without the token skips the submit step
+# cleanly instead of failing. The in-repo manifest is version-stamped by
+# dev/cut_release.sh; see RELEASING.md in jellytoast-ops (private).
 
 on:
   release:

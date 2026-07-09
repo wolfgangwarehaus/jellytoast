@@ -10,7 +10,7 @@ from jellytoast.eq_presets import (
     FIREQUALIZER_DELAY_S,
     GAIN_LIMIT_DB,
     PRESETS,
-    format_anequalizer_string,
+    format_eq_filter_string,
     format_firequalizer_string,
     get_preset,
 )
@@ -104,7 +104,7 @@ class TestGetPreset:
         assert get_preset("Flat") == [0] * BAND_COUNT
 
 
-# ── format_anequalizer_string ───────────────────────────────────────────────
+# ── format_eq_filter_string ───────────────────────────────────────────────
 
 
 class TestFormatAnequalizerString:
@@ -120,7 +120,7 @@ class TestFormatAnequalizerString:
         # the formatter's job is to produce a valid filter spec for
         # whatever band gains it's given. Keeps the calling convention
         # uniform — the output type doesn't depend on the values.
-        result = format_anequalizer_string([0] * BAND_COUNT)
+        result = format_eq_filter_string([0] * BAND_COUNT)
         # Single ``anequalizer=params="…"`` filter; entries
         # pipe-separated inside the params string.
         assert result.startswith(_ANEQ_PREFIX)
@@ -131,7 +131,7 @@ class TestFormatAnequalizerString:
             assert "g=0 " in entry or entry.endswith("g=0 t=0")
 
     def test_rock_preset_contains_all_ten_bands_per_channel(self):
-        result = format_anequalizer_string(PRESETS["Rock"])
+        result = format_eq_filter_string(PRESETS["Rock"])
         entries = _aneq_entries(result)
         assert len(entries) == 2 * BAND_COUNT
         # Channel 0 entries come first, then channel 1, each in
@@ -148,7 +148,7 @@ class TestFormatAnequalizerString:
                 )
 
     def test_rock_preset_gains_present_per_channel(self):
-        result = format_anequalizer_string(PRESETS["Rock"])
+        result = format_eq_filter_string(PRESETS["Rock"])
         for ch in range(2):
             for freq, gain in zip(BAND_FREQUENCIES, PRESETS["Rock"], strict=False):
                 # Integer gains emit without a decimal point.
@@ -160,16 +160,16 @@ class TestFormatAnequalizerString:
         # missing bands, and the resulting "bands 8-10 sit at 0 dB"
         # behaviour is harder to diagnose than a stack trace.
         with pytest.raises(ValueError):
-            format_anequalizer_string([0] * 5)
+            format_eq_filter_string([0] * 5)
         with pytest.raises(ValueError):
-            format_anequalizer_string([])
+            format_eq_filter_string([])
         with pytest.raises(ValueError):
-            format_anequalizer_string([0] * (BAND_COUNT + 1))
+            format_eq_filter_string([0] * (BAND_COUNT + 1))
 
     def test_gain_clamped_to_envelope(self):
         # ±60 dB would shred drivers — clamp before the string ever
         # hits mpv. ±12 is the envelope the research doc specifies.
-        result = format_anequalizer_string([99, -99] + [0] * (BAND_COUNT - 2))
+        result = format_eq_filter_string([99, -99] + [0] * (BAND_COUNT - 2))
         assert f"g={int(GAIN_LIMIT_DB)} " in result
         assert f"g=-{int(GAIN_LIMIT_DB)} " in result
 
@@ -178,7 +178,7 @@ class TestFormatAnequalizerString:
         # dB — make sure those round-trip into the string without
         # weird formatting.
         bands = [1.5, 0, 0, 0, 0, 0, 0, 0, 0, 0]
-        result = format_anequalizer_string(bands)
+        result = format_eq_filter_string(bands)
         assert "g=1.5 " in result
 
     def test_band_width_is_one_octave_butterworth(self):
@@ -186,7 +186,7 @@ class TestFormatAnequalizerString:
         # the canonical one-octave Butterworth bandwidth and matches
         # the ffmpeg + real-world MPD examples cited in
         # ``docs/research/eq_dsp_v2.md`` §2.
-        result = format_anequalizer_string(PRESETS["Flat"])
+        result = format_eq_filter_string(PRESETS["Flat"])
         for entry in _aneq_entries(result):
             # Each entry shape: "c<n> f=<freq> w=<freq> g=<dB> t=0"
             parts = entry.split()
@@ -201,13 +201,13 @@ class TestFormatAnequalizerString:
         """The original "wart" was the use of ``c-1`` as an
         all-channels sentinel — ``anequalizer`` doesn't have one and
         silently dropped every band. The fix is concrete indices."""
-        result = format_anequalizer_string(PRESETS["Flat"])
+        result = format_eq_filter_string(PRESETS["Flat"])
         assert "c-1" not in result
         assert "c0 " in result
         assert "c1 " in result
 
     def test_mono_channel_count_emits_single_channel_only(self):
-        result = format_anequalizer_string(PRESETS["Flat"], channel_count=1)
+        result = format_eq_filter_string(PRESETS["Flat"], channel_count=1)
         entries = _aneq_entries(result)
         assert len(entries) == BAND_COUNT
         for entry in entries:
@@ -217,7 +217,7 @@ class TestFormatAnequalizerString:
         """5.1 = 6 channels → 6 × BAND_COUNT entries, each channel
         getting the full band set. Guards against the formatter
         forgetting a channel on surround sources."""
-        result = format_anequalizer_string(PRESETS["Flat"], channel_count=6)
+        result = format_eq_filter_string(PRESETS["Flat"], channel_count=6)
         entries = _aneq_entries(result)
         assert len(entries) == 6 * BAND_COUNT
         for ch in range(6):
@@ -229,9 +229,9 @@ class TestFormatAnequalizerString:
         # Defence-in-depth: a misbehaving mpv property could return
         # None, a string, 0, or a huge number. The formatter must
         # not crash and must produce a syntactically valid filter.
-        result_none = format_anequalizer_string(PRESETS["Flat"], channel_count=None)
-        result_zero = format_anequalizer_string(PRESETS["Flat"], channel_count=0)
-        result_huge = format_anequalizer_string(PRESETS["Flat"], channel_count=999)
+        result_none = format_eq_filter_string(PRESETS["Flat"], channel_count=None)
+        result_zero = format_eq_filter_string(PRESETS["Flat"], channel_count=0)
+        result_huge = format_eq_filter_string(PRESETS["Flat"], channel_count=999)
         # None / non-numeric → stereo default; 0 clamps up to 1;
         # 999 clamps down to 8.
         assert result_none.startswith(_ANEQ_PREFIX)

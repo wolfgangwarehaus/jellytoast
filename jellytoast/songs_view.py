@@ -649,7 +649,7 @@ class SongsView(QWidget):
 
     @property
     def _items(self) -> List[Dict]:
-        """jellytoast/app.py reads this to gate re-loads on emptiness."""
+        """session_controller.py reads this to gate re-loads on emptiness."""
         return self._model.items()
 
     # ── Scroll plumbing ───────────────────────────────────────────────

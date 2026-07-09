@@ -248,7 +248,7 @@ autostart (`autostart/_windows.py`), toast notifications
 (`taskbar.py`), prevent-sleep-during-playback (`power/`, cross-platform),
 and single-instance window foregrounding.
 
-**Working today (macOS, shipped 0.1.4–0.1.7):** signed + notarized `.dmg`
+**Working today (macOS, shipped 0.1.4–0.1.8):** signed + notarized `.dmg`
 for Apple Silicon (Sonoma 14+) and Intel (Ventura 13+); a Mac App Store
 build auto-uploads to App Store Connect on every release.
 - Native frosted glass via `NSVisualEffectView` vibrancy

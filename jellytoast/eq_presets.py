@@ -167,13 +167,6 @@ def format_eq_filter_string(bands: list[float], channel_count: int = 2) -> str:
     return 'anequalizer=params="' + "|".join(entries) + '"'
 
 
-# Back-compat alias. Older imports still resolve to the new function
-# so the rename is a single-commit change without breaking external
-# call sites (there are none in-tree, but the name is referenced in
-# memory entries and docs). Safe to delete once those have caught up.
-format_anequalizer_string = format_eq_filter_string
-
-
 # ── EQ T2 — linear-phase FIR ─────────────────────────────────────────
 # FIR delay tuned to the research doc's value (§6 T2). 20 ms is the
 # audiophile-tier balance: long enough that the FIR taps cover the

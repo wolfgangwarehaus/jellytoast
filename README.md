@@ -30,7 +30,7 @@
 Latest builds are on [**Releases**][rel].
 
 - **Linux** — [.deb][rel] · [AppImage][rel] · AUR *(soon)*
-- **macOS** — [Apple Silicon][rel] · [Intel][rel] · App Store *(soon)*
+- **macOS** — [Apple Silicon][rel] · [Intel][rel] · [App Store][mas]
 - **Windows** — [Microsoft Store][store] · [.exe][rel] · `winget install jellytoast`
 - **Any OS** — `pipx install jellytoast` *(needs libmpv installed, like from-source)*
 
@@ -46,6 +46,7 @@ Want to contribute? [`CONTRIBUTING.md`](.github/CONTRIBUTING.md) has the dev set
 
 [rel]: https://github.com/wolfgangwarehaus/jellytoast/releases/latest
 [store]: https://apps.microsoft.com/detail/9PNLTPXGHN79
+[mas]: https://apps.apple.com/app/id6784370624
 
 ## Documentation
 
