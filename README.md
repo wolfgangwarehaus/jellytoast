@@ -29,8 +29,8 @@
 
 Latest builds are on [**Releases**][rel].
 
-- **Linux** — [.deb][rel] · [AppImage][rel] · AUR *(soon)*
-- **macOS** — [Apple Silicon][rel] · [Intel][rel] · [App Store][mas]
+- **Linux** — [AppImage][rel] · [.deb][rel] · AUR *(soon)*
+- **macOS** — [App Store][mas] · [Apple Silicon .dmg][rel] · [Intel .dmg][rel]
 - **Windows** — [Microsoft Store][store] · [.exe][rel] · `winget install jellytoast`
 - **Any OS** — `pipx install jellytoast` *(needs libmpv installed, like from-source)*
 
