@@ -39,6 +39,19 @@ build-options:
     - --share=network
 
 modules:
+  - name: krb5
+    # Not in the freedesktop runtime; PySide6's QtNetwork links
+    # libgssapi_krb5 dynamically (standard module for Qt apps).
+    buildsystem: autotools
+    subdir: src
+    config-opts:
+      - --disable-static
+      - --disable-rpath
+    sources:
+      - type: archive
+        url: https://kerberos.org/dist/krb5/1.21/krb5-1.21.3.tar.gz
+        sha256: b7a4cd5ead67fb08b980b21abd150ff7217e85ea320c9ed0c6dadd304840ad35
+
   - name: libass
     buildsystem: meson
     config-opts: [-Ddefault_library=shared]
@@ -64,6 +77,18 @@ modules:
       - type: git
         url: https://github.com/FFmpeg/FFmpeg.git
         tag: n7.1
+
+  - name: libplacebo
+    # mpv >=0.37 hard-requires it; the MAS build gets it from Homebrew's
+    # dep graph, here it's built like everything else. demos off; the
+    # git source pulls the fast_float submodule.
+    buildsystem: meson
+    config-opts:
+      - -Ddemos=false
+    sources:
+      - type: git
+        url: https://code.videolan.org/videolan/libplacebo.git
+        tag: v7.349.0
 
   - name: libmpv
     buildsystem: meson
@@ -117,4 +142,7 @@ modules:
       - type: script
         dest-filename: launcher.sh
         commands:
+          # Prefer native Wayland with an xcb fallback — same policy as
+          # dev/run.sh; without it Qt tries xcb first inside the sandbox.
+          - export QT_QPA_PLATFORM="${QT_QPA_PLATFORM:-wayland;xcb}"
           - exec python3 -m jellytoast "$@"
