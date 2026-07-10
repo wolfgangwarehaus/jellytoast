@@ -628,6 +628,40 @@ jobs:
             --version "${{ steps.ver.outputs.version }}" \
             --whats-new mas_whats_new.txt
 
+  build-linux-flatpak:
+    # Self-distributed .flatpak bundle (NOT a Flathub submission — see the
+    # manifest header; Flathub's AI policy path is a separate, deliberate
+    # future step). One file users install with
+    # `flatpak install ./jellytoast-X.Y.Z.flatpak`; a self-hosted OSTree
+    # repo for auto-updates is the planned follow-up.
+    runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/flathub-infra/flatpak-github-actions:freedesktop-24.08
+      options: --privileged
+    timeout-minutes: 60  # ffmpeg + mpv build from source (~20 min, cached after)
+    steps:
+      - uses: actions/checkout@v7
+      - name: Resolve version
+        id: ver
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            V="$(python3 -c 'import tomllib;print(tomllib.load(open("pyproject.toml","rb"))["project"]["version"])')"
+          else
+            V="${GITHUB_REF_NAME#v}"
+          fi
+          echo "version=$V" >> "$GITHUB_OUTPUT"
+      - uses: flathub/flatpak-github-actions/flatpak-builder@v6
+        with:
+          manifest-path: packaging/flatpak/io.github.wolfgangwarehaus.jellytoast.yml
+          bundle: jellytoast-${{ steps.ver.outputs.version }}.flatpak
+          cache-key: flatpak-builder-${{ hashFiles('packaging/flatpak/*.yml') }}
+          arch: x86_64
+          upload-artifact: false
+      - uses: actions/upload-artifact@v7
+        with:
+          name: flatpak
+          path: jellytoast-*.flatpak
+
   build-python:
     runs-on: ubuntu-latest
     permissions:
@@ -655,7 +689,7 @@ jobs:
 
   draft-release:
     if: github.event_name == 'push'
-    needs: [build-linux-deb, build-linux-appimage, build-windows, build-macos, build-python]
+    needs: [build-linux-deb, build-linux-appimage, build-linux-flatpak, build-windows, build-macos, build-python]
     runs-on: ubuntu-latest
     permissions:
       contents: write  # only this job mints the release

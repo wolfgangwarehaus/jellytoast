@@ -1,0 +1,120 @@
+# Flatpak manifest — SELF-DISTRIBUTED bundle (not a Flathub submission).
+#
+# Built by release.yml's build-linux-flatpak job into a one-file
+# jellytoast-X.Y.Z.flatpak attached to every release; a self-hosted
+# OSTree repo (auto-updates) is the planned follow-up. Because this is
+# our own distribution channel, the build allows network (pip installs
+# PySide6 + deps directly) — a Flathub submission would need generated
+# offline sources instead (flatpak-pip-generator), which is deliberate
+# future work gated on their AI-policy exception process.
+#
+# Native media stack: the same LGPL/no-Lua ffmpeg+libmpv recipe the Mac
+# App Store build uses (packaging/macos/mas/build_libmpv_lgpl.sh), so
+# the licensing story stays uniform across store-ish channels.
+
+app-id: io.github.wolfgangwarehaus.jellytoast
+runtime: org.freedesktop.Platform
+runtime-version: '24.08'
+sdk: org.freedesktop.Sdk
+command: jellytoast
+
+finish-args:
+  - --socket=wayland
+  - --socket=fallback-x11
+  - --share=ipc
+  - --share=network            # the media server + casting live on the network
+  - --socket=pulseaudio        # PipeWire's pulse interface on modern distros
+  - --device=dri               # GPU for Qt RHI + mpv vo=gpu
+  - --own-name=org.mpris.MediaPlayer2.jellytoast   # media keys / MPRIS
+  - --talk-name=org.freedesktop.Notifications      # track-change toasts
+  - --talk-name=org.kde.StatusNotifierWatcher      # tray icon
+  - --talk-name=org.freedesktop.secrets            # keyring (server login)
+  # Launch-at-login writes ~/.config/autostart directly (jellytoast/
+  # autostart/_linux.py) — narrow static grant instead of the Background
+  # portal for now; portal migration is tracked with the channel work.
+  - --filesystem=~/.config/autostart:create
+
+build-options:
+  build-args:
+    - --share=network
+
+modules:
+  - name: libass
+    buildsystem: meson
+    config-opts: [-Ddefault_library=shared]
+    sources:
+      - type: archive
+        url: https://github.com/libass/libass/releases/download/0.17.3/libass-0.17.3.tar.xz
+        sha256: eae425da50f0015c21f7b3a9c7262a910f0218af469e22e2931462fed3c50959
+
+  - name: ffmpeg-lgpl
+    buildsystem: autotools
+    config-opts:
+      - --enable-shared
+      - --disable-static
+      - --disable-gpl
+      - --disable-nonfree
+      - --disable-programs
+      - --disable-doc
+      - --disable-postproc
+      - --disable-avdevice
+      - --disable-encoders
+      - --disable-muxers
+    sources:
+      - type: git
+        url: https://github.com/FFmpeg/FFmpeg.git
+        tag: n7.1
+
+  - name: libmpv
+    buildsystem: meson
+    config-opts:
+      - -Dgpl=false
+      - -Dlibmpv=true
+      - -Dcplayer=false
+      - -Dlua=disabled
+      - -Djavascript=disabled
+      - -Dvapoursynth=disabled
+      - -Ddefault_library=shared
+    sources:
+      - type: git
+        url: https://github.com/mpv-player/mpv.git
+        tag: v0.39.0
+
+  - name: jellytoast
+    buildsystem: simple
+    build-commands:
+      # Install the checked-out tree itself — version-accurate on tag
+      # builds AND workflow_dispatch dry runs, no PyPI/tag timing race.
+      # PySide6 wheels bundle their own Qt — same runtime-independent
+      # approach as the PyInstaller channels, so no Qt/KDE-runtime
+      # version coupling.
+      - pip3 install --prefix=/app --no-cache-dir .
+      - install -Dm755 launcher.sh /app/bin/jellytoast
+      - install -Dm644 packaging/io.github.wolfgangwarehaus.jellytoast.desktop
+        /app/share/applications/io.github.wolfgangwarehaus.jellytoast.desktop
+      - install -Dm644 packaging/io.github.wolfgangwarehaus.jellytoast.metainfo.xml
+        /app/share/metainfo/io.github.wolfgangwarehaus.jellytoast.metainfo.xml
+      - |
+        for sz in 16 24 32 48 64 128 256 512; do
+          f="packaging/icons/hicolor/${sz}x${sz}/apps/io.github.wolfgangwarehaus.jellytoast.png"
+          if [ -f "$f" ]; then
+            install -Dm644 "$f" \
+              "/app/share/icons/hicolor/${sz}x${sz}/apps/io.github.wolfgangwarehaus.jellytoast.png"
+          fi
+        done
+      - install -Dm644 packaging/icons/jellytoast.svg
+        /app/share/icons/hicolor/scalable/apps/io.github.wolfgangwarehaus.jellytoast.svg
+    sources:
+      - type: dir
+        path: ../..
+        dest: .
+        skip:
+          - .git
+          - .venv
+          - dist
+          - build
+          - .flatpak-builder
+      - type: script
+        dest-filename: launcher.sh
+        commands:
+          - exec python3 -m jellytoast "$@"
