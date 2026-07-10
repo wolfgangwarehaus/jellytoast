@@ -142,6 +142,14 @@ def test_patch_refuses_unknown_shapes():
     assert pn.patch({"nothing": "here"}, "new") == 0
 
 
+def test_extract_json_strips_ansi_woven_through_payload():
+    # 0.1.9 run: spinner escapes landed INSIDE the JSON span and a raw
+    # control char sat in a string value ('Invalid control character').
+    woven = '\x1b[32mRetrieving\x07\x1b[0m{"listings": {"en\x1b[2K-us":\n {"baseListing": {"description": "line1\x02line2"}}}}'
+    d = pn.extract_json(woven)
+    assert "en-us" in d["listings"]
+
+
 def test_extract_json_tolerates_cli_chatter():
     # `msstore submission get` writes status-spinner lines to stdout before
     # the JSON payload (seen live on the 0.1.8 run) — the extractor must

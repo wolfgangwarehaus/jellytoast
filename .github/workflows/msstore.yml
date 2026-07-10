@@ -143,6 +143,9 @@ jobs:
             # the pipe via the OEM codepage and corrupts non-ASCII listing text
             # (which we'd then PUT straight back to the Store).
             [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+            # NO_COLOR: keep Spectre's spinner ANSI escapes out of the JSON
+            # (0.1.9 run: control characters woven through the payload).
+            $env:NO_COLOR = "1"
             msstore submission get 9PNLTPXGHN79 | Set-Content submission.json -Encoding utf8
             if ($LASTEXITCODE -ne 0) { throw "submission get exited $LASTEXITCODE" }
             python dev/store_patch_release_notes.py submission.json whats_new.txt patched.json

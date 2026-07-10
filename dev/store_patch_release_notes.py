@@ -20,6 +20,7 @@ rather than guessing at a shape Partner Center might reject.
 from __future__ import annotations
 
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -49,21 +50,28 @@ def patch(submission: dict, notes: str) -> int:
     return stamped
 
 
+_ANSI = re.compile(r"\x1b\[[0-9;?]*[ -/]*[@-~]|\x1b\][^\x07]*\x07|[\x00-\x08\x0b-\x1f]")
+
+
 def extract_json(raw: str) -> dict:
     """The submission object from `msstore submission get` output.
 
-    The CLI prints the JSON via AnsiConsole AFTER its status spinner has
-    already written progress lines to the same stream (seen live on the
-    0.1.8 run: 'Retrieving Submission' chatter ahead of the payload), so
-    a bare json.loads fails. Parse the outermost brace span instead.
+    The CLI prints the JSON via AnsiConsole with a status spinner on the
+    same stream — chatter lines land before the payload (0.1.8 run) and
+    spinner ANSI escapes can be woven straight through it (0.1.9 run:
+    'Invalid control character' mid-JSON). The workflow sets NO_COLOR
+    to suppress them at the source; this strips any survivors and
+    parses the outermost brace span with strict=False so a stray
+    control char inside a string can't sink the stamping.
     """
+    raw = _ANSI.sub("", raw)
     try:
-        return json.loads(raw)
+        return json.loads(raw, strict=False)
     except ValueError:
         start, end = raw.find("{"), raw.rfind("}")
         if start == -1 or end <= start:
             raise ValueError("no JSON object found in the CLI output") from None
-        return json.loads(raw[start : end + 1])
+        return json.loads(raw[start : end + 1], strict=False)
 
 
 def main() -> int:
