@@ -53,8 +53,10 @@ class FauxFrost:
     # cached texture is stable across rebuilds. Sparse + low-alpha = fine film
     # grain rather than a haze.
     _GRAIN_TILE = 64
-    _GRAIN_ALPHA_MAX = 9
-    _GRAIN_DENSITY = 0.20  # fraction of pixels that get any speck
+    # Tuned down 2026-07-10 (august: "a bit less grain") — was alpha 9 /
+    # density 0.20; the frost should whisper, not sizzle.
+    _GRAIN_ALPHA_MAX = 6
+    _GRAIN_DENSITY = 0.12  # fraction of pixels that get any speck
     _GRAIN_SEED = 0xF0057
     _grain: Optional[QPixmap] = None
 
