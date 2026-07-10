@@ -13,7 +13,8 @@ caller keeps no reference.
 
 from __future__ import annotations
 
-from PySide6.QtCore import QEasingCurve, QPropertyAnimation, Qt, QTimer
+from PySide6.QtCore import QEasingCurve, QPropertyAnimation, QRectF, Qt, QTimer
+from PySide6.QtGui import QPainter, QPainterPath
 from PySide6.QtWidgets import (
     QFrame,
     QGraphicsOpacityEffect,
@@ -23,7 +24,7 @@ from PySide6.QtWidgets import (
 )
 
 import jellytoast.ui_helpers as _tokens
-from jellytoast.design_tokens import TYPE_CAPTION, rad, type_qss
+from jellytoast.design_tokens import RADIUS_MD, TYPE_CAPTION, type_qss
 
 
 class _Toast(QFrame):
@@ -43,23 +44,19 @@ class _Toast(QFrame):
         # Purely informational — never eat a click meant for the
         # content underneath it.
         self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
-        # Read tokens live (module attribute access, not `from import`)
-        # so a runtime theme/accent change is reflected.
-        self.setStyleSheet(
-            f"""
-            QFrame#jtToast {{
-                background: {_tokens.BG_PANEL};
-                border: 1px solid {_tokens.BORDER};
-                border-radius: {rad(8)}px;
-            }}
-            """
-        )
+        # Translucent so the rounded pill painted in paintEvent shows with
+        # clear corners (no square box behind it) — matches the hover
+        # tooltip's surface (custom_tooltip.ToolTipPopup).
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
 
         layout = QHBoxLayout(self)
         layout.setContentsMargins(16, 10, 16, 10)
         layout.setSpacing(0)
         label = QLabel(message)
-        label.setStyleSheet(f"color: {_tokens.TEXT}; {type_qss(TYPE_CAPTION)}")
+        # No background on the label — only the pill shows behind the text.
+        label.setStyleSheet(
+            f"background: transparent; color: {_tokens.TEXT}; {type_qss(TYPE_CAPTION)}"
+        )
         layout.addWidget(label)
 
         self.adjustSize()
@@ -67,6 +64,25 @@ class _Toast(QFrame):
         self.show()
         self.raise_()
         QTimer.singleShot(self._HOLD_MS, self._begin_fade)
+
+    def paintEvent(self, _e):  # noqa: N802 — Qt naming
+        """Paint the frosted pill — the SAME body colour and rounded shape
+        the hover tooltip uses (``popup_paint_qcolor``: theme- and
+        blur-aware, dark in the dark family). Was a QSS ``BG_PANEL`` fill
+        + border, which is the light card tone and read pale over blur,
+        mismatching the tooltips."""
+        from jellytoast.ui_helpers import popup_paint_qcolor
+
+        p = QPainter(self)
+        try:
+            p.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+            path = QPainterPath()
+            path.addRoundedRect(QRectF(self.rect()), float(RADIUS_MD), float(RADIUS_MD))
+            p.setPen(Qt.PenStyle.NoPen)
+            p.setBrush(popup_paint_qcolor())
+            p.drawPath(path)
+        finally:
+            p.end()
 
     def _reposition(self) -> None:
         """Centre the pill horizontally near the host's bottom edge."""
