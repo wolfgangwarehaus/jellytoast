@@ -163,16 +163,20 @@ def resolve_app(c: Client) -> str:
 
 
 def wait_for_build(c: Client, app_id: str, version: str, timeout_s: int = 45 * 60) -> str:
-    """The id of the processed build whose CFBundleVersion == version.
-    The upload just happened in the same pipeline run, so poll until
-    Apple finishes processing it (typically 5–30 minutes)."""
+    """The id of the newest processed build for marketing version
+    ``version``. NB: the ASC API's ``filter[version]`` matches
+    CFBundleVersion — which is the CI RUN NUMBER in this pipeline, not
+    the marketing version (0.1.9's maiden run polled for a build
+    literally named "0.1.9" for 45 minutes) — so filter on the
+    preReleaseVersion relationship instead. The upload just happened in
+    the same pipeline run; Apple processing typically takes 5–30 min."""
     deadline = time.time() + timeout_s
     while True:
         builds = c.get(
             "/v1/builds",
             **{
                 "filter[app]": app_id,
-                "filter[version]": version,
+                "filter[preReleaseVersion.version]": version,
                 "sort": "-uploadedDate",
                 "limit": "5",
             },
@@ -180,7 +184,7 @@ def wait_for_build(c: Client, app_id: str, version: str, timeout_s: int = 45 * 6
         for b in builds:
             state = b["attributes"].get("processingState")
             if state == "VALID":
-                log(f"build {version} processed (id {b['id']})")
+                log(f"build {b['attributes'].get('version')} (marketing {version}) processed (id {b['id']})")
                 return b["id"]
             if state in ("FAILED", "INVALID"):
                 raise RuntimeError(f"build {version} processing state: {state}")
