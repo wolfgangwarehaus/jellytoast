@@ -102,13 +102,37 @@ class Client:
             "Authorization": f"Bearer {self._auth()}",
             "Content-Type": "application/json",
         })
-        try:
-            with urllib.request.urlopen(req, timeout=60) as r:
-                raw = r.read()
-                return json.loads(raw) if raw else {}
-        except urllib.error.HTTPError as e:
-            detail = e.read().decode(errors="replace")
-            raise RuntimeError(f"{method} {path} -> HTTP {e.code}: {detail}") from None
+        for attempt in range(4):
+            try:
+                with urllib.request.urlopen(req, timeout=120) as r:
+                    raw = r.read()
+                    return json.loads(raw) if raw else {}
+            except urllib.error.HTTPError as e:
+                detail = e.read().decode(errors="replace")
+                # ASC throws transient UNEXPECTED_ERROR 5xx; retry those.
+                # (A 500 on POST may still have committed server-side —
+                # the whole flow is written get-or-reuse-idempotent, so a
+                # rerun converges rather than duplicating.)
+                if e.code >= 500 and attempt < 3:
+                    log(f"{method} {path} -> HTTP {e.code}, retrying in {15 * (attempt + 1)}s")
+                    time.sleep(15 * (attempt + 1))
+                    req = urllib.request.Request(url, data=data, method=method, headers={
+                        "Authorization": f"Bearer {self._auth()}",
+                        "Content-Type": "application/json",
+                    })
+                    continue
+                raise RuntimeError(f"{method} {path} -> HTTP {e.code}: {detail}") from None
+            except (TimeoutError, urllib.error.URLError) as e:
+                if attempt < 3:
+                    log(f"{method} {path} -> {type(e).__name__}, retrying in {15 * (attempt + 1)}s")
+                    time.sleep(15 * (attempt + 1))
+                    req = urllib.request.Request(url, data=data, method=method, headers={
+                        "Authorization": f"Bearer {self._auth()}",
+                        "Content-Type": "application/json",
+                    })
+                    continue
+                raise RuntimeError(f"{method} {path}: network failure after retries: {e}") from None
+        raise RuntimeError(f"{method} {path}: retries exhausted")
 
     def get(self, path: str, **params: str) -> dict:
         if params:
@@ -199,10 +223,14 @@ def wait_for_build(c: Client, app_id: str, version: str, timeout_s: int = 45 * 6
 
 
 def ensure_version(c: Client, app_id: str, version_string: str) -> str:
-    versions = c.get(
-        f"/v1/apps/{app_id}/appStoreVersions",
-        **{"filter[platform]": PLATFORM, "limit": "10"},
-    )["data"]
+    # filter[platform] 500s on this endpoint (seen live, 0.1.9) —
+    # fetch recent versions and filter client-side instead.
+    versions = [
+        v for v in c.get(
+            f"/v1/apps/{app_id}/appStoreVersions", **{"limit": "20"}
+        )["data"]
+        if v["attributes"].get("platform") == PLATFORM
+    ]
     existing = pick_editable_version(versions, version_string)
     if existing is None:
         log(f"creating appStoreVersion {version_string}")
