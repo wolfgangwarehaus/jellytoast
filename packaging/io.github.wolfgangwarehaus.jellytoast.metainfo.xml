@@ -61,31 +61,31 @@
        pin them to the release TAG (not /main/) for a reproducible result. -->
   <screenshots>
     <screenshot type="default">
-      <image type="source" width="1600" height="900">https://raw.githubusercontent.com/wolfgangwarehaus/jellytoast/main/docs/screenshots/library.png</image>
+      <image type="source" width="1600" height="1000">https://raw.githubusercontent.com/wolfgangwarehaus/jellytoast/main/docs/screenshots/library.png</image>
       <caption>Browse your library as a clean album grid</caption>
     </screenshot>
     <screenshot>
-      <image type="source" width="1600" height="900">https://raw.githubusercontent.com/wolfgangwarehaus/jellytoast/main/docs/screenshots/now-playing.png</image>
+      <image type="source" width="1600" height="1000">https://raw.githubusercontent.com/wolfgangwarehaus/jellytoast/main/docs/screenshots/now-playing.png</image>
       <caption>Now playing with the album queue and a live audio visualizer</caption>
     </screenshot>
     <screenshot>
-      <image type="source" width="1600" height="900">https://raw.githubusercontent.com/wolfgangwarehaus/jellytoast/main/docs/screenshots/cast.png</image>
+      <image type="source" width="1600" height="1000">https://raw.githubusercontent.com/wolfgangwarehaus/jellytoast/main/docs/screenshots/cast.png</image>
       <caption>Cast to Chromecast, AirPlay, DLNA, or Sonos</caption>
     </screenshot>
     <screenshot>
-      <image type="source" width="1600" height="900">https://raw.githubusercontent.com/wolfgangwarehaus/jellytoast/main/docs/screenshots/smart-playlists.png</image>
+      <image type="source" width="1600" height="1000">https://raw.githubusercontent.com/wolfgangwarehaus/jellytoast/main/docs/screenshots/smart-playlists.png</image>
       <caption>Build smart playlists from rule-based filters</caption>
     </screenshot>
     <screenshot>
-      <image type="source" width="1600" height="900">https://raw.githubusercontent.com/wolfgangwarehaus/jellytoast/main/docs/screenshots/radio.png</image>
+      <image type="source" width="1600" height="1000">https://raw.githubusercontent.com/wolfgangwarehaus/jellytoast/main/docs/screenshots/radio.png</image>
       <caption>Tune in to internet radio stations</caption>
     </screenshot>
     <screenshot>
-      <image type="source" width="1600" height="900">https://raw.githubusercontent.com/wolfgangwarehaus/jellytoast/main/docs/screenshots/downloads.png</image>
+      <image type="source" width="1600" height="1000">https://raw.githubusercontent.com/wolfgangwarehaus/jellytoast/main/docs/screenshots/downloads.png</image>
       <caption>Download albums for offline playback</caption>
     </screenshot>
     <screenshot>
-      <image type="source" width="1600" height="900">https://raw.githubusercontent.com/wolfgangwarehaus/jellytoast/main/docs/screenshots/settings.png</image>
+      <image type="source" width="1600" height="1000">https://raw.githubusercontent.com/wolfgangwarehaus/jellytoast/main/docs/screenshots/settings.png</image>
       <caption>Bit-perfect playback with equalizer and crossfade</caption>
     </screenshot>
     <screenshot>
