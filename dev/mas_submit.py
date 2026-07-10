@@ -281,7 +281,7 @@ def submit_for_review(c: Client, app_id: str, version_id: str) -> None:
         "type": "reviewSubmissionItems",
         "relationships": {
             "reviewSubmission": {"data": {"type": "reviewSubmissions", "id": sub_id}},
-            "appStoreVersionForReview": {"data": {"type": "appStoreVersions", "id": version_id}},
+            "appStoreVersion": {"data": {"type": "appStoreVersions", "id": version_id}},
         },
     }})
     c.request("PATCH", f"/v1/reviewSubmissions/{sub_id}", {"data": {
