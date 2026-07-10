@@ -700,6 +700,22 @@ jobs:
         with:
           path: artifacts
           merge-multiple: true
+      # Versionless "latest" aliases — byte-identical copies of the desktop
+      # downloads under stable names, so the README / site can link
+      # /releases/latest/download/<stable-name> as a PERMANENT direct
+      # download (the versioned names embed the version and 404 next
+      # release). Copied before SHA256SUMS so the checksums cover them too.
+      - name: Add versionless download aliases
+        run: |
+          cd artifacts
+          V="${GITHUB_REF_NAME#v}"
+          alias() { if [ -f "$1" ]; then cp "$1" "$2"; else echo "skip alias: $1 absent"; fi; }
+          alias "jellytoast-${V}-x86_64.AppImage"        jellytoast-x86_64.AppImage
+          alias "jellytoast_${V}_amd64.deb"              jellytoast-amd64.deb
+          alias "jellytoast-${V}.flatpak"                jellytoast.flatpak
+          alias "jellytoast-${V}-macos-arm64.dmg"        jellytoast-macos-arm64.dmg
+          alias "jellytoast-${V}-macos-x86_64.dmg"       jellytoast-macos-x86_64.dmg
+          alias "jellytoast-${V}-windows-x64-setup.exe"  jellytoast-windows-x64-setup.exe
       - name: Generate SHA256SUMS
         run: |
           cd artifacts
