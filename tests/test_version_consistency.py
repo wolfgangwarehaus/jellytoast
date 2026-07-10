@@ -95,11 +95,20 @@ def test_metainfo_matches_pyproject():
 
 
 def test_runtime_version_matches_pyproject():
-    # In a source checkout (CI / dev) the package isn't installed, so
-    # __version__ resolves to the fallback, which must equal pyproject.
-    # If a stale install IS present, this would surface the drift — which
-    # is exactly the failure we want.
+    # In a source checkout (CI / dev), __version__ resolves to the fallback
+    # literal, which must equal pyproject. This now holds EVEN WITH a stale
+    # editable install present, because version.py prefers the literal in a
+    # checkout (see _IN_SOURCE_CHECKOUT) — the fix for the dev shortcut
+    # reporting an old version + phantom update chip after a bump.
     assert jellytoast.version.__version__ == _pyproject_version()
+
+
+def test_source_checkout_prefers_literal_over_stale_metadata():
+    # The mechanism behind the fix: running from the repo, version.py must
+    # detect the checkout and use the fresh literal, never installed
+    # metadata (which lags between a bump and the next `pip install -e`).
+    assert jellytoast.version._IN_SOURCE_CHECKOUT is True
+    assert jellytoast.version.__version__ == _version_py_fallback()
 
 
 # ── Per-channel manifests (the unified-release single-source gate) ───────────
