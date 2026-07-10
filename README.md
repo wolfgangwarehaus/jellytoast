@@ -32,6 +32,7 @@ Latest builds are on [**Releases**][rel].
 - **Linux**
   - [AppImage][rel]
   - [.deb][rel]
+  - [Flatpak][rel]
   - AUR *(soon)*
 - **macOS**
   - [App Store][mas]
