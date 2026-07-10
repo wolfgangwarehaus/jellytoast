@@ -469,11 +469,13 @@ class JtTopBar(QWidget):
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
-        self._position_center_cluster()
+        # Re-fit the library title (the budget before the centred dropdown
+        # shrinks with the window) — this also re-centres the cluster.
+        self._fit_library_title()
 
     def showEvent(self, event):
         super().showEvent(event)
-        self._position_center_cluster()
+        self._fit_library_title()
 
     def changeEvent(self, event):
         super().changeEvent(event)
@@ -483,13 +485,14 @@ class JtTopBar(QWidget):
         # re-flows the title / view-button widths but does NOT fire a resize, so
         # without this the centre dropdown keeps its OLD position and a wider
         # font leaves the title overlapping it ("Music Library" over "Albums").
-        # Deferred so the layout re-runs with the new metrics before we re-read
-        # geometry to re-clamp the dropdown.
+        # Re-fit (a wider font may also force the title to a shorter form),
+        # which re-centres too. Deferred so the layout re-runs with the new
+        # metrics before we re-read geometry.
         if event.type() in (
             QEvent.Type.FontChange,
             QEvent.Type.ApplicationFontChange,
         ):
-            QTimer.singleShot(0, self._position_center_cluster)
+            QTimer.singleShot(0, self._fit_library_title)
 
     def set_library_controls_visible(self, visible: bool):
         """Show/hide the Shuffle + View toggle + Sort cluster. The host
@@ -874,14 +877,60 @@ class JtTopBar(QWidget):
         # A restyle can shift button metrics → re-centre the view dropdown.
         self._position_center_cluster()
 
-    def set_title(self, text: str):
-        # Drive whichever title widget is active: the dropdown button when
-        # the server has multiple libraries, the plain label otherwise.
-        text = text or ""
-        self.title_label.setText(text)
-        self.library_btn.setText(text)
-        # The library dropdown's width feeds the left cluster, which clamps the
-        # centre dropdown — re-centre after a title change.
+    def set_title(self, text):
+        """Set the library title. Accepts a plain string OR a list of
+        title forms (most → least informative, from
+        ``library_selection.selection_title_forms``); the library dropdown
+        picks the widest form that fits before the centred view dropdown,
+        so a long multi-library title degrades ("Music Library + Discovery"
+        → "Music Library +1" → "2 libraries") instead of overrunning it."""
+        forms = [text or ""] if isinstance(text, str) else [str(t) for t in (text or [""])]
+        self._library_title_forms = forms or [""]
+        # The plain label (single / no-library server) shows the full form —
+        # it can't overflow (one name or the default). The dropdown fits.
+        self.title_label.setText(self._library_title_forms[0])
+        self._fit_library_title()
+
+    def _library_title_budget(self) -> int:
+        """Pixels available to the library button before it would reach the
+        centred view dropdown — the space its title must fit within."""
+        bar_w = self.width()
+        if bar_w <= 0:
+            return 260  # not laid out yet — permissive default
+        vb_w = self.view_btn.sizeHint().width() if self.view_btn.isVisible() else 0
+        center_left = bar_w // 2 - vb_w // 2 - self._CLUSTER_GAP
+        btn_left = self.library_btn.mapTo(self, self.library_btn.rect().topLeft()).x()
+        if btn_left <= 0:
+            return min(260, max(70, center_left))
+        return max(70, center_left - btn_left)
+
+    def _fit_library_title(self):
+        """Pick the widest title form that fits the budget and size the
+        library button to it. Recursion-guarded because setText can nudge
+        the layout and re-enter via resizeEvent."""
+        if getattr(self, "_fitting_library_title", False):
+            return
+        forms = getattr(self, "_library_title_forms", None) or [""]
+        if not self.library_btn.isVisible():
+            self.library_btn.setText(forms[0])
+            self._position_center_cluster()
+            return
+        self._fitting_library_title = True
+        try:
+            budget = self._library_title_budget()
+            chosen, chosen_w = forms[-1], None
+            for form in forms:
+                self.library_btn.setText(form)
+                w = self.library_btn.sizeHint().width()
+                if w <= budget:
+                    chosen, chosen_w = form, w
+                    break
+            self.library_btn.setText(chosen)
+            if chosen_w is None:  # even the most compact form overflows — clamp
+                chosen_w = min(self.library_btn.sizeHint().width(), budget)
+            self.library_btn.setMaximumWidth(max(70, int(chosen_w)))
+        finally:
+            self._fitting_library_title = False
         self._position_center_cluster()
 
     def set_available_libraries(self, libs: list):

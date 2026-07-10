@@ -128,7 +128,7 @@ class _LibrarySelectionMixin:
         from jellytoast import library_selection as _ls
 
         if hasattr(self, "top_bar"):
-            self.top_bar.set_title(_ls.selection_title("Music"))
+            self.top_bar.set_title(_ls.selection_title_forms("Music"))
 
     @Slot(list)
     def _on_libraries_selected(self, ids: list):

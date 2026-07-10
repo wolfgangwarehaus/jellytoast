@@ -149,6 +149,40 @@ def test_title_leads_with_primary_regardless_of_click_order(isolated_settings):
     assert ls.selection_title() == "Music + Discover"
 
 
+def test_title_forms_ladder_two_libraries(isolated_settings):
+    # The degradation ladder the top bar walks when the full title would
+    # overrun the centred view dropdown: full → primary +N → count.
+    _reset()
+    ids = _seed("Music", "Discover", "Soundtracks")
+    ls.set_selected_ids([ids[0], ids[1]])
+    assert ls.selection_title_forms() == [
+        "Music + Discover",
+        "Music +1",
+        "2 libraries",
+    ]
+    # selection_title() is exactly the most-informative form.
+    assert ls.selection_title() == ls.selection_title_forms()[0]
+
+
+def test_title_forms_ladder_many_libraries(isolated_settings):
+    # 3-of-4 partial subset: no "A + B" form (only shown for exactly two),
+    # so the ladder is the compact "+N" then the count.
+    _reset()
+    ids = _seed("Music", "Discover", "Soundtracks", "Live")
+    ls.set_selected_ids([ids[0], ids[1], ids[2]])
+    assert ls.selection_title_forms() == ["Music +2", "3 libraries"]
+
+
+def test_title_forms_single_and_default(isolated_settings):
+    # One library and 'all' collapse to a single, unshortenable form.
+    _reset()
+    ids = _seed("Music", "Discover")
+    ls.set_selected_ids([ids[1]])
+    assert ls.selection_title_forms() == ["Discover"]
+    ls.set_selected_ids([])  # all → default
+    assert ls.selection_title_forms("Music") == ["Music"]
+
+
 # ── Reset on server change ─────────────────────────────────────────────────
 
 

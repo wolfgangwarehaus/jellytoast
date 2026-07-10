@@ -193,32 +193,44 @@ def selection_cache_key() -> str:
     return ",".join(sorted(key))
 
 
-def selection_title(default: str = "Music") -> str:
-    """The top-left title for the active selection.
+def selection_title_forms(default: str = "Music") -> List[str]:
+    """Top-left title candidates for the active selection, MOST → LEAST
+    informative. The top bar picks the widest form that fits before the
+    centred view dropdown, so a long multi-library title
+    ("Music Library + Discovery") degrades to "Music Library +1" and then
+    "2 libraries" instead of overrunning the "Albums" dropdown.
 
-    * 'all' (or single-library server) → ``default`` ("Music").
-    * one library → that library's name ("Discover").
-    * two → "A + B" ("Music + Discover").
-    * 3+ → "A +N" ("Music +2") to stay compact.
+    * 'all' / single-library server → ``[default]`` ("Music").
+    * one library → ``[name]`` (a single name can't sensibly shorten).
+    * two → ``["A + B", "A +1", "2 libraries"]``.
+    * 3+ → ``["A +N", "N libraries"]`` (already compact; just the fallback).
     """
-    ids = set(selected_ids())
     if not _effective_key(selected_ids()):
-        return default
+        return [default]
+    ids = set(selected_ids())
     # Render names in SERVER order (the order get_libraries returned, which
     # the dropdown also shows), not click order — so the primary library
-    # ("Music", the first folder) always leads when it's part of the
-    # selection. "Discover" alone → "Discover"; Music+Discover → "Music +
-    # Discover" regardless of which the user toggled first; 3+ → "Music +2".
+    # ("Music", the first folder) always leads when it's part of the selection.
     names = [lib["Name"] for lib in (_available or []) if lib["Id"] in ids]
-    # Fall back to any selected ids the available list doesn't know about
-    # (shouldn't happen — selected_ids filters to known — but stay safe).
     if not names:
-        return default
+        return [default]
     if len(names) == 1:
-        return names[0]
-    if len(names) == 2:
-        return f"{names[0]} + {names[1]}"
-    return f"{names[0]} +{len(names) - 1}"
+        return [names[0]]
+    n = len(names)
+    forms: List[str] = []
+    if n == 2:
+        forms.append(f"{names[0]} + {names[1]}")
+    forms.append(f"{names[0]} +{n - 1}")
+    forms.append(f"{n} libraries")
+    # Dedupe, preserving order (n==2 never collides; belt-and-braces).
+    seen: set = set()
+    return [f for f in forms if not (f in seen or seen.add(f))]
+
+
+def selection_title(default: str = "Music") -> str:
+    """The single best (widest) title form — back-compat + the plain-label
+    path where width never matters. See :func:`selection_title_forms`."""
+    return selection_title_forms(default)[0]
 
 
 def music_libraries(libs: List[Dict[str, Any]]) -> List[Dict[str, Any]]:

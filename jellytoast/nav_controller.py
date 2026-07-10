@@ -581,7 +581,7 @@ class _NavMixin:
         the active content widget."""
         from jellytoast import library_selection as _ls
 
-        self.top_bar.set_title(_ls.selection_title("Music"))
+        self.top_bar.set_title(_ls.selection_title_forms("Music"))
         self.top_bar.set_collection("music")
 
     def _show_search_view(self):
