@@ -98,7 +98,13 @@ dependencies = [
     # Security floor: 43.0.1 is a current patched OpenSSL-backed release
     # (clears the GHSA-h4gh-qq45 / pyOpenSSL-side advisories that lingered
     # on the old >=41.0 floor). Narrow surface, so no upper cap.
-    "cryptography>=43.0.1",
+    # Scoped to non-Windows: cryptography has no win_arm64 wheel (shipped one
+    # briefly at 46.0.0, dropped it in 46.0.4, still absent at 49.x), which
+    # would block a native ARM64 Windows build. Windows uses the OS-native
+    # DPAPI instead (jellytoast/credentials.py) and pulls in NO cryptography —
+    # our own declaration here is the sole cryptography puller on Windows, so
+    # this marker removes it (and its transitive cffi) from the Windows resolve.
+    'cryptography>=43.0.1 ; sys_platform != "win32"',
     # ── Cast / visualizer backends ────────────────────────────────────
     # Promoted from per-feature extras to required deps so EVERY install
     # (pipx, source, future AUR) ships the same backend set — no

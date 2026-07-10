@@ -80,6 +80,84 @@ def test_decrypt_corrupted_blob_returns_empty():
     assert _decrypt_token(bad) == ""
 
 
+# ── Windows DPAPI migration (0.2.0: cryptography dropped on Windows) ───
+# On the 0.2.0 Windows build the resilience cipher becomes DPAPI ("d1:")
+# and cryptography is absent, so old "v1:" AES-GCM blobs are undecryptable
+# there. These simulate that runtime on the Linux CI box (patch IS_WINDOWS +
+# a fake DPAPI layer + the platform prefix) to lock the migration behavior.
+
+
+def _fake_dpapi():
+    """Reversible CryptProtectData/CryptUnprotectData stand-in; the marker
+    carries a NUL to exercise the binary-safe path."""
+
+    def protect(pt: bytes) -> bytes:
+        return b"D\x00P" + pt
+
+    def unprotect(ct: bytes) -> bytes:
+        return ct[3:]
+
+    return protect, unprotect
+
+
+def _simulate_windows(monkeypatch):
+    import jellytoast.credentials as cred
+    import jellytoast.settings as smod
+
+    monkeypatch.setattr(cred, "IS_WINDOWS", True)
+    monkeypatch.setattr(cred, "_dpapi_fns", _fake_dpapi(), raising=False)
+    # The "current format" prefix the self-heal guards test against is d1 on
+    # Windows — patch both namespaces the getters read it from.
+    monkeypatch.setattr(cred, "_ENC_PREFIX", "d1:")
+    monkeypatch.setattr(smod, "_ENC_PREFIX", "d1:")
+
+
+def test_windows_access_token_self_heals_via_keyring(isolated_settings, monkeypatch):
+    # Existing Windows install: a real v1 AES-GCM blob in QSettings + the token
+    # in Credential Locker. On 0.2.0 the v1 blob is unreadable, but keyring
+    # carries the token across the upgrade and the blob self-heals to d1 — no
+    # re-login.
+    fake = _FakeKeyring()
+    fake.store["token"] = "server-token"
+    _patch_keyring(monkeypatch, fake)
+    v1_blob = _encrypt_token("server-token")  # v1 on this Linux box
+    assert v1_blob.startswith("v1:")
+    isolated_settings._s.setValue("server/token", v1_blob)
+
+    _simulate_windows(monkeypatch)
+
+    assert isolated_settings.access_token == "server-token"
+    stored = isolated_settings._s.value("server/token", "", type=str)
+    assert stored.startswith("d1:")  # rewritten forward under DPAPI
+    assert stored != v1_blob
+    assert _decrypt_token(stored) == "server-token"  # d1 decrypts under sim
+
+
+def test_windows_scrobble_token_degrades_without_corruption(
+    isolated_settings,
+    monkeypatch,
+):
+    # listenbrainz_token has NO keyring copy. On the Windows upgrade its old v1
+    # blob can't be decrypted → the getter MUST return "" (clean one-time
+    # re-auth) and MUST NOT rewrite it into a garbage d1 blob (the corruption
+    # the known-prefix fix exists to prevent).
+    v1_blob = _encrypt_token("lb-secret")
+    assert v1_blob.startswith("v1:")
+    isolated_settings._s.setValue("scrobble/listenbrainz_token", v1_blob)
+
+    _simulate_windows(monkeypatch)
+
+    assert isolated_settings.listenbrainz_token == ""  # clean degrade
+    # The stale blob is left untouched — never re-encrypted into a bogus token.
+    assert isolated_settings._s.value("scrobble/listenbrainz_token", "", type=str) == v1_blob
+    # A fresh set writes a real d1 blob that round-trips.
+    isolated_settings.listenbrainz_token = "new-lb-token"
+    assert isolated_settings.listenbrainz_token == "new-lb-token"
+    assert isolated_settings._s.value(
+        "scrobble/listenbrainz_token", "", type=str
+    ).startswith("d1:")
+
+
 # ── dual-store contract ───────────────────────────────────────────────
 
 

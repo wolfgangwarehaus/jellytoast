@@ -6,10 +6,18 @@ crypto reads in isolation. Two stores back the access token (see
 
   Primary:    OS secret store via python-keyring (``_keyring_get_token`` /
               ``_keyring_set_token``), encrypted at rest, OS-managed.
-  Resilience: an AES-GCM blob in the QSettings file (``_encrypt_token`` /
-              ``_decrypt_token``), keyed by ``_machine_key`` (PBKDF2 over
-              /etc/machine-id + $USER) so a stolen config file alone can't
-              be decrypted.
+  Resilience: an encrypted blob in the QSettings file (``_encrypt_token`` /
+              ``_decrypt_token``). Two ciphers by platform:
+                • Linux/macOS — AES-GCM keyed by ``_machine_key`` (PBKDF2 over
+                  /etc/machine-id + $USER), prefix ``v1:``. Needs cryptography.
+                • Windows — OS-native DPAPI (``CryptProtectData`` via ctypes),
+                  prefix ``d1:``. Needs NO cryptography, so the Windows build
+                  carries no cryptography dep (it has no win_arm64 wheel — a
+                  hard blocker for native ARM64 Windows). Bound to the current
+                  user + a fixed app-entropy domain separator.
+              Either way a stolen config file alone can't be decrypted off the
+              originating machine/user. This is defense-in-depth on top of the
+              OS keyring, not the primary secret.
 
 ``settings`` re-imports every name here, so existing callers
 (``jellytoast.airplay2``, the boot ``warm_keyring_async`` in ``jellytoast``,
@@ -39,12 +47,114 @@ _KEYRING_USERNAME = "access_token"
 _KEYRING_WARNED = False
 _LEGACY_KEYRING_SERVICE = "JellyToast"
 
-# Version prefix on the QSettings token blob. Anything that doesn't
-# start with this is a legacy plaintext value (pre-2026-05-08); we
-# detect and re-encrypt on first read so existing installs upgrade
-# silently. Bumping the prefix is the migration knob if we ever
-# rotate the KDF or cipher.
-_ENC_PREFIX = "v1:"
+# Version prefixes on the QSettings token blob — one per cipher family.
+# A value that starts with NEITHER is a legacy plaintext value
+# (pre-2026-05-08); we detect and re-encrypt on first read so existing
+# installs upgrade silently. A value under a prefix we recognise but can't
+# decrypt on THIS platform (a ``v1:`` AES-GCM blob on Windows, where
+# cryptography is gone) decrypts to "" — never handed back raw, which the
+# re-encrypt-forward path would corrupt into a bogus token.
+_ENC_PREFIX_AESGCM = "v1:"  # PBKDF2 + AES-GCM (cryptography) — Linux/macOS
+_ENC_PREFIX_DPAPI = "d1:"  # Windows DPAPI (CryptProtectData) — no cryptography
+# The prefix NEW writes use on this platform. The self-heal guards in
+# settings.py / airplay2.py test ``stored.startswith(_ENC_PREFIX)`` to decide
+# "is the blob already in the current format?" — so on Windows this is ``d1:``
+# and an old ``v1:`` blob reads as needing a rewrite forward.
+_ENC_PREFIX = _ENC_PREFIX_DPAPI if IS_WINDOWS else _ENC_PREFIX_AESGCM
+_KNOWN_PREFIXES = (_ENC_PREFIX_AESGCM, _ENC_PREFIX_DPAPI)
+
+
+# ── Windows DPAPI (CryptProtectData) — the no-cryptography resilience path ───
+# Fixed, non-secret domain separator passed as DPAPI's optional entropy so
+# only jellytoast (supplying the same bytes) can unprotect the blob — without
+# it, any process running as the same user could. Reuses the AES-GCM PBKDF2
+# salt bytes; it's a separator, not a key, and shipping it in the binary is fine.
+_DPAPI_ENTROPY = b"jellytoast/access_token/v1"
+_CRYPTPROTECT_UI_FORBIDDEN = 0x01  # never raise a UI prompt (safe on bg threads)
+_dpapi_fns: Optional[tuple] = None  # cached (protect, unprotect) after first load
+
+
+def _load_dpapi() -> tuple:
+    """Lazily bind crypt32 ``CryptProtectData`` / ``CryptUnprotectData``.
+    Windows-only — importing this module on Linux/macOS never touches
+    ``ctypes.WinDLL`` (which doesn't exist there). Cached after first call."""
+    global _dpapi_fns
+    if _dpapi_fns is not None:
+        return _dpapi_fns
+    import ctypes
+    from ctypes import wintypes
+
+    class DATA_BLOB(ctypes.Structure):
+        # POINTER(c_char), NOT c_char_p: DPAPI ciphertext has embedded NULs, and
+        # c_char_p would truncate at the first one.
+        _fields_ = [
+            ("cbData", wintypes.DWORD),
+            ("pbData", ctypes.POINTER(ctypes.c_char)),
+        ]
+
+    crypt32 = ctypes.WinDLL("crypt32", use_last_error=True)
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    # .argtypes/.restype are MANDATORY on win_arm64 / win64 — without them
+    # ctypes assumes 32-bit and TRUNCATES the returned 64-bit pbData pointer.
+    crypt32.CryptProtectData.restype = wintypes.BOOL
+    crypt32.CryptProtectData.argtypes = [
+        ctypes.POINTER(DATA_BLOB),  # pDataIn
+        wintypes.LPCWSTR,  # szDataDescr (NULL)
+        ctypes.POINTER(DATA_BLOB),  # pOptionalEntropy
+        ctypes.c_void_p,  # pvReserved (NULL)
+        ctypes.c_void_p,  # pPromptStruct (NULL)
+        wintypes.DWORD,  # dwFlags
+        ctypes.POINTER(DATA_BLOB),  # pDataOut
+    ]
+    crypt32.CryptUnprotectData.restype = wintypes.BOOL
+    crypt32.CryptUnprotectData.argtypes = [
+        ctypes.POINTER(DATA_BLOB),  # pDataIn
+        ctypes.POINTER(wintypes.LPWSTR),  # ppszDataDescr (NULL)
+        ctypes.POINTER(DATA_BLOB),  # pOptionalEntropy
+        ctypes.c_void_p,  # pvReserved (NULL)
+        ctypes.c_void_p,  # pPromptStruct (NULL)
+        wintypes.DWORD,  # dwFlags
+        ctypes.POINTER(DATA_BLOB),  # pDataOut
+    ]
+    kernel32.LocalFree.restype = wintypes.HLOCAL
+    kernel32.LocalFree.argtypes = [wintypes.HLOCAL]
+
+    def _blob_in(data: bytes):
+        # from_buffer_copy is valid for len 0 too; the caller keeps `buf` alive.
+        buf = (ctypes.c_char * len(data)).from_buffer_copy(data)
+        blob = DATA_BLOB(len(data), ctypes.cast(buf, ctypes.POINTER(ctypes.c_char)))
+        return blob, buf
+
+    def _call(fn, data: bytes) -> bytes:
+        in_blob, _in = _blob_in(data)
+        ent_blob, _ent = _blob_in(_DPAPI_ENTROPY)  # identical on protect+unprotect
+        out = DATA_BLOB()
+        ok = fn(
+            ctypes.byref(in_blob),
+            None,
+            ctypes.byref(ent_blob),
+            None,
+            None,
+            _CRYPTPROTECT_UI_FORBIDDEN,
+            ctypes.byref(out),
+        )
+        if not ok:
+            raise ctypes.WinError(ctypes.get_last_error())
+        try:
+            # string_at copies exactly cbData bytes (keeps embedded NULs).
+            return ctypes.string_at(out.pbData, out.cbData)
+        finally:
+            if out.pbData:
+                kernel32.LocalFree(ctypes.cast(out.pbData, wintypes.HLOCAL))
+
+    def protect(plaintext: bytes) -> bytes:
+        return _call(crypt32.CryptProtectData, plaintext)
+
+    def unprotect(ciphertext: bytes) -> bytes:
+        return _call(crypt32.CryptUnprotectData, ciphertext)
+
+    _dpapi_fns = (protect, unprotect)
+    return _dpapi_fns
 
 
 def _machine_key() -> bytes:
@@ -107,42 +217,66 @@ def _machine_key() -> bytes:
 
 
 def _encrypt_token(plaintext: str) -> str:
-    """AES-GCM encrypt with the machine-derived key. Returns
-    ``v1:<base64(nonce||ciphertext||tag)>``. Empty input → empty
-    string. Encryption failure → empty string (rather than falling
-    through to plaintext, which would defeat the whole point)."""
+    """Encrypt with the platform resilience cipher: Windows → DPAPI
+    (``d1:<base64>``), everywhere else → PBKDF2 + AES-GCM
+    (``v1:<base64(nonce||ciphertext||tag)>``). Empty input → empty string.
+    Encryption failure → empty string (never plaintext — that would defeat
+    the whole point)."""
     if not plaintext:
         return ""
     try:
         import base64
 
+        if IS_WINDOWS:
+            protect, _ = _load_dpapi()
+            blob = protect(plaintext.encode("utf-8"))
+            return _ENC_PREFIX_DPAPI + base64.b64encode(blob).decode("ascii")
+        # Non-Windows: PBKDF2 + AES-GCM. The cryptography import stays strictly
+        # inside this branch so a Windows build (which ships no cryptography)
+        # never references the absent module.
         from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
         key = _machine_key()
         aes = AESGCM(key)
         nonce = os.urandom(12)  # AES-GCM standard nonce size
         ct = aes.encrypt(nonce, plaintext.encode("utf-8"), None)
-        return _ENC_PREFIX + base64.b64encode(nonce + ct).decode("ascii")
+        return _ENC_PREFIX_AESGCM + base64.b64encode(nonce + ct).decode("ascii")
     except Exception as e:
         logger.warning("token encryption failed: %s", e)
         return ""
 
 
 def _decrypt_token(value: str) -> str:
-    """Decrypt a stored token blob. Returns the plaintext, or '' on
-    failure. Values that don't start with the version prefix are
-    treated as legacy plaintext and returned as-is — the caller
-    should re-encrypt forward."""
+    """Decrypt a stored token blob → plaintext, or '' on failure.
+
+    A value under a prefix we DON'T recognise is genuine legacy plaintext
+    (pre-encryption) and returned as-is for the caller to re-encrypt forward.
+    A value under a known prefix we CAN'T decrypt on this platform (a ``v1:``
+    AES-GCM blob on Windows, where cryptography is gone; or a ``d1:`` DPAPI
+    blob off Windows) returns '' — never the raw blob, which the caller's
+    re-encrypt-forward path would otherwise corrupt into a bogus token."""
     if not value:
         return ""
-    if not value.startswith(_ENC_PREFIX):
+    if not value.startswith(_KNOWN_PREFIXES):
         return value  # legacy plaintext, will be re-encrypted on next write
     try:
         import base64
 
+        if value.startswith(_ENC_PREFIX_DPAPI):
+            if not IS_WINDOWS:
+                return ""  # a DPAPI blob on a non-Windows box — unreadable here
+            _, unprotect = _load_dpapi()
+            raw = base64.b64decode(value[len(_ENC_PREFIX_DPAPI) :].encode("ascii"))
+            return unprotect(raw).decode("utf-8")
+        # v1: AES-GCM.
+        if IS_WINDOWS:
+            # cryptography is absent on Windows — degrade to '' so the token
+            # falls back to keyring (server login) or a clean re-auth
+            # (ListenBrainz / Last.fm) rather than being handed back raw.
+            return ""
         from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
-        blob = base64.b64decode(value[len(_ENC_PREFIX) :].encode("ascii"))
+        blob = base64.b64decode(value[len(_ENC_PREFIX_AESGCM) :].encode("ascii"))
         nonce, ct = blob[:12], blob[12:]
         key = _machine_key()
         aes = AESGCM(key)
