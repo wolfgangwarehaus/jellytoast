@@ -12,6 +12,8 @@ developer-facing history lives in [`docs/CHANGELOG.md`](docs/CHANGELOG.md).
      should stand alone: the Store "What's new" shows just the title (+ first
      sentence in --detail mode). -->
 
+## [0.1.9] — 2026-07-10
+
 - **Smart playlists respect your library picker.** With only some libraries
   selected, previews and Save & Play no longer sneak in tracks from the
   ones you deselected — fixed on both Jellyfin and Navidrome / Subsonic.
