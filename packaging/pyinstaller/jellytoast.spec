@@ -198,6 +198,40 @@ if sys.platform.startswith("linux"):
             file=sys.stderr,
         )
 
+# --- macOS: drop Intel-only stragglers so the two arch trees stay symmetric --
+# The 0.2.0 universal .dmg lipo-merges the arm64 and x86_64 .app trees file by
+# file, and merge_universal.sh FAILS CLOSED if the trees' Mach-O sets differ.
+# Two collections happen on the Intel leg only (verified against real CI trees,
+# run 29157012071):
+#   • libmpv.dylib — PyInstaller's ctypes hook resolves python-mpv's
+#     find_library("mpv") at BUILD time. Intel Homebrew lives under /usr/local
+#     (on dyld's default search path) so it resolves — via the keg's
+#     unversioned symlink, collecting a DUPLICATE libmpv under that name.
+#     arm64 brew is /opt/homebrew (not searched), so nothing is collected.
+#     The real libmpv.2.dylib is staged explicitly (binaries=... above) on
+#     both legs and player_backend redirects find_library into the bundle,
+#     so this copy is 4.5 MB of dead weight even on a pure Intel build.
+#   • ossl-modules/legacy.dylib — the Intel leg builds cryptography from
+#     source (no x86_64 wheel on 49+), linking Homebrew OpenSSL dynamically;
+#     PyInstaller tags the keg's provider-module dir along. The arm64 wheel is
+#     statically linked, so no ossl-modules there. Our only cryptography use
+#     is AES-GCM (credentials.py), which never loads the legacy provider, and
+#     CPython's own _ssl (TLS for requests) bundles its own libssl/libcrypto
+#     on BOTH legs — dropping the provider dir costs nothing.
+if sys.platform == "darwin":
+    _mac_drop = [
+        b
+        for b in a.binaries
+        if b[0] == "libmpv.dylib" or b[0].startswith("ossl-modules")
+    ]
+    if _mac_drop:
+        a.binaries = [b for b in a.binaries if b not in _mac_drop]
+        print(
+            "jellytoast.spec: excluded "
+            f"{len(_mac_drop)} Intel-only macOS collection(s) for universal-"
+            f"merge symmetry: {sorted(b[0] for b in _mac_drop)}"
+        )
+
 pyz = PYZ(a.pure)
 
 exe = EXE(
