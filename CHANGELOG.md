@@ -12,6 +12,22 @@ developer-facing history lives in [`docs/CHANGELOG.md`](docs/CHANGELOG.md).
      should stand alone: the Store "What's new" shows just the title (+ first
      sentence in --detail mode). -->
 
+- **One download for every Mac.** macOS is now a single universal .dmg that
+  runs natively on both Apple Silicon and Intel — no more picking the right
+  one. Heads up: it now needs macOS 15 (Sequoia) or newer.
+- **Native on Windows ARM.** There's now a real ARM64 build, so jellytoast
+  runs at full speed on Snapdragon / ARM PCs instead of through emulation.
+  One installer picks the right version for your PC automatically.
+- **The library name shrinks before it collides.** With a couple of libraries
+  selected, the title up top steps down ("Music Library +1", then "2
+  libraries") instead of sliding under the Albums menu.
+- **"Other audio is playing" matches the rest.** That little popup now wears
+  the same frosted style as the app's other hover notes.
+- **Windows scrobblers: reconnect once.** Windows now keeps your logins in its
+  own secure store. Your server sign-in carries over automatically — but if you
+  scrobble to ListenBrainz or Last.fm, you'll reconnect those one time after
+  updating.
+
 ## [0.1.9] — 2026-07-10
 
 - **Smart playlists respect your library picker.** With only some libraries

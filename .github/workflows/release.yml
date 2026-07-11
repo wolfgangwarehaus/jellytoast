@@ -3,12 +3,13 @@
 #   • jellytoast_<ver>_amd64.deb        (Ubuntu 22.04+/Debian 12+, self-contained)
 #   • jellytoast-<ver>-x86_64.AppImage  (universal Linux, self-contained libmpv;
 #                                        + .zsync for AppImageUpdate delta updates)
-#   • jellytoast-<ver>-windows-x64-setup.exe   (Inno Setup installer, libmpv bundled)
-#   • jellytoast-<ver>-windows-x64-portable.zip
-#   • jellytoast-<ver>-macos-arm64.dmg  (Apple Silicon) + -macos-x86_64.dmg
-#                                        (Intel) — native per-arch .app, libmpv
-#                                        bundled; signed + notarized once the
-#                                        Apple secrets exist
+#   • jellytoast-<ver>-windows-setup.exe  (ONE dual-arch Inno installer: native
+#                                          x64 + native Arm64 trees, the machine
+#                                          picks its own at install time)
+#   • jellytoast-<ver>-windows-{x64,arm64}-portable.zip
+#   • jellytoast-<ver>-macos-universal.dmg  (ONE universal .app — two native
+#                                        builds lipo-merged, signed + notarized
+#                                        once; macOS 15+ on both arches)
 #   • sdist + wheel (PyPI-shaped, also attached)
 #
 # The release is created as a DRAFT — publishing (and the AUR/winget
@@ -193,32 +194,73 @@ jobs:
           subject-path: dist/*.AppImage
 
   build-windows:
-    runs-on: windows-latest
+    # Two NATIVE frozen trees — x64 (windows-latest) and Arm64
+    # (windows-11-arm, native ARM64 since 0.2.0: the cryptography dep is
+    # win32-excluded now, so the whole dep set resolves from arm64 wheels —
+    # except zeroconf, which has no arm64 wheel and installs from sdist with a
+    # pure-Python fallback; do NOT add --only-binary here, it would hard-fail).
+    # Each leg is signed on its own runner, then build-windows-installer wraps
+    # BOTH trees into one dual-arch Inno installer.
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: windows-latest
+            arch: x64
+            libmpv: packaging/windows/get_libmpv.ps1
+          - runner: windows-11-arm
+            arch: arm64
+            libmpv: packaging/windows/get_libmpv_arm64.ps1
+    runs-on: ${{ matrix.runner }}
     # Azure Artifact Signing activates only once the secrets exist (see
-    # jellytoast-ops → packaging/windows/azure-signing.md); until then SIGN='false' and both
-    # signing steps below are skipped, so releases keep building unsigned.
+    # jellytoast-ops → packaging/windows/azure-signing.md); until then SIGN='false' and the
+    # signing step below is skipped, so releases keep building unsigned.
     env:
       SIGN: ${{ secrets.AZURE_CLIENT_ID != '' }}
     permissions:
       contents: read
-      id-token: write
-      attestations: write
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
           cache: pip
-      - name: Stage pinned libmpv-2.dll
-        run: pwsh packaging/windows/get_libmpv.ps1
+      - name: Stage pinned libmpv-2.dll (${{ matrix.arch }})
+        run: pwsh ${{ matrix.libmpv }}
       - name: Build PyInstaller bundle
         run: |
           python -m pip install --upgrade pip
           pip install . pyinstaller
           pyinstaller packaging/pyinstaller/jellytoast.spec --noconfirm
-      # Sign the frozen app (exe + bundled DLLs incl. libmpv-2.dll) BEFORE the
-      # installer + portable zip are built, so every shipped binary is signed.
-      # Skipped until the Azure secrets are configured.
+      # The whole point of the DPAPI switch: the arm64 resolve must contain NO
+      # cryptography (it has no win_arm64 wheel — a from-source Rust/OpenSSL
+      # compile would be the only way, and we refuse to need one). Fails the
+      # build if any future dep drags it back in.
+      - name: Assert cryptography absent from the Windows resolve
+        shell: pwsh
+        run: |
+          $r = pip list --format=freeze | Select-String -Pattern '^cryptography=='
+          if ($r) { throw "cryptography is back in the Windows closure: $r" }
+          Write-Host "OK: no cryptography in the ${{ matrix.arch }} resolve."
+      # Boot the frozen exe headless — on arm64 this is the FIRST real
+      # exercise of the aarch64 libmpv-2.dll + the DPAPI ctypes path inside
+      # the frozen bundle. Surviving 12s means Qt + `import mpv` initialized.
+      - name: Smoke-test the frozen bundle
+        shell: pwsh
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: |
+          $exe = "dist\jellytoast\jellytoast.exe"
+          if (-not (Test-Path $exe)) { throw "$exe missing" }
+          $p = Start-Process -FilePath $exe -PassThru
+          Start-Sleep -Seconds 12
+          if ($p.HasExited) {
+            throw "app exited early (rc=$($p.ExitCode)) — likely an import/loader failure"
+          }
+          Write-Host "still alive after 12s — Qt + bundle initialized OK"
+          Stop-Process -Id $p.Id -Force
+      # Sign the frozen tree (exe + bundled DLLs incl. libmpv-2.dll) BEFORE it
+      # ships to the installer job, so every carried binary is signed.
       - name: Code-sign frozen bundle (Azure Artifact Signing)
         if: env.SIGN == 'true'
         uses: azure/trusted-signing-action@c7ab2a863ab5f9a846ddb8265964877ef296ee82 # v2
@@ -235,6 +277,49 @@ jobs:
           file-digest: SHA256
           timestamp-rfc3161: http://timestamp.acs.microsoft.com
           timestamp-digest: SHA256
+      - name: Pack the signed tree for the installer job
+        shell: pwsh
+        run: Compress-Archive -Path dist\jellytoast -DestinationPath "dist-${{ matrix.arch }}.zip"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: tmp-windows-dist-${{ matrix.arch }}
+          path: dist-${{ matrix.arch }}.zip
+          retention-days: 3
+
+  build-windows-installer:
+    # One dual-arch Inno Setup installer carrying BOTH signed trees — the
+    # machine installs its native one (see packaging/windows/jellytoast.iss).
+    # Also re-cuts the per-arch portable zips from the same signed trees.
+    needs: build-windows
+    runs-on: windows-latest
+    env:
+      SIGN: ${{ secrets.AZURE_CLIENT_ID != '' }}
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/checkout@v7
+      # Only for the tomllib "Resolve version" fallback on workflow_dispatch —
+      # this job never had a setup-python of its own and the image's default
+      # python is not guaranteed to be 3.11+.
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: tmp-windows-dist-*
+          merge-multiple: true
+      - name: Unpack both arch trees where the .iss expects them
+        shell: pwsh
+        run: |
+          Expand-Archive dist-x64.zip   -DestinationPath dist-x64
+          Expand-Archive dist-arm64.zip -DestinationPath dist-arm64
+          foreach ($a in "x64","arm64") {
+            if (-not (Test-Path "dist-$a\jellytoast\jellytoast.exe")) {
+              throw "dist-$a tree is missing jellytoast.exe"
+            }
+          }
       - name: Resolve version
         id: ver
         shell: pwsh
@@ -245,9 +330,9 @@ jobs:
             $v = "${{ github.ref_name }}".TrimStart("v")
           }
           "version=$v" >> $env:GITHUB_OUTPUT
-      - name: Build Inno Setup installer
+      - name: Build dual-arch Inno Setup installer
         run: iscc /DAppVersion=${{ steps.ver.outputs.version }} packaging\windows\jellytoast.iss
-      # Sign the installer itself (the bundle inside it was signed above).
+      # Sign the installer itself (the trees inside were signed per-leg).
       - name: Code-sign installer (Azure Artifact Signing)
         if: env.SIGN == 'true'
         uses: azure/trusted-signing-action@c7ab2a863ab5f9a846ddb8265964877ef296ee82 # v2
@@ -263,17 +348,21 @@ jobs:
           file-digest: SHA256
           timestamp-rfc3161: http://timestamp.acs.microsoft.com
           timestamp-digest: SHA256
-      - name: Build portable zip
+      - name: Build per-arch portable zips
         shell: pwsh
         run: |
-          Compress-Archive -Path dist\jellytoast\* `
-            -DestinationPath "dist\jellytoast-${{ steps.ver.outputs.version }}-windows-x64-portable.zip"
+          $v = "${{ steps.ver.outputs.version }}"
+          Compress-Archive -Path dist-x64\jellytoast\* `
+            -DestinationPath "dist\jellytoast-$v-windows-x64-portable.zip"
+          Compress-Archive -Path dist-arm64\jellytoast\* `
+            -DestinationPath "dist\jellytoast-$v-windows-arm64-portable.zip"
       - uses: actions/upload-artifact@v7
         with:
           name: windows
           path: |
             dist/*-setup.exe
             dist/*-portable.zip
+          if-no-files-found: error
       - name: Attest Windows artifact provenance
         if: github.event_name == 'push'
         uses: actions/attest-build-provenance@v4
@@ -284,12 +373,13 @@ jobs:
 
   build-macos:
     # Two NATIVE builds — Apple Silicon (arm64, macos-14) and Intel (x86_64,
-    # macos-15-intel). Each does a native Homebrew-libmpv + PyInstaller build,
-    # signs with Developer ID, notarizes, and ships its own
-    # jellytoast-<ver>-macos-<arch>.dmg. fail-fast off so one arch failing
-    # doesn't kill the other. (A single universal2 .dmg was ruled out: numpy +
-    # cffi ship NO universal2 wheels, so PyInstaller's --target-arch universal2
-    # aborts on the thin binaries — two native .dmgs are the reliable path.)
+    # macos-15-intel). Since 0.2.0 these legs no longer ship their own DMGs:
+    # each uploads its UNSIGNED native .app tree, and merge-macos-universal
+    # lipo-fuses the two into ONE universal .app that is signed, smoke-tested,
+    # DMG'd and notarized once. fail-fast off so one arch failing doesn't kill
+    # the other. (A single-pass universal2 PyInstaller build was ruled out:
+    # numpy + cffi ship NO universal2 wheels, so --target-arch universal2
+    # aborts on the thin binaries — build native twice, merge after.)
     #
     # `min` = the bundle's REAL macOS floor, dictated by the RUNNER OS: the
     # bundled Homebrew dylibs (libmpv + its FFmpeg/libass/libplacebo closure)
@@ -298,39 +388,33 @@ jobs:
     # real floor into the plist (see "Pin the macOS floor") and the headless
     # smoke-test runs ON that floor, so a too-high floor can't ship silently.
     #
-    # Floor = runner OS: Intel → Sequoia 15 (macos-15-intel), arm64 → Sonoma 14
-    # (macos-14, the oldest free Apple-silicon image). We WANTED a lower Intel
-    # floor (Ventura 13 via macos-13) but GitHub won't allocate macos-13 — jobs
-    # queue indefinitely (hours, never picked up), so macos-15-intel is the only
-    # viable Intel image (and the longer-lived one, ~to Aug 2027). Going below
-    # Sequoia on Intel would mean building libmpv from source with a lower
-    # MACOSX_DEPLOYMENT_TARGET on macos-15-intel (the finicky from-source path —
-    # a follow-up if broader Intel reach is worth it). History: building Intel
-    # here WITHOUT pinning the plist made a .dmg that claimed 12.0 but bounced-
-    # and-died on Monterey (Sequoia dylibs, dyld refused them); the pin makes the
+    # BOTH legs run macOS 15 images (macos-15 arm64, macos-15-intel) since
+    # 0.2.0, for two reasons: (1) the universal bundle has ONE plist floor and
+    # the Intel leg pins it at 15 regardless (GitHub allocates nothing older —
+    # macos-13 queues forever), so an arm64 Sonoma-14 leg bought nothing
+    # user-visible anymore; (2) the merge is file-by-file, so the two legs'
+    # Homebrew closures must contain the SAME dylib set — same-day macOS 15
+    # bottles for both arches keep the FFmpeg/libass version names identical,
+    # where a 14-vs-15 brew mix could ship differently-versioned dylib names
+    # and break the fuse (merge_universal.sh fails closed on a set mismatch).
+    # History: building Intel WITHOUT pinning the plist made a .dmg that
+    # claimed 12.0 but bounced-and-died on Monterey; the pin keeps the
     # declared floor honest.
     strategy:
       fail-fast: false
       matrix:
         include:
-          - runner: macos-14
+          - runner: macos-15
             arch: arm64
-            min: "14.0"
+            min: "15.0"
           - runner: macos-15-intel
             arch: x86_64
             min: "15.0"
     runs-on: ${{ matrix.runner }}
-    # Signing + notarization are gated on the Apple secrets, which are set —
-    # releases ship a signed, notarized .dmg. The gate stays so a fork or a
-    # secrets-less run still produces a local-testable unsigned build instead
-    # of failing (see jellytoast-ops → packaging/macos/MACOS_SESSION.md).
-    env:
-      SIGN: ${{ secrets.APPLE_SIGNING_IDENTITY != '' }}
-      NOTARIZE: ${{ secrets.APPLE_API_KEY_ID != '' }}
+    # No signing here anymore — lipo strips signatures anyway, so signing (and
+    # DMG + notarization) happens ONCE in merge-macos-universal, after the fuse.
     permissions:
       contents: read
-      id-token: write
-      attestations: write
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v6
@@ -358,6 +442,86 @@ jobs:
             dist/jellytoast.app/Contents/Info.plist
           echo "LSMinimumSystemVersion now: $(/usr/libexec/PlistBuddy -c \
             'Print :LSMinimumSystemVersion' dist/jellytoast.app/Contents/Info.plist)"
+      # Boot the frozen .app headless: an import/loader failure (e.g. libmpv
+      # not bundled) dies fast with a real exit code; surviving 12s means Qt +
+      # the bundle (incl. `import mpv`) initialized. Runs on the UNSIGNED
+      # native tree — each arch is exercised on its native runner here, since
+      # the merged bundle can only be smoke-tested on one arch later.
+      - name: Smoke-test the .app (boots headless, import mpv OK)
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: |
+          BIN=dist/jellytoast.app/Contents/MacOS/jellytoast
+          test -x "$BIN"
+          "$BIN" &
+          PID=$!
+          sleep 12
+          if kill -0 "$PID" 2>/dev/null; then
+            echo "still alive after 12s — Qt + bundle initialized OK"
+            kill "$PID" 2>/dev/null || true
+          else
+            wait "$PID"; rc=$?
+            echo "app exited early (rc=$rc) — likely an import/loader failure"
+            exit 1
+          fi
+      # tar (not a bare directory upload) so the .app's framework symlinks —
+      # Qt/Python .framework Versions links and PyInstaller 6's
+      # Frameworks<->Resources cross-links — survive the artifact round-trip;
+      # upload-artifact's zip does NOT preserve symlinks.
+      - name: Pack the unsigned .app for the merge job
+        run: tar -C dist -czf "jellytoast-app-${{ matrix.arch }}.tar.gz" jellytoast.app
+      - uses: actions/upload-artifact@v7
+        with:
+          name: tmp-macos-app-${{ matrix.arch }}
+          path: jellytoast-app-${{ matrix.arch }}.tar.gz
+          retention-days: 3
+
+  merge-macos-universal:
+    # Fuse the two native .app trees into ONE universal .app (lipo, file by
+    # file — packaging/macos/merge_universal.sh), then do the sign → smoke →
+    # .dmg → notarize tail ONCE on the merged bundle. Ships
+    # jellytoast-<ver>-macos-universal.dmg. Signing MUST live here: lipo
+    # strips signatures, so per-leg signing could never survive the fuse.
+    needs: build-macos
+    runs-on: macos-15  # arm64 image — smoke-tests the merged bundle's arm64 slice
+    env:
+      SIGN: ${{ secrets.APPLE_SIGNING_IDENTITY != '' }}
+      NOTARIZE: ${{ secrets.APPLE_API_KEY_ID != '' }}
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/checkout@v7
+      # Only for the tomllib "Resolve version" fallback on workflow_dispatch —
+      # the image's default python3 is not guaranteed to be 3.11+.
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: tmp-macos-app-*
+          path: apps
+          merge-multiple: true
+      - name: Unpack the two native .app trees
+        run: |
+          mkdir -p apps/arm64 apps/x86_64
+          tar -C apps/arm64  -xzf apps/jellytoast-app-arm64.tar.gz
+          tar -C apps/x86_64 -xzf apps/jellytoast-app-x86_64.tar.gz
+      - name: Merge into one universal .app (lipo)
+        run: |
+          mkdir -p dist
+          bash packaging/macos/merge_universal.sh \
+            apps/arm64/jellytoast.app apps/x86_64/jellytoast.app \
+            dist/jellytoast.app
+      - name: Pin the universal floor (macOS 15) in Info.plist
+        # One plist, one floor: the Intel leg's Homebrew closure needs 15, so
+        # the universal bundle declares 15 for BOTH arches (decided for 0.2.0).
+        run: |
+          /usr/libexec/PlistBuddy -c "Set :LSMinimumSystemVersion 15.0" \
+            dist/jellytoast.app/Contents/Info.plist
+          echo "LSMinimumSystemVersion now: $(/usr/libexec/PlistBuddy -c \
+            'Print :LSMinimumSystemVersion' dist/jellytoast.app/Contents/Info.plist)"
       # Import the Developer ID cert into a temporary keychain so codesign can
       # use it non-interactively. Skipped until the Apple secrets are set.
       - name: Import Developer ID certificate
@@ -377,44 +541,63 @@ jobs:
           security set-key-partition-list -S apple-tool:,apple:,codesign: \
             -s -k "$KEYCHAIN_PWD" build.keychain
           rm -f "$CERT"
-      - name: Code-sign the .app (Developer ID, hardened runtime)
+      - name: Code-sign the universal .app (Developer ID, hardened runtime)
         if: env.SIGN == 'true'
         env:
           APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
         run: bash packaging/macos/sign_app.sh dist/jellytoast.app
-      # Boot the frozen .app headless: an import/loader failure (e.g. libmpv
-      # not bundled) dies fast with a real exit code; surviving 12s means Qt +
-      # the bundle (incl. `import mpv`) initialized.
-      - name: Smoke-test the .app (boots headless, import mpv OK)
+      # lipo stripped ALL signatures (incl. PyInstaller's ad-hoc ones) and
+      # macOS refuses to exec unsigned arm64 code entirely — on a secrets-less
+      # run (fork, or before the Apple secrets exist) the smoke test below
+      # would fail for the wrong reason without an ad-hoc re-seal.
+      - name: Ad-hoc re-sign for the smoke test (secrets-less path only)
+        if: env.SIGN != 'true'
+        run: |
+          find dist/jellytoast.app -type f -print0 | while IFS= read -r -d '' f; do
+            case "$(file -b "$f")" in *Mach-O*) codesign --force -s - "$f" ;; esac
+          done
+          codesign --force -s - dist/jellytoast.app
+      # Smoke the MERGED bundle — BOTH slices. Each thin tree already smoked
+      # natively in build-macos; this catches fuse breakage (a half-merged
+      # dylib, a broken symlink, a signature codesign rejects). The x86_64
+      # pass (Rosetta 2, provisioned on GitHub's arm64 macOS images) is
+      # load-bearing: it exercises the Intel slice of every dylib AND proves
+      # the bootloader's appended-PKG archive serves the non-last slice —
+      # the exact thing that makes an onedir lipo merge legal.
+      - name: Smoke-test the merged .app (arm64 native + x86_64 under Rosetta)
         env:
           QT_QPA_PLATFORM: offscreen
         run: |
           BIN=dist/jellytoast.app/Contents/MacOS/jellytoast
           test -x "$BIN"
-          "$BIN" &
-          PID=$!
-          sleep 12
-          if kill -0 "$PID" 2>/dev/null; then
-            echo "still alive after 12s — Qt + bundle initialized OK"
-            kill "$PID" 2>/dev/null || true
-          else
-            wait "$PID"; rc=$?
-            echo "app exited early (rc=$rc) — likely an import/loader failure"
-            exit 1
-          fi
+          lipo -archs "$BIN" | grep -q 'arm64' && lipo -archs "$BIN" | grep -q 'x86_64'
+          for PREFIX in "" "arch -x86_64"; do
+            echo "--- smoke: ${PREFIX:-native arm64}"
+            $PREFIX "$BIN" &
+            PID=$!
+            sleep 12
+            if kill -0 "$PID" 2>/dev/null; then
+              echo "still alive after 12s — slice initialized OK"
+              kill "$PID" 2>/dev/null || true
+            else
+              wait "$PID"; rc=$?
+              echo "slice exited early (rc=$rc) — import/loader failure"
+              exit 1
+            fi
+          done
       - name: Resolve version
         id: ver
         run: |
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            V="$(python -c 'import tomllib;print(tomllib.load(open("pyproject.toml","rb"))["project"]["version"])')"
+            V="$(python3 -c 'import tomllib;print(tomllib.load(open("pyproject.toml","rb"))["project"]["version"])')"
           else
             V="${GITHUB_REF_NAME#v}"
           fi
           echo "version=$V" >> "$GITHUB_OUTPUT"
       - name: Build the .dmg
-        run: bash packaging/macos/build_dmg.sh "${{ steps.ver.outputs.version }}" dist/jellytoast.app "${{ matrix.arch }}"
+        run: bash packaging/macos/build_dmg.sh "${{ steps.ver.outputs.version }}" dist/jellytoast.app universal
       # Notarize + staple the .dmg so Gatekeeper accepts it offline on first
-      # launch. Skipped until the Apple API-key secrets are set.
+      # launch. Universal fat binaries are not a special case for the notary.
       - name: Notarize + staple the .dmg
         if: env.NOTARIZE == 'true'
         env:
@@ -426,17 +609,18 @@ jobs:
           echo "$APPLE_API_KEY_B64" | base64 --decode > "$KEY"
           export APPLE_API_KEY_PATH="$KEY"
           bash packaging/macos/notarize.sh \
-            "dist/jellytoast-${{ steps.ver.outputs.version }}-macos-${{ matrix.arch }}.dmg"
+            "dist/jellytoast-${{ steps.ver.outputs.version }}-macos-universal.dmg"
           rm -f "$KEY"
       - uses: actions/upload-artifact@v7
         with:
-          name: macos-${{ matrix.arch }}
-          path: dist/*-macos-${{ matrix.arch }}.dmg
+          name: macos-universal
+          path: dist/*-macos-universal.dmg
+          if-no-files-found: error
       - name: Attest macOS artifact provenance
         if: github.event_name == 'push'
         uses: actions/attest-build-provenance@v4
         with:
-          subject-path: dist/*-macos-${{ matrix.arch }}.dmg
+          subject-path: dist/*-macos-universal.dmg
 
   build-mas:
     # Mac App Store (sandboxed .pkg) build. Mirrors build-macos but with the
@@ -689,7 +873,7 @@ jobs:
 
   draft-release:
     if: github.event_name == 'push'
-    needs: [build-linux-deb, build-linux-appimage, build-linux-flatpak, build-windows, build-macos, build-python]
+    needs: [build-linux-deb, build-linux-appimage, build-linux-flatpak, build-windows-installer, merge-macos-universal, build-python]
     runs-on: ubuntu-latest
     permissions:
       contents: write  # only this job mints the release
@@ -700,11 +884,24 @@ jobs:
         with:
           path: artifacts
           merge-multiple: true
+      # The tmp-* inter-job artifacts (unsigned .app tars, per-arch dist zips)
+      # ride along in the merged download — drop them so they never reach the
+      # release page or the SHA256SUMS glob.
+      - name: Drop inter-job intermediates
+        run: |
+          cd artifacts
+          rm -f jellytoast-app-*.tar.gz dist-x64.zip dist-arm64.zip
+          ls -la
       # Versionless "latest" aliases — byte-identical copies of the desktop
       # downloads under stable names, so the README / site can link
       # /releases/latest/download/<stable-name> as a PERMANENT direct
       # download (the versioned names embed the version and 404 next
       # release). Copied before SHA256SUMS so the checksums cover them too.
+      #
+      # The three legacy per-arch names (macos-arm64/x86_64.dmg, windows-x64-
+      # setup.exe) alias the NEW universal artifacts since 0.2.0: anything
+      # still holding a pre-0.2.0 /latest/download/ link gets the universal
+      # build, which runs fine on the arch the old name promised.
       - name: Add versionless download aliases
         run: |
           cd artifacts
@@ -713,9 +910,12 @@ jobs:
           alias "jellytoast-${V}-x86_64.AppImage"        jellytoast-x86_64.AppImage
           alias "jellytoast_${V}_amd64.deb"              jellytoast-amd64.deb
           alias "jellytoast-${V}.flatpak"                jellytoast.flatpak
-          alias "jellytoast-${V}-macos-arm64.dmg"        jellytoast-macos-arm64.dmg
-          alias "jellytoast-${V}-macos-x86_64.dmg"       jellytoast-macos-x86_64.dmg
-          alias "jellytoast-${V}-windows-x64-setup.exe"  jellytoast-windows-x64-setup.exe
+          alias "jellytoast-${V}-macos-universal.dmg"    jellytoast-macos.dmg
+          alias "jellytoast-${V}-windows-setup.exe"      jellytoast-windows-setup.exe
+          # Legacy stable names (pre-0.2.0 README/site links) → universal builds.
+          alias "jellytoast-${V}-macos-universal.dmg"    jellytoast-macos-arm64.dmg
+          alias "jellytoast-${V}-macos-universal.dmg"    jellytoast-macos-x86_64.dmg
+          alias "jellytoast-${V}-windows-setup.exe"      jellytoast-windows-x64-setup.exe
       - name: Generate SHA256SUMS
         run: |
           cd artifacts

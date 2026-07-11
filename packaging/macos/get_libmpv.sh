@@ -25,6 +25,14 @@ fi
 echo "Installing mpv (provides libmpv) via Homebrew…"
 brew install mpv
 
+# Record the resolved bottle versions in the CI log. The universal merge
+# (merge_universal.sh) requires BOTH arch legs to stage the same dylib
+# closure — if the arm64 and x86_64 runner images ever resolve different
+# mpv/ffmpeg bottles (an ffmpeg soname bump renames libavcodec.NN.dylib),
+# the merge fails closed on a Mach-O set mismatch and THESE two log lines
+# are how you diagnose which leg drifted.
+brew list --versions mpv ffmpeg || true
+
 # brew --prefix mpv gives the keg dir; the dylib lives under lib/.
 MPV_PREFIX="$(brew --prefix mpv)"
 LIBMPV="$(find "${MPV_PREFIX}/lib" -maxdepth 1 -name 'libmpv*.dylib' | sort | tail -n1)"
