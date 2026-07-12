@@ -71,9 +71,12 @@ lipo -archs /Applications/jellytoast.app/Contents/MacOS/jellytoast   # → x86_6
 stapler validate /Applications/jellytoast.app                        # → worked
 spctl -a -vv /Applications/jellytoast.app                            # → accepted, Developer ID
 ```
-First launch **from Finder** (Gatekeeper check — must open with NO warning
-dialog; screenshot the first-launch moment). Then quit, and relaunch with the
-bridge for the automated sweep — direct exec passes env where `open` doesn't:
+First launch **from Finder** (Gatekeeper check — the one-time benign
+"downloaded from the Internet… Apple checked it" confirm with a normal Open
+button is EXPECTED and correct; what must NOT appear is the blocking
+"unidentified developer" refusal. Screenshot the dialog). Then quit, and
+relaunch with the bridge for the automated sweep — direct exec passes env
+where `open` doesn't:
 ```bash
 TMPDIR=/tmp JT_TEST_BRIDGE=1 /Applications/jellytoast.app/Contents/MacOS/jellytoast &
 ```

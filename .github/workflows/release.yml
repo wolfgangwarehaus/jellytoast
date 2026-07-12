@@ -429,9 +429,29 @@ jobs:
         env:
           MACOSX_DEPLOYMENT_TARGET: ${{ matrix.min }}
         run: |
+          # STATIC-link OpenSSL into any from-source cryptography build. The
+          # Intel leg has no x86_64 cryptography wheel (49+), so pip builds it
+          # from Rust source; linked DYNAMICALLY it lands in the bundle next to
+          # CPython's own (older) libssl.3.dylib and dlopen dies at runtime on
+          # missing newer symbols (_SSL_get0_group_name — the 0.2.0 QA "token
+          # decryption failed" bug, which killed the AES-GCM resilience store
+          # AND would break pyatv/AirPlay). Static removes the coupling. No-op
+          # on the arm64 leg (prebuilt wheel, itself statically linked).
+          brew list --versions openssl@3 >/dev/null 2>&1 || brew install openssl@3
+          export OPENSSL_STATIC=1
+          export OPENSSL_DIR="$(brew --prefix openssl@3)"
+          echo "OPENSSL_DIR=$OPENSSL_DIR (static for source-built cryptography)"
           python -m pip install --upgrade pip
           pip install . pyinstaller
           pyinstaller packaging/pyinstaller/jellytoast.spec --noconfirm
+          # Fail the LEG (not the user at runtime) if a source-built
+          # cryptography still dynamically links an OpenSSL: its _rust.abi3.so
+          # must not reference libssl/libcrypto install names.
+          RUST_SO="$(find dist/jellytoast.app -name '_rust.abi3.so' | head -1)"
+          if [ -n "$RUST_SO" ] && otool -L "$RUST_SO" | grep -E 'libssl|libcrypto'; then
+            echo "error: cryptography _rust.abi3.so dynamically links OpenSSL — static link failed" >&2
+            exit 1
+          fi
       - name: Pin the macOS floor in the bundle's Info.plist
         # The spec ships a default LSMinimumSystemVersion; overwrite it with this
         # leg's REAL floor (the runner OS) so LaunchServices shows an honest
@@ -594,6 +614,24 @@ jobs:
             V="${GITHUB_REF_NAME#v}"
           fi
           echo "version=$V" >> "$GITHUB_OUTPUT"
+      # Notarize + staple the .app ITSELF before it goes into the dmg (0.2.0
+      # QA finding: only the dmg carried a ticket, so the INSTALLED app could
+      # not prove notarization offline on its first launch). notarytool takes
+      # the .app as a zip; the staple lands on the .app directory, and the dmg
+      # is then built from the already-stapled bundle.
+      - name: Notarize + staple the .app
+        if: env.NOTARIZE == 'true'
+        env:
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          APPLE_API_KEY_B64: ${{ secrets.APPLE_API_KEY_B64 }}
+        run: |
+          KEY="$(mktemp /tmp/AuthKey_XXXXXX.p8)"
+          echo "$APPLE_API_KEY_B64" | base64 --decode > "$KEY"
+          export APPLE_API_KEY_PATH="$KEY"
+          ditto -c -k --keepParent dist/jellytoast.app dist/jellytoast.app.zip
+          bash packaging/macos/notarize.sh dist/jellytoast.app.zip dist/jellytoast.app
+          rm -f dist/jellytoast.app.zip "$KEY"
       - name: Build the .dmg
         run: bash packaging/macos/build_dmg.sh "${{ steps.ver.outputs.version }}" dist/jellytoast.app universal
       # Notarize + staple the .dmg so Gatekeeper accepts it offline on first

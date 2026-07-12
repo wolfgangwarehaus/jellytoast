@@ -60,6 +60,15 @@ LicenseFile=..\..\LICENSE
 [Tasks]
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked
 
+[InstallDelete]
+; A PyInstaller onedir upgrade must never OVERLAY the previous tree: files the
+; new version dropped would otherwise survive as stale orphans (0.2.0 QA found
+; 0.1.x's whole cryptography/ package lingering under _internal after the
+; DPAPI switch removed it — dead weight at best, importable version-skew at
+; worst). Purge the bundle dir before laying the fresh tree down. User
+; data/config live under %APPDATA%, not {app}, so only shipped files go.
+Type: filesandordirs; Name: "{app}\_internal"
+
 [Files]
 ; Two PyInstaller onedir outputs, each with its arch's libmpv-2.dll bundled.
 ; Exactly one is installed, chosen by the Check: functions in [Code]. solidbreak
