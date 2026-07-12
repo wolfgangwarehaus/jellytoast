@@ -442,6 +442,12 @@ jobs:
           export OPENSSL_DIR="$(brew --prefix openssl@3)"
           echo "OPENSSL_DIR=$OPENSSL_DIR (static for source-built cryptography)"
           python -m pip install --upgrade pip
+          # setup-python restores the pip cache ACROSS runs — including a
+          # cryptography wheel self-built on an earlier run WITHOUT the static
+          # env (env vars don't key the wheel cache), which pip would silently
+          # reuse and the otool gate below would fail. Evict it so the build
+          # actually runs under OPENSSL_STATIC.
+          pip cache remove cryptography 2>/dev/null || true
           pip install . pyinstaller
           pyinstaller packaging/pyinstaller/jellytoast.spec --noconfirm
           # Fail the LEG (not the user at runtime) if a source-built
