@@ -15,6 +15,9 @@ developer-facing history lives in [`docs/CHANGELOG.md`](docs/CHANGELOG.md).
 - **One download for every Mac.** macOS is now a single universal .dmg that
   runs natively on both Apple Silicon and Intel — no more picking the right
   one. Heads up: it now needs macOS 15 (Sequoia) or newer.
+- **The Mac .dmg gets its glass back.** The direct-download build was missing
+  the piece that powers native frosted blur, Control Center controls, and
+  notifications (the App Store build had it all along). Now they match.
 - **Native on Windows ARM.** There's now a real ARM64 build, so jellytoast
   runs at full speed on Snapdragon / ARM PCs instead of through emulation.
   One installer picks the right version for your PC automatically.

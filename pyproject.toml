@@ -140,6 +140,21 @@ dependencies = [
     # dropped QtWinExtras). Guarded so a missing install just disables the
     # badge. (jellytoast/taskbar.py)
     'comtypes>=1.2 ; sys_platform == "win32"',
+    # ── macOS-only: pyobjc for the native bits ────────────────────────
+    # Promoted from the [macos] extra (0.2.0): these back SHIPPED features —
+    # NSVisualEffectView vibrancy (blur/_macos.py), the transparent-titlebar
+    # window chrome incl. the non-opaque NSWindow the frost needs
+    # (macos_window.py), Control Center / media keys (media_controls/_macos.py),
+    # Notification Center banners (notifications/_macos.py), and SMAppService
+    # autostart in the MAS build (autostart/_macos.py). As an extra, the CI
+    # dmg's plain `pip install .` omitted them and every one of those degraded
+    # silently. Imports stay lazy + guarded, so a source env without pyobjc
+    # still boots with the no-op backends.
+    'pyobjc-core>=10.0 ; sys_platform == "darwin"',
+    'pyobjc-framework-Cocoa>=10.0 ; sys_platform == "darwin"',
+    'pyobjc-framework-MediaPlayer>=10.0 ; sys_platform == "darwin"',
+    'pyobjc-framework-UserNotifications>=10.0 ; sys_platform == "darwin"',
+    'pyobjc-framework-ServiceManagement>=10.0 ; sys_platform == "darwin"',
 ]
 
 [project.optional-dependencies]
@@ -176,31 +191,21 @@ dev = [
 # The DLNA / Sonos cast backends + the visualizer FFT dep are now
 # bundled as REQUIRED dependencies (see [project.dependencies]) so every
 # install ships the same backends — they're no longer opt-in extras.
-# Per-platform extras. Windows stays empty (its winrt deps live in
-# [project.dependencies] behind sys_platform markers). macOS carries pyobjc
-# for the NowPlaying / Control Center backend and the future vibrancy bridge.
+# Per-platform extras. BOTH are empty now: Windows' winrt deps and macOS's
+# pyobjc deps live in [project.dependencies] behind sys_platform markers.
 windows = []
-# pyobjc powers the macOS native bits: media controls (MPNowPlayingInfoCenter +
-# MPRemoteCommandCenter, surfaced in Control Center / on media keys) and the
-# planned NSVisualEffectView vibrancy bridge. Kept as an EXTRA (not a hard
-# darwin dependency) until those backends land — the autostart LaunchAgent
-# backend that ships now is pure stdlib and needs none of this. Imports will be
-# lazy + guarded so a missing install degrades to the no-op backend. Markers
-# keep it a darwin-only resolve even when the extra is requested.
-# (jellytoast/media_controls/_macos.py, jellytoast/blur/_macos.py — Mac-phase.)
-macos = [
-    'pyobjc-core>=10.0 ; sys_platform == "darwin"',
-    'pyobjc-framework-Cocoa>=10.0 ; sys_platform == "darwin"',
-    'pyobjc-framework-MediaPlayer>=10.0 ; sys_platform == "darwin"',
-    # Real Notification Center banners (track-change / download-complete),
-    # attributed to jellytoast — only fires in the bundled .app; falls back to
-    # osascript from source. (jellytoast/notifications/_macos.py.)
-    'pyobjc-framework-UserNotifications>=10.0 ; sys_platform == "darwin"',
-    # SMAppService login-item autostart in the sandboxed Mac App Store build
-    # (the .dmg uses a LaunchAgent; the sandbox forbids writing LaunchAgents).
-    # jellytoast/autostart/_macos.py.
-    'pyobjc-framework-ServiceManagement>=10.0 ; sys_platform == "darwin"',
-]
+# EMPTY since 0.2.0 — kept so `pip install '.[macos]'` (the MAS CI job, docs,
+# muscle memory) stays valid. The pyobjc set moved to [project.dependencies]
+# (darwin-gated): it was parked here "until the backends land", and they
+# landed — blur/_macos.py (vibrancy), media_controls/_macos.py,
+# notifications/_macos.py, macos_window.py all import it. Leaving it an extra
+# meant the CI dmg (plain `pip install .`) shipped WITHOUT pyobjc, silently
+# degrading every native macOS bit: no vibrancy, and macos_window.py couldn't
+# even make the NSWindow non-opaque, so the faux-frost fallback rendered on a
+# SOLID window (the 0.2.0-rc "frost isn't transparent" bug). Only the MAS job
+# installed '.[macos]', which is why the App Store build looked right while
+# the dmg didn't.
+macos = []
 
 # GUI entry point. `gui-scripts` (vs `scripts`) suppresses the console
 # window on Windows; on Linux it behaves identically to `scripts`.
