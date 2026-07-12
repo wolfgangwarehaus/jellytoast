@@ -1,16 +1,25 @@
 # yaml-language-server: $schema=https://aka.ms/winget-manifest.installer.1.6.0.schema.json
 PackageIdentifier: wolfgangwarehaus.jellytoast
-PackageVersion: 0.1.9
+PackageVersion: 0.2.0
 InstallerLocale: en-US
 InstallerType: inno
 Scope: user
 UpgradeBehavior: install
+# ONE dual-arch installer since 0.2.0 (x64 + native Arm64 payloads; the
+# machine installs its own) — so one URL, TWO architecture entries. The old
+# per-arch name (…-windows-x64-setup.exe) no longer exists as a versioned
+# asset. If winget-releaser regenerates only the x64 entry from the 0.1.x
+# template, hand-add the arm64 entry on the winget-pkgs PR (post-publish
+# eyeball is already on the release checklist).
 Installers:
   - Architecture: x64
-    InstallerUrl: https://github.com/wolfgangwarehaus/jellytoast/releases/download/v0.1.9/jellytoast-0.1.9-windows-x64-setup.exe
+    InstallerUrl: https://github.com/wolfgangwarehaus/jellytoast/releases/download/v0.2.0/jellytoast-0.2.0-windows-setup.exe
     # NOTE: winget-releaser recomputes this at publish — the winget repo, not
     # this file, is authoritative. Backfilled from the release's SHA256SUMS so
     # a direct `winget install --manifest` of this checkout works.
+    InstallerSha256: 15445DB87355CE807C222709AADB2B8D478EDAE972575BACFFE9CA3885B23918
+  - Architecture: arm64
+    InstallerUrl: https://github.com/wolfgangwarehaus/jellytoast/releases/download/v0.2.0/jellytoast-0.2.0-windows-setup.exe
     InstallerSha256: 15445DB87355CE807C222709AADB2B8D478EDAE972575BACFFE9CA3885B23918
 ManifestType: installer
 ManifestVersion: 1.6.0

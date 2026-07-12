@@ -16,10 +16,16 @@
 #
 # Stapling attaches the ticket so Gatekeeper verifies OFFLINE on first launch.
 #
-# Usage: bash packaging/macos/notarize.sh dist/jellytoast-<ver>-macos.dmg
+# Usage: bash packaging/macos/notarize.sh <path-to.dmg-or-.zip> [staple-target]
+#   staple-target: what to staple once the submission clears. Defaults to the
+#   submitted file. Pass it when submitting a .app as a zip: notarytool only
+#   accepts the ZIP, but a zip cannot carry a ticket — the staple must land on
+#   the .app directory itself (0.2.0 QA: an un-stapled installed .app can't
+#   prove notarization OFFLINE on first launch; only the dmg could).
 set -euo pipefail
 
-TARGET="${1:?usage: notarize.sh <path-to.dmg-or-.zip>}"
+TARGET="${1:?usage: notarize.sh <path-to.dmg-or-.zip> [staple-target]}"
+STAPLE_TARGET="${2:-${TARGET}}"
 
 if [ ! -e "${TARGET}" ]; then
     echo "error: ${TARGET} does not exist." >&2
@@ -49,6 +55,6 @@ else
 fi
 
 echo "Stapling the notarization ticket…"
-xcrun stapler staple "${TARGET}"
-xcrun stapler validate "${TARGET}"
-echo "Notarized and stapled: ${TARGET}"
+xcrun stapler staple "${STAPLE_TARGET}"
+xcrun stapler validate "${STAPLE_TARGET}"
+echo "Notarized and stapled: ${STAPLE_TARGET}"

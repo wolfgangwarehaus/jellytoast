@@ -13,7 +13,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "jellytoast"
-version = "0.1.9"
+version = "0.2.0"
 description = "A desktop music player for Jellyfin and Navidrome servers — bit-perfect mpv playback (Linux, Windows, macOS)."
 readme = "README.md"
 # Floor is 3.11, not 3.10: the pinned pychromecast (>=14) requires
@@ -46,9 +46,11 @@ classifiers = [
 # just creates needless resolver friction on a clean install.
 dependencies = [
     # Cap at the next major: Qt 7 is a hard compat break and must never
-    # silently install over the user's working 6.x. The floor stays at
-    # 6.6.0 (earliest API we rely on); installed today is 6.11.x.
-    "PySide6>=6.6.0,<7.0",
+    # silently install over the user's working 6.x. Floor raised to 6.11 for
+    # 0.2.0: it's where PySide6/shiboken6 ship the cp310-abi3 win_arm64 wheels
+    # a native ARM64 Windows build needs, and it keeps the macOS universal2
+    # wheel current. Installed today is 6.11.x anyway, so no real-world churn.
+    "PySide6>=6.11.0,<7.0",
     "python-mpv>=1.0.5",
     "pychromecast>=14.0.0,<16",
     # Security floor: bumped to 0.149.12 to clear CVE-2026-47180/47183/
@@ -138,6 +140,21 @@ dependencies = [
     # dropped QtWinExtras). Guarded so a missing install just disables the
     # badge. (jellytoast/taskbar.py)
     'comtypes>=1.2 ; sys_platform == "win32"',
+    # ── macOS-only: pyobjc for the native bits ────────────────────────
+    # Promoted from the [macos] extra (0.2.0): these back SHIPPED features —
+    # NSVisualEffectView vibrancy (blur/_macos.py), the transparent-titlebar
+    # window chrome incl. the non-opaque NSWindow the frost needs
+    # (macos_window.py), Control Center / media keys (media_controls/_macos.py),
+    # Notification Center banners (notifications/_macos.py), and SMAppService
+    # autostart in the MAS build (autostart/_macos.py). As an extra, the CI
+    # dmg's plain `pip install .` omitted them and every one of those degraded
+    # silently. Imports stay lazy + guarded, so a source env without pyobjc
+    # still boots with the no-op backends.
+    'pyobjc-core>=10.0 ; sys_platform == "darwin"',
+    'pyobjc-framework-Cocoa>=10.0 ; sys_platform == "darwin"',
+    'pyobjc-framework-MediaPlayer>=10.0 ; sys_platform == "darwin"',
+    'pyobjc-framework-UserNotifications>=10.0 ; sys_platform == "darwin"',
+    'pyobjc-framework-ServiceManagement>=10.0 ; sys_platform == "darwin"',
 ]
 
 [project.optional-dependencies]
@@ -174,31 +191,21 @@ dev = [
 # The DLNA / Sonos cast backends + the visualizer FFT dep are now
 # bundled as REQUIRED dependencies (see [project.dependencies]) so every
 # install ships the same backends — they're no longer opt-in extras.
-# Per-platform extras. Windows stays empty (its winrt deps live in
-# [project.dependencies] behind sys_platform markers). macOS carries pyobjc
-# for the NowPlaying / Control Center backend and the future vibrancy bridge.
+# Per-platform extras. BOTH are empty now: Windows' winrt deps and macOS's
+# pyobjc deps live in [project.dependencies] behind sys_platform markers.
 windows = []
-# pyobjc powers the macOS native bits: media controls (MPNowPlayingInfoCenter +
-# MPRemoteCommandCenter, surfaced in Control Center / on media keys) and the
-# planned NSVisualEffectView vibrancy bridge. Kept as an EXTRA (not a hard
-# darwin dependency) until those backends land — the autostart LaunchAgent
-# backend that ships now is pure stdlib and needs none of this. Imports will be
-# lazy + guarded so a missing install degrades to the no-op backend. Markers
-# keep it a darwin-only resolve even when the extra is requested.
-# (jellytoast/media_controls/_macos.py, jellytoast/blur/_macos.py — Mac-phase.)
-macos = [
-    'pyobjc-core>=10.0 ; sys_platform == "darwin"',
-    'pyobjc-framework-Cocoa>=10.0 ; sys_platform == "darwin"',
-    'pyobjc-framework-MediaPlayer>=10.0 ; sys_platform == "darwin"',
-    # Real Notification Center banners (track-change / download-complete),
-    # attributed to jellytoast — only fires in the bundled .app; falls back to
-    # osascript from source. (jellytoast/notifications/_macos.py.)
-    'pyobjc-framework-UserNotifications>=10.0 ; sys_platform == "darwin"',
-    # SMAppService login-item autostart in the sandboxed Mac App Store build
-    # (the .dmg uses a LaunchAgent; the sandbox forbids writing LaunchAgents).
-    # jellytoast/autostart/_macos.py.
-    'pyobjc-framework-ServiceManagement>=10.0 ; sys_platform == "darwin"',
-]
+# EMPTY since 0.2.0 — kept so `pip install '.[macos]'` (the MAS CI job, docs,
+# muscle memory) stays valid. The pyobjc set moved to [project.dependencies]
+# (darwin-gated): it was parked here "until the backends land", and they
+# landed — blur/_macos.py (vibrancy), media_controls/_macos.py,
+# notifications/_macos.py, macos_window.py all import it. Leaving it an extra
+# meant the CI dmg (plain `pip install .`) shipped WITHOUT pyobjc, silently
+# degrading every native macOS bit: no vibrancy, and macos_window.py couldn't
+# even make the NSWindow non-opaque, so the faux-frost fallback rendered on a
+# SOLID window (the 0.2.0-rc "frost isn't transparent" bug). Only the MAS job
+# installed '.[macos]', which is why the App Store build looked right while
+# the dmg didn't.
+macos = []
 
 # GUI entry point. `gui-scripts` (vs `scripts`) suppresses the console
 # window on Windows; on Linux it behaves identically to `scripts`.

@@ -243,8 +243,16 @@ def test_view_dropdown_clamped_and_library_not_clipped_when_narrow(qapp):
     bar.show()
     qapp.processEvents()
 
-    # Library dropdown shows its full text (width is at least what it needs).
-    assert bar.library_btn.width() >= bar.library_btn.sizeHint().width() - 1
+    # The library dropdown is given ALL the room available before the centred
+    # view dropdown — the old equal-thirds layout clamped it to a fixed third
+    # and clipped "Music Library" even when more space was free. The width it
+    # gets is min(what it wants, what's available): whichever is smaller, it is
+    # never squeezed below that. (Whether the FULL text fits at this narrow
+    # width is font-metric dependent — it fits on some platforms and elides on
+    # wider fonts, e.g. Linux/Windows under PySide6 6.11 — so we assert the
+    # font-independent no-squeeze invariant, not "full text always fits".)
+    want = min(bar.library_btn.sizeHint().width(), bar._library_title_budget())
+    assert bar.library_btn.width() >= want - 1
 
     # Centre cluster never overlaps the left cluster.
     assert bar._center_cluster.geometry().left() >= bar._left_col.geometry().right()

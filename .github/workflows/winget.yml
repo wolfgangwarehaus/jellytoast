@@ -34,8 +34,12 @@ jobs:
         uses: vedantmgoyal9/winget-releaser@4ffc7888bffd451b357355dc214d43bb9f23917e # v2
         with:
           identifier: wolfgangwarehaus.jellytoast
-          # Match ONLY the Inno setup.exe — never the portable .zip.
-          installers-regex: 'windows-x64-setup\.exe$'
+          # Match ONLY the VERSIONED dual-arch Inno setup.exe — never the
+          # portable .zips, and not the versionless/legacy alias copies
+          # (jellytoast-windows-setup.exe, jellytoast-windows-x64-setup.exe)
+          # the release also carries: byte-identical duplicates would make
+          # winget see two installer URLs for one version.
+          installers-regex: 'jellytoast-\d+\.\d+\.\d+-windows-setup\.exe$'
           token: ${{ secrets.WINGET_TOKEN }}
           # On a release event this is the published tag; on workflow_dispatch it
           # is the input tag (so a release that published before the token existed

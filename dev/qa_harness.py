@@ -281,7 +281,9 @@ def write_manifest(out, manifest, smoke_path, capture_name):
     if smoke_path and os.path.exists(smoke_path):
         lines += ["## smoke test", f"See `{os.path.basename(smoke_path)}`.", ""]
     path = os.path.join(out, "manifest.md")
-    with open(path, "w") as f:
+    # encoding pinned: the manifest carries unicode (surface labels, smoke
+    # output) and Windows' default cp1252 raises UnicodeEncodeError on it.
+    with open(path, "w", encoding="utf-8") as f:
         f.write("\n".join(lines))
     return path
 

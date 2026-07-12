@@ -36,11 +36,10 @@ Latest builds are on [**Releases**][rel].
   - AUR *(soon)*
 - **macOS**
   - [App Store][mas]
-  - [Apple Silicon .dmg][dl-dmg-arm]
-  - [Intel .dmg][dl-dmg-intel]
+  - [.dmg][dl-dmg] *(universal — Apple Silicon + Intel, macOS 15+)*
 - **Windows**
   - [Microsoft Store][store]
-  - [.exe][dl-exe]
+  - [.exe][dl-exe] *(one installer — x64 + ARM64)*
   - `winget install jellytoast`
 - **Any OS**
   - `pipx install jellytoast` *(needs libmpv installed, like from-source)*
@@ -63,9 +62,8 @@ Want to contribute? [`CONTRIBUTING.md`](.github/CONTRIBUTING.md) has the dev set
 [dl-appimage]: https://github.com/wolfgangwarehaus/jellytoast/releases/latest/download/jellytoast-x86_64.AppImage
 [dl-deb]: https://github.com/wolfgangwarehaus/jellytoast/releases/latest/download/jellytoast-amd64.deb
 [dl-flatpak]: https://github.com/wolfgangwarehaus/jellytoast/releases/latest/download/jellytoast.flatpak
-[dl-dmg-arm]: https://github.com/wolfgangwarehaus/jellytoast/releases/latest/download/jellytoast-macos-arm64.dmg
-[dl-dmg-intel]: https://github.com/wolfgangwarehaus/jellytoast/releases/latest/download/jellytoast-macos-x86_64.dmg
-[dl-exe]: https://github.com/wolfgangwarehaus/jellytoast/releases/latest/download/jellytoast-windows-x64-setup.exe
+[dl-dmg]: https://github.com/wolfgangwarehaus/jellytoast/releases/latest/download/jellytoast-macos.dmg
+[dl-exe]: https://github.com/wolfgangwarehaus/jellytoast/releases/latest/download/jellytoast-windows-setup.exe
 
 ## Documentation
 
