@@ -15,11 +15,14 @@ the LAN Navidrome (**same server the Mac session used**).
 is correct end-to-end (lossless round-trip, consistent dual store, faithful
 `d1:` migration on upgrade) and a **clean** install/resolve pulls **no
 cryptography** on either channel. Native-ARM64 tree ships as its own distinct
-zip. **No PR-caused defect found.** Two minor packaging notes (upgrade leaves a
-stale `cryptography` orphan) and one **environmental block**: this box's saved
-server password is stale (server-side rotation), so live auth fails 40 and the
-content-dependent feature rows could not be driven here (couldn't re-enter the
-current password; declined to clobber the stored login by switching to a demo).
+zip. **No PR-caused defect found.** After august re-logged in (the empty library
+was a stale-credential rotation, not a bug), the audio/content rows were driven
+and pass — real FLAC playback, transport/seek, live EQ, synced lyrics, Windows
+SMTC session, queue reorder+restore. Two minor packaging notes (upgrade leaves a
+stale `cryptography` orphan). One 🔴 **crash to look at** — *not* in this PR's
+changed code: toggling **offline mode mid-playback** + forcing a track transition
+triggered a native access violation in the playback/async path (normal online
+playback never crashed; app recovered cleanly).
 
 ---
 
@@ -85,10 +88,16 @@ onto OS-native DPAPI (`d1:` blobs via `CryptProtectData`). Verified against the
 The credential machinery is correct. The migration **faithfully** re-encrypted
 the existing token.
 
-### 🔵 Environmental (NOT a PR bug): this box's saved password is stale → live auth 40
-A raw `GET /rest/ping` returns **`Subsonic error 40: Wrong username or
-password`**; so do `getAlbumList2` / `search_all` / `getMusicFolders` → every
-library surface reads **empty** ("No albums yet"). Ruled out every PR-side cause:
+### 🔵 Environmental (NOT a PR bug) — RESOLVED: saved password was stale → live auth 40
+> **Update:** august re-logged in on the box and content now loads (`ping` → ok,
+> 20 newest albums / 240 artists / 3 folders). This **confirmed** the diagnosis
+> below — it was purely a stale credential — and unblocked the audio/content
+> feature rows, now driven (see the updated sweep). The new login re-encrypted
+> the token as `d1:` (DPAPI) again.
+
+A raw `GET /rest/ping` had returned **`Subsonic error 40: Wrong username or
+password`**; so did `getAlbumList2` / `search_all` / `getMusicFolders` → every
+library surface read **empty** ("No albums yet"). Ruled out every PR-side cause:
 
 - DPAPI round-trips losslessly and the dual store is **consistent** (above) — the
   credential isn't corrupted, it's faithfully preserved.
@@ -118,23 +127,51 @@ the record.
 
 | # | Feature | Result | Evidence |
 |---|---|---|---|
-| 1 | Sign in → relaunch → still signed in | ✅ | survived 0.1.x→0.2.0 upgrade; token migrated `→ d1:`, dual store consistent, session state restored on launch |
-| 2 | Library browse + **multi-library picker degrade** | ⚠️ picker ✅ / browse ⬜ | **degrade fully validated** (below); content browse blocked by stale server |
-| 3 | Playback | ⬜ | stale server, no radio station to fall back on |
-| 4 | Queue reorder/restore | ⬜ | needs content |
-| 5 | Now-playing + lyrics + visualizer | ⬜ | needs content |
-| 6 | Equalizer audibly applies | ⬜ | needs audio |
-| 7 | Mini player frost | ⚠️ | acrylic applies app-wide (ACTIVE); clean mini capture not obtained on this box (see harness note) |
-| 8 | Casting discovery | ⚠️ | `discover_all()` ran cleanly; **0 devices** on this network — subsystem OK, nothing to drive |
-| 9 | Offline download | ⬜ | needs content |
-| 10 | Smart playlist | ⚠️ | resolve/rule engine **smoke PASS** (rule validation, date ops, crossfade curve); UI create-flow ⬜ |
+| 1 | Sign in → relaunch → still signed in | ✅ | survived 0.1.x→0.2.0 upgrade; token migrated `→ d1:`, dual store consistent; also survived an involuntary crash-restart (below) |
+| 2 | Library browse + **multi-library picker degrade** | ✅ | **degrade fully validated** (below); browse now loads real content (20 albums / 240 artists / 3 folders) post-relogin |
+| 3 | Playback | ✅ | real **FLAC 1052/1018 kbps** playback; position advances in real time; next→prev→seek(90 s exact) all work; 0 play errors |
+| 4 | Queue reorder/restore | ✅ | `move_item(9,0)` reordered ("The Secret Life of Arabia" → front); order **persisted across a restart** (verified after relaunch) |
+| 5 | Now-playing + lyrics + visualizer | ✅ | screenshot: album art + **synced lyrics live-advancing** with playback + full track list (current highlighted) + "Show visualizer" |
+| 6 | Equalizer audibly applies | ✅ | `eq_changed(True, bass-curve)` → `_last_eq_state` flips to enabled w/ the curve; firequalizer chain applied **live**, audio kept advancing, 0 errors |
+| 7 | Mini player frost | ⚠️ | mini shows at correct compact 384×96; acrylic app-wide; **clean solo capture blocked** by Windows z-order (harness limitation) |
+| 8 | Casting discovery | ⚠️ | `discover_all()` ran cleanly; **0 devices** on this network — subsystem OK, nothing to cast to |
+| 9 | Offline download | ⚠️ | **download works** (`is_downloaded` false→true; local blob on disk; offline toggles) — BUT **playing from cache while offline crashed the app** (see 🔴 below) |
+| 10 | Smart playlist | ⚠️ | resolve/rule engine **smoke PASS** (rule validation, date ops, crossfade curve); view opens; full UI create-flow ⬜ |
 | 11 | Internet radio | ⬜ | **0 stations** on server; can't create one without a server write |
 | 12 | Scrobbling | ⬜ | nothing linked; DPAPI upgrade preserved token cleanly, **no garbled state** |
-| 13 | OS media integration (SMTC) | ⚠️ | backend loaded (`winrt.windows.media` + `.interop`); live flyout not driven (no playback) |
-| 14 | Notifications | ⬜ | no track-changes to fire; `Windows-Toasts` dep present |
-| 15 | Frost/theming — **native acrylic** | ✅ | `blur.status() == ACTIVE`; body genuinely translucent (desktop bleeds through) — dark frosted composited shot |
+| 13 | OS media integration (SMTC) | ✅ | Windows GSMTC session `wolfgangwarehaus.jellytoast`, status **Playing**, title+artist populated (flyout/lock-screen will show it) |
+| 14 | Notifications | ⬜ | track-change toast is opt-in/off by default — not enabled/driven; `Windows-Toasts` dep present |
+| 15 | Frost/theming — **native acrylic** | ✅ | `blur.status() == ACTIVE`; body translucent (desktop's green→blue→purple wallpaper visibly blurred through — confirmed by a main-minimized shot) |
 | 16 | Tray + start-at-login + settings persist | ✅ | tray present; **start-at-login toggle validated** (adds/removes `HKCU\…\Run\jellytoast`, `is_enabled()` tracks, restored to off); QSettings `NoError` |
 | 17 | About shows **0.2.0**; no false update chip | ✅ | `__version__ 0.2.0`; `is_newer('0.2.0','0.2.0') == False`; channel `source` |
+
+### 🔴 Crash (needs a look — NOT in the PR's changed code): offline-mode playback → native access violation
+While driving row 9 I toggled **offline mode on mid-playback** and forced a track
+transition against a downloaded album; the app died with a **`Windows fatal
+exception: access violation`**. `crash.log` fatal frame is `app.py:382
+eventFilter` — but that's trivial Tab-nav code running on nearly every event, so
+the real fault almost certainly came from a **background thread**: the dump shows
+`async_io` network threads mid-`report_playback_stopped` / `get_lyrics`
+(`subsonic._request`, i.e. **still hitting the server while offline mode was on**)
+racing the main thread's `_on_playback_ended → next → _play_current →
+_audio_stream_url → offline.local_blob` transition. Looks like a **thread-safety /
+use-after-free in the playback-transition + async-network path**, provoked by the
+offline toggle.
+
+- **Attribution:** not in this PR's changed surface (DPAPI/packaging); likely
+  pre-existing. Provoked by an abnormal bridge-driven sequence (reorder + offline
+  toggle mid-play + forced transition) — **normal online playback, driven
+  extensively above, never crashed.**
+- **Recovery:** clean — relaunch restored auth + the reordered queue; **single**
+  access-violation event; stable for 2+ min once offline mode was toggled back
+  off. (The second `crash.log` write is the benign boot-time `0xe24c4a02`
+  stall-watchdog dump, not a second crash.)
+- **Secondary smell:** `report_playback_stopped` / `get_lyrics` fired **live
+  server requests while offline mode was active** — offline mode arguably should
+  suppress those; may be related to the race.
+- **Ask:** worth the author repro'ing the offline-mode play/transition path on
+  Windows before a broad 0.2.0 push. Not a blocker for the DPAPI/packaging change
+  this PR is about.
 
 **Row 2 — multi-library picker degrade (the new fix): validated.** Fed two
 libraries + the three title forms, swept window width:
