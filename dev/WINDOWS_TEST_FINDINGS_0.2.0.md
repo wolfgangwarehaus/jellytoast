@@ -9,7 +9,7 @@ display. LAN `192.168.50.66/24`.
 silent per-user install → installed-app drive via the test bridge +
 `qa_harness.py` gallery → smoke test → clean-venv `pipx` install of the wheel →
 raw-Subsonic + credential-store diagnostics. Server: Navidrome (subsonic) at
-`192.168.50.100:4533`, user `avtips` (**same server the Mac session used**).
+the LAN Navidrome (**same server the Mac session used**).
 
 **Verdict:** the headline **Windows change lands** — the DPAPI credential store
 is correct end-to-end (lossless round-trip, consistent dual store, faithful
@@ -96,7 +96,7 @@ library surface reads **empty** ("No albums yet"). Ruled out every PR-side cause
   40 — so this is **not** the documented transient Navidrome "first-ping-after-
   restart" quirk (that clears on `authenticate`; see `verify_session` docstring).
 
-⇒ the server-side password for `avtips` was **rotated**; the Mac box carries the
+⇒ the server-side password for the saved account was **rotated**; the Mac box carries the
 current one, this Windows box retained the old. **Environmental.** Consequence:
 the audio/content rows (3–6, 9–14) **cannot be driven on this box** — I can't
 re-enter the current password, and I declined switching to a public demo because
