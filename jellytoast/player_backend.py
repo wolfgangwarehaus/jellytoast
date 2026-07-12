@@ -801,6 +801,24 @@ class MpvController(_CastTransportMixin, QObject):
         # stage only resets on a HEALTHY check.
         self._schedule_audio_health_check()
 
+    @staticmethod
+    def _offline_suppresses_reporting() -> bool:
+        """True when offline mode is on — playback reporting (start /
+        progress / stop) must not fire live server requests. Two reasons:
+        it's the contract (offline mode means the app leaves the network
+        alone; the server can live without play-state from an offline
+        client), and the 0.2.0 Windows QA crash showed these fire-and-
+        forget reports still hitting the server mid-transition while
+        offline widened the race window around track changes (see
+        dev/WINDOWS_TEST_FINDINGS_0.2.0.md). Session bookkeeping still
+        runs — only the network dispatch is skipped."""
+        try:
+            from jellytoast import offline as _offline
+
+            return _offline.is_offline_mode()
+        except Exception:
+            return False
+
     def _end_play_session_if_active(self, force_finished: bool = False):
         """Send a final Stopped for the current session and clear the
         session id. `force_finished` is True when the track played
@@ -817,15 +835,18 @@ class MpvController(_CastTransportMixin, QObject):
             position_ticks = np.duration_ticks if force_finished else np.position_ticks
         else:
             position_ticks = 0
-        # Fire-and-forget on the pool — see _report_session_start.
+        # Fire-and-forget on the pool — see _report_session_start. Skipped
+        # in offline mode (network stays quiet; the session state below is
+        # still cleared either way).
         iid, sid = self._session_item_id, self._session_id
         pm = self._session_play_method
-        run_async(
-            lambda: self.api.report_playback_stopped(
-                iid, position_ticks, play_session_id=sid, play_method=pm
-            ),
-            on_error=lambda _e: None,
-        )
+        if not self._offline_suppresses_reporting():
+            run_async(
+                lambda: self.api.report_playback_stopped(
+                    iid, position_ticks, play_session_id=sid, play_method=pm
+                ),
+                on_error=lambda _e: None,
+            )
         self._session_item_id = ""
         self._session_id = ""
         self._session_play_method = "DirectStream"
@@ -839,6 +860,8 @@ class MpvController(_CastTransportMixin, QObject):
         a dead/unreachable server must never stall the GUI thread for
         the request's timeout. Snapshot the values now; the pool thread
         just sends them."""
+        if self._offline_suppresses_reporting():
+            return
         iid, pos = np.item_id, np.position_ticks
         sid, pm = self._session_id, self._session_play_method
         run_async(
@@ -2549,6 +2572,8 @@ class MpvController(_CastTransportMixin, QObject):
     def _report_progress(self):
         np = get_now_playing()
         if not np.item_id:
+            return
+        if self._offline_suppresses_reporting():
             return
         # Fire-and-forget on the pool — this fires on a timer, so a
         # blocking provider call to a dead server would stutter the GUI

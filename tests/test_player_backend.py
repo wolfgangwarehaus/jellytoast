@@ -692,3 +692,69 @@ class TestPlaybackStartedPauseFlag:
 
         assert np.is_paused is False
         assert out and out[-1][0].is_paused is False
+
+
+# ── Offline mode suppresses playback reporting ──────────────────────────────
+# Offline mode's contract is "leave the network alone", and the 0.2.0 Windows
+# QA crash showed the fire-and-forget play-state reports still hitting the
+# server mid-track-transition while offline (dev/WINDOWS_TEST_FINDINGS_0.2.0.md).
+# These pin: no run_async dispatch when offline; session bookkeeping unaffected.
+
+
+class TestOfflineSuppressesReporting:
+    @pytest.fixture
+    def dispatches(self, monkeypatch):
+        """Record run_async dispatches from player_backend; never run them."""
+        import jellytoast.player_backend as backend_mod
+
+        calls = []
+        monkeypatch.setattr(
+            backend_mod, "run_async", lambda *a, **k: calls.append((a, k))
+        )
+        return calls
+
+    @pytest.fixture
+    def offline_on(self, monkeypatch):
+        from jellytoast import offline as offline_mod
+
+        monkeypatch.setattr(offline_mod, "is_offline_mode", lambda: True)
+
+    def _arm_session(self, controller):
+        controller._session_item_id = "abc"
+        controller._session_id = "sess-1"
+        controller._session_play_method = "DirectStream"
+        set_now_playing(_np(item_id="abc", position=5000))
+
+    def test_progress_report_skipped_offline(self, controller, dispatches, offline_on):
+        self._arm_session(controller)
+        controller._report_progress()
+        assert dispatches == []
+
+    def test_progress_report_fires_online(self, controller, dispatches):
+        self._arm_session(controller)
+        controller._report_progress()
+        assert len(dispatches) == 1
+
+    def test_session_start_skipped_offline(self, controller, dispatches, offline_on):
+        controller._session_id = "sess-1"
+        controller._report_session_start(_np(item_id="abc"))
+        assert dispatches == []
+
+    def test_stop_report_skipped_offline_but_session_still_clears(
+        self, controller, dispatches, offline_on
+    ):
+        # The network dispatch is suppressed, but the session bookkeeping —
+        # clearing the ids so the NEXT track can mint a fresh session — must
+        # still run, or the first online track after offline mode would
+        # inherit a stale session id.
+        self._arm_session(controller)
+        controller._end_play_session_if_active()
+        assert dispatches == []
+        assert controller._session_item_id == ""
+        assert controller._session_id == ""
+
+    def test_stop_report_fires_online(self, controller, dispatches):
+        self._arm_session(controller)
+        controller._end_play_session_if_active()
+        assert len(dispatches) == 1
+        assert controller._session_item_id == ""

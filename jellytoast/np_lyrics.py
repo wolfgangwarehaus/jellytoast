@@ -156,6 +156,19 @@ class _LyricsMixin:
             return
         if self._lyrics_loading_for == item_id:
             return  # already in flight
+        # Offline mode: lyrics live only on the server (the offline store
+        # doesn't carry them), so don't fire a live request — that honours
+        # the "leave the network alone" contract and keeps the track-
+        # transition path free of in-flight server calls (the 0.2.0 Windows
+        # QA crash rode exactly that mix). Cache hits above still render.
+        try:
+            from jellytoast import offline as _offline
+
+            if _offline.is_offline_mode():
+                self._set_lyrics_text("Lyrics unavailable offline", muted=True)
+                return
+        except Exception:
+            pass
         self._lyrics_loading_for = item_id
         self._set_lyrics_text("Loading lyrics…", muted=True)
         # Fetch on the shared QThreadPool; `_lyrics_loaded` is wired to

@@ -30,6 +30,9 @@ developer-facing history lives in [`docs/CHANGELOG.md`](docs/CHANGELOG.md).
   own secure store. Your server sign-in carries over automatically — but if you
   scrobble to ListenBrainz or Last.fm, you'll reconnect those one time after
   updating.
+- **Offline mode actually stays offline.** With offline mode on, the app no
+  longer quietly pings your server for play-progress or lyrics — and switching
+  it on mid-song is steadier for it.
 
 ## [0.1.9] — 2026-07-10
 
