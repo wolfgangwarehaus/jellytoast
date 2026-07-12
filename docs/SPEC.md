@@ -239,7 +239,8 @@ Queue is persisted separately as `queue.json` (v2 schema with v1 legacy read).
 **Working today (Windows):** smoke-verified end-to-end on a clean Windows 11 25H2 box (pipx install, login, libmpv→WASAPI playback, Chromecast, persistence; 2026-06-05/06).
 - Frameless borderless main window with real **Acrylic** frosted-glass blur as the default (`jellytoast/blur/_dwm.py` calls `apply_acrylic` unless `JT_NO_WIN_BLUR`; legacy `SetWindowCompositionAttribute` / `ACCENT_ENABLE_ACRYLICBLURBEHIND`), rounded dialog corners, and a centered cast menu.
 - Auto (follow-OS) theme that live-swaps light/dark with the Windows colour scheme, plus crisp HiDPI icon-buttons at fractional display scale.
-- Credentials via the OS keyring; libmpv shipped as `libmpv-2.dll` (placement: pipx venv `Lib\site-packages` or on PATH).
+- Credentials via the OS keyring (Credential Locker), with a DPAPI-encrypted resilience copy since 0.2.0 (`credentials.py` `d1:` blobs — no `cryptography` dep on Windows at all); libmpv shipped as `libmpv-2.dll` (placement: pipx venv `Lib\site-packages` or on PATH).
+- **Native ARM64 Windows** build since 0.2.0 — one dual-arch installer (x64 + arm64); the machine installs its native tree.
 
 **Working today (Windows, shipped 2026-06-14, PR #86):** SMTC hardware
 media keys + now-playing flyout (`media_controls/_windows.py`), Run-key
@@ -248,9 +249,12 @@ autostart (`autostart/_windows.py`), toast notifications
 (`taskbar.py`), prevent-sleep-during-playback (`power/`, cross-platform),
 and single-instance window foregrounding.
 
-**Working today (macOS, shipped 0.1.4–0.1.8):** signed + notarized `.dmg`
-for Apple Silicon (Sonoma 14+) and Intel (Ventura 13+); a Mac App Store
-build auto-uploads to App Store Connect on every release.
+**Working today (macOS):** ONE signed + notarized **universal** `.dmg`
+(Apple Silicon + Intel in a single fat bundle, macOS 15 Sequoia+, since
+0.2.0 — previously two per-arch dmgs); a Mac App Store build auto-uploads
+to App Store Connect on every release. Since 0.2.0 the dmg (and wheel)
+finally bundle pyobjc, so vibrancy / media keys / banners work outside
+the MAS build too.
 - Native frosted glass via `NSVisualEffectView` vibrancy
   (`blur/_macos.py`, honors Reduce Transparency), integrated titlebar,
   native menu bar + Dock menu.
