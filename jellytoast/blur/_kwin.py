@@ -221,6 +221,24 @@ def probe():
         return BlurStatus.REQUESTED_UNVERIFIABLE
     if _blur_disabled():
         return BlurStatus.UNSUPPORTED
+    import os
+
+    if os.environ.get("FLATPAK_ID"):
+        from jellytoast.platform_compat import is_kde_desktop
+
+        if is_kde_desktop() and _blur_effect_active() is None:
+            # KDE inside a flatpak with an INCONCLUSIVE effect check: the
+            # sandbox likely can't reach org.kde.KWin on the session bus (a
+            # bundle built before the --talk-name=org.kde.KWin grant), so a
+            # host with the Blur effect OFF is indistinguishable from one
+            # with it on — while the Wayland capability bit stays True
+            # either way. Trusting the bit painted full-transparency glass
+            # over an UNBLURRED desktop (the 0.2.0 Steam Deck report).
+            # Claim only what we can verify; the near-opaque frosted
+            # fallback is the honest render. Outside the sandbox an
+            # inconclusive check is rare (missing QtDBus) and host
+            # behaviour is unchanged.
+            return BlurStatus.REQUESTED_UNVERIFIABLE
     return BlurStatus.ACTIVE
 
 

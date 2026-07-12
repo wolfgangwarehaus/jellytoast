@@ -278,7 +278,44 @@ class TestKWinProbe:
         monkeypatch.setattr(_kwin, "_resolve_avail", lambda: (lambda effect: True))
         monkeypatch.setattr(pc, "is_x11", lambda: False)
         monkeypatch.setattr(_kwin, "_blur_disabled", lambda: False)
+        monkeypatch.delenv("FLATPAK_ID", raising=False)
         assert _kwin.probe() is blur.BlurStatus.ACTIVE
+
+    def _flatpak_kde_probe(self, monkeypatch, *, effect, kde=True):
+        """probe() under a simulated flatpak-on-KDE-Wayland with a True
+        capability bit; `effect` is what the D-Bus cross-check returns."""
+        import jellytoast.platform_compat as pc
+
+        monkeypatch.setattr(_kwin, "_resolve", lambda: object())
+        monkeypatch.setattr(_kwin, "_resolve_avail", lambda: (lambda e: True))
+        monkeypatch.setattr(pc, "is_x11", lambda: False)
+        monkeypatch.setattr(pc, "is_kde_desktop", lambda: kde)
+        monkeypatch.setattr(_kwin, "_blur_disabled", lambda: False)
+        monkeypatch.setattr(_kwin, "_blur_effect_active", lambda: effect)
+        monkeypatch.setenv("FLATPAK_ID", "io.github.wolfgangwarehaus.jellytoast")
+        return _kwin.probe()
+
+    def test_probe_flatpak_kde_inconclusive_effect_is_unverifiable(self, monkeypatch):
+        """The 0.2.0 Steam Deck bug: inside a sandbox that can't reach
+        org.kde.KWin, a host with the Blur effect OFF looks identical to one
+        with it on — the capability bit stays True either way. An
+        inconclusive effect check in a flatpak on KDE must NOT earn ACTIVE
+        (full-transparency glass over an unblurred desktop); it demotes to
+        the near-opaque frosted fallback."""
+        st = self._flatpak_kde_probe(monkeypatch, effect=None)
+        assert st is blur.BlurStatus.REQUESTED_UNVERIFIABLE
+
+    def test_probe_flatpak_kde_verified_effect_stays_active(self, monkeypatch):
+        # With the --talk-name=org.kde.KWin grant the cross-check works and
+        # a genuinely-on Blur effect keeps real glass.
+        st = self._flatpak_kde_probe(monkeypatch, effect=True)
+        assert st is blur.BlurStatus.ACTIVE
+
+    def test_probe_flatpak_nonkde_inconclusive_stays_active(self, monkeypatch):
+        # niri/COSMIC honestly advertise the blur protocol; the KDE-only
+        # doubt must not demote them.
+        st = self._flatpak_kde_probe(monkeypatch, effect=None, kde=False)
+        assert st is blur.BlurStatus.ACTIVE
 
     def test_probe_unsupported_when_capability_false(self, monkeypatch):
         monkeypatch.setattr(_kwin, "_resolve", lambda: object())

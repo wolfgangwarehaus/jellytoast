@@ -36,6 +36,15 @@ finish-args:
   - --talk-name=org.freedesktop.Notifications      # track-change toasts
   - --talk-name=org.kde.StatusNotifierWatcher      # tray icon
   - --talk-name=org.freedesktop.secrets            # keyring (server login)
+  # Blur HONESTY check (read-only queries: isEffectLoaded / compositing
+  # active). KWin's Wayland blur protocol stays advertised even when the
+  # Blur desktop effect is OFF (user choice, or the distro's default — the
+  # Steam Deck), so without this grant the sandbox can't tell, trusts the
+  # capability bit, and paints full-transparency glass over an UNBLURRED
+  # desktop (0.2.0 Steam Deck report). With it, blur/_kwin.py's D-Bus
+  # cross-check works exactly as it does outside the sandbox and the app
+  # demotes to the near-opaque frosted fallback.
+  - --talk-name=org.kde.KWin
   # Launch-at-login writes ~/.config/autostart directly (jellytoast/
   # autostart/_linux.py) — narrow static grant instead of the Background
   # portal for now; portal migration is tracked with the channel work.

@@ -12,6 +12,11 @@ developer-facing history lives in [`docs/CHANGELOG.md`](docs/CHANGELOG.md).
      should stand alone: the Store "What's new" shows just the title (+ first
      sentence in --detail mode). -->
 
+- **Flatpak: no more see-through windows when blur is off.** On desktops where
+  KDE's blur effect isn't running (hi, Steam Deck), the Flatpak painted clear
+  glass over an unblurred desktop. It now detects that properly and falls back
+  to the regular frosted look.
+
 ## [0.2.0] — 2026-07-12
 
 - **One download for every Mac.** macOS is now a single universal .dmg that
