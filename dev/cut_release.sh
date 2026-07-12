@@ -99,18 +99,27 @@ vp.write_text(text, encoding="utf-8")
 
 # 3. AppStream metainfo — insert the new (newest) <release> at the top of
 #    <releases>; the consistency test reads the FIRST release entry.
+#    IDEMPOTENT: skipped when the newest entry already carries `new`. A
+#    release branch may pre-stamp the manifests (0.2.0 did, via its QA
+#    session), and a second unconditional insert would ship a DUPLICATE
+#    <release> that appstream validators reject — while this script's own
+#    consistency gate (which reads only the FIRST entry) would never notice.
 mi = root / "packaging" / "io.github.wolfgangwarehaus.jellytoast.metainfo.xml"
 text = mi.read_text(encoding="utf-8")
-entry = (
-    f'    <release version="{new}" type="stable" date="{date}">\n'
-    f"      <description>\n"
-    f"        <p>See the release notes for {new}.</p>\n"
-    f"      </description>\n"
-    f"    </release>\n"
-)
-text, n = re.subn(r"(<releases>\n)", rf"\g<1>{entry}", text, count=1)
-assert n == 1, "did not find <releases> to insert into metainfo.xml"
-mi.write_text(text, encoding="utf-8")
+newest = re.search(r'<release version="([^"]+)"', text)
+if newest is not None and newest.group(1) == new:
+    print(f"metainfo already carries <release {new}> as newest — not re-inserting")
+else:
+    entry = (
+        f'    <release version="{new}" type="stable" date="{date}">\n'
+        f"      <description>\n"
+        f"        <p>See the release notes for {new}.</p>\n"
+        f"      </description>\n"
+        f"    </release>\n"
+    )
+    text, n = re.subn(r"(<releases>\n)", rf"\g<1>{entry}", text, count=1)
+    assert n == 1, "did not find <releases> to insert into metainfo.xml"
+    mi.write_text(text, encoding="utf-8")
 
 # 4. CHANGELOG — snip [Unreleased] into a dated version block, leaving a
 #    fresh empty [Unreleased] at the top (Keep a Changelog flow). This is the

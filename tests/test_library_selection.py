@@ -6,6 +6,8 @@ the ``get_settings()`` singleton to a tmp-dir Settings so the persisted
 ``selected_library_ids`` round-trips in isolation.
 """
 
+import pytest
+
 from jellytoast import library_selection as ls
 from jellytoast.settings import get_settings
 
@@ -18,6 +20,22 @@ def _seed(*names):
 
 
 def _reset():
+    ls.reset_after_server_change()
+
+
+@pytest.fixture(autouse=True)
+def _clean_selection_state():
+    """Reset library_selection's MODULE globals after every test here.
+
+    ``_seed``/``set_selected_ids`` mutate module state (`_available` + the
+    persisted selection); without teardown the LAST test's selection leaks
+    into whatever file runs next. Concretely: the Jellyfin smart-playlist
+    evaluator's ``query_items`` fans out one /Items pass per selected
+    library (``_smart_folder_plan``), so a leaked 2-library selection
+    doubled its expected call counts —
+    tests/test_smart_playlist_evaluator.py's paged-fetch tests failed in
+    full-suite order while passing alone."""
+    yield
     ls.reset_after_server_change()
 
 

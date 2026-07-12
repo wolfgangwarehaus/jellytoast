@@ -858,7 +858,16 @@ class TestSubsonicMultiRule:
 
 @pytest.fixture
 def jellyfin_provider(monkeypatch):
+    from jellytoast import library_selection as _ls
     from jellytoast.providers.jellyfin import JellyfinProvider
+
+    # These tests assert EXACT /Items call counts, and query_items fans out
+    # one pass per selected library (_smart_folder_plan, #226). Ambient
+    # selection state leaked by an earlier test FILE (library_selection's
+    # module globals persist across files) multiplies those counts — the
+    # "3 failed in suite order, pass alone" flake. Pin to the default
+    # no-selection state so the plan is always a single pass.
+    _ls.reset_after_server_change()
 
     p = JellyfinProvider()
     p.api.user_id = "u1"

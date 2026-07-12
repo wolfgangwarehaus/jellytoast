@@ -37,11 +37,28 @@ def isolated_caches(tmp_path, monkeypatch):
     target.mkdir(parents=True, exist_ok=True)
     monkeypatch.setattr(image_cache, "_CACHE_DIR", target)
     monkeypatch.setattr(image_cache, "_puts_since_eviction", 0)
-    ui_helpers._image_cache.clear()
-    ui_helpers._raw_image_cache.clear()
+
+    def _clear_loader_state():
+        ui_helpers._image_cache.clear()
+        ui_helpers._raw_image_cache.clear()
+        # The loader's TRANSPORT state leaks across tests too, and either
+        # leak silently swallows a load without it ever reaching QNAM:
+        #   • an _inflight_subscribers residue for the same cache_key
+        #     coalesces the new call onto a dead in-flight entry;
+        #   • a leaked _gated_in_flight counter >= _GATED_MAX_INFLIGHT parks
+        #     the request in a deferred queue nothing will ever drain.
+        # Concretely: test_large_library_covers exercises the gate, and in
+        # random suite order its leftovers made
+        # test_online_uncached_falls_through_to_network see zero QNAM gets.
+        ui_helpers._inflight_subscribers.clear()
+        ui_helpers._pending_replies.clear()
+        ui_helpers._deferred_normal.clear()
+        ui_helpers._deferred_low.clear()
+        ui_helpers._gated_in_flight = 0
+
+    _clear_loader_state()
     yield target
-    ui_helpers._image_cache.clear()
-    ui_helpers._raw_image_cache.clear()
+    _clear_loader_state()
 
 
 @pytest.fixture
