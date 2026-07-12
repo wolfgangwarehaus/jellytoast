@@ -12,6 +12,8 @@ developer-facing history lives in [`docs/CHANGELOG.md`](docs/CHANGELOG.md).
      should stand alone: the Store "What's new" shows just the title (+ first
      sentence in --detail mode). -->
 
+## [0.2.0] — 2026-07-12
+
 - **One download for every Mac.** macOS is now a single universal .dmg that
   runs natively on both Apple Silicon and Intel — no more picking the right
   one. Heads up: it now needs macOS 15 (Sequoia) or newer.
