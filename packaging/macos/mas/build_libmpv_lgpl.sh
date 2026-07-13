@@ -22,12 +22,18 @@ cd "$SRC" || fail cd
 echo "=== STEP 2: LGPL FFmpeg from source (n7.1) ==="
 [ -d FFmpeg ] || git clone --depth 1 --branch n7.1 https://github.com/FFmpeg/FFmpeg.git FFmpeg || fail "ffmpeg clone"
 cd FFmpeg || fail
+# --enable-securetransport: the TLS backend. Without one, FFmpeg silently
+# builds WITHOUT the https protocol — every TLS media URL fails as `loading
+# failed` while plain http plays (found by the 0.2.0 Steam Deck flatpak QA;
+# THIS script had the identical hole, i.e. MAS playback against an https
+# server was silently broken since 0.1.4). SecureTransport is Apple's system
+# TLS — no new deps, sandbox-clean, LGPL-compatible.
 ./configure --prefix="$PREFIX" \
   --enable-shared --disable-static \
   --disable-gpl --disable-nonfree \
   --disable-programs --disable-doc --disable-postproc \
   --disable-avdevice --disable-encoders --disable-muxers \
-  --enable-audiotoolbox || fail "ffmpeg configure"
+  --enable-audiotoolbox --enable-securetransport || fail "ffmpeg configure"
 make -j"$NCPU" || fail "ffmpeg make"
 make install || fail "ffmpeg install"
 cd "$SRC" || fail

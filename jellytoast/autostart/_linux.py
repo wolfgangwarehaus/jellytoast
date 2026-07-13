@@ -47,12 +47,22 @@ def is_enabled() -> bool:
 def enable() -> bool:
     """Drop a .desktop entry into ~/.config/autostart. Returns True on
     success, False on filesystem errors (e.g. read-only home)."""
+    import os
+
     try:
         _AUTOSTART_DIR.mkdir(parents=True, exist_ok=True)
     except Exception:
         return False
 
-    if _SOURCE_DESKTOP.exists():
+    # Inside a flatpak, ALWAYS synthesize: ~/.config/autostart is executed
+    # by the HOST session, and both the copied desktop entry and the old
+    # synth pointed at sandbox-internal paths (/app/…, the sandbox python)
+    # that don't exist on the host — so start-at-login silently launched
+    # nothing on every login (0.2.0 Steam Deck QA finding #3). The synth's
+    # flatpak branch writes the host-runnable `flatpak run <app-id>` form.
+    if os.environ.get("FLATPAK_ID"):
+        content = _synth_desktop_entry()
+    elif _SOURCE_DESKTOP.exists():
         try:
             content = _SOURCE_DESKTOP.read_text()
         except Exception:
@@ -96,21 +106,31 @@ def _strip_hidden_flags(content: str) -> str:
 
 
 def _synth_desktop_entry() -> str:
-    """Fallback: build a minimal entry from the current interpreter and
-    the installed jellytoast package (`python -m jellytoast`). Used when
-    the canonical entry under ~/.local/share/applications is missing."""
-    # parent.parent = the jellytoast package dir; its parent is whatever
-    # holds the package (repo root or site-packages) — Path= there so a
-    # repo checkout launches from the repo, same as before the rename.
-    pkg_dir = Path(__file__).resolve().parent.parent
-    interpreter = sys.executable or "python3"
+    """Build a minimal autostart entry. Flatpak: the host-runnable
+    ``flatpak run <app-id>`` form (no Path= — /app/… is unresolvable on the
+    host that executes autostart). Otherwise: the current interpreter and
+    the installed jellytoast package (`python -m jellytoast`)."""
+    import os
+
+    flatpak_id = os.environ.get("FLATPAK_ID")
+    if flatpak_id:
+        exec_line = f"Exec=flatpak run {flatpak_id}\n"
+        path_line = ""
+    else:
+        # parent.parent = the jellytoast package dir; its parent is whatever
+        # holds the package (repo root or site-packages) — Path= there so a
+        # repo checkout launches from the repo, same as before the rename.
+        pkg_dir = Path(__file__).resolve().parent.parent
+        interpreter = sys.executable or "python3"
+        exec_line = f"Exec={interpreter} -m jellytoast\n"
+        path_line = f"Path={pkg_dir.parent}\n"
     return (
         "[Desktop Entry]\n"
         "Type=Application\n"
         "Name=jellytoast\n"
         "Comment=Audio-first native music client for Jellyfin and Subsonic\n"
-        f'Exec={interpreter} -m jellytoast\n'
-        f"Path={pkg_dir.parent}\n"
+        f"{exec_line}"
+        f"{path_line}"
         "Icon=jellytoast\n"
         "Terminal=false\n"
         "Categories=AudioVideo;Audio;Player;\n"

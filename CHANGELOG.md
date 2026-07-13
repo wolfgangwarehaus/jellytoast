@@ -16,6 +16,13 @@ developer-facing history lives in [`docs/CHANGELOG.md`](docs/CHANGELOG.md).
   KDE's blur effect isn't running (hi, Steam Deck), the Flatpak painted clear
   glass over an unblurred desktop. It now detects that properly and falls back
   to the regular frosted look.
+- **HTTPS servers play again on Flatpak and the Mac App Store build.** The
+  audio engine in those two builds shipped without TLS, so a server behind
+  https (reverse proxy, Tailscale, most remote setups) would browse fine but
+  play nothing — silently. Both builds now speak https.
+- **Flatpak: "Launch at login" actually launches at login.** The toggle wrote
+  a startup entry pointing inside the sandbox, which the desktop couldn't run.
+  It now writes the proper flatpak launch command.
 
 ## [0.2.0] — 2026-07-12
 

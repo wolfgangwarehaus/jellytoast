@@ -515,3 +515,48 @@ def _restore_autostart_module():
         "jellytoast.autostart._unsupported",
     ):
         sys.modules.pop(mod_name, None)
+
+
+class TestFlatpakAutostart:
+    """0.2.0 Steam Deck QA finding #3: inside a flatpak the autostart entry
+    must be the HOST-runnable `flatpak run <app-id>` form — the old copy/
+    synth pointed at sandbox paths (/app/…, the sandbox python) that don't
+    exist for the host session executing ~/.config/autostart, so the toggle
+    silently launched nothing."""
+
+    def test_synth_uses_flatpak_run_inside_sandbox(self, monkeypatch):
+        from jellytoast.autostart import _linux
+
+        monkeypatch.setenv("FLATPAK_ID", "io.github.wolfgangwarehaus.jellytoast")
+        entry = _linux._synth_desktop_entry()
+        assert "Exec=flatpak run io.github.wolfgangwarehaus.jellytoast\n" in entry
+        assert "Path=" not in entry  # /app/... is unresolvable on the host
+        assert "/app/" not in entry
+
+    def test_synth_uses_interpreter_outside_sandbox(self, monkeypatch):
+        from jellytoast.autostart import _linux
+
+        monkeypatch.delenv("FLATPAK_ID", raising=False)
+        entry = _linux._synth_desktop_entry()
+        assert "-m jellytoast" in entry
+        assert "flatpak run" not in entry
+
+    def test_enable_prefers_synth_in_flatpak_even_with_source_desktop(
+        self, monkeypatch, tmp_path
+    ):
+        # Even when a copied desktop entry EXISTS, the flatpak branch must
+        # synthesize — the copy's Exec is sandbox-internal too.
+        from jellytoast.autostart import _linux
+
+        monkeypatch.setenv("FLATPAK_ID", "io.github.wolfgangwarehaus.jellytoast")
+        src = tmp_path / "jellytoast.desktop"
+        src.write_text("[Desktop Entry]\nExec=/app/bin/whatever\n")
+        monkeypatch.setattr(_linux, "_SOURCE_DESKTOP", src)
+        monkeypatch.setattr(_linux, "_AUTOSTART_DIR", tmp_path / "autostart")
+        monkeypatch.setattr(
+            _linux, "_AUTOSTART_FILE", tmp_path / "autostart" / "jellytoast.desktop"
+        )
+        assert _linux.enable() is True
+        written = (tmp_path / "autostart" / "jellytoast.desktop").read_text()
+        assert "Exec=flatpak run io.github.wolfgangwarehaus.jellytoast" in written
+        assert "/app/" not in written

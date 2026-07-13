@@ -76,6 +76,15 @@ modules:
       - --disable-avdevice
       - --disable-encoders
       - --disable-muxers
+      # TLS backend — without one, FFmpeg silently builds WITHOUT the https
+      # protocol and every TLS media URL dies as `loading failed` while plain
+      # http plays fine (0.2.0 Steam Deck QA, headline finding: a user whose
+      # server sits behind a reverse proxy / Tailscale https would browse
+      # their whole library and get silence on every track). gnutls is the
+      # GPL-compatible choice (OpenSSL's Apache-2.0 is not, for this
+      # project's GPL-2.0+); the KDE runtime ships libgnutls, the SDK the
+      # headers.
+      - --enable-gnutls
     sources:
       - type: git
         url: https://github.com/FFmpeg/FFmpeg.git
