@@ -323,6 +323,108 @@ class TestKWinProbe:
         assert _kwin.probe() is blur.BlurStatus.UNSUPPORTED
 
 
+# ── The request never reaches the compositor (#229) ───────────────────
+
+
+class TestBlurDelivery:
+    """A True capability bit says the COMPOSITOR can blur. It says nothing
+    about whether our request gets there. On a Qt/KWindowSystem version skew
+    enableBlurBehind silently drops it (Qt refuses KF6 the Wayland native
+    interface) while isEffectAvailable() still answers True — which is how
+    0.2.0 came to paint clear glass over an unblurred desktop."""
+
+    def _capable_probe(self, monkeypatch, *, delivered):
+        """probe() on a KDE Wayland box where every compositor-side signal is
+        green; `delivered` is what the delivery self-test reports."""
+        import jellytoast.platform_compat as pc
+
+        monkeypatch.setattr(_kwin, "_resolve", lambda: object())
+        monkeypatch.setattr(_kwin, "_resolve_avail", lambda: (lambda e: True))
+        monkeypatch.setattr(pc, "is_x11", lambda: False)
+        monkeypatch.setattr(_kwin, "_blur_disabled", lambda: False)
+        monkeypatch.setattr(
+            _kwin, "_blur_request_reaches_compositor", lambda: delivered
+        )
+        monkeypatch.delenv("FLATPAK_ID", raising=False)
+        return _kwin.probe()
+
+    def test_dropped_request_demotes_to_unverifiable(self, monkeypatch):
+        # The #229 regression: capability True, Blur effect on, and yet
+        # nothing we send lands. Full glass here is see-through-broken.
+        st = self._capable_probe(monkeypatch, delivered=False)
+        assert st is blur.BlurStatus.REQUESTED_UNVERIFIABLE
+
+    def test_delivered_request_earns_active(self, monkeypatch):
+        st = self._capable_probe(monkeypatch, delivered=True)
+        assert st is blur.BlurStatus.ACTIVE
+
+    def test_inconclusive_test_does_not_demote(self, monkeypatch):
+        # None = "couldn't run the test" (no QGuiApplication, no symbol).
+        # Absence of a verdict is not evidence of failure — a box that
+        # blurred fine before must keep its glass.
+        st = self._capable_probe(monkeypatch, delivered=None)
+        assert st is blur.BlurStatus.ACTIVE
+
+    def test_selftest_is_tri_state_and_never_raises(self, qapp, monkeypatch):
+        monkeypatch.setattr(_kwin, "_delivery_tested", False)
+        monkeypatch.setattr(_kwin, "_delivery_ok", None)
+        r = _kwin._blur_request_reaches_compositor()
+        assert r is None or isinstance(r, bool)
+
+    def test_selftest_is_cached(self, monkeypatch):
+        """One throwaway window per process, not one per status() call."""
+        calls = []
+        monkeypatch.setattr(_kwin, "_delivery_tested", False)
+        monkeypatch.setattr(_kwin, "_delivery_ok", None)
+
+        def counted():
+            calls.append(1)
+            raise RuntimeError("boom")  # forces the inconclusive path
+
+        monkeypatch.setattr(_kwin, "_resolve", counted)
+        assert _kwin._blur_request_reaches_compositor() is None
+        assert _kwin._blur_request_reaches_compositor() is None
+        assert len(calls) == 1
+
+    def test_selftest_restores_the_previous_message_handler(self, qapp, monkeypatch):
+        """The handler is a PROCESS-WIDE hook — leaving ours installed would
+        swallow every later Qt warning in the app."""
+        from PySide6.QtCore import qInstallMessageHandler
+
+        sentinel_seen = []
+
+        def sentinel(mode, ctx, msg):
+            sentinel_seen.append(msg)
+
+        prev = qInstallMessageHandler(sentinel)
+        try:
+            monkeypatch.setattr(_kwin, "_delivery_tested", False)
+            monkeypatch.setattr(_kwin, "_delivery_ok", None)
+            _kwin._blur_request_reaches_compositor()
+            # Ours must be gone; the sentinel must be back in charge.
+            from PySide6.QtCore import qCritical
+
+            qCritical("jellytoast-selftest-canary")
+            assert any("canary" in m for m in sentinel_seen)
+        finally:
+            qInstallMessageHandler(prev)
+
+    def test_reason_explains_a_dropped_request(self, monkeypatch):
+        import jellytoast.platform_compat as pc
+
+        monkeypatch.setattr(pc, "is_x11", lambda: False)
+        monkeypatch.setattr(pc, "is_kde_desktop", lambda: True)
+        monkeypatch.setattr(pc, "desktop_name", lambda: "KDE")
+        monkeypatch.setattr(_kwin, "_resolve", lambda: object())
+        monkeypatch.setattr(_kwin, "_blur_disabled", lambda: False)
+        monkeypatch.setattr(
+            _kwin, "_blur_request_reaches_compositor", lambda: False
+        )
+        msg = _kwin.reason(blur.BlurStatus.REQUESTED_UNVERIFIABLE)
+        assert "skew" in msg.lower()
+        assert "near-opaque" in msg
+
+
 # ── Windows Mica backend (_dwm) ───────────────────────────────────────
 
 
