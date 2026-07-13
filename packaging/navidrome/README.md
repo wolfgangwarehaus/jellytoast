@@ -5,8 +5,13 @@ Everything here is copied verbatim into a PR against
 [`navidrome/website`](https://github.com/navidrome/website) — no edits needed.
 
 **Validated** against the repo's live `assets/apps/app-schema.json` (jsonschema
-PASS, 2026-07-13). Eligibility is met by **app-store availability** (Mac App
-Store + Microsoft Store), so the 15-GitHub-stars rule doesn't apply.
+PASS, 2026-07-13).
+
+> ⚠️ **Not yet eligible — needs 15 GitHub stars.** Navidrome's availability
+> rule is CONDITIONAL on license (verbatim): *open source* apps need **≥15
+> stars**; the app-store path is for *closed source* apps only. jellytoast is
+> GPL-2.0+ (open source), so it needs the stars — app-store presence does NOT
+> substitute. Currently **7 stars**. Hold this PR until 15.
 
 ## Contents
 
@@ -62,8 +67,8 @@ Subsonic/Navidrome (Linux, Windows, macOS).
 - **API:** OpenSubsonic (Subsonic 1.16.1 + OpenSubsonic; uses
   getLyricsBySongId, coverArt, the `type` field, etc.)
 - **Open source:** GPL-2.0-or-later — https://github.com/wolfgangwarehaus/jellytoast
-- **Eligibility:** available on the Mac App Store and Microsoft Store
-  (also AppImage / .deb / Flatpak / winget / pipx).
+- **Availability:** Mac App Store, Microsoft Store, AppImage, .deb, Flatpak,
+  winget, pipx. (Open source, so listed under the 15-stars rule.)
 - Highlights: bit-perfect mpv playback, casting to Chromecast / AirPlay 2 /
   Sonos / DLNA, offline downloads, floating mini player, synced lyrics,
   audio visualizer, smart playlists, and a full theme picker with frosted-glass
@@ -74,6 +79,7 @@ Subsonic/Navidrome (Linux, Windows, macOS).
 jellytoast` passes.
 ```
 
-**Eligibility note:** the 15-GitHub-stars rule is the alternative to app-store
-availability — jellytoast meets the app-store criterion (MAS + Microsoft Store),
-so star count is not a blocker. Submittable now.
+**Eligibility note:** because jellytoast is open source, Navidrome requires **15
+GitHub stars** (the app-store path applies only to closed-source apps). At 7
+stars today — do NOT submit until 15. Everything else here is ready; this is
+the only gate.
