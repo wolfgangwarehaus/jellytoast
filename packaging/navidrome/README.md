@@ -46,3 +46,34 @@ for n in order:
     im.thumbnail((1200,1200), Image.LANCZOS)
     im.save(f"packaging/navidrome/{n}.webp", "WEBP", quality=82, method=6)
 ```
+
+## PR title + body (ready to paste)
+
+**Title:**
+```
+Add jellytoast to the apps catalog
+```
+
+**Body:**
+```markdown
+Adds **jellytoast** — a native desktop music player for Jellyfin and
+Subsonic/Navidrome (Linux, Windows, macOS).
+
+- **API:** OpenSubsonic (Subsonic 1.16.1 + OpenSubsonic; uses
+  getLyricsBySongId, coverArt, the `type` field, etc.)
+- **Open source:** GPL-2.0-or-later — https://github.com/wolfgangwarehaus/jellytoast
+- **Eligibility:** available on the Mac App Store and Microsoft Store
+  (also AppImage / .deb / Flatpak / winget / pipx).
+- Highlights: bit-perfect mpv playback, casting to Chromecast / AirPlay 2 /
+  Sonos / DLNA, offline downloads, floating mini player, synced lyrics,
+  audio visualizer, smart playlists, and a full theme picker with frosted-glass
+  blur on KDE / macOS / Windows.
+
+`index.yaml` validates against `assets/apps/app-schema.json`; thumbnail +
+5 gallery screenshots are WebP within the size limits. `npm run validate:app
+jellytoast` passes.
+```
+
+**Eligibility note:** the 15-GitHub-stars rule is the alternative to app-store
+availability — jellytoast meets the app-store criterion (MAS + Microsoft Store),
+so star count is not a blocker. Submittable now.
