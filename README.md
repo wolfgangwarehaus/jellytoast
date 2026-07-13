@@ -11,8 +11,9 @@
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-GPL--2.0--or--later-blue" alt="License"></a>
 </p>
 
-<!-- hero screenshot: docs/screenshots/hero.png (Library view, Frosted dark) -->
-<!-- <p align="center"><img src="docs/screenshots/hero.png" width="800" alt="jellytoast — library view"></p> -->
+<p align="center">
+  <img src="docs/screenshots/webp/library.webp" width="820" alt="jellytoast — library view (Frosted dark theme)">
+</p>
 
 ## Features
 
@@ -24,6 +25,22 @@
 - **Desktop features** — media keys, a tray icon, optional notifications, and a start-at-login option.
 - **Frosted glass & theming** — background blur on KDE, macOS, and Windows, plus a full theme picker: light/dark, built-in color presets (Catppuccin, Dracula, Nord, Gruvbox, …), import any base16 scheme, or follow your system accent (and your pywal wallpaper palette on Linux).
 - **And more** — synced lyrics, an audio visualizer, smart playlists, smart shuffle, a sleep timer, ListenBrainz scrobbling, and tag editing (Jellyfin).
+
+## Screenshots
+
+<table>
+  <tr>
+    <td width="50%"><a href="docs/screenshots/webp/now-playing.webp"><img src="docs/screenshots/webp/now-playing.webp" alt="Now playing with synced lyrics and visualizer"></a><br><sub><b>Now playing</b> — synced lyrics + audio visualizer</sub></td>
+    <td width="50%"><a href="docs/screenshots/webp/theme-picker.webp"><img src="docs/screenshots/webp/theme-picker.webp" alt="Theme picker"></a><br><sub><b>Theming</b> — presets, base16 import, follow system accent</sub></td>
+  </tr>
+  <tr>
+    <td width="50%"><a href="docs/screenshots/webp/cast.webp"><img src="docs/screenshots/webp/cast.webp" alt="Casting menu"></a><br><sub><b>Cast anywhere</b> — Chromecast, AirPlay 2, Sonos, DLNA</sub></td>
+    <td width="50%"><a href="docs/screenshots/webp/smart-playlists.webp"><img src="docs/screenshots/webp/smart-playlists.webp" alt="Smart playlist editor"></a><br><sub><b>Smart playlists</b> — rule-based, with live preview</sub></td>
+  </tr>
+  <tr>
+    <td colspan="2" align="center"><a href="docs/screenshots/webp/mini-expanded.webp"><img src="docs/screenshots/webp/mini-expanded.webp" width="60%" alt="Floating mini player"></a><br><sub><b>Floating mini player</b> — compact and album-art views</sub></td>
+  </tr>
+</table>
 
 ## Install
 
