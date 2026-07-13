@@ -135,10 +135,33 @@ modules:
     build-commands:
       # Install the checked-out tree itself — version-accurate on tag
       # builds AND workflow_dispatch dry runs, no PyPI/tag timing race.
-      # PySide6 wheels bundle their own Qt — same runtime-independent
-      # approach as the PyInstaller channels, so no Qt/KDE-runtime
-      # version coupling.
-      - pip3 install --prefix=/app --no-cache-dir .
+      #
+      # PySide6 comes from the BaseApp above (built against the runtime's
+      # Qt) and must NOT be replaced by the PyPI wheel, which bundles its
+      # own Qt. Both copies carry the same SONAME, so the loader binds KF6
+      # WindowSystem — built against the runtime's Qt — to whichever libQt6
+      # is already mapped, i.e. the wheel's. A version-skewed KF6 can't get
+      # Qt's Wayland native interface ("Native interface revision mismatch
+      # … QWaylandApplication"), so enableBlurBehind never sends
+      # org_kde_kwin_blur.create and silently no-ops — while
+      # isEffectAvailable() still returns True. blur/_kwin.py then reports
+      # ACTIVE and paints full-transparency glass over an UNBLURRED desktop
+      # (issue #229). `pip install .` used to pull the wheel in because
+      # pyproject floors PySide6 at >=6.11 (needed for the win_arm64 /
+      # macOS universal2 wheels — a packaging concern, not a code one).
+      #
+      # So: install the deps EXCEPT PySide6, then the project --no-deps.
+      # The list is derived from pyproject at build time so it can't drift.
+      - |
+        python3 - <<'PY'
+        import tomllib
+        deps = tomllib.load(open("pyproject.toml", "rb"))["project"]["dependencies"]
+        keep = [d for d in deps if not d.lower().replace("_", "-").startswith("pyside6")]
+        assert len(keep) < len(deps), "PySide6 not found in pyproject dependencies"
+        open("flatpak-deps.txt", "w").write("\n".join(keep) + "\n")
+        PY
+      - pip3 install --prefix=/app --no-cache-dir -r flatpak-deps.txt
+      - pip3 install --prefix=/app --no-cache-dir --no-deps .
       - install -Dm755 launcher.sh /app/bin/jellytoast
       - install -Dm644 packaging/io.github.wolfgangwarehaus.jellytoast.desktop
         /app/share/applications/io.github.wolfgangwarehaus.jellytoast.desktop
