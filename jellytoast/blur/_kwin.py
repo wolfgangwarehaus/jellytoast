@@ -124,6 +124,83 @@ def _blur_effect_active():
         return None
 
 
+_delivery_ok = None  # tri-state self-test result: True / False / None
+_delivery_tested = False
+
+
+def _blur_request_reaches_compositor():
+    """Does ``enableBlurBehind`` actually reach the compositor here?
+
+    KWindowSystem talks to Wayland through Qt's native interface, and that
+    interface is REVISION-CHECKED: a KF6 compiled against one Qt minor
+    cannot obtain it from another. When the check fails, Qt hands back
+    nullptr, and ``enableBlurBehind`` returns normally WITHOUT ever sending
+    ``org_kde_kwin_blur.create`` — the request is dropped on the floor and
+    nothing blurs. Meanwhile ``isEffectAvailable()`` still answers True (it
+    needs no native interface), so the capability gate in probe() sails
+    through and we paint full-transparency glass over an UNBLURRED desktop.
+    That is exactly the 0.2.0 flatpak bug (#229): the sandbox shipped
+    PySide6's bundled Qt over the runtime's, so KF6 — built against the
+    runtime's Qt — was handed a Qt it couldn't speak to.
+
+    The failure is silent by design (blur is fire-and-forget; KWin sends no
+    ack), and Qt reports it ONLY by logging. So we run the call once, for
+    real, on a throwaway QWindow — created but never shown, so there is no
+    visible artifact — with a message handler installed, and watch for the
+    complaint.
+
+    Returns True if the call ran clean (the request is being delivered),
+    False if Qt refused the native interface (blur silently no-ops here),
+    and None if the test couldn't be run at all (no QGuiApplication yet, no
+    symbol, any error). Callers must NOT demote on None — absence of a
+    verdict is not evidence of failure. Cached: the answer is a per-process
+    fact (it depends on which Qt got loaded), and the window churn is not
+    worth repeating. Never raises.
+    """
+    global _delivery_ok, _delivery_tested
+    if _delivery_tested:
+        return _delivery_ok
+    _delivery_tested = True
+    try:
+        import ctypes as _ct
+
+        import shiboken6
+        from PySide6.QtCore import qInstallMessageHandler
+        from PySide6.QtGui import QGuiApplication, QRegion, QWindow
+
+        fn = _resolve()
+        if fn is None or QGuiApplication.instance() is None:
+            return _delivery_ok  # None — nothing to test against (yet)
+
+        complained = []
+
+        def _catch(mode, ctx, msg):
+            # Qt logs the refusal as e.g. "Native interface revision mismatch
+            # (requested 1 / available 2) for interface QWaylandApplication"
+            # under the qt.nativeinterface category.
+            if "revision mismatch" in msg or "native interface" in msg.lower():
+                complained.append(msg)
+
+        win = QWindow()
+        win.create()  # platform window only — never shown, never mapped
+        prev = qInstallMessageHandler(_catch)
+        try:
+            region = QRegion()
+            fn(
+                _ct.c_void_p(shiboken6.getCppPointer(win)[0]),
+                True,
+                _ct.c_void_p(shiboken6.getCppPointer(region)[0]),
+            )
+        finally:
+            qInstallMessageHandler(prev)
+            win.destroy()
+
+        _delivery_ok = not complained
+    except Exception:
+        _delivery_ok = None  # inconclusive — never demote on a failed test
+    return _delivery_ok
+
+
 def _kreadconfig_bin():
     import shutil
 
@@ -239,6 +316,14 @@ def probe():
             # inconclusive check is rare (missing QtDBus) and host
             # behaviour is unchanged.
             return BlurStatus.REQUESTED_UNVERIFIABLE
+
+    # Last honesty gate. Everything above asks the COMPOSITOR whether it can
+    # blur; none of it checks whether our request ever gets there. On a Qt /
+    # KWindowSystem version skew enableBlurBehind silently drops it while
+    # every capability signal above still says yes — the #229 failure. Only
+    # a False demotes: an inconclusive test (None) leaves behaviour as it was.
+    if _blur_request_reaches_compositor() is False:
+        return BlurStatus.REQUESTED_UNVERIFIABLE
     return BlurStatus.ACTIVE
 
 
@@ -275,6 +360,12 @@ def reason(status):
         return "KWindowSystem missing — install kwindowsystem for Frosted glass blur on KDE"
     if is_kde_desktop() and _blur_disabled():
         return "KWin's Blur effect is off — enable System Settings → Desktop Effects → Blur"
+    if _blur_request_reaches_compositor() is False:
+        # The compositor is willing; we're the ones who can't ask it.
+        return (
+            "KWindowSystem can't drive this Qt build (version skew) — blur "
+            "requests are dropped; using a near-opaque body"
+        )
     return "compositor blur unavailable here — using a near-opaque body"
 
 
