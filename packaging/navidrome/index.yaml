@@ -1,0 +1,30 @@
+name: jellytoast
+url: https://wolfgangwarehaus.com/jellytoast
+repoUrl: https://github.com/wolfgangwarehaus/jellytoast
+platforms:
+  linux: true
+  windows:
+    store: https://apps.microsoft.com/detail/9PNLTPXGHN79
+  macos:
+    store: https://apps.apple.com/app/id6784370624
+# OpenSubsonic: jellytoast targets Subsonic 1.16.1 + OpenSubsonic and uses
+# OpenSubsonic-only endpoints (getLyricsBySongId, coverArt, the `type` field).
+api: OpenSubsonic
+description: "A native desktop music player for Jellyfin and Subsonic/Navidrome servers, with bit-perfect mpv playback, casting to Chromecast, AirPlay 2, Sonos, and DLNA, offline downloads, a floating mini player, synced lyrics, and frosted-glass theming."
+screenshots:
+  thumbnail: library.webp
+  gallery:
+    - now-playing.webp
+    - cast.webp
+    - theme-picker.webp
+    - smart-playlists.webp
+    - mini-expanded.webp
+isFree: true
+# isOpenSource omitted → treated as open source (GPL-2.0-or-later), since repoUrl is set.
+keywords:
+  - jellyfin
+  - subsonic
+  - chromecast
+  - airplay
+  - bit-perfect
+  - mpv
