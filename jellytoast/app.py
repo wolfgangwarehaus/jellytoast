@@ -522,7 +522,6 @@ def _resolve_chrome_mode(
     native_border: bool,
     no_win_chrome: bool,
     no_linux_chrome: bool,
-    force_kde_csd: bool = False,
 ):
     """Pure decision for the main window's chrome mode. Kept side-effect-free
     (no Qt, no settings reads) so the platform matrix is unit-testable.
@@ -541,15 +540,9 @@ def _resolve_chrome_mode(
     ``JT_NO_LINUX_CHROME`` env hatches force the native decoration back on.
     """
     win_frameless = is_windows and not native_border and not no_win_chrome
-    # ``force_kde_csd`` (JT_KDE_FORCE_CSD) treats KDE Wayland like a generic
-    # Wayland compositor: Qt-frameless CSD instead of KWin server-side
-    # decorations + a noborder rule. Experiment lever for #deck-opaque-blur —
-    # some KWin builds (Steam Deck / older SteamOS Plasma) composite an
-    # SSD-decorated translucent window OPAQUE, so we want to A/B whether the
-    # CSD surface gets the glass backdrop the SSD one doesn't. Off by default.
     linux_frameless = (
         linux_wayland
-        and (not kde_wayland or force_kde_csd)
+        and not kde_wayland
         and not native_border
         and not no_linux_chrome
     )
@@ -723,7 +716,6 @@ class JellytoastWindow(_NavMixin, _SessionMixin, _CastDispatcherMixin, _ShuffleP
             native_border=get_settings().native_window_border,
             no_win_chrome=bool(os.environ.get("JT_NO_WIN_CHROME")),
             no_linux_chrome=bool(os.environ.get("JT_NO_LINUX_CHROME")),
-            force_kde_csd=bool(os.environ.get("JT_KDE_FORCE_CSD")),
         )
         if self._win_frameless or self._linux_frameless:
             self.setWindowFlag(Qt.WindowType.FramelessWindowHint, True)
@@ -1276,10 +1268,11 @@ class JellytoastWindow(_NavMixin, _SessionMixin, _CastDispatcherMixin, _ShuffleP
         status = blur.status(force=True)
         self._refresh_body_color()
         # JT_BLUR_DIAG=1 dumps the full surface truth once the window is mapped
-        # — the ground truth for "status says ACTIVE but the window looks
-        # opaque" (#deck-opaque-blur). Distinguishes a genuinely-opaque surface
-        # (translucent False / alphaBuffer 0) from a live blur that just reads
-        # neutral over a complementary wallpaper.
+        # — the ground truth for any "status says ACTIVE but the window looks
+        # off" report. Distinguishes a genuinely-opaque surface (translucent
+        # False / alphaBuffer 0) from a live blur that just reads neutral over
+        # a complementary wallpaper (the #229 false alarm). Kept as a standing
+        # diagnostic for future compositor-integration questions.
         if os.environ.get("JT_BLUR_DIAG") == "1":
             try:
                 wh = self.windowHandle()

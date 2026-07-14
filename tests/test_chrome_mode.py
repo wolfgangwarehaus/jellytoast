@@ -70,20 +70,8 @@ def test_is_linux_wayland_predicate(monkeypatch):
     assert pc.is_linux_wayland() is False
 
 
-def test_force_kde_csd_flips_kde_to_frameless():
-    # JT_KDE_FORCE_CSD experiment (#deck-opaque-blur): KDE Wayland uses Qt
-    # frameless CSD instead of KWin SSD+noborder, to A/B the opaque-surface bug.
-    win, lin, borderless = _mode(kde_wayland=True, linux_wayland=True, force_kde_csd=True)
-    assert lin is True and borderless is True and win is False
-
-
-def test_force_kde_csd_is_a_noop_off_kde():
-    # The hatch only affects KDE; a GNOME session is already frameless, and X11
-    # (not linux_wayland) stays native.
-    assert _mode(linux_wayland=True, force_kde_csd=True) == (False, True, True)
-    assert _mode(force_kde_csd=True) == (False, False, False)
-
-
-def test_default_kde_still_ssd_without_the_hatch():
-    # Belt-and-braces: the default (no hatch) is unchanged — KDE stays SSD.
+def test_kde_wayland_uses_ssd_not_csd():
+    # KDE strips its decoration with a KWin noborder rule (SSD), NOT the Qt
+    # frameless flag. A Deck A/B (#229) confirmed SSD is not the cause of the
+    # (non-)opaque-blur report, so KDE stays SSD.
     assert _mode(kde_wayland=True, linux_wayland=True) == (False, False, True)

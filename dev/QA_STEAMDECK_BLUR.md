@@ -92,7 +92,19 @@ run `gh auth login` (august completes the device-code flow).
 
 ---
 
-## Follow-up: opaque-surface vs blur-artifact (#deck-opaque-blur, 0.2.1)
+## Follow-up: opaque-surface vs blur-artifact — ✅ RESOLVED (no bug)
+
+**Resolved 2026-07-14 on the Deck (build f6b8987): blur genuinely works; the
+"opaque" reading was a complementary-wallpaper artifact.** A red-vs-green
+control test (the solid-red test below is NOT sufficient — a blurred pure red
+looks like an unblurred pure red) showed the body margins DO follow the
+backdrop (perfect channel swap), and the luma matched the blurred-grey
+prediction exactly. `JT_BLUR_DIAG` confirmed the surface is correct
+(`WA_TranslucentBackground=True, alphaBufferSize=8, status=ACTIVE` — accurate).
+The `JT_KDE_FORCE_CSD` A/B was identical, so SSD is NOT the cause — the CSD
+experiment hatch was removed. #229 closed. `JT_BLUR_DIAG` kept as a standing
+diagnostic. The protocol below is retained for reference / future compositor
+questions.
 
 Row 15 came back "ACTIVE but composites opaque". Two things to nail before a
 fix, both need a build with the diagnostics (any 0.2.1-dev flatpak):
