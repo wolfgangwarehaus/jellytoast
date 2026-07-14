@@ -12,6 +12,11 @@ developer-facing history lives in [`docs/CHANGELOG.md`](docs/CHANGELOG.md).
      should stand alone: the Store "What's new" shows just the title (+ first
      sentence in --detail mode). -->
 
+- **Big libraries: album art keeps loading instead of stalling.** On large
+  collections served by a busy server, cover art could load a handful then stop
+  (or blank out) — the server was choking on resizing every thumbnail. The app
+  now notices a slow server and fetches the original art instead, so the grid
+  fills in reliably.
 - **Flatpak: no more see-through windows when blur is off.** On desktops where
   KDE's blur effect isn't running (hi, Steam Deck), the Flatpak painted clear
   glass over an unblurred desktop. It now detects that properly and falls back

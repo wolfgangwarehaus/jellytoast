@@ -55,6 +55,10 @@ def isolated_caches(tmp_path, monkeypatch):
         ui_helpers._deferred_normal.clear()
         ui_helpers._deferred_low.clear()
         ui_helpers._gated_in_flight = 0
+        # The adaptive slow-resize latch is a module global too — a timeout in
+        # one test must not leave the whole suite fetching originals.
+        ui_helpers._resize_timeouts = 0
+        ui_helpers._prefer_original_covers = False
 
     _clear_loader_state()
     yield target
@@ -484,3 +488,65 @@ class TestCoverResizeFallback:
         assert fired == []          # no further retry
         assert errs == [1]          # terminal failure fanned out to on_error
         assert "ck" not in ui_helpers._inflight_subscribers  # popped/finished
+
+
+class _CapQNAM:
+    """A QNAM spy that records every request URL and returns a reply whose
+    finished signal is a no-op (the test drives the finish handler by hand)."""
+
+    def __init__(self, sink):
+        self._sink = sink
+
+    class _Rep:
+        class _Sig:
+            def connect(self, _cb):
+                pass
+
+        finished = _Sig()
+
+    def get(self, req):
+        self._sink.append(req.url().toString())
+        return _CapQNAM._Rep()
+
+
+class TestSlowResizeAdaptation:
+    """After a couple of resize TIMEOUTs, the session latches onto original-
+    fetch so we stop paying the timeout per cover (#cover-stall — verified
+    against a CPU-throttled 5,200-album Navidrome)."""
+
+    def _timeout_a_sized_cover(self, cache_key="ck"):
+        from PySide6.QtNetwork import QNetworkReply
+
+        reply = _FakeReply(b"", QNetworkReply.NetworkError.TimeoutError)
+        ui_helpers._pending_replies[reply] = (
+            cache_key, cache_key, 100, 100, 0, "high",  # high → no gate accounting
+            "http://s/rest/getCoverArt?id=x&size=400", False,
+        )
+        ui_helpers._inflight_subscribers[cache_key] = [(lambda _p: None, None)]
+        ui_helpers._on_image_reply_finished(reply)
+        ui_helpers._inflight_subscribers.pop(cache_key, None)
+
+    def test_latches_after_trip_and_strips_size(self, qapp, isolated_caches, monkeypatch):
+        urls: list = []
+        monkeypatch.setattr(ui_helpers, "get_qnam", lambda: _CapQNAM(urls))
+
+        assert ui_helpers._prefer_original_covers is False
+        for i in range(ui_helpers._RESIZE_TIMEOUT_TRIP):
+            self._timeout_a_sized_cover(f"ck{i}")
+        assert ui_helpers._prefer_original_covers is True
+
+        # Fresh fire now skips the sized request entirely — straight to original.
+        urls.clear()
+        ui_helpers._fire_image_request(
+            "ck-new", "ck-new", "http://s/rest/getCoverArt?id=y&size=400",
+            100, 100, 0, "normal",
+        )
+        assert urls and "size=" not in urls[-1] and "id=y" in urls[-1]
+
+    def test_healthy_server_never_latches(self, qapp, isolated_caches, monkeypatch):
+        urls: list = []
+        monkeypatch.setattr(ui_helpers, "get_qnam", lambda: _CapQNAM(urls))
+        # A single timeout (below the trip) must NOT latch the session.
+        self._timeout_a_sized_cover()
+        assert ui_helpers._resize_timeouts == 1
+        assert ui_helpers._prefer_original_covers is False

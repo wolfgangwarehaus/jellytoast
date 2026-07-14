@@ -990,6 +990,23 @@ _gated_in_flight = 0
 _deferred_normal: list = []  # zero-arg callables — visible tiles
 _deferred_low: list = []  # zero-arg callables — off-screen prefetch
 
+# Adaptive "this server is slow at resizing" latch (#cover-stall). We ask the
+# server to resize covers (getCoverArt `size=` / Jellyfin maxWidth) because a
+# sized thumbnail is a small download. But a big library on an underpowered
+# server (Skope's ~5,200-album Navidrome in Docker) can take longer than the
+# transfer timeout to GENERATE each thumbnail — every cover then times out and
+# never loads ("loads some then stops"). VERIFIED locally against a
+# CPU-throttled 5,200-album Navidrome: sized requests hit the 30s timeout.
+# So once a couple of sized requests time out, we stop asking THIS session's
+# server to resize and fetch the ORIGINAL instead (served straight off disk, no
+# CPU) — we already re-scale locally (_derive_pixmap), so quality is identical.
+# A healthy server never trips this (timeouts don't happen), so it keeps the
+# bandwidth-efficient sized path. Resets on relaunch; worst case if wrongly
+# tripped is heavier downloads, never breakage.
+_RESIZE_TIMEOUT_TRIP = 2
+_resize_timeouts = 0
+_prefer_original_covers = False
+
 # L2 "raw decoded source" cache. Keyed by the SEMANTIC key (the part of
 # the caller's `key` before the first `|`, typically an item id /
 # AlbumId), stores the pre-scale source QImage from the network. Lets
@@ -1340,6 +1357,13 @@ def _fire_image_request(
     """Actually open the QNetworkReply for this load. Split out so the
     low-priority gate can defer-then-fire without duplicating the
     QNetworkRequest setup."""
+    # Once this session's server has proven slow at resizing, skip the sized
+    # request entirely — go straight to the original (#cover-stall).
+    if _prefer_original_covers and not resize_fallback_done:
+        stripped = _strip_resize_params(url)
+        if stripped is not None:
+            url = stripped
+            resize_fallback_done = True  # already original — no further fallback
     req = QNetworkRequest(QUrl(url))
     # The app-level gate (_GATED_MAX_INFLIGHT) now means a request only
     # reaches QNAM when a socket is actually free, so this timeout covers
@@ -1396,6 +1420,19 @@ def _on_image_reply_finished(reply: QNetworkReply):
     if not ok and not fb_done:
         stripped = _strip_resize_params(url)
         if stripped is not None:
+            # A TIMEOUT specifically means the server is too slow to GENERATE
+            # the resized thumbnail. After a couple of those, latch the whole
+            # session onto original-fetch so we stop paying the timeout per
+            # cover (#cover-stall).
+            if net_err == QNetworkReply.NetworkError.TimeoutError:
+                global _resize_timeouts, _prefer_original_covers
+                _resize_timeouts += 1
+                if _resize_timeouts >= _RESIZE_TIMEOUT_TRIP and not _prefer_original_covers:
+                    _prefer_original_covers = True
+                    logger.warning(
+                        "server slow at cover resize (%d timeouts) — fetching "
+                        "originals for the rest of this session", _resize_timeouts,
+                    )
             logger.info(
                 "cover load failed (%s, http=%s) — retrying without server "
                 "resize: %s", net_err.name, http_status, _redact_url(url),
