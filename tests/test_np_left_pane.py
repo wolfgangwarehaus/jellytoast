@@ -110,3 +110,31 @@ def test_preview_mode_hides_the_whole_left_pane(qapp):
     assert host._lyrics_toggle_btn.isVisible() is False
     assert host._live_btn.isVisible() is False
     assert host._lyrics_toggle_eligible is False
+
+
+def test_visualizer_engine_runs_only_while_visible(qapp):
+    """The pane starts/stops the FFT engine off the widget's visibility so
+    the ~12%/core decode doesn't keep running after the user leaves the
+    visualizer (#visualizer-leak)."""
+    host = _PaneHost()
+
+    class _FakeEngine:
+        def __init__(self):
+            self.starts = 0
+            self.stops = 0
+
+        def start(self):
+            self.starts += 1
+
+        def stop(self, **_kw):
+            self.stops += 1
+
+    host._visualizer_engine = _FakeEngine()
+    host._on_visualizer_visibility(True)
+    assert host._visualizer_engine.starts == 1
+    assert host._visualizer_engine.stops == 0
+    host._on_visualizer_visibility(False)
+    assert host._visualizer_engine.stops == 1
+    # No engine → no crash (defensive early-return).
+    host._visualizer_engine = None
+    host._on_visualizer_visibility(True)

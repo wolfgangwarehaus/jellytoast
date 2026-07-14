@@ -15,7 +15,7 @@ from __future__ import annotations
 
 from typing import List
 
-from PySide6.QtCore import QPointF, Qt, Slot
+from PySide6.QtCore import QPointF, Qt, Signal, Slot
 from PySide6.QtGui import (
     QColor,
     QFont,
@@ -92,6 +92,13 @@ class VisualizerWidget(QWidget):
     fractional / Retina scales. No pixmap cache (repaint every signal),
     no internal timer.
     """
+
+    # Emitted True on show / False on hide (also fires when an ancestor is
+    # shown/hidden — Qt propagates show/hide events to descendants). The NP
+    # pane drives the FFT engine off this so the decoder + FFT worker only
+    # burn CPU while the visualizer is actually on screen (see np_left_pane;
+    # previously the engine ran forever after one glance — a ~12%/core leak).
+    visibility_changed = Signal(bool)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -197,9 +204,18 @@ class VisualizerWidget(QWidget):
 
     def showEvent(self, event):  # noqa: N802 — Qt naming
         """Paint immediately on show so the user sees current bands
-        without a 20 ms wait for the next signal."""
+        without a 20 ms wait for the next signal, and signal the pane to
+        spin the FFT engine up."""
         super().showEvent(event)
+        self.visibility_changed.emit(True)
         self.update()
+
+    def hideEvent(self, event):  # noqa: N802 — Qt naming
+        """Tell the pane to wind the FFT engine down — hidden means the
+        user switched to lyrics or navigated off the now-playing page, so
+        there is nothing to draw and no reason to keep decoding."""
+        super().hideEvent(event)
+        self.visibility_changed.emit(False)
 
     def paintEvent(self, event: QPaintEvent) -> None:  # noqa: N802
         from jellytoast.ui_helpers import ACCENT, ACCENT_DEEP, TEXT_DIM

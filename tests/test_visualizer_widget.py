@@ -285,3 +285,24 @@ class TestBusWiring:
         PlayerBus.get().cast_stopped.emit()
         assert widget._cast_active is False
         assert widget._cast_device == ""
+
+
+# ── Visibility → engine gating (#visualizer-leak) ───────────────────────────
+
+
+class TestVisibilitySignal:
+    """The FFT engine (decoder + worker, ~12%/core) must run ONLY while the
+    visualizer is on screen. The widget signals its visibility; the NP pane
+    drives engine start/stop off it. Here we pin the widget half."""
+
+    def test_show_emits_true_hide_emits_false(self, qapp):
+        w = VisualizerWidget()
+        events = []
+        w.visibility_changed.connect(events.append)
+        w.show()
+        qapp.processEvents()
+        w.hide()
+        qapp.processEvents()
+        assert events[0] is True
+        assert events[-1] is False
+        w.deleteLater()

@@ -80,17 +80,34 @@ class _LeftPaneMixin:
         # Same hover gate as the lyrics scroll — moving the cursor over
         # the visualizer surface keeps the toggle button reachable.
         widget.installEventFilter(self)
-        # Spin up the FFT engine on first widget build. All platforms
-        # share one audio source: an in-process QtMultimedia decode of
-        # the playing stream (see jellytoast/visualizer.py). Engine is
-        # parented to the widget so Qt's cleanup chain stops it at app
-        # shutdown, and we also connect destroyed → stop explicitly so
-        # the decoder and FFT worker wind down promptly rather than
-        # waiting for the Python finaliser.
+        # Construct the FFT engine on first widget build, but DON'T run it
+        # yet — it runs only while the visualizer is actually on screen. All
+        # platforms share one audio source: an in-process QtMultimedia decode
+        # of the playing stream (see jellytoast/visualizer.py), which is
+        # expensive (~12%/core), so it must not keep decoding after the user
+        # switches back to lyrics or leaves the now-playing page. We drive
+        # start/stop off the widget's visibility (both fire when an ancestor
+        # is shown/hidden too). Engine is parented to the widget so Qt's
+        # cleanup chain reaps it at shutdown; destroyed → stop is the
+        # belt-and-braces net for teardown.
         if self._visualizer_engine is None:
             self._visualizer_engine = VisualizerEngine(parent=widget)
-            self._visualizer_engine.start()
+            widget.visibility_changed.connect(self._on_visualizer_visibility)
             widget.destroyed.connect(self._visualizer_engine.stop)
+            # The widget may already be visible by the time we connect (built
+            # because the user toggled INTO visualizer mode) — sync now.
+            if widget.isVisible():
+                self._visualizer_engine.start()
+
+    def _on_visualizer_visibility(self, visible: bool) -> None:
+        """Run the FFT engine only while the visualizer is on screen."""
+        engine = self._visualizer_engine
+        if engine is None:
+            return
+        if visible:
+            engine.start()
+        else:
+            engine.stop()
 
     def _update_live_btn_visibility(self):
         # Live button only makes sense when lyrics are visible, synced,
