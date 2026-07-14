@@ -12,6 +12,10 @@ developer-facing history lives in [`docs/CHANGELOG.md`](docs/CHANGELOG.md).
      should stand alone: the Store "What's new" shows just the title (+ first
      sentence in --detail mode). -->
 
+- **Visualizer stops eating CPU when you look away.** The audio visualizer kept
+  running in the background after you switched back to lyrics or left the
+  now-playing screen — burning battery for nothing. It now runs only while it's
+  actually on screen.
 - **Big libraries: album art keeps loading instead of stalling.** On large
   collections served by a busy server, cover art could load a handful then stop
   (or blank out) — the server was choking on resizing every thumbnail. The app
