@@ -30,7 +30,7 @@ from pathlib import Path
 _IN_SOURCE_CHECKOUT = (Path(__file__).resolve().parent.parent / "pyproject.toml").is_file()
 
 if _IN_SOURCE_CHECKOUT:
-    __version__ = "0.2.0"  # keep in sync with pyproject.toml [project].version
+    __version__ = "0.2.1"  # keep in sync with pyproject.toml [project].version
 else:
     try:
         from importlib.metadata import PackageNotFoundError
@@ -39,6 +39,6 @@ else:
         try:
             __version__ = _v("jellytoast")
         except PackageNotFoundError:
-            __version__ = "0.2.0"  # keep in sync with pyproject.toml [project].version
+            __version__ = "0.2.1"  # keep in sync with pyproject.toml [project].version
     except Exception:
-        __version__ = "0.2.0"  # keep in sync with pyproject.toml [project].version
+        __version__ = "0.2.1"  # keep in sync with pyproject.toml [project].version

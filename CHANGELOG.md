@@ -12,6 +12,8 @@ developer-facing history lives in [`docs/CHANGELOG.md`](docs/CHANGELOG.md).
      should stand alone: the Store "What's new" shows just the title (+ first
      sentence in --detail mode). -->
 
+## [0.2.1] — 2026-07-14
+
 - **Visualizer stops eating CPU when you look away.** The audio visualizer kept
   running in the background after you switched back to lyrics or left the
   now-playing screen — burning battery for nothing. It now runs only while it's
