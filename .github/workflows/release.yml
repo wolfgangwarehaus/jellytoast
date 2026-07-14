@@ -798,8 +798,30 @@ jobs:
           # NOTE: CFBundleVersion = GITHUB_RUN_NUMBER (see jellytoast.spec) —
           # monotonic per run, so re-running the same release tag re-uploads
           # cleanly under a fresh build number.
-          xcrun altool --validate-app -t macos -f "$PKG" \
-            --apiKey "$APPLE_API_KEY_ID" --apiIssuer "$APPLE_API_ISSUER"
+          # On a real tag push the validate is the go/no-go and stays STRICT.
+          # On a manual dispatch (a dry-run building test artifacts) the current
+          # version may already be APPROVED and its App Store "train" CLOSED, so
+          # altool returns a 409 ("train … is closed" / "must contain a higher
+          # version") — that is EXPECTED for a dry-run of a shipped version and
+          # must not fail the run (the point of a dispatch is the OTHER
+          # artifacts). The next real tag bumps the version → open train → strict
+          # validate passes again.
+          set +e
+          VOUT="$(xcrun altool --validate-app -t macos -f "$PKG" \
+            --apiKey "$APPLE_API_KEY_ID" --apiIssuer "$APPLE_API_ISSUER" 2>&1)"
+          VRC=$?
+          set -e
+          echo "$VOUT"
+          if [ "$VRC" -ne 0 ]; then
+            if [ "${{ github.event_name }}" != "push" ] && \
+               echo "$VOUT" | grep -qiE 'closed for new build submissions|must contain a higher version'; then
+              echo "::notice::MAS validate 409 (closed/approved train) is expected on a dispatch dry-run of an already-shipped version — not failing the run."
+            else
+              echo "::error::MAS validation failed."
+              rm -f ~/".appstoreconnect/private_keys/AuthKey_${APPLE_API_KEY_ID}.p8"
+              exit "$VRC"
+            fi
+          fi
           if [ "${{ github.event_name }}" = "push" ] || [ "${{ github.event.inputs.mas_action }}" = "upload" ]; then
             echo "release tag (or mas_action=upload) → uploading to App Store Connect"
             xcrun altool --upload-app -t macos -f "$PKG" \
