@@ -89,3 +89,41 @@ run `gh auth login` (august completes the device-code flow).
 - Discover may show a spurious "install failed" for sideloaded bundles —
   known quirk, ignore it if `flatpak info` shows the app installed.
 - Keep system volume LOW if you drive playback (not required for this brief).
+
+---
+
+## Follow-up: opaque-surface vs blur-artifact (#deck-opaque-blur, 0.2.1)
+
+Row 15 came back "ACTIVE but composites opaque". Two things to nail before a
+fix, both need a build with the diagnostics (any 0.2.1-dev flatpak):
+
+### 1. Disambiguate — was the checkerboard a red herring?
+The original test used a **magenta/green** wallpaper. Those are complementary,
+so a *working* blur averages them to neutral grey — indistinguishable from a
+truly opaque surface. Re-test on a **solid, saturated single-colour wallpaper**
+(pure red `#FF0000` fills the screen):
+- Sample the jellytoast body over the middle of the screen.
+- **Reddish-grey** (R clearly > G,B) → blur IS working; the earlier "opaque"
+  read was a wallpaper artifact. Close the bug.
+- **Neutral grey** (R≈G≈B) → genuinely opaque; continue below.
+
+### 2. Capture the surface truth
+Launch with `JT_BLUR_DIAG=1` and grab the `BLUR-DIAG:` line from
+`~/.var/app/io.github.wolfgangwarehaus.jellytoast/cache/jellytoast/jellytoast.log`
+(flatpak) — it reports WA_TranslucentBackground, alphaBufferSize, chrome mode,
+body rgba, faux_frost. `alphaBufferSize=0` or `WA_TranslucentBackground=false`
+would point at the surface format; both-correct-but-opaque points at the
+compositor/decoration integration.
+
+### 3. A/B the SSD hypothesis
+KDE Wayland uses KWin server-side decorations + a noborder rule; the leading
+theory is older SteamOS KWin composites that opaque. Test the client-side-
+decoration path:
+```
+flatpak override --user --env=JT_KDE_FORCE_CSD=1 io.github.wolfgangwarehaus.jellytoast
+```
+Relaunch, repeat the solid-red test. If the body now shows the red backdrop,
+**SSD was the culprit** → the fix is to default KDE Wayland (or just SteamOS)
+to CSD. Undo: `flatpak override --user --unset-env=JT_KDE_FORCE_CSD …`.
+
+Report all three on issue #229 / the 0.2.1 tracker.
