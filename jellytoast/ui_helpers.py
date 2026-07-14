@@ -3,10 +3,13 @@ Shared UI helpers: theme, async image loader, formatting, common widgets.
 """
 
 import contextlib
+import logging
 import shutil
 import subprocess
 from collections import OrderedDict
 from typing import Callable, Optional
+
+logger = logging.getLogger(__name__)
 
 from PySide6.QtCore import (
     Property,
@@ -1278,6 +1281,52 @@ def _after_disk_miss(
         raise
 
 
+# Query params that ask the server to RESIZE the image before sending it.
+# Covers both dialects: Subsonic getCoverArt (`size`) and Jellyfin /Images
+# (`maxWidth`/`fillWidth`/…). Stripping them yields the ORIGINAL asset, which
+# the server just serves off disk instead of generating on demand.
+_RESIZE_QUERY_KEYS = frozenset(
+    {"size", "width", "height", "maxwidth", "maxheight", "fillwidth", "fillheight"}
+)
+
+
+def _redact_url(url: str) -> str:
+    """Drop auth/token query params so a cover URL is safe to log — Subsonic
+    carries `p`/`t`/`s`/`u`, Jellyfin an `api_key`. Keeps host + path + the
+    non-secret bits (id, size) which are what we care about when debugging."""
+    try:
+        from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
+
+        secret = {"p", "t", "s", "u", "api_key", "apikey", "token", "password"}
+        parts = urlparse(url)
+        kept = [(k, v) for k, v in parse_qsl(parts.query, keep_blank_values=True)
+                if k.lower() not in secret]
+        return urlunparse(parts._replace(query=urlencode(kept)))
+    except Exception:
+        return "<url>"
+
+
+def _strip_resize_params(url: str) -> Optional[str]:
+    """Return ``url`` with any server-side-resize query params removed, or
+    None if there were none to remove. Used as a fallback when a sized cover
+    request fails: some servers are slow to generate thumbnails (a big library
+    on first touch can exceed the transfer timeout) or reject the resize param
+    outright, while the original asset serves instantly. We re-scale locally
+    anyway (_derive_pixmap), so the size hint is an optimisation, not a need —
+    dropping it is strictly safer on the failure path. (#cover-stall)"""
+    try:
+        from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
+
+        parts = urlparse(url)
+        kept = [(k, v) for k, v in parse_qsl(parts.query, keep_blank_values=True)
+                if k.lower() not in _RESIZE_QUERY_KEYS]
+        if len(kept) == len(parse_qsl(parts.query, keep_blank_values=True)):
+            return None  # nothing stripped
+        return urlunparse(parts._replace(query=urlencode(kept)))
+    except Exception:
+        return None
+
+
 def _fire_image_request(
     cache_key: str,
     sem_key: str,
@@ -1286,6 +1335,7 @@ def _fire_image_request(
     target_h: int,
     rounded_radius: int,
     priority: str,
+    resize_fallback_done: bool = False,
 ):
     """Actually open the QNetworkReply for this load. Split out so the
     low-priority gate can defer-then-fire without duplicating the
@@ -1310,6 +1360,8 @@ def _fire_image_request(
         target_h,
         rounded_radius,
         priority,
+        url,
+        resize_fallback_done,
     )
     reply.finished.connect(lambda r=reply: _on_image_reply_finished(r))
 
@@ -1319,7 +1371,57 @@ def _on_image_reply_finished(reply: QNetworkReply):
     if ctx is None:
         reply.deleteLater()
         return
-    cache_key, sem_key, target_w, target_h, radius, priority = ctx
+    cache_key, sem_key, target_w, target_h, radius, priority, url, fb_done = ctx
+
+    # Decode before deciding — a transport success can still fail to decode
+    # (server returned an error page / unsupported format).
+    net_err = reply.error()
+    http_status = reply.attribute(
+        QNetworkRequest.Attribute.HttpStatusCodeAttribute
+    )
+    ok = False
+    src: Optional[QImage] = None
+    if net_err == QNetworkReply.NetworkError.NoError:
+        data = bytes(reply.readAll())
+        src = QImage()
+        if src.loadFromData(data) and not src.isNull():
+            ok = True
+
+    # FALLBACK: a sized cover request that FAILED (slow server-side resize
+    # past the transfer timeout, a server that rejects the size param, or an
+    # error page) — retry ONCE for the ORIGINAL asset (resize params stripped),
+    # which the server serves off disk. We re-scale locally, so quality is
+    # unchanged. Reuses this load's gate slot + waiters; nothing is faned out
+    # yet. (#cover-stall — the recurring "loads some art then stops".)
+    if not ok and not fb_done:
+        stripped = _strip_resize_params(url)
+        if stripped is not None:
+            logger.info(
+                "cover load failed (%s, http=%s) — retrying without server "
+                "resize: %s", net_err.name, http_status, _redact_url(url),
+            )
+            reply.deleteLater()
+            # Keep the slot: re-fire under the same cache_key; _inflight_
+            # subscribers[cache_key] is untouched so waiters still get served.
+            try:
+                _fire_image_request(
+                    cache_key, sem_key, stripped, target_w, target_h,
+                    radius, priority, resize_fallback_done=True,
+                )
+                return
+            except Exception:
+                # Couldn't even open the retry — fall through to the normal
+                # failure fan-out below (and release the slot there).
+                logger.warning("cover resize-fallback failed to start")
+
+    if not ok:
+        logger.info(
+            "cover load failed (%s, http=%s)%s: %s",
+            net_err.name, http_status,
+            " [after resize-fallback]" if fb_done else "",
+            _redact_url(url),
+        )
+
     waiters = _inflight_subscribers.pop(cache_key, [])
     # Release the gate slot for a gated (normal/low) load and promote the
     # next waiter — NORMAL before LOW so a visible tile beats a prefetch.
@@ -1342,15 +1444,9 @@ def _on_image_reply_finished(reply: QNetworkReply):
                 # can't ratchet permanently shut over a long session.
                 _gated_in_flight -= 1
     try:
-        success = False
-        src: Optional[QImage] = None
-        if reply.error() == QNetworkReply.NetworkError.NoError:
-            data = bytes(reply.readAll())
-            src = QImage()
-            if src.loadFromData(data) and not src.isNull():
-                success = True
-
-        if success:
+        # `ok`/`src` were decoded at the top (the reply buffer is already
+        # consumed, so we can't re-read it here).
+        if ok:
             # Stash the pre-scale source in L2 (in-memory + on-disk) so
             # a future caller asking for a different size of the same
             # image — including across launches — can derive locally

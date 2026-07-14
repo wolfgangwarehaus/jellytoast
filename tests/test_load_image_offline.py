@@ -114,6 +114,9 @@ class _FakeReply:
     def readAll(self):
         return self._data
 
+    def attribute(self, _attr):
+        return 200  # HttpStatusCodeAttribute — value doesn't matter here
+
     def deleteLater(self):
         pass
 
@@ -135,6 +138,8 @@ class TestImageReplyFanoutGuard:
             8,
             0,
             "normal",
+            "http://srv/rest/getCoverArt?id=x",  # url (no resize param)
+            True,  # resize_fallback_done — go straight to the fan-out under test
         )
         ui_helpers._inflight_subscribers[cache_key] = list(waiters)
         # Must NOT raise even though one subscriber does.
@@ -407,3 +412,75 @@ class TestOnlineGateDoesNothing:
         # The offline gate did NOT intercept; the network path ran
         # and a QNAM request was created.
         assert len(gets) == 1
+
+
+# ── Cover resize-fallback + URL helpers (#cover-stall) ──────────────────────
+
+
+class TestResizeParamHelpers:
+    def test_strips_subsonic_size(self):
+        out = ui_helpers._strip_resize_params("http://s/rest/getCoverArt?id=al-1&size=400")
+        assert out is not None and "size=" not in out and "id=al-1" in out
+
+    def test_strips_jellyfin_maxwidth(self):
+        out = ui_helpers._strip_resize_params("http://s/Items/x/Images/Primary?maxWidth=300&tag=t")
+        assert out is not None and "maxWidth" not in out and "tag=t" in out
+
+    def test_no_resize_params_returns_none(self):
+        assert ui_helpers._strip_resize_params("http://s/rest/getCoverArt?id=al-1") is None
+
+    def test_redact_drops_subsonic_auth_keeps_id(self):
+        red = ui_helpers._redact_url("http://s/rest/getCoverArt?id=al-1&u=bob&t=abc&s=xy&size=400")
+        assert "u=bob" not in red and "t=abc" not in red and "s=xy" not in red
+        assert "id=al-1" in red and "size=400" in red  # non-secret bits kept for debugging
+
+
+class TestCoverResizeFallback:
+    """A sized cover request that FAILS retries ONCE for the original asset
+    (resize params stripped) before giving up — the recurring "loads some
+    art then stops" is a slow/quirky server-side resize."""
+
+    def _ctx(self, url, fb_done):
+        return ("ck", "ck", 100, 100, 0, "normal", url, fb_done)
+
+    def test_failed_sized_request_retries_without_size(self, qapp, isolated_caches, monkeypatch):
+        from PySide6.QtNetwork import QNetworkReply
+
+        fired = []
+        monkeypatch.setattr(
+            ui_helpers, "_fire_image_request",
+            lambda *a, **k: fired.append((a, k)),
+        )
+        reply = _FakeReply(b"", QNetworkReply.NetworkError.TimeoutError)
+        ui_helpers._pending_replies[reply] = self._ctx(
+            "http://s/rest/getCoverArt?id=al-1&size=400", False
+        )
+        waiters = [(lambda _p: None, None)]
+        ui_helpers._inflight_subscribers["ck"] = list(waiters)
+
+        ui_helpers._on_image_reply_finished(reply)
+
+        # Retried exactly once, without the size param, marked fallback-done.
+        assert len(fired) == 1
+        retry_url = fired[0][0][2]
+        assert "size=" not in retry_url and "id=al-1" in retry_url
+        assert fired[0][1].get("resize_fallback_done") is True
+        # Subscribers preserved for the retry — NOT fanned out yet.
+        assert "ck" in ui_helpers._inflight_subscribers
+
+    def test_no_second_retry_after_fallback(self, qapp, isolated_caches, monkeypatch):
+        from PySide6.QtNetwork import QNetworkReply
+
+        fired = []
+        monkeypatch.setattr(ui_helpers, "_fire_image_request", lambda *a, **k: fired.append(a))
+        reply = _FakeReply(b"", QNetworkReply.NetworkError.TimeoutError)
+        # fb_done=True → the already-stripped retry failed; must NOT loop.
+        ui_helpers._pending_replies[reply] = self._ctx("http://s/rest/getCoverArt?id=al-1", True)
+        errs = []
+        ui_helpers._inflight_subscribers["ck"] = [(lambda _p: None, lambda: errs.append(1))]
+
+        ui_helpers._on_image_reply_finished(reply)
+
+        assert fired == []          # no further retry
+        assert errs == [1]          # terminal failure fanned out to on_error
+        assert "ck" not in ui_helpers._inflight_subscribers  # popped/finished
