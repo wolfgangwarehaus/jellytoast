@@ -39,7 +39,13 @@ make install || fail "ffmpeg install"
 cd "$SRC" || fail
 
 echo "=== STEP 3: LGPL libmpv from source (no Lua, no GPL) ==="
-[ -d mpv ] || git clone --depth 1 https://github.com/mpv-player/mpv.git mpv || fail "mpv clone"
+# PINNED to a release tag (was an unpinned master clone — every MAS build
+# shipped whatever mpv master was that day; one bad upstream day = a broken
+# App Store build, and no two builds were reproducible). v0.41.0 matches the
+# generation the shinchiro Windows builds ship. Bump deliberately, with a
+# validate run — deps-watch.yml flags when upstream has a newer release.
+MPV_TAG="v0.41.0"
+[ -d mpv ] || git clone --depth 1 --branch "$MPV_TAG" https://github.com/mpv-player/mpv.git mpv || fail "mpv clone"
 cd mpv || fail
 export PKG_CONFIG_PATH="$PREFIX/lib/pkgconfig:/opt/homebrew/lib/pkgconfig"
 rm -rf build

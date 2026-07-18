@@ -1,0 +1,121 @@
+# Pin-health watchdog — the dependency pins Dependabot CANNOT see.
+#
+# Dependabot covers pyproject deps + action versions. But the release pipeline
+# also rides pins that live in shell scripts and the flatpak manifest, and
+# every one of these has already broken (or nearly broken) a release once:
+#   • shinchiro libmpv archive URLs + SHA-256 (x64 + aarch64) — upstream
+#     deletes old release assets eventually; a dead URL = a red release run.
+#   • The flatpak runtime / BaseApp branches (org.kde.Platform 6.10) — KDE
+#     runtimes EOL; staying on a dead branch stops security updates.
+#   • The MAS from-source pins (FFmpeg n7.1, mpv tag) — drift silently.
+#   • PySide6 floor vs PyPI latest — the flatpak deliberately runs BaseApp's
+#     older Qt-matched PySide6 (see the manifest), so a NEW PySide6 floor bump
+#     must always be checked against the BaseApp branch too.
+#
+# Monthly + manual. SILENT when everything is healthy. When something needs
+# attention it opens (or updates) a single "Pin health report" issue — a
+# dashboard, not a nag-per-pin.
+
+name: deps-watch
+
+on:
+  schedule:
+    - cron: "17 6 3 * *" # monthly, 3rd at 06:17 UTC — offset from other crons
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  pin-health:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Check every unmanaged pin
+        id: check
+        shell: bash
+        run: |
+          set -uo pipefail
+          PROBLEMS=()
+          note() { PROBLEMS+=("$1"); echo "::warning::$1"; }
+
+          # ── 1. shinchiro libmpv archive URLs still resolve ─────────────
+          for f in packaging/windows/get_libmpv.ps1 packaging/windows/get_libmpv_arm64.ps1; do
+            url=$(grep -oP '(?<=\$Url = ")[^"]+' "$f")
+            code=$(curl -sIL -o /dev/null -w '%{http_code}' "$url")
+            if [ "$code" != "200" ]; then
+              note "DEAD PIN: $f archive URL returns $code — $url"
+            fi
+          done
+          # …and how far behind upstream's latest release we are.
+          pinned_tag=$(grep -oP '(?<=download/)[0-9]+' packaging/windows/get_libmpv.ps1 | head -1)
+          latest_tag=$(curl -s https://api.github.com/repos/shinchiro/mpv-winbuild-cmake/releases/latest | python3 -c "import json,sys; print(json.load(sys.stdin).get('tag_name',''))")
+          if [ -n "$latest_tag" ] && [ "$pinned_tag" != "$latest_tag" ]; then
+            note "DRIFT: shinchiro libmpv pinned at $pinned_tag; upstream latest is $latest_tag (bump both windows ps1 pins together + revalidate hashes)"
+          fi
+
+          # ── 2. flatpak runtime / BaseApp branches still published ──────
+          runtime_ver=$(grep -oP "(?<=runtime-version: ')[^']+" packaging/flatpak/io.github.wolfgangwarehaus.jellytoast.yml)
+          sudo apt-get install -y -qq flatpak >/dev/null 2>&1 || true
+          if command -v flatpak >/dev/null; then
+            flatpak remote-add --user --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
+            branches=$(flatpak remote-ls --user flathub --columns=application,branch 2>/dev/null | awk '$1=="org.kde.Platform"{print $2}' | sort -uV)
+            if ! grep -qx "$runtime_ver" <<<"$branches"; then
+              note "DEAD PIN: org.kde.Platform//$runtime_ver no longer on Flathub (available: $(tr '\n' ' ' <<<"$branches"))"
+            else
+              newest=$(tail -1 <<<"$branches")
+              if [ "$newest" != "$runtime_ver" ]; then
+                note "DRIFT: flatpak runtime pinned $runtime_ver; newest org.kde.Platform is $newest (bump runtime + BaseApp + kwindowsystem TOGETHER — Qt coupling, see manifest header)"
+              fi
+            fi
+          fi
+
+          # ── 3. MAS from-source pins (FFmpeg branch + mpv tag) ──────────
+          mpv_tag=$(grep -oP '(?<=MPV_TAG=")[^"]+' packaging/macos/mas/build_libmpv_lgpl.sh)
+          mpv_latest=$(curl -s https://api.github.com/repos/mpv-player/mpv/releases/latest | python3 -c "import json,sys; print(json.load(sys.stdin).get('tag_name',''))")
+          if [ -n "$mpv_latest" ] && [ "$mpv_tag" != "$mpv_latest" ]; then
+            note "DRIFT: MAS libmpv pinned $mpv_tag; mpv latest is $mpv_latest"
+          fi
+          ff_branch=$(grep -oP '(?<=--branch )n[0-9.]+' packaging/macos/mas/build_libmpv_lgpl.sh)
+          ff_ok=$(curl -s "https://api.github.com/repos/FFmpeg/FFmpeg/git/matching-refs/tags/$ff_branch" | python3 -c "import json,sys; print(len(json.load(sys.stdin)))")
+          if [ "$ff_ok" = "0" ]; then
+            note "DEAD PIN: FFmpeg tag $ff_branch not found upstream (build_libmpv_lgpl.sh)"
+          fi
+
+          # ── 4. PySide6 floor vs PyPI latest (+ the BaseApp coupling) ───
+          floor=$(grep -oP '(?<=PySide6>=)[0-9.]+' pyproject.toml | head -1)
+          latest=$(curl -s https://pypi.org/pypi/PySide6/json | python3 -c "import json,sys; print(json.load(sys.stdin)['info']['version'])")
+          base_ver=$(grep -oP "(?<=base-version: ')[^']+" packaging/flatpak/io.github.wolfgangwarehaus.jellytoast.yml)
+          if [ -n "$latest" ]; then
+            major_minor() { cut -d. -f1,2 <<<"$1"; }
+            if [ "$(major_minor "$floor")" != "$(major_minor "$latest")" ]; then
+              note "DRIFT: PySide6 floor $floor vs PyPI latest $latest. REMEMBER: the flatpak runs BaseApp $base_ver's Qt-matched PySide6 (deps-except-PySide6 install) — any floor bump must keep that split working."
+            fi
+          fi
+
+          # ── report ─────────────────────────────────────────────────────
+          if [ "${#PROBLEMS[@]}" -eq 0 ]; then
+            echo "all pins healthy"
+            echo "healthy=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "healthy=false" >> "$GITHUB_OUTPUT"
+            {
+              echo "Automated pin-health report ($(date -u +%F)). These pins live outside Dependabot's view (shell scripts + flatpak manifest); each has broken a release before. Details + bump guidance in \`.github/workflows/deps-watch.yml\`."
+              echo
+              for p in "${PROBLEMS[@]}"; do echo "- [ ] $p"; done
+            } > /tmp/report.md
+          fi
+      - name: Open or update the dashboard issue
+        if: steps.check.outputs.healthy == 'false'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          existing=$(gh issue list --state open --label pin-health --json number --jq '.[0].number // empty')
+          if [ -n "$existing" ]; then
+            gh issue comment "$existing" --body-file /tmp/report.md
+          else
+            gh label create pin-health --description "Automated unmanaged-pin drift reports" --color D93F0B 2>/dev/null || true
+            gh issue create --title "Pin health report — unmanaged dependency pins need attention" \
+              --label pin-health --body-file /tmp/report.md
+          fi
