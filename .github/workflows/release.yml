@@ -960,7 +960,12 @@ jobs:
       - name: Drop inter-job intermediates
         run: |
           cd artifacts
-          rm -f jellytoast-app-*.tar.gz dist-x64.zip dist-arm64.zip
+          # Also drop the MAS .pkg: build-mas is NOT in this job's needs, so
+          # whether its artifact exists at download time is a RACE — sometimes
+          # the sandboxed store pkg (useless to end users) landed on the public
+          # release, sometimes not (audit 2026-07). It ships via App Store
+          # Connect, never via GitHub assets.
+          rm -f jellytoast-app-*.tar.gz dist-x64.zip dist-arm64.zip jellytoast-*-mas.pkg
           ls -la
       # Versionless "latest" aliases — byte-identical copies of the desktop
       # downloads under stable names, so the README / site can link
@@ -1039,10 +1044,18 @@ jobs:
           TITLE="jellytoast $TAG"
           if gh release view "$TAG" --repo "$REPO" >/dev/null 2>&1; then
             echo "Release $TAG already exists — updating it in place (idempotent re-run)."
+            # NEVER demote a PUBLISHED release back to draft (audit 2026-07):
+            # a re-run after publishing used to pass --draft unconditionally,
+            # which would yank the live release — 404ing every versionless
+            # /latest/download alias (README, landing page) until re-published.
+            # Only keep the draft flag while it IS still a draft.
+            IS_DRAFT="$(gh release view "$TAG" --repo "$REPO" --json isDraft --jq .isDraft)"
+            DRAFT_FLAG=""
+            [ "$IS_DRAFT" = "true" ] && DRAFT_FLAG="--draft"
             if [ "${{ steps.notes.outputs.have_notes }}" = "true" ]; then
-              gh release edit "$TAG" --repo "$REPO" --draft --title "$TITLE" --notes-file RELEASE_NOTES.md
+              gh release edit "$TAG" --repo "$REPO" $DRAFT_FLAG --title "$TITLE" --notes-file RELEASE_NOTES.md
             else
-              gh release edit "$TAG" --repo "$REPO" --draft --title "$TITLE"
+              gh release edit "$TAG" --repo "$REPO" $DRAFT_FLAG --title "$TITLE"
             fi
             gh release upload "$TAG" --repo "$REPO" --clobber artifacts/*
           elif [ "${{ steps.notes.outputs.have_notes }}" = "true" ]; then

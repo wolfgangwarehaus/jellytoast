@@ -239,11 +239,41 @@ class JellyfinAPI:
 
     # ── Generic queries ─────────────────────────────────────────────────────
 
+    @staticmethod
+    def _split_timeout(timeout) -> tuple:
+        """Scalar timeout → (connect, read) split. A GONE server (host
+        unreachable / box powered off) fails the 3.05s CONNECT instead of
+        stalling the caller for the full read budget; a slow-but-alive
+        server keeps the whole read window. Mirrors subsonic._request —
+        ported by the 2026-07 audit."""
+        if isinstance(timeout, tuple):
+            return timeout
+        return (3.05, timeout)
+
+    @staticmethod
+    def _note_transport_failure(exc) -> None:
+        """Feed the connectivity tracker — but NEVER count a ReadTimeout.
+        The TCP connect SUCCEEDED, so the server is reachable — it was just
+        slow to answer (a big Jellyfin building a heavy response can blow the
+        read budget). Counting that as a network failure trips auto-offline
+        mid-browse and blanks every grid — the exact bug fixed on the
+        Subsonic path in 0.1.6 (see subsonic._request) and never ported
+        here until the 2026-07 audit. Only connect-level failures
+        (ConnectTimeout, ConnectionError, DNS) say "network down"."""
+        import requests
+
+        from jellytoast import offline as _offline
+
+        if isinstance(exc, requests.exceptions.ReadTimeout):
+            return
+        _offline.note_request_failure()
+
     def _get(self, path: str, params: Optional[Dict] = None, timeout: int = 15) -> Dict:
         """GET wrapper that feeds the connectivity tracker. HTTPError
         4xx / 5xx still counts as "server reachable" — only a
-        ``RequestException`` (timeout, DNS fail, connection refused)
-        signals the server itself is gone."""
+        connect-level ``RequestException`` (DNS fail, connection refused,
+        connect timeout) signals the server itself is gone; a ReadTimeout
+        is slow-but-alive and never feeds the offline counter."""
         url = f"{self.server_url}{path}"
         import requests
 
@@ -254,10 +284,10 @@ class JellyfinAPI:
                 url,
                 headers=self._headers(),
                 params=params or {},
-                timeout=timeout,
+                timeout=self._split_timeout(timeout),
             )
-        except requests.exceptions.RequestException:
-            _offline.note_request_failure()
+        except requests.exceptions.RequestException as e:
+            self._note_transport_failure(e)
             raise
         _offline.note_request_success()
         if r.status_code in (401, 403):
@@ -286,10 +316,10 @@ class JellyfinAPI:
                 url,
                 headers=self._headers(),
                 json=payload or {},
-                timeout=10,
+                timeout=self._split_timeout(10),
             )
-        except requests.exceptions.RequestException:
-            _offline.note_request_failure()
+        except requests.exceptions.RequestException as e:
+            self._note_transport_failure(e)
             return None
         except Exception:
             # Any non-network failure (JSON encode, etc.) leaves the
@@ -647,10 +677,10 @@ class JellyfinAPI:
             self.session.delete(
                 f"{self.server_url}{path}",
                 headers=self._headers(),
-                timeout=5,
+                timeout=self._split_timeout(5),
             )
         except requests.exceptions.RequestException as e:
-            _offline.note_request_failure()
+            self._note_transport_failure(e)
             logger.warning("%s failed (server unreachable?): %s", what, e)
             return
         except Exception as e:
@@ -744,10 +774,10 @@ class JellyfinAPI:
                 url,
                 headers=self._headers(),
                 json=merged,
-                timeout=15,
+                timeout=self._split_timeout(15),
             )
-        except requests.exceptions.RequestException:
-            _offline.note_request_failure()
+        except requests.exceptions.RequestException as e:
+            self._note_transport_failure(e)
             raise
         _offline.note_request_success()
         if r.status_code in (401, 403):
@@ -795,10 +825,10 @@ class JellyfinAPI:
                 url,
                 headers=headers,
                 data=body,
-                timeout=30,
+                timeout=self._split_timeout(30),
             )
-        except requests.exceptions.RequestException:
-            _offline.note_request_failure()
+        except requests.exceptions.RequestException as e:
+            self._note_transport_failure(e)
             raise
         _offline.note_request_success()
         if r.status_code in (401, 403):

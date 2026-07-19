@@ -397,6 +397,15 @@ class QtDecodeTap(QObject):
             self._begin_decode(max(0, self._target_ms))
 
     def stop(self, *, fast: bool = False) -> None:
+        # Clear the started latch, not just the live decode: set_source() fires
+        # on EVERY track change (the engine's bus handler stays connected across
+        # engine stop/start), and it gates on `self._started` — leaving it True
+        # meant a stopped tap still re-downloaded each new track's full
+        # compressed body and ran a QAudioDecoder pass with the visualizer
+        # hidden (audit 2026-07: the residue of the visibility-gating fix).
+        # Engine.start() calls tap.start() + re-pushes the live source, so
+        # re-showing the visualizer still snaps back.
+        self._started = False
         self._teardown_decode()
 
     def clear(self) -> None:
