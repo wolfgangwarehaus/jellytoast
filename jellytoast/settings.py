@@ -1773,6 +1773,18 @@ class Settings:
     def square_corners(self, v: bool):
         self._s.setValue("ui/square_corners", v)
 
+    @property
+    def language(self) -> str:
+        # UI language override — a bare code like "es", or "" (default) to
+        # follow the system locale. Read once at startup by jellytoast.i18n
+        # before any widget exists, so a change applies on the next launch
+        # (the Display page shows the restart notice, same as Square corners).
+        return self._s.value("ui/language", "", type=str)
+
+    @language.setter
+    def language(self, v: str):
+        self._s.setValue("ui/language", (v or "").strip().lower())
+
     # NB: no ``opaque_mode`` setting. The "Opaque background" toggle was removed
     # — a frosted theme that can't get blur already falls back to a near-opaque
     # body automatically, and the toggle broke the window's rounded corners by

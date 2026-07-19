@@ -12,6 +12,12 @@ developer-facing history lives in [`docs/CHANGELOG.md`](docs/CHANGELOG.md).
      should stand alone: the Store "What's new" shows just the title (+ first
      sentence in --detail mode). -->
 
+- **jellytoast is learning new languages.** First steps toward a translated app:
+  the sign-in screen now speaks Spanish, and there's a Language picker under
+  Settings → Display (follows your system language by default). More of the app
+  — and more languages — will translate over the next releases, and translation
+  help is welcome.
+
 ## [0.2.1] — 2026-07-14
 
 - **Visualizer stops eating CPU when you look away.** The audio visualizer kept

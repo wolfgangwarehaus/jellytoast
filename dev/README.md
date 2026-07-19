@@ -18,6 +18,7 @@ index over renaming/moving.
 | `gen_stress_library.py` | Generates a Skope-scale synthetic library (5,200 albums / 72.8k tracks / unique mixed-size covers, ~1.7 GB) for any Navidrome. Built for #cover-stall; reusable for all large-library work. |
 | `repro_cover_stall.py` | Drives the REAL provider + image loader + connectivity tracker against a live (throttled) server — the harness that reproduced and then verified the #cover-stall fix. Pair with `gen_stress_library.py`. |
 | `stress_large_library.py` | In-process large-grid stress with a FAKE QNAM (gate/no-stall/no-wipe invariants). Faster than `repro_cover_stall.py` but blind to real-server behavior — use both. |
+| `update_translations.sh` | i18n catalog refresh (#232): `pyside6-lupdate` sweeps `jellytoast/*.py` for `tr()` strings into `jellytoast/i18n/*.ts`, `pyside6-lrelease` compiles the shipped `.qm`. Pass a language code (`dev/update_translations.sh fr`) to bootstrap a new catalog. Commit both `.ts` and `.qm`. |
 | `mas_submit.py` | App Store Connect auto-submit (ops#2): waits for build processing, creates the version (AFTER_APPROVAL), sets What's-New, submits for review. Called by the `mas-submit` job. |
 | `store_whats_new.py` / `store_patch_release_notes.py` | Store "What's new" extraction from the CHANGELOG (titles-only voice) + MS Store submission patching. Called by `msstore.yml` / `mas_submit.py`. |
 

@@ -136,7 +136,7 @@ class _UrlRow(QWidget):
         self.url_edit.setPlaceholderText("http://alt.address:8096")
         self.url_edit.setStyleSheet(_dialog_field_qss())
         self.label_edit = QLineEdit(label)
-        self.label_edit.setPlaceholderText("Label (optional)")
+        self.label_edit.setPlaceholderText(self.tr("Label (optional)"))
         self.label_edit.setMaximumWidth(150)
         self.label_edit.setStyleSheet(_dialog_field_qss())
 
@@ -175,7 +175,7 @@ class _AlternateUrlsDialog(QDialog):
     def __init__(self, settings, parent=None):
         super().__init__(parent)
         self._settings = settings
-        self.setWindowTitle("Alternate server URLs")
+        self.setWindowTitle(self.tr("Alternate server URLs"))
         self.setModal(True)
         self.setMinimumWidth(480)
         self.setStyleSheet(self._dialog_qss())
@@ -185,10 +185,12 @@ class _AlternateUrlsDialog(QDialog):
         outer.setSpacing(SPACE_SM)
 
         self._intro = QLabel(
-            "Extra addresses for the same account — handy for a Tailscale "
-            "name vs. a LAN IP. jellytoast probes these in order when the "
-            "main Server URL stops responding, and switches back when it "
-            "recovers."
+            self.tr(
+                "Extra addresses for the same account — handy for a Tailscale "
+                "name vs. a LAN IP. jellytoast probes these in order when the "
+                "main Server URL stops responding, and switches back when it "
+                "recovers."
+            )
         )
         self._intro.setWordWrap(True)
         self._intro.setStyleSheet(f"color: {TEXT_DIM}; {type_qss(TYPE_CAPTION)}")
@@ -200,7 +202,7 @@ class _AlternateUrlsDialog(QDialog):
         outer.addLayout(self._rows_box)
         self._rows: list[_UrlRow] = []
 
-        self._add_btn = QPushButton("+ Add URL")
+        self._add_btn = QPushButton(self.tr("+ Add URL"))
         self._add_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self._add_btn.setStyleSheet(self._add_btn_qss())
         self._add_btn.clicked.connect(lambda: self._add_row())
@@ -337,7 +339,7 @@ class LoginView(QWidget):
         title.setStyleSheet(f"color: {TEXT}; {type_qss(TYPE_DISPLAY)} font-weight: 600;")
         card_layout.addWidget(title)
 
-        self._subtitle = QLabel("Sign in to your music server")
+        self._subtitle = QLabel(self.tr("Sign in to your music server"))
         self._subtitle.setStyleSheet(f"color: {TEXT_DIM}; {type_qss(TYPE_BODY)}")
         card_layout.addWidget(self._subtitle)
         card_layout.addSpacing(SPACE_MD)
@@ -347,7 +349,7 @@ class LoginView(QWidget):
         # probe + authenticate calls go through the right provider.
         # Default to whatever was used last (persisted in
         # provider_kind) so re-login is one-click.
-        kind_cap = QLabel("SERVER TYPE")
+        kind_cap = QLabel(self.tr("SERVER TYPE"))
         kind_cap.setStyleSheet(
             f"color: {TEXT_FAINT}; {type_qss(TYPE_CAPTION)} letter-spacing: 0.6px;"
         )
@@ -374,17 +376,17 @@ class LoginView(QWidget):
         # style "floating label" would need extra widget code; this
         # is simpler and just as clear.
         self._server_field = self._build_field(
-            "Server URL",
+            self.tr("Server URL"),
             "http://your.server:8096",
             initial=self._settings.server_url,
         )
         self._username_field = self._build_field(
-            "Username",
+            self.tr("Username"),
             "",
             initial=self._settings.username,
         )
         self._password_field = self._build_field(
-            "Password",
+            self.tr("Password"),
             "",
             password=True,
         )
@@ -398,7 +400,7 @@ class LoginView(QWidget):
             card_layout.addWidget(field)
             card_layout.addSpacing(SPACE_XS)
 
-        _add_field("Server URL", self._server_field)
+        _add_field(self.tr("Server URL"), self._server_field)
 
         # Alternate-URL affordance — sits right under Server URL since
         # it's the same concept (where to reach the server). Opens the
@@ -416,8 +418,8 @@ class LoginView(QWidget):
         card_layout.addWidget(self._alt_urls_btn, 0, Qt.AlignmentFlag.AlignLeft)
         card_layout.addSpacing(SPACE_XS)
 
-        _add_field("Username", self._username_field)
-        _add_field("Password", self._password_field)
+        _add_field(self.tr("Username"), self._username_field)
+        _add_field(self.tr("Password"), self._password_field)
 
         # Error message — hidden until a sign-in attempt fails.
         self._error_label = QLabel("")
@@ -427,7 +429,7 @@ class LoginView(QWidget):
         card_layout.addWidget(self._error_label)
         card_layout.addSpacing(SPACE_SM)
 
-        self._submit_btn = QPushButton("Sign in")
+        self._submit_btn = QPushButton(self.tr("Sign in"))
         self._submit_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self._submit_btn.setFixedHeight(40)
         self._submit_btn.setStyleSheet(self._submit_btn_qss())
@@ -439,7 +441,7 @@ class LoginView(QWidget):
         # form for the SELECTED server type (so the existing picker doubles as
         # the demo selector) and submits through the normal auth path.
         card_layout.addSpacing(SPACE_XS)
-        self._demo_btn = QPushButton("No server? Try a demo →")
+        self._demo_btn = QPushButton(self.tr("No server? Try a demo →"))
         self._demo_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self._demo_btn.setStyleSheet(
             f"QPushButton {{ background: transparent; border: none; "
@@ -579,7 +581,9 @@ class LoginView(QWidget):
         """Affordance text — a count when alternates exist, an invite
         to add one when the list is empty."""
         count = len(self._settings.server_hostnames)
-        return f"Alternate URLs · {count}" if count else "+ Add alternate URL"
+        if count:
+            return self.tr("Alternate URLs · {0}").format(count)
+        return self.tr("+ Add alternate URL")
 
     def _open_alt_urls(self):
         dlg = _AlternateUrlsDialog(self._settings, self)
@@ -600,7 +604,9 @@ class LoginView(QWidget):
         kind = self._kind_combo.currentData() or "jellyfin"
         demo = demo_for_kind(kind)
         if demo is None:
-            self._show_error("No demo server is available for this server type.")
+            self._show_error(
+                self.tr("No demo server is available for this server type.")
+            )
             return
         # Reflect the demo in the form so the user SEES what they're connecting
         # to (and can tweak or sign in normally afterwards).
@@ -617,7 +623,7 @@ class LoginView(QWidget):
         username = self._username_field.text().strip()
         password = self._password_field.text()
         if not server or not username:
-            self._show_error("Please fill in the server URL and username.")
+            self._show_error(self.tr("Please fill in the server URL and username."))
             return
         # Server URL must include a scheme — both Jellyfin and
         # Subsonic 404 on bare hosts.
@@ -659,18 +665,19 @@ class LoginView(QWidget):
     def _on_kind_changed(self, _idx: int):
         kind = self._kind_combo.currentData() or "jellyfin"
         if kind == "subsonic":
-            self._subtitle.setText("Sign in to your Subsonic / Navidrome server")
+            self._subtitle.setText(self.tr("Sign in to your Subsonic / Navidrome server"))
             self._server_field.setPlaceholderText("http://your.server:4533")
         else:
-            self._subtitle.setText("Sign in to your Jellyfin server")
+            self._subtitle.setText(self.tr("Sign in to your Jellyfin server"))
             self._server_field.setPlaceholderText("http://your.server:8096")
 
     def _on_probe_ok(self, server: str, username: str, password: str, info):
         if info is None:
             self._set_submitting(False)
             self._show_error(
-                "That URL responded but doesn't look like a "
-                f"{self.provider.kind.capitalize()} server."
+                self.tr(
+                    "That URL responded but doesn't look like a {0} server."
+                ).format(self.provider.kind.capitalize())
             )
             return
         # URL probe succeeded. Authenticate. The product_name from the
@@ -698,21 +705,22 @@ class LoginView(QWidget):
             # The user typed nothing — any failure here means the public demo
             # itself is unreachable. Be honest that it's not our server.
             self._show_error(
-                "The public demo looks offline right now — it's a shared server "
-                "run by the Navidrome / Jellyfin projects, not by jellytoast. "
-                "Try again later, or sign in to your own server above."
+                self.tr(
+                    "The public demo looks offline right now — it's a shared server "
+                    "run by the Navidrome / Jellyfin projects, not by jellytoast. "
+                    "Try again later, or sign in to your own server above."
+                )
             )
             return
         msg = str(err) or err.__class__.__name__
         if "Connection" in msg or "Max retries" in msg or "timed out" in msg:
-            msg = "Couldn't reach the server. Check the URL and your network."
+            msg = self.tr("Couldn't reach the server. Check the URL and your network.")
         elif "404" in msg or "Not Found" in msg:
-            msg = (
-                "That URL doesn't look like a "
-                f"{self.provider.kind.capitalize()} server."
+            msg = self.tr("That URL doesn't look like a {0} server.").format(
+                self.provider.kind.capitalize()
             )
         else:
-            msg = f"Couldn't reach the server: {msg}"
+            msg = self.tr("Couldn't reach the server: {0}").format(msg)
         self._show_error(msg)
 
     def _on_auth_ok(
@@ -761,11 +769,11 @@ class LoginView(QWidget):
         # error string from requests is verbose; surface a friendly
         # message and tuck the technical detail underneath.
         if unauthorized:
-            msg = "Wrong username or password."
+            msg = self.tr("Wrong username or password.")
         elif "404" in msg or "Not Found" in msg:
-            msg = "Server not found at that URL."
+            msg = self.tr("Server not found at that URL.")
         elif "Connection" in msg or "Max retries" in msg:
-            msg = "Couldn't reach the server. Check the URL and your network."
+            msg = self.tr("Couldn't reach the server. Check the URL and your network.")
         self._show_error(msg)
         # On a 401 the user almost certainly mistyped the password;
         # clear it + return focus + select-all so the next keystroke
@@ -780,7 +788,9 @@ class LoginView(QWidget):
 
     def _set_submitting(self, submitting: bool):
         self._submitting = submitting
-        self._submit_btn.setText("Signing in…" if submitting else "Sign in")
+        self._submit_btn.setText(
+            self.tr("Signing in…") if submitting else self.tr("Sign in")
+        )
         self._submit_btn.setEnabled(not submitting)
         self._demo_btn.setEnabled(not submitting)
         for f in (self._server_field, self._username_field, self._password_field):

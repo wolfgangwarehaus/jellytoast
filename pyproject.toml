@@ -246,6 +246,10 @@ exclude = ["tests*", "docs*", "packaging*"]
 # (The packaging/icons/ copy stays for the freedesktop / hicolor system
 # install, which is outside the wheel.)
 "jellytoast.assets" = ["*.svg"]
+# Compiled translation catalogs (#232) — loaded at boot by jellytoast/i18n
+# via importlib.resources. The editable .ts sources ship too so a source
+# checkout can regenerate without the repo (dev/update_translations.sh).
+"jellytoast.i18n" = ["*.qm", "*.ts"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

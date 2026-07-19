@@ -2944,6 +2944,33 @@ class SettingsDialog(QDialog):
         v.addSpacing(4)
         v.addWidget(self._section_header("Interface"))
 
+        # Language — the UI language override (#232). "System default" ('')
+        # follows the OS locale; explicit picks are bare codes ("es").
+        # Translators install in main() before any widget exists, so this is
+        # restart-required like Square corners. Options come from
+        # i18n.SHIPPED_LANGUAGES so adding a catalog auto-extends the menu.
+        from jellytoast.i18n import SHIPPED_LANGUAGES
+
+        lang_row = QHBoxLayout()
+        lang_row.setContentsMargins(0, 0, 0, 0)
+        lang_row.setSpacing(10)
+        self._language_combo = _Selector()
+        self._language_combo.addItem("System default", "")
+        self._language_combo.addItem("English", "en")
+        for _code, _en_name, _native in SHIPPED_LANGUAGES:
+            self._language_combo.addItem(_native, _code)
+        self._initial_language = self.s.language
+        self._select_combo_by_data(self._language_combo, self._initial_language)
+        self._language_combo.currentIndexChanged.connect(self._on_language_changed)
+        self._language_combo.setMinimumWidth(185)
+        lang_row.addWidget(self._field_label("Language:"))
+        lang_row.addWidget(self._language_combo)
+        lang_hint = QLabel("(needs restart)")
+        lang_hint.setStyleSheet(f"color: {TEXT_FAINT}; {type_qss(TYPE_CAPTION)}")
+        lang_row.addWidget(lang_hint)
+        lang_row.addStretch(1)
+        v.addLayout(lang_row)
+
         self._tooltips_check = QCheckBox("Show hover tooltips")
         self._tooltips_check.setChecked(self.s.show_tooltips)
         self._tooltips_check.toggled.connect(lambda val: setattr(self.s, "show_tooltips", val))
@@ -3091,18 +3118,27 @@ class SettingsDialog(QDialog):
         set_square_corners(bool(on))
         self._refresh_restart_notice_visibility()
 
+    def _on_language_changed(self):
+        # Persist the pick; translators only install at boot (main() runs
+        # i18n.install before any widget exists), so show the restart notice.
+        self.s.language = self._language_combo.currentData() or ""
+        self._refresh_restart_notice_visibility()
+
     def _refresh_restart_notice_visibility(self):
         """Show the restart banner if a setting that bakes into module
         state differs from the value loaded when the dialog opened.
 
-        ``square_corners`` bakes into ``design_tokens`` at import time, so it's
-        the only setting that still needs a restart. Font family + font scale
-        now live-apply (``apply_font_settings_live`` — the tokens are recomputed
-        + propagated at runtime), and theme mode / accent live-apply via
+        ``square_corners`` bakes into ``design_tokens`` at import time, and
+        ``language`` installs translators before any widget exists — both need
+        a restart. Font family + font scale now live-apply
+        (``apply_font_settings_live`` — the tokens are recomputed + propagated
+        at runtime), and theme mode / accent live-apply via
         ``refresh_theme()`` + ``PlayerBus.theme_changed`` — so none of those are
         part of the dirty check."""
         dirty = self.s.square_corners != getattr(
             self, "_initial_square_corners", self.s.square_corners
+        ) or self.s.language != getattr(
+            self, "_initial_language", self.s.language
         )
         self._theme_restart_notice.setVisible(dirty)
 

@@ -2126,6 +2126,14 @@ def main():
     app.setWindowIcon(QIcon(make_app_icon(64)))
     app.setQuitOnLastWindowClosed(False)
 
+    # Install translation catalogs (Settings override → system locale) before
+    # ANY widget is built — Qt translates at construction time. Never raises;
+    # a missing catalog just leaves the English source strings. (#232)
+    from jellytoast import i18n as _i18n
+
+    _i18n.install(app)
+    _boot_mark("translators installed")
+
     # Apply the user-chosen UI font family (Settings → Display → Font) as the
     # application font so painter-drawn delegate text — which uses a bare
     # QFont() and inherits the app font — adopts it too, not just QSS-styled
