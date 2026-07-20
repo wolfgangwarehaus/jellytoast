@@ -180,13 +180,13 @@ class _DownloadRow(QFrame):
             f"QPushButton:disabled {{ color: {TEXT_FAINT}; border-color: {TEXT_FAINT}; }}"
         )
 
-        self._resync_btn = QPushButton("Re-sync")
+        self._resync_btn = QPushButton(self.tr("Re-sync"))
         self._resync_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self._resync_btn.setStyleSheet(_ghost_btn_qss)
         self._resync_btn.clicked.connect(lambda: self.resync_requested.emit(self._item_id))
         row.addWidget(self._resync_btn, 0, Qt.AlignmentFlag.AlignVCenter)
 
-        self._remove_btn = QPushButton("Remove")
+        self._remove_btn = QPushButton(self.tr("Remove"))
         self._remove_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self._remove_btn.setStyleSheet(_ghost_btn_qss)
         self._remove_btn.clicked.connect(lambda: self.remove_requested.emit(self._item_id))
@@ -210,7 +210,7 @@ class _DownloadRow(QFrame):
         self._remove_btn.setEnabled(not on)
         if on:
             kind_label = _KIND_LABEL.get(self._kind, self._kind.title())
-            self._sub.setText(f"{kind_label} · Re-syncing…")
+            self._sub.setText(self.tr("{0} · Re-syncing…").format(kind_label))
             self._sub.setStyleSheet(f"{type_qss(TYPE_CAPTION)} color: {ACCENT};")
 
     def set_resync_failed(self) -> None:
@@ -221,7 +221,7 @@ class _DownloadRow(QFrame):
         self._resync_btn.setEnabled(True)
         self._remove_btn.setEnabled(True)
         kind_label = _KIND_LABEL.get(self._kind, self._kind.title())
-        self._sub.setText(f"{kind_label} · Re-sync failed")
+        self._sub.setText(self.tr("{0} · Re-sync failed").format(kind_label))
         self._sub.setStyleSheet(f"{type_qss(TYPE_CAPTION)} color: {WARN_FG};")
 
     def _load_thumb(self, node: Dict) -> None:
@@ -288,17 +288,19 @@ class _DownloadRow(QFrame):
             self._sub.setStyleSheet(f"{type_qss(TYPE_CAPTION)} color: {TEXT_DIM};")
         elif state == offline.DownloadState.DOWNLOADING:
             pct = max(0, min(100, int(round(fraction * 100))))
-            self._sub.setText(f"{kind_label} · Downloading… {pct}%")
+            self._sub.setText(
+                self.tr("{0} · Downloading… {1}%").format(kind_label, pct)
+            )
             self._sub.setStyleSheet(f"{type_qss(TYPE_CAPTION)} color: {ACCENT};")
         elif state == offline.DownloadState.PENDING:
-            self._sub.setText(f"{kind_label} · Queued…")
+            self._sub.setText(self.tr("{0} · Queued…").format(kind_label))
             self._sub.setStyleSheet(f"{type_qss(TYPE_CAPTION)} color: {TEXT_DIM};")
         elif state == offline.DownloadState.FAILED:
-            self._sub.setText(f"{kind_label} · Download failed")
+            self._sub.setText(self.tr("{0} · Download failed").format(kind_label))
             self._sub.setStyleSheet(f"{type_qss(TYPE_CAPTION)} color: {WARN_FG};")
         elif state == offline.DownloadState.STALE:
             size_text = _fmt_size(offline.item_size(self._item_id))
-            self._sub.setText(f"{kind_label} · Stale")
+            self._sub.setText(self.tr("{0} · Stale").format(kind_label))
             self._sub.setStyleSheet(f"{type_qss(TYPE_CAPTION)} color: {WARN_FG};")
         else:  # unrecognised — show what we have
             size_text = _fmt_size(offline.item_size(self._item_id))
@@ -440,11 +442,13 @@ class _QueueAggregateBlock(QWidget):
         # Until enough jobs have settled to give a real fraction, the
         # number jitters — show a placeholder so the user knows we're
         # still calculating instead of "0%" looking stuck.
-        pct_text = f"{pct}%" if pct > 0 else "calculating…"
+        pct_text = f"{pct}%" if pct > 0 else self.tr("calculating…")
 
         if self._is_paused:
             self._counts.setText(
-                f"Paused · {active} of {total_session} waiting · {pct_text}"
+                self.tr("Paused · {0} of {1} waiting · {2}").format(
+                    active, total_session, pct_text
+                )
             )
             self._counts.setStyleSheet(
                 f"{type_qss(TYPE_BODY)} color: {TEXT_DIM};"
@@ -455,7 +459,9 @@ class _QueueAggregateBlock(QWidget):
 
         # Active variant.
         self._counts.setText(
-            f"Downloading {active} of {total_session} · {pct_text}"
+            self.tr("Downloading {0} of {1} · {2}").format(
+                active, total_session, pct_text
+            )
         )
         self._counts.setStyleSheet(f"{type_qss(TYPE_BODY)} color: {TEXT};")
 
@@ -587,7 +593,7 @@ class DownloadsView(QWidget):
         # Bulk-download action — paginate the active provider's album
         # list and enqueue everything that isn't already downloaded.
         # Idempotent (already-complete items skip on the manager side).
-        self._download_all_btn = QPushButton("Download entire library")
+        self._download_all_btn = QPushButton(self.tr("Download entire library"))
         self._download_all_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self._download_all_btn.setStyleSheet(
             f"QPushButton {{ {type_qss(TYPE_BODY)} color: {TEXT}; "
@@ -603,7 +609,7 @@ class DownloadsView(QWidget):
         # active (mirrors the ``_walking_library`` state). Clear all
         # is the heavier hammer; this is the right button for "I
         # changed my mind about this walk".
-        self._cancel_walk_btn = QPushButton("Cancel library download")
+        self._cancel_walk_btn = QPushButton(self.tr("Cancel library download"))
         self._cancel_walk_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self._cancel_walk_btn.setStyleSheet(
             f"QPushButton {{ {type_qss(TYPE_BODY)} color: {TEXT}; "
@@ -620,7 +626,7 @@ class DownloadsView(QWidget):
         # Destructive sweep — wipes every downloaded item. Built here
         # so the click handler can reach it; added to the layout at
         # the bottom of the page next to "Storage used".
-        self._clear_all_btn = QPushButton("Clear all downloads")
+        self._clear_all_btn = QPushButton(self.tr("Clear all downloads"))
         self._clear_all_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self._clear_all_btn.setStyleSheet(
             f"QPushButton {{ {type_qss(TYPE_BODY)} color: {TEXT}; "
@@ -633,7 +639,7 @@ class DownloadsView(QWidget):
         # Offline mode — explicit user toggle. Routed through the
         # offline package so the bus signal fires + persistence
         # happens in one place.
-        self._offline_mode = QCheckBox("Offline mode")
+        self._offline_mode = QCheckBox(self.tr("Offline mode"))
         self._offline_mode.setChecked(offline.is_offline_mode())
         self._offline_mode.toggled.connect(self._on_offline_mode_toggled)
         outer.addLayout(
@@ -649,7 +655,7 @@ class DownloadsView(QWidget):
         # those states so the user isn't toggling a flag that does
         # nothing; ``_refresh_prefer_server_gating`` keeps it in sync
         # with bus state.
-        self._prefer_server = QCheckBox("Always stream from server")
+        self._prefer_server = QCheckBox(self.tr("Always stream from server"))
         self._prefer_server.setChecked(get_settings().prefer_server_when_online)
         self._prefer_server.toggled.connect(
             lambda v: setattr(get_settings(), "prefer_server_when_online", v)
@@ -666,13 +672,13 @@ class DownloadsView(QWidget):
         # never happens. The setting, dispatch gate, and this handler stay
         # wired; when a metered detector lands (e.g. Qt 6.7+
         # QNetworkInformation.isMetered), re-add the check row here.
-        self._wifi_only = QCheckBox("Only download on Wi-Fi")
+        self._wifi_only = QCheckBox(self.tr("Only download on Wi-Fi"))
         self._wifi_only.setChecked(offline.is_wifi_only())
         self._wifi_only.toggled.connect(self._on_wifi_only_toggled)
         self._wifi_only.setVisible(False)
 
         # Notify-on-complete — slice C of the downloads-progress feature.
-        self._notify_complete = QCheckBox("Notify when downloads finish")
+        self._notify_complete = QCheckBox(self.tr("Notify when downloads finish"))
         self._notify_complete.setChecked(get_settings().notify_on_download_complete)
         self._notify_complete.toggled.connect(
             lambda v: setattr(get_settings(), "notify_on_download_complete", v)
@@ -685,7 +691,7 @@ class DownloadsView(QWidget):
 
         # Library sync — paired with the "Download entire library"
         # action; 6-hour timer re-walks the provider for new albums.
-        self._library_sync = QCheckBox("Keep library in sync")
+        self._library_sync = QCheckBox(self.tr("Keep library in sync"))
         self._library_sync.setChecked(get_settings().library_sync_enabled)
         self._library_sync.toggled.connect(self._on_library_sync_toggled)
         outer.addLayout(
@@ -701,7 +707,7 @@ class DownloadsView(QWidget):
         dq_row = QHBoxLayout()
         dq_row.setContentsMargins(0, 0, 0, 0)
         dq_row.setSpacing(SPACE_SM)
-        dq_label = QLabel("Download quality:")
+        dq_label = QLabel(self.tr("Download quality:"))
         dq_label.setStyleSheet(f"{type_qss(TYPE_BODY)} color: {TEXT};")
         dq_row.addWidget(dq_label)
         self._dq_combo = _Selector()
@@ -721,7 +727,7 @@ class DownloadsView(QWidget):
         # cover-art cache (LRU-capped at 200 MB in `image_cache`). Each
         # row pairs its size readout with the matching destructive
         # action so the user can act on what they're reading.
-        cache_header = QLabel("CACHE")
+        cache_header = QLabel(self.tr("CACHE"))
         cache_header.setFont(font(TYPE_MICRO))
         cache_header.setStyleSheet(f"color: {TEXT_FAINT};")
         outer.addWidget(cache_header)
@@ -734,9 +740,9 @@ class DownloadsView(QWidget):
         downloads_row.addWidget(self._clear_all_btn)
         outer.addLayout(downloads_row)
 
-        self._cache_size_label = QLabel("Album art: calculating…")
+        self._cache_size_label = QLabel(self.tr("Album art: calculating…"))
         self._cache_size_label.setStyleSheet(f"{type_qss(TYPE_BODY)} color: {TEXT_DIM};")
-        self._clear_cache_btn = QPushButton("Refresh album art")
+        self._clear_cache_btn = QPushButton(self.tr("Refresh album art"))
         self._clear_cache_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self._clear_cache_btn.setStyleSheet(
             f"QPushButton {{ {type_qss(TYPE_BODY)} color: {TEXT}; "
@@ -806,7 +812,7 @@ class DownloadsView(QWidget):
 
     def _refresh_storage(self) -> None:
         total = offline.storage_usage().get("total", 0)
-        self._storage.setText(f"Storage used: {_fmt_size(total)}")
+        self._storage.setText(self.tr("Storage used: {0}").format(_fmt_size(total)))
 
     def _on_download_quality_changed(self, _idx: int = 0) -> None:
         get_settings().download_quality = self._dq_combo.currentData() or "original"
@@ -838,12 +844,12 @@ class DownloadsView(QWidget):
         self._prefer_server.setEnabled(not gated)
         if gated:
             if offline_now:
-                tip = (
+                tip = self.tr(
                     "No effect while offline — the server isn't reachable to "
                     "stream from."
                 )
             else:
-                tip = (
+                tip = self.tr(
                     "No effect while casting — downloaded tracks are always "
                     "served from disk via the cast proxy."
                 )
@@ -916,22 +922,24 @@ class DownloadsView(QWidget):
 
         if not frosted_confirm(
             self,
-            "Download entire library",
-            "Download every album in your library to local storage?\n\n"
-            "This walks your server and enqueues any albums that aren't "
-            "already downloaded. You can pause or cancel at any time "
-            "from this page.",
-            confirm_text="Download",
+            self.tr("Download entire library"),
+            self.tr(
+                "Download every album in your library to local storage?\n\n"
+                "This walks your server and enqueues any albums that aren't "
+                "already downloaded. You can pause or cancel at any time "
+                "from this page."
+            ),
+            confirm_text=self.tr("Download"),
         ):
             self._walking_library = False
             return
 
         self._download_all_btn.setEnabled(False)
-        self._download_all_btn.setText("Walking library…")
+        self._download_all_btn.setText(self.tr("Walking library…"))
         # Reset cancel button state in case a prior cancel left it
         # disabled with the "Cancelling…" label.
         self._cancel_walk_btn.setEnabled(True)
-        self._cancel_walk_btn.setText("Cancel library download")
+        self._cancel_walk_btn.setText(self.tr("Cancel library download"))
         # Flag the queue as "this is a full-library walk" so the
         # pause/resume button gets the explicit label. Cleared on
         # the drain-edge stats emit (active == 0 && total_session
@@ -952,7 +960,7 @@ class DownloadsView(QWidget):
             total, enqueued = result if isinstance(result, tuple) else (0, 0)
             self._walking_library = False
             self._download_all_btn.setEnabled(True)
-            self._download_all_btn.setText("Download entire library")
+            self._download_all_btn.setText(self.tr("Download entire library"))
             self._refresh_button_states()
             # Only nag with a popup when the walk produced nothing —
             # otherwise the aggregate block + drain notification
@@ -962,23 +970,27 @@ class DownloadsView(QWidget):
 
                 frosted_info(
                     self,
-                    "Library walk complete",
-                    f"All {total} albums in your library are already "
-                    "downloaded — nothing new to enqueue.",
+                    self.tr("Library walk complete"),
+                    self.tr(
+                        "All {0} albums in your library are already "
+                        "downloaded — nothing new to enqueue."
+                    ).format(total),
                 )
 
         def _err(_exc):
             self._walking_library = False
             self._download_all_btn.setEnabled(True)
-            self._download_all_btn.setText("Download entire library")
+            self._download_all_btn.setText(self.tr("Download entire library"))
             self._refresh_button_states()
             from jellytoast.frosted_dialog import frosted_warning
 
             frosted_warning(
                 self,
-                "Library walk failed",
-                "Couldn't walk the library — the server may be "
-                "unreachable. Check the connection and try again.",
+                self.tr("Library walk failed"),
+                self.tr(
+                    "Couldn't walk the library — the server may be "
+                    "unreachable. Check the connection and try again."
+                ),
             )
 
         run_async(offline.sync_library, on_result=_done, on_error=_err)
@@ -1027,11 +1039,13 @@ class DownloadsView(QWidget):
         self._pause_btn.setVisible(paused or active > 0)
         if in_lib_walk:
             self._pause_btn.setText(
-                "Resume library download" if paused else "Pause library download"
+                self.tr("Resume library download")
+                if paused
+                else self.tr("Pause library download")
             )
         else:
             self._pause_btn.setText(
-                "Resume downloads" if paused else "Pause downloads"
+                self.tr("Resume downloads") if paused else self.tr("Pause downloads")
             )
 
         # Cancel library download — meaningful only inside a walk.
@@ -1090,28 +1104,30 @@ class DownloadsView(QWidget):
 
         if not frosted_confirm(
             self,
-            "Clear all downloads",
-            "Remove every downloaded album, playlist, artist, and track "
-            "from this device?\n\n"
-            "This frees up the storage immediately. Your library on the "
-            "server isn't affected — you can re-download anything later.",
-            confirm_text="Clear all",
+            self.tr("Clear all downloads"),
+            self.tr(
+                "Remove every downloaded album, playlist, artist, and track "
+                "from this device?\n\n"
+                "This frees up the storage immediately. Your library on the "
+                "server isn't affected — you can re-download anything later."
+            ),
+            confirm_text=self.tr("Clear all"),
             destructive=True,
         ):
             return
 
         self._clear_all_btn.setEnabled(False)
-        self._clear_all_btn.setText("Clearing…")
+        self._clear_all_btn.setText(self.tr("Clearing…"))
 
         def _done(_result):
             self._clear_all_btn.setEnabled(True)
-            self._clear_all_btn.setText("Clear all downloads")
+            self._clear_all_btn.setText(self.tr("Clear all downloads"))
             self._refresh_storage()
             self._refresh_clear_all_visibility()
 
         def _err(_exc):
             self._clear_all_btn.setEnabled(True)
-            self._clear_all_btn.setText("Clear all downloads")
+            self._clear_all_btn.setText(self.tr("Clear all downloads"))
             self._refresh_clear_all_visibility()
 
         run_async(offline.clear_all, on_result=_done, on_error=_err)
@@ -1135,10 +1151,12 @@ class DownloadsView(QWidget):
                     continue
             mb = total / (1024 * 1024)
             self._cache_size_label.setText(
-                f"Album art: {mb:.1f} MB across {count} files"
+                self.tr("Album art: {0} MB across {1} files").format(
+                    f"{mb:.1f}", count
+                )
             )
         except Exception:
-            self._cache_size_label.setText("Album art: unavailable")
+            self._cache_size_label.setText(self.tr("Album art: unavailable"))
 
     def _on_clear_cache(self) -> None:
         # Both legs: disk (image_cache) + in-memory (ui_helpers pixmap

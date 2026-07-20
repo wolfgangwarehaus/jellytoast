@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import logging
 
-from PySide6.QtCore import QEvent, QObject, Qt, QTimer, QUrl
+from PySide6.QtCore import QCoreApplication, QEvent, QObject, Qt, QTimer, QUrl
 from PySide6.QtGui import QAction, QDesktopServices, QKeySequence
 from PySide6.QtWidgets import QApplication, QMenu, QMenuBar, QMessageBox
 
@@ -75,25 +75,29 @@ def _install_menubar(window):
     # attached to. We hang them on File (they vanish from File on relocation)
     # rather than create a dedicated menu, which would be left empty + show a
     # redundant app-named menu in the bar.
-    file_menu = mb.addMenu("File")
-    _act(file_menu, window, "About jellytoast", role=MR.AboutRole, slot=lambda: _about(window))
-    _act(file_menu, window, "Settings…", role=MR.PreferencesRole, key=SK.Preferences,
+    file_menu = mb.addMenu(QCoreApplication.translate("MacMenuBar", "File"))
+    _act(file_menu, window, QCoreApplication.translate("MacMenuBar", "About jellytoast"),
+         role=MR.AboutRole, slot=lambda: _about(window))
+    _act(file_menu, window, QCoreApplication.translate("MacMenuBar", "Settings…"),
+         role=MR.PreferencesRole, key=SK.Preferences,
          slot=window._open_settings)
-    _act(file_menu, window, "Quit jellytoast", role=MR.QuitRole, slot=lambda: _quit(window))
-    _act(file_menu, window, "Close Window", key=SK.Close,
+    _act(file_menu, window, QCoreApplication.translate("MacMenuBar", "Quit jellytoast"),
+         role=MR.QuitRole, slot=lambda: _quit(window))
+    _act(file_menu, window, QCoreApplication.translate("MacMenuBar", "Close Window"),
+         key=SK.Close,
          slot=lambda: (QApplication.activeWindow() or window).close())
 
     # Edit — present so system text shortcuts + the Services menu work; each
     # item dispatches to the focused widget's matching method.
-    edit_menu = mb.addMenu("Edit")
+    edit_menu = mb.addMenu(QCoreApplication.translate("MacMenuBar", "Edit"))
     for label, key, meth in (
-        ("Undo", SK.Undo, "undo"),
-        ("Redo", SK.Redo, "redo"),
+        (QCoreApplication.translate("MacMenuBar", "Undo"), SK.Undo, "undo"),
+        (QCoreApplication.translate("MacMenuBar", "Redo"), SK.Redo, "redo"),
         (None, None, None),
-        ("Cut", SK.Cut, "cut"),
-        ("Copy", SK.Copy, "copy"),
-        ("Paste", SK.Paste, "paste"),
-        ("Select All", SK.SelectAll, "selectAll"),
+        (QCoreApplication.translate("MacMenuBar", "Cut"), SK.Cut, "cut"),
+        (QCoreApplication.translate("MacMenuBar", "Copy"), SK.Copy, "copy"),
+        (QCoreApplication.translate("MacMenuBar", "Paste"), SK.Paste, "paste"),
+        (QCoreApplication.translate("MacMenuBar", "Select All"), SK.SelectAll, "selectAll"),
     ):
         if label is None:
             edit_menu.addSeparator()
@@ -102,21 +106,24 @@ def _install_menubar(window):
              slot=lambda _=False, m=meth: _dispatch_edit(m))
 
     # View
-    view_menu = mb.addMenu("View")
-    _act(view_menu, window, "Enter Full Screen", key=SK.FullScreen,
+    view_menu = mb.addMenu(QCoreApplication.translate("MacMenuBar", "View"))
+    _act(view_menu, window, QCoreApplication.translate("MacMenuBar", "Enter Full Screen"),
+         key=SK.FullScreen,
          slot=lambda: _toggle_fullscreen(window))
 
     # Window
-    win_menu = mb.addMenu("Window")
-    _act(win_menu, window, "Minimize", key="Ctrl+M",
+    win_menu = mb.addMenu(QCoreApplication.translate("MacMenuBar", "Window"))
+    _act(win_menu, window, QCoreApplication.translate("MacMenuBar", "Minimize"), key="Ctrl+M",
          slot=lambda: (QApplication.activeWindow() or window).showMinimized())
-    _act(win_menu, window, "Zoom", slot=lambda: _zoom(window))
+    _act(win_menu, window, QCoreApplication.translate("MacMenuBar", "Zoom"),
+         slot=lambda: _zoom(window))
     win_menu.addSeparator()
-    _act(win_menu, window, "Mini Player", slot=lambda: _bus().show_mini_player.emit())
+    _act(win_menu, window, QCoreApplication.translate("MacMenuBar", "Mini Player"),
+         slot=lambda: _bus().show_mini_player.emit())
 
     # Help
-    help_menu = mb.addMenu("Help")
-    _act(help_menu, window, "jellytoast Help",
+    help_menu = mb.addMenu(QCoreApplication.translate("MacMenuBar", "Help"))
+    _act(help_menu, window, QCoreApplication.translate("MacMenuBar", "jellytoast Help"),
          slot=lambda: QDesktopServices.openUrl(QUrl(_HELP_URL)))
 
 
@@ -185,11 +192,15 @@ def _install_dock_menu(window):
     bus = _bus()
     menu = QMenu()
     window._macos_dock_menu = menu  # keep a strong ref
-    _act(menu, window, "Play / Pause", slot=lambda: bus.pause_toggled.emit())
-    _act(menu, window, "Next", slot=lambda: bus.next_track.emit())
-    _act(menu, window, "Previous", slot=lambda: bus.prev_track.emit())
+    _act(menu, window, QCoreApplication.translate("MacMenuBar", "Play / Pause"),
+         slot=lambda: bus.pause_toggled.emit())
+    _act(menu, window, QCoreApplication.translate("MacMenuBar", "Next"),
+         slot=lambda: bus.next_track.emit())
+    _act(menu, window, QCoreApplication.translate("MacMenuBar", "Previous"),
+         slot=lambda: bus.prev_track.emit())
     menu.addSeparator()
-    _act(menu, window, "Stop", slot=lambda: bus.stop_requested.emit())
+    _act(menu, window, QCoreApplication.translate("MacMenuBar", "Stop"),
+         slot=lambda: bus.stop_requested.emit())
     menu.setAsDockMenu()
 
 
@@ -251,8 +262,16 @@ def _about(window):
         window,
         "jellytoast",
         "<b>jellytoast</b>"
-        + (f"<br>Version {ver}" if ver else "")
-        + "<br>A native music client for Jellyfin &amp; Subsonic."
+        + (
+            "<br>"
+            + QCoreApplication.translate("MacMenuBar", "Version {0}").format(ver)
+            if ver
+            else ""
+        )
+        + "<br>"
+        + QCoreApplication.translate(
+            "MacMenuBar", "A native music client for Jellyfin &amp; Subsonic."
+        )
         + "<br><br>© 2026 William August Mueller",
     )
 

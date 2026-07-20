@@ -112,7 +112,7 @@ class EqSettingsPage(QWidget):
         wv.setContentsMargins(0, 0, 0, 0)
         wv.setSpacing(6)
 
-        wv.addWidget(self._section_header("EQUALIZER"))
+        wv.addWidget(self._section_header(self.tr("EQUALIZER")))
         # Same header-to-content gap pattern as Crossfade.
         wv.addSpacing(4)
 
@@ -122,7 +122,7 @@ class EqSettingsPage(QWidget):
         # labels the section.
         eq_toggle_row = QHBoxLayout()
         eq_toggle_row.setSpacing(20)
-        self._eq_enabled_check = QCheckBox("Enable")
+        self._eq_enabled_check = QCheckBox(self.tr("Enable"))
         self._eq_enabled_check.setChecked(self.s.eq_enabled)
         self._eq_enabled_check.toggled.connect(self._on_eq_enabled_toggled)
         eq_toggle_row.addWidget(self._eq_enabled_check)
@@ -135,10 +135,10 @@ class EqSettingsPage(QWidget):
         # built-in side margin like the _info_button IconButtons).
         lp_row.setSpacing(12)
         lp_row.setContentsMargins(0, 0, 0, 0)
-        self._eq_linear_phase_check = QCheckBox("Linear phase")
+        self._eq_linear_phase_check = QCheckBox(self.tr("Linear phase"))
         self._eq_linear_phase_check.setChecked(self.s.eq_linear_phase)
         self._eq_linear_phase_check.setToolTip(
-            "Linear-phase FIR EQ — see the ⓘ for the trade-offs."
+            self.tr("Linear-phase FIR EQ — see the ⓘ for the trade-offs.")
         )
         self._eq_linear_phase_check.toggled.connect(self._on_eq_linear_phase_toggled)
         lp_row.addWidget(self._eq_linear_phase_check)
@@ -150,7 +150,7 @@ class EqSettingsPage(QWidget):
         self._eq_lp_info.setCursor(Qt.CursorShape.PointingHandCursor)
         self._eq_lp_info.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self._eq_lp_info.setToolTip(_LINEAR_PHASE_INFO)
-        self._eq_lp_info.setAccessibleName("About linear phase")
+        self._eq_lp_info.setAccessibleName(self.tr("About linear phase"))
         self._eq_lp_info.setStyleSheet(
             "QToolButton { border: none; background: transparent; padding: 0; }"
         )
@@ -161,12 +161,14 @@ class EqSettingsPage(QWidget):
         # slider strip with the parametric curve editor; same band
         # data, different surface. Settings persists the choice so the
         # user's preferred view comes back next session.
-        self._eq_advanced_check = QCheckBox("Curve")
+        self._eq_advanced_check = QCheckBox(self.tr("Curve"))
         self._eq_advanced_check.setChecked(self.s.eq_view_advanced)
         self._eq_advanced_check.setToolTip(
-            "Parametric curve editor — drag nodes on a log-frequency "
-            "canvas. AutoEQ profiles allow horizontal drag (movable "
-            "centres); graphic mode keeps freqs locked, gain only."
+            self.tr(
+                "Parametric curve editor — drag nodes on a log-frequency "
+                "canvas. AutoEQ profiles allow horizontal drag (movable "
+                "centres); graphic mode keeps freqs locked, gain only."
+            )
         )
         self._eq_advanced_check.toggled.connect(self._on_eq_advanced_toggled)
         eq_toggle_row.addWidget(self._eq_advanced_check)
@@ -188,7 +190,7 @@ class EqSettingsPage(QWidget):
         preset_row.setContentsMargins(0, 0, 46, 0)
         preset_row.setSpacing(16)
 
-        preset_lbl = self._field_label("Preset:")
+        preset_lbl = self._field_label(self.tr("Preset:"))
         preset_lbl.setMinimumWidth(self._label_col_w)
         preset_row.addWidget(preset_lbl)
 
@@ -205,11 +207,11 @@ class EqSettingsPage(QWidget):
         preset_row.addWidget(self._eq_preset_combo)
         preset_row.addStretch(1)
 
-        self._eq_save_btn = QPushButton("Save…")
+        self._eq_save_btn = QPushButton(self.tr("Save…"))
         self._eq_save_btn.clicked.connect(self._on_eq_save_preset)
         preset_row.addWidget(self._eq_save_btn)
 
-        self._eq_delete_btn = QPushButton("Delete")
+        self._eq_delete_btn = QPushButton(self.tr("Delete"))
         self._eq_delete_btn.clicked.connect(self._on_eq_delete_preset)
         preset_row.addWidget(self._eq_delete_btn)
 
@@ -257,7 +259,7 @@ class EqSettingsPage(QWidget):
         def _fmt_freq(hz: int) -> str:
             return f"{hz // 1000}k" if hz >= 1000 else str(hz)
 
-        labels = ["Pre"] + [_fmt_freq(f) for f in BAND_FREQUENCIES]
+        labels = [self.tr("Pre")] + [_fmt_freq(f) for f in BAND_FREQUENCIES]
         initial = [self.s.eq_preamp] + list(self.s.eq_bands)
 
         for label_text, val in zip(labels, initial, strict=False):
@@ -368,15 +370,15 @@ class EqSettingsPage(QWidget):
         wv.addSpacing(4)
         autoeq_row = QHBoxLayout()
         autoeq_row.setSpacing(8)
-        self._autoeq_status = QLabel("AutoEQ: not loaded")
+        self._autoeq_status = QLabel(self.tr("AutoEQ: not loaded"))
         self._autoeq_status.setStyleSheet(
             f"color: {TEXT_DIM}; {type_qss(TYPE_CAPTION)}"
         )
         autoeq_row.addWidget(self._autoeq_status, 1)
-        self._autoeq_import_btn = QPushButton("Import…")
+        self._autoeq_import_btn = QPushButton(self.tr("Import…"))
         self._autoeq_import_btn.clicked.connect(self._on_autoeq_import_clicked)
         autoeq_row.addWidget(self._autoeq_import_btn)
-        self._autoeq_clear_btn = QPushButton("Clear")
+        self._autoeq_clear_btn = QPushButton(self.tr("Clear"))
         self._autoeq_clear_btn.clicked.connect(self._on_autoeq_clear_clicked)
         autoeq_row.addWidget(self._autoeq_clear_btn)
         wv.addLayout(autoeq_row)
@@ -543,7 +545,7 @@ class EqSettingsPage(QWidget):
         the other ⓘ buttons."""
         from jellytoast.frosted_dialog import frosted_info
 
-        frosted_info(self, "Linear phase", _LINEAR_PHASE_INFO)
+        frosted_info(self, self.tr("Linear phase"), _LINEAR_PHASE_INFO)
 
     # ── AutoEQ profile import (EQ T3a) ──────────────────────────────
 
@@ -557,7 +559,7 @@ class EqSettingsPage(QWidget):
             return
         raw = self.s.eq_autoeq_profile_json or ""
         if not raw:
-            self._autoeq_status.setText("AutoEQ: not loaded")
+            self._autoeq_status.setText(self.tr("AutoEQ: not loaded"))
             self._autoeq_clear_btn.setEnabled(False)
             return
         try:
@@ -565,15 +567,15 @@ class EqSettingsPage(QWidget):
             n_bands = len(parsed.get("bands", []))
             n_skipped = len(parsed.get("skipped", []))
             preamp = parsed.get("preamp_db", 0.0)
-            parts = [f"{n_bands} bands"]
+            parts = [self.tr("{0} bands").format(n_bands)]
             if abs(preamp) > 0.05:
-                parts.append(f"preamp {preamp:+.1f} dB")
+                parts.append(self.tr("preamp {0:+.1f} dB").format(preamp))
             if n_skipped:
-                parts.append(f"{n_skipped} skipped")
-            self._autoeq_status.setText("AutoEQ: " + " · ".join(parts))
+                parts.append(self.tr("{0} skipped").format(n_skipped))
+            self._autoeq_status.setText(self.tr("AutoEQ: {0}").format(" · ".join(parts)))
             self._autoeq_clear_btn.setEnabled(True)
         except (json.JSONDecodeError, TypeError):
-            self._autoeq_status.setText("AutoEQ: (corrupt — Clear to reset)")
+            self._autoeq_status.setText(self.tr("AutoEQ: (corrupt — Clear to reset)"))
             self._autoeq_clear_btn.setEnabled(True)
 
     def _on_autoeq_import_clicked(self):
@@ -591,17 +593,19 @@ class EqSettingsPage(QWidget):
         # Read colour tokens live off ui_helpers — this module imported them
         # by value, so a dark↔light switch since import would leave the
         # frozen copies stale; the dialog is built fresh on each open.
-        dlg = FrostedDialog(self, title="Import AutoEQ profile")
+        dlg = FrostedDialog(self, title=self.tr("Import AutoEQ profile"))
         dlg.resize(560, 380)
         layout = dlg.content_layout
         layout.setSpacing(10)
 
         instructions = QLabel(
-            "Paste a ParametricEQ.txt-style profile from autoeq.app or "
-            "your headphone correction source. Each line should look "
-            "like: <code>Filter 1: ON PK Fc 105 Hz Gain 5.5 dB Q 1.41</code>. "
-            "Shelf filters (LSC / HSC) are skipped — most headphone "
-            "profiles are predominantly peaking filters."
+            self.tr(
+                "Paste a ParametricEQ.txt-style profile from autoeq.app or "
+                "your headphone correction source. Each line should look "
+                "like: <code>Filter 1: ON PK Fc 105 Hz Gain 5.5 dB Q 1.41</code>. "
+                "Shelf filters (LSC / HSC) are skipped — most headphone "
+                "profiles are predominantly peaking filters."
+            )
         )
         instructions.setWordWrap(True)
         instructions.setStyleSheet(
@@ -635,7 +639,7 @@ class EqSettingsPage(QWidget):
             | QDialogButtonBox.StandardButton.Ok
         )
         ok_btn = btns.button(QDialogButtonBox.StandardButton.Ok)
-        ok_btn.setText("Import")
+        ok_btn.setText(self.tr("Import"))
         ok_btn.setEnabled(False)
         layout.addWidget(btns)
 
@@ -649,19 +653,17 @@ class EqSettingsPage(QWidget):
                 return
             parsed = parse_autoeq_profile(text)
             if not parsed["bands"]:
-                preview.setText(
-                    "No peaking filters detected — check the format."
-                )
+                preview.setText(self.tr("No peaking filters detected — check the format."))
                 ok_btn.setEnabled(False)
                 return
             n_bands = len(parsed["bands"])
             n_skipped = len(parsed["skipped"])
-            parts = [f"{n_bands} bands"]
+            parts = [self.tr("{0} bands").format(n_bands)]
             if abs(parsed["preamp_db"]) > 0.05:
-                parts.append(f"preamp {parsed['preamp_db']:+.1f} dB")
+                parts.append(self.tr("preamp {0:+.1f} dB").format(parsed["preamp_db"]))
             if n_skipped:
-                parts.append(f"{n_skipped} non-peaking filters will be skipped")
-            preview.setText("Ready: " + " · ".join(parts))
+                parts.append(self.tr("{0} non-peaking filters will be skipped").format(n_skipped))
+            preview.setText(self.tr("Ready: {0}").format(" · ".join(parts)))
             ok_btn.setEnabled(True)
 
         text_edit.textChanged.connect(_on_text_changed)
@@ -906,7 +908,7 @@ class EqSettingsPage(QWidget):
             )
         if cast_active:
             self._eq_caption.setText(
-                "Casting — EQ applies to local playback only and is inactive now."
+                self.tr("Casting — EQ applies to local playback only and is inactive now.")
             )
             self._eq_caption.setVisible(True)
         else:
@@ -1076,9 +1078,7 @@ class EqSettingsPage(QWidget):
         from jellytoast.eq_presets import PRESETS
         from jellytoast.frosted_dialog import frosted_confirm, frosted_warning
 
-        name, ok = QInputDialog.getText(
-            self, "Save preset", "Preset name:"
-        )
+        name, ok = QInputDialog.getText(self, self.tr("Save preset"), self.tr("Preset name:"))
         if not ok:
             return
         name = (name or "").strip()
@@ -1087,17 +1087,17 @@ class EqSettingsPage(QWidget):
         if name in PRESETS or name == "Custom":
             frosted_warning(
                 self,
-                "Name taken",
-                f"'{name}' is a built-in preset name. Pick a different name.",
+                self.tr("Name taken"),
+                self.tr("'{0}' is a built-in preset name. Pick a different name.").format(name),
             )
             return
         existing = self.s.eq_user_presets
         if name in existing:
             if not frosted_confirm(
                 self,
-                "Overwrite preset",
-                f"User preset '{name}' already exists. Overwrite?",
-                confirm_text="Overwrite",
+                self.tr("Overwrite preset"),
+                self.tr("User preset '{0}' already exists. Overwrite?").format(name),
+                confirm_text=self.tr("Overwrite"),
             ):
                 return
         preamp = float(self._eq_sliders[0].value())
@@ -1121,9 +1121,9 @@ class EqSettingsPage(QWidget):
             return
         if not frosted_confirm(
             self,
-            "Delete preset",
-            f"Delete user preset '{name}'?",
-            confirm_text="Delete",
+            self.tr("Delete preset"),
+            self.tr("Delete user preset '{0}'?").format(name),
+            confirm_text=self.tr("Delete"),
             destructive=True,
         ):
             return

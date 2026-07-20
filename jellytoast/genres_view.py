@@ -353,8 +353,8 @@ class _GenresListView(QListView):
         )
 
         menu = opaque_menu(self)
-        radio_act = menu.addAction("Start genre radio")
-        sp_act = menu.addAction(f"Create smart playlist: {gname} Discoveries")
+        radio_act = menu.addAction(self.tr("Start genre radio"))
+        sp_act = menu.addAction(self.tr("Create smart playlist: {0} Discoveries").format(gname))
         chosen = menu.exec(e.globalPos())
         if chosen is radio_act:
             start_seed_radio("genre", item.get("Id", ""), gname)
@@ -412,10 +412,12 @@ class GenresView(QWidget):
         # a blank scroll area.
         self._empty_state = EmptyState(
             glyph="♪",
-            headline="No genres yet",
-            sub="Your library hasn't reported any genres — try "
-            "refreshing the library or wait for tracks to import.",
-            action_label="Refresh",
+            headline=self.tr("No genres yet"),
+            sub=self.tr(
+                "Your library hasn't reported any genres — try "
+                "refreshing the library or wait for tracks to import."
+            ),
+            action_label=self.tr("Refresh"),
             parent=self,
         )
         self._empty_state.action_clicked.connect(

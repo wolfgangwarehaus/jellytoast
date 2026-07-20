@@ -25,6 +25,7 @@ from typing import Dict, List
 
 from PySide6.QtCore import (
     QAbstractListModel,
+    QCoreApplication,
     QEvent,
     QModelIndex,
     QPoint,
@@ -812,7 +813,7 @@ class _TileDelegate(QStyledItemDelegate):
         painter.setFont(self._title_font)
         fm_title = self._fm_title
         painter.setPen(QColor(_TEXT))
-        title = item.get("Name") or "Unknown"
+        title = item.get("Name") or self.tr("Unknown")
         painter.drawText(
             title_rect,
             int(Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignVCenter),
@@ -1111,7 +1112,7 @@ class _RowDelegate(QStyledItemDelegate):
 
         painter.setFont(title_font)
         painter.setPen(QColor(_TEXT))
-        title = item.get("Name") or "Unknown"
+        title = item.get("Name") or self.tr("Unknown")
         painter.drawText(
             title_rect,
             int(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter),
@@ -1182,7 +1183,11 @@ class _RowDelegate(QStyledItemDelegate):
 def _compute_subtitle(item: Dict, kind: str) -> str:
     if kind == "playlist":
         count = item.get("ChildCount") or 0
-        return f"{count} tracks" if count != 1 else "1 track"
+        return (
+            QCoreApplication.translate("LibraryGrid", "{0} tracks").format(count)
+            if count != 1
+            else QCoreApplication.translate("LibraryGrid", "1 track")
+        )
     if kind == "artist":
         genres = [g for g in (item.get("Genres") or []) if g]
         return genres[0] if genres else ""
@@ -1607,12 +1612,12 @@ class _LibraryListView(QListView):
         kind = self._tile_delegate._kind
         cascade_kinds = ("album", "playlist", "artist")
         if kind in cascade_kinds:
-            name = item.get("Name") or f"this {kind}"
+            name = item.get("Name") or self.tr("this {0}").format(kind)
             if not frosted_confirm(
                 self,
-                "Remove download",
-                f"Remove the downloaded files for “{name}”?",
-                confirm_text="Remove",
+                self.tr("Remove download"),
+                self.tr("Remove the downloaded files for “{0}”?").format(name),
+                confirm_text=self.tr("Remove"),
                 destructive=True,
             ):
                 return
@@ -1652,22 +1657,26 @@ class _LibraryListView(QListView):
         # curated set).
         radio_act = None
         if kind == "album":
-            radio_act = menu.addAction("Start album radio")
+            radio_act = menu.addAction(self.tr("Start album radio"))
         elif kind == "artist":
-            radio_act = menu.addAction("Start artist radio")
+            radio_act = menu.addAction(self.tr("Start artist radio"))
         # Create smart playlist from this album / artist — pre-fills the
         # editor with a from_album / from_artist recipe. Naming follows
         # the short-suffix idiom: "More like X" / "Deep Cuts: X".
         sp_act = None
         if item_name and kind in ("album", "artist"):
             sp_act = menu.addAction(
-                f"Create smart playlist: More like {item_name}"
+                self.tr("Create smart playlist: More like {0}").format(item_name)
                 if kind == "album"
-                else f"Create smart playlist: Deep Cuts: {item_name}"
+                else self.tr("Create smart playlist: Deep Cuts: {0}").format(
+                    item_name
+                )
             )
         if radio_act is not None or sp_act is not None:
             menu.addSeparator()
-        act = menu.addAction("Remove download" if downloaded else "Download")
+        act = menu.addAction(
+            self.tr("Remove download") if downloaded else self.tr("Download")
+        )
         chosen = menu.exec(e.globalPos())
         if radio_act is not None and chosen is radio_act:
             seed_kind = "album" if kind == "album" else "artist"
@@ -1689,12 +1698,12 @@ class _LibraryListView(QListView):
         # Removing a parent cascades to its tracks — confirm first.
         from jellytoast.frosted_dialog import frosted_confirm
 
-        name = item.get("Name") or f"this {kind}"
+        name = item.get("Name") or self.tr("this {0}").format(kind)
         if frosted_confirm(
             self,
-            "Remove download",
-            f"Remove the downloaded files for “{name}”?",
-            confirm_text="Remove",
+            self.tr("Remove download"),
+            self.tr("Remove the downloaded files for “{0}”?").format(name),
+            confirm_text=self.tr("Remove"),
             destructive=True,
         ):
             offline.remove(item_id)
@@ -2066,7 +2075,7 @@ class LibraryGrid(_PaginatorMixin, QWidget):
             glyph="♪",
             headline=self._empty_default_headline(),
             sub="",
-            action_label="Refresh",
+            action_label=self.tr("Refresh"),
             parent=self,
         )
         self._empty_state.action_clicked.connect(
@@ -2087,7 +2096,7 @@ class LibraryGrid(_PaginatorMixin, QWidget):
         # "Loading more…" footer surfaces while a paginated next-page
         # fetch is in flight. Centered + caption-tier so it reads as
         # status info, not a tile. Hidden by default.
-        self._loading_more_label = QLabel("Loading more…", self)
+        self._loading_more_label = QLabel(self.tr("Loading more…"), self)
         self._loading_more_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._loading_more_label.setStyleSheet(self._loading_more_qss())
         self._loading_more_label.setVisible(False)
@@ -2277,10 +2286,10 @@ class LibraryGrid(_PaginatorMixin, QWidget):
 
     def _empty_default_headline(self) -> str:
         if self.kind == "playlist":
-            return "No playlists yet"
+            return self.tr("No playlists yet")
         if self.kind == "artist":
-            return "No artists yet"
-        return "No albums yet"
+            return self.tr("No artists yet")
+        return self.tr("No albums yet")
 
     def _empty_copy_for_scope(self) -> "tuple[str, str]":
         """Headline + sub-line tuned to the current filter scope. A
@@ -2290,17 +2299,19 @@ class LibraryGrid(_PaginatorMixin, QWidget):
         kind = self.kind
         if self._genre_id:
             return (
-                f"No {kind}s in this genre",
-                "Try a different genre or refresh the library.",
+                self.tr("No {0}s in this genre").format(kind),
+                self.tr("Try a different genre or refresh the library."),
             )
         if self._year:
             return (
-                f"No {kind}s from {self._year}",
-                "Try a different year or refresh the library.",
+                self.tr("No {0}s from {1}").format(kind, self._year),
+                self.tr("Try a different year or refresh the library."),
             )
         return (
             self._empty_default_headline(),
-            "Your library may still be loading, or it's empty. Refresh to retry.",
+            self.tr(
+                "Your library may still be loading, or it's empty. Refresh to retry."
+            ),
         )
 
     def _show_empty_state(self):

@@ -28,8 +28,8 @@ class TrayController(QObject):
 
         self.bus.playback_started.connect(self._on_started)
         self.bus.playback_stopped.connect(self._on_stopped)
-        self.bus.playback_paused.connect(lambda: self.play_action.setText("▶  Play"))
-        self.bus.playback_resumed.connect(lambda: self.play_action.setText("⏸  Pause"))
+        self.bus.playback_paused.connect(lambda: self.play_action.setText(self.tr("▶  Play")))
+        self.bus.playback_resumed.connect(lambda: self.play_action.setText(self.tr("⏸  Pause")))
 
     def _build_menu(self):
         self.menu = opaque_menu()
@@ -54,31 +54,31 @@ class TrayController(QObject):
         # only held by a local variable, the Python wrapper gets garbage-
         # collected and the menu silently loses the item — even though
         # menu.addAction() supposedly reparents it. Pass self.menu as parent.
-        self.now_playing = QAction("─── Nothing Playing ───", self.menu)
+        self.now_playing = QAction(self.tr("─── Nothing Playing ───"), self.menu)
         self.now_playing.setEnabled(False)
         self.menu.addAction(self.now_playing)
 
         self.menu.addSeparator()
 
-        self.play_action = QAction("▶  Play", self.menu)
+        self.play_action = QAction(self.tr("▶  Play"), self.menu)
         self.play_action.triggered.connect(lambda: self.bus.pause_toggled.emit())
         self.menu.addAction(self.play_action)
 
-        self.prev_action = QAction("⏮  Previous", self.menu)
+        self.prev_action = QAction(self.tr("⏮  Previous"), self.menu)
         self.prev_action.triggered.connect(lambda: self.bus.prev_track.emit())
         self.menu.addAction(self.prev_action)
 
-        self.next_action = QAction("⏭  Next", self.menu)
+        self.next_action = QAction(self.tr("⏭  Next"), self.menu)
         self.next_action.triggered.connect(lambda: self.bus.next_track.emit())
         self.menu.addAction(self.next_action)
 
-        self.stop_action = QAction("⏹  Stop", self.menu)
+        self.stop_action = QAction(self.tr("⏹  Stop"), self.menu)
         self.stop_action.triggered.connect(lambda: self.bus.stop_requested.emit())
         self.menu.addAction(self.stop_action)
 
         self.menu.addSeparator()
 
-        self.mini_action = QAction("🪟  Show Mini Player", self.menu)
+        self.mini_action = QAction(self.tr("🪟  Show Mini Player"), self.menu)
         self.mini_action.triggered.connect(self._toggle_mini)
         self.menu.addAction(self.mini_action)
         # Sync the Show/Hide label to the mini player's ACTUAL visibility each
@@ -86,13 +86,13 @@ class TrayController(QObject):
         # which _toggle_mini's optimistic label update wouldn't catch.
         self.menu.aboutToShow.connect(self._refresh_mini_label)
 
-        self.open_action = QAction("🎬  Open jellytoast", self.menu)
+        self.open_action = QAction(self.tr("🎬  Open jellytoast"), self.menu)
         self.open_action.triggered.connect(lambda: self.bus.open_main_window.emit())
         self.menu.addAction(self.open_action)
 
         self.menu.addSeparator()
 
-        self.quit_action = QAction("✕  Quit jellytoast", self.menu)
+        self.quit_action = QAction(self.tr("✕  Quit jellytoast"), self.menu)
         self.quit_action.triggered.connect(self._quit)
         self.menu.addAction(self.quit_action)
 
@@ -160,16 +160,18 @@ class TrayController(QObject):
 
     def _refresh_mini_label(self):
         self.mini_action.setText(
-            "🪟  Hide Mini Player" if self.mini.isVisible() else "🪟  Show Mini Player"
+            self.tr("🪟  Hide Mini Player")
+            if self.mini.isVisible()
+            else self.tr("🪟  Show Mini Player")
         )
 
     def _toggle_mini(self):
         if self.mini.isVisible():
             self.mini.hide()
-            self.mini_action.setText("🪟  Show Mini Player")
+            self.mini_action.setText(self.tr("🪟  Show Mini Player"))
         else:
             self.mini.show()
-            self.mini_action.setText("🪟  Hide Mini Player")
+            self.mini_action.setText(self.tr("🪟  Hide Mini Player"))
 
     def _on_activated(self, reason):
         from jellytoast.platform_compat import IS_LINUX, IS_MACOS
@@ -208,10 +210,10 @@ class TrayController(QObject):
             label = label[:47] + "…"
         self.now_playing.setText(f"♪  {label}")
         self.tray.setToolTip(f"jellytoast\n{label}")
-        self.play_action.setText("⏸  Pause")
+        self.play_action.setText(self.tr("⏸  Pause"))
 
     @Slot()
     def _on_stopped(self):
-        self.now_playing.setText("─── Nothing Playing ───")
+        self.now_playing.setText(self.tr("─── Nothing Playing ───"))
         self.tray.setToolTip("jellytoast")
-        self.play_action.setText("▶  Play")
+        self.play_action.setText(self.tr("▶  Play"))

@@ -318,7 +318,7 @@ class _SongRowDelegate(QStyledItemDelegate):
         painter.setFont(self._body_font)
         fm_body = self._fm_body
         painter.setPen(QColor(_TEXT))
-        title = item.get("Name") or "Unknown"
+        title = item.get("Name") or self.tr("Unknown")
         painter.drawText(
             title_rect,
             int(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter),
@@ -558,9 +558,9 @@ class SongsView(QWidget):
         # with the same visual language as albums / artists / genres.
         self._empty_state = EmptyState(
             glyph="♪",
-            headline="No songs yet",
-            sub="Your library is empty, or your connection isn't ready.",
-            action_label="Refresh",
+            headline=self.tr("No songs yet"),
+            sub=self.tr("Your library is empty, or your connection isn't ready."),
+            action_label=self.tr("Refresh"),
             parent=self,
         )
         self._empty_state.action_clicked.connect(
@@ -747,8 +747,8 @@ class SongsView(QWidget):
 
         bus = PlayerBus.get()
         menu = opaque_menu(self._view)
-        play_next = menu.addAction("Play next")
-        add_end = menu.addAction("Add to queue")
+        play_next = menu.addAction(self.tr("Play next"))
+        add_end = menu.addAction(self.tr("Add to queue"))
 
         # Start-radio — seeds an INSTANT_MIX queue with this track; the
         # RadioFeeder auto-extends with similar tracks near the tail.
@@ -756,7 +756,7 @@ class SongsView(QWidget):
         radio_act = None
         if song_id:
             menu.addSeparator()
-            radio_act = menu.addAction("Start radio from this song")
+            radio_act = menu.addAction(self.tr("Start radio from this song"))
 
         # Create smart playlist seeded by this track — "More like
         # {Track}". from_track reads the track's Genres +
@@ -769,7 +769,9 @@ class SongsView(QWidget):
         if track_name:
             if radio_act is None:
                 menu.addSeparator()
-            sp_act = menu.addAction(f"Create smart playlist: More like {track_name}")
+            sp_act = menu.addAction(
+                self.tr("Create smart playlist: More like {0}").format(track_name)
+            )
 
         # Edit tags — only when the active provider supports metadata
         # editing AND the signed-in account is permitted (Jellyfin
@@ -781,7 +783,7 @@ class SongsView(QWidget):
             prov = get_provider()
             if getattr(prov, "can_edit_metadata", False) and prov.can_edit_metadata_on_account():
                 menu.addSeparator()
-                edit_act = menu.addAction("Edit tags…")
+                edit_act = menu.addAction(self.tr("Edit tags…"))
 
         chosen = menu.exec(self._view.viewport().mapToGlobal(pos))
         if chosen is play_next:
@@ -803,7 +805,7 @@ class SongsView(QWidget):
             from jellytoast.toast import show_toast
 
             if open_tag_editor(item, self):
-                show_toast(self.window(), "Tags updated", bottom_margin=128)
+                show_toast(self.window(), self.tr("Tags updated"), bottom_margin=128)
 
     @Slot(object)
     def _on_view_clicked(self, idx):
@@ -1089,9 +1091,11 @@ class SongsView(QWidget):
         self._initial_load_complete = True
         self._empty_state.set_state(
             glyph="⚠",
-            headline="Couldn't load songs",
-            sub="The server didn't respond. Check your connection and try again.",
-            action_label="Retry",
+            headline=self.tr("Couldn't load songs"),
+            sub=self.tr(
+                "The server didn't respond. Check your connection and try again."
+            ),
+            action_label=self.tr("Retry"),
         )
         self._content_stack.setCurrentIndex(1)
 
@@ -1376,9 +1380,9 @@ class SongsView(QWidget):
         if not items:
             self._empty_state.set_state(
                 glyph="♪",
-                headline="No songs yet",
-                sub="Your library is empty, or your connection isn't ready.",
-                action_label="Refresh",
+                headline=self.tr("No songs yet"),
+                sub=self.tr("Your library is empty, or your connection isn't ready."),
+                action_label=self.tr("Refresh"),
             )
             self._content_stack.setCurrentIndex(1)
             return

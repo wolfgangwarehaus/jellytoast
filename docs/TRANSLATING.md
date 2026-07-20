@@ -51,5 +51,22 @@ dropdown builds itself from that list.
   catalog picks up the new sources (existing translations are preserved;
   changed strings show as "unfinished" until retranslated).
 
-Coverage note: the string sweep is landing surface-by-surface — the sign-in
-screen shipped first; the rest of the app is being wrapped in follow-up passes.
+## Known not-yet-translatable strings
+
+The full-app sweep (2026-07) wrapped ~740 strings. What remains English needs
+small refactors (tracked on #232) because translating it naively would break
+behavior — each is either evaluated at module import time (before translators
+install) or doubles as an identity/persisted value:
+
+- Settings nav page titles ("General", "Playback", "Casting"…) — compared by
+  `show_page()` and used for deep-links; needs a key/label split.
+- Import-time constant label lists: `AUDIO_QUALITIES`, `REPLAYGAIN_MODES`,
+  `HOME_DESTINATIONS`, `LYRICS_FONT_SIZES`, `CAST_ROUTING_MODES`,
+  `_THEME_MODE_CHOICES`, `ACCENT_PRESETS` tooltips, `_LINEAR_PHASE_INFO`,
+  smart-playlist `_FIELD_LABELS`/`_SORT_LABELS` + preset names +
+  `validate_rules` messages, `download_button._TIPS`, `downloads_view._KIND_LABEL`,
+  top-bar `_LIBRARY_TABS`/`LIBRARY_SORT_OPTIONS`, `frosted_dialog` default
+  button texts, radio `POPULAR_STATIONS` category headers.
+- Identity strings: EQ preset "Custom" (persisted), session "Primary" fallback,
+  cast section headers (product names anyway), taskbar overlay "play"/"pause"
+  (doubles as a cache key), macOS native-menu lookups ("Services", "About Qt").

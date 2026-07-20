@@ -568,7 +568,7 @@ class _TrackDelegate(QStyledItemDelegate):
         # `PlayerBus.theme_changed`.
         painter.setFont(self._divider_font)
         fm = self._fm_divider
-        label = f"Disc {disc_num}  ·  {count} tracks"
+        label = self.tr("Disc {0}  ·  {1} tracks").format(disc_num, count)
         label_w = fm.horizontalAdvance(label)
         label_rect = QRect(
             rect.x() + self.LEFT_PAD,
@@ -698,7 +698,7 @@ class _TrackDelegate(QStyledItemDelegate):
             title_rect = QRect(text_x, rect.y(), text_w, rect.height())
             sub_rect = None
 
-        title = item.get("Name") or "Unknown"
+        title = item.get("Name") or self.tr("Unknown")
         if is_current:
             painter.setPen(QColor(_ACCENT))
         else:

@@ -18,7 +18,7 @@ savings and avoiding a cast_dialog ↔ host cycle.
 import logging
 import os
 
-from PySide6.QtCore import QPoint, QTimer
+from PySide6.QtCore import QCoreApplication, QPoint, QTimer
 
 from jellytoast.cast_manager import CastType
 from jellytoast.player_state import get_now_playing
@@ -119,17 +119,27 @@ class _CastDispatcherMixin:
         if favs:
             for fav in favs:
                 glyph = _icon("airplay" if fav.get("type") == "airplay" else "cast")
-                act = menu.addAction(glyph, fav.get("name") or "Device")
+                act = menu.addAction(
+                    glyph,
+                    fav.get("name")
+                    or QCoreApplication.translate("CastDispatcher", "Device"),
+                )
                 act.triggered.connect(lambda _=False, f=fav: self._cast_to_favorite(f))
         else:
-            placeholder = menu.addAction("No favorite devices")
+            placeholder = menu.addAction(
+                QCoreApplication.translate("CastDispatcher", "No favorite devices")
+            )
             placeholder.setEnabled(False)
         menu.addSeparator()
-        disconnect = menu.addAction("Disconnect")
+        disconnect = menu.addAction(
+            QCoreApplication.translate("CastDispatcher", "Disconnect")
+        )
         disconnect.setEnabled(self.cast_manager.active_cast is not None)
         disconnect.triggered.connect(self._disconnect_cast)
         menu.addSeparator()
-        open_picker = menu.addAction("Open cast menu…")
+        open_picker = menu.addAction(
+            QCoreApplication.translate("CastDispatcher", "Open cast menu…")
+        )
         open_picker.triggered.connect(self._open_cast_dialog)
         # Anchor the menu fully above the mini-player / cast / volume
         # icon cluster, horizontally centered on it — rather than at the
@@ -192,9 +202,12 @@ class _CastDispatcherMixin:
 
                 frosted_info(
                     self,
-                    "Cast",
-                    f"Couldn't find “{fav.get('name')}” on the "
-                    f"network right now. Open the cast menu to rescan.",
+                    QCoreApplication.translate("CastDispatcher", "Cast"),
+                    QCoreApplication.translate(
+                        "CastDispatcher",
+                        "Couldn't find “{0}” on the "
+                        "network right now. Open the cast menu to rescan.",
+                    ).format(fav.get("name")),
                 )
 
         timer.timeout.connect(_poll)
@@ -246,7 +259,12 @@ class _CastDispatcherMixin:
                 from jellytoast.frosted_dialog import frosted_warning
 
                 frosted_warning(
-                    self, "Cast failed", f"Could not cast to {_dev.name}.", icon_name="cast"
+                    self,
+                    QCoreApplication.translate("CastDispatcher", "Cast failed"),
+                    QCoreApplication.translate(
+                        "CastDispatcher", "Could not cast to {0}."
+                    ).format(_dev.name),
+                    icon_name="cast",
                 )
                 # We stopped local mpv up front (stop_requested at the top of
                 # _cast_to_device) before attempting the cast. On failure the

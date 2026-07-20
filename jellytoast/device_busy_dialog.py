@@ -16,6 +16,7 @@ from __future__ import annotations
 
 from typing import Callable, Optional
 
+from PySide6.QtCore import QCoreApplication
 from PySide6.QtWidgets import QHBoxLayout, QLabel, QPushButton, QWidget
 
 from jellytoast.design_tokens import TYPE_BODY, type_qss
@@ -30,14 +31,20 @@ class DeviceBusyDialog(FrostedDialog):
         device_label: str,
         on_play_via_pipewire: Optional[Callable[[], None]] = None,
     ) -> None:
-        super().__init__(parent, title="Audio device in use", min_width=420)
+        super().__init__(
+            parent,
+            title=QCoreApplication.translate("DeviceBusyDialog", "Audio device in use"),
+            min_width=420,
+        )
         from jellytoast import ui_helpers as _u
 
         self._message = QLabel(
-            f"{device_label} is in use by another app.\n\n"
-            "Bit-perfect playback claims the device exclusively — stop "
-            "other audio first, then press play again. Or play through "
-            "PipeWire for now (shared, not bit-perfect)."
+            self.tr(
+                "{0} is in use by another app.\n\n"
+                "Bit-perfect playback claims the device exclusively — stop "
+                "other audio first, then press play again. Or play through "
+                "PipeWire for now (shared, not bit-perfect)."
+            ).format(device_label)
         )
         self._message.setWordWrap(True)
         self._message.setStyleSheet(
@@ -48,7 +55,7 @@ class DeviceBusyDialog(FrostedDialog):
         row = QHBoxLayout()
         row.addStretch(1)
         if on_play_via_pipewire is not None:
-            self._pipewire_btn = QPushButton("Play via PipeWire")
+            self._pipewire_btn = QPushButton(self.tr("Play via PipeWire"))
             self._pipewire_btn.setAutoDefault(False)
 
             def _go():
@@ -57,7 +64,7 @@ class DeviceBusyDialog(FrostedDialog):
 
             self._pipewire_btn.clicked.connect(_go)
             row.addWidget(self._pipewire_btn)
-        self._ok_btn = QPushButton("OK")
+        self._ok_btn = QPushButton(self.tr("OK"))
         self._ok_btn.setDefault(True)
         self._ok_btn.clicked.connect(self.reject)
         row.addWidget(self._ok_btn)

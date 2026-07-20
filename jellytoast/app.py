@@ -190,7 +190,7 @@ if _qt_plugin_added:
         _qt_plugin_added,
     )
 
-from PySide6.QtCore import QEvent, QObject, Qt, QTimer, Slot
+from PySide6.QtCore import QCoreApplication, QEvent, QObject, Qt, QTimer, Slot
 from PySide6.QtGui import QColor, QGuiApplication, QIcon, QPainter
 from PySide6.QtWidgets import (
     QAbstractButton,
@@ -1117,8 +1117,10 @@ class JellytoastWindow(_NavMixin, _SessionMixin, _CastDispatcherMixin, _ShuffleP
 
         show_toast(
             self,
-            "Other audio is playing — output is shared, not bit-perfect, "
-            "until other playback stops.",
+            self.tr(
+                "Other audio is playing — output is shared, not bit-perfect, "
+                "until other playback stops."
+            ),
             bottom_margin=128,
         )
 
@@ -2328,10 +2330,13 @@ def main():
     if not MPV_AVAILABLE:
         QMessageBox.critical(
             None,
-            "Missing dependency",
-            "jellytoast requires libmpv.\n\n"
-            "Install mpv from your system package manager, "
-            "or download it from https://mpv.io.",
+            QCoreApplication.translate("JellytoastWindow", "Missing dependency"),
+            QCoreApplication.translate(
+                "JellytoastWindow",
+                "jellytoast requires libmpv.\n\n"
+                "Install mpv from your system package manager, "
+                "or download it from https://mpv.io.",
+            ),
         )
         sys.exit(1)
 
@@ -2348,9 +2353,12 @@ def main():
     if not QSystemTrayIcon.isSystemTrayAvailable():
         QMessageBox.warning(
             None,
-            "No system tray",
-            "Your desktop doesn't appear to have a system tray.\n"
-            "jellytoast will run, but tray features will be unavailable.",
+            QCoreApplication.translate("JellytoastWindow", "No system tray"),
+            QCoreApplication.translate(
+                "JellytoastWindow",
+                "Your desktop doesn't appear to have a system tray.\n"
+                "jellytoast will run, but tray features will be unavailable.",
+            ),
         )
 
     bus = PlayerBus.get()

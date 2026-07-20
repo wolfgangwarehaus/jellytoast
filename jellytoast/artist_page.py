@@ -19,7 +19,7 @@ Play overlay → install that album as the live queue + start.
 import logging
 from typing import Dict, List, Optional
 
-from PySide6.QtCore import Qt, Signal, Slot
+from PySide6.QtCore import QCoreApplication, Qt, Signal, Slot
 
 logger = logging.getLogger(__name__)
 from PySide6.QtGui import QPalette, QPixmap
@@ -147,7 +147,8 @@ def _resolve_offline_artist(artist_id: str):
                 if (ar or {}).get("Id") == artist_id:
                     meta = {
                         "Id": artist_id,
-                        "Name": ar.get("Name") or "Unknown artist",
+                        "Name": ar.get("Name")
+                        or QCoreApplication.translate("ArtistPage", "Unknown artist"),
                         "Type": "MusicArtist",
                     }
                     break
@@ -228,12 +229,12 @@ class ArtistPage(QWidget):
         meta.setContentsMargins(0, SPACE_SM, 0, 0)
         meta.setSpacing(SPACE_SM)
 
-        self._kicker = QLabel("ARTIST")
+        self._kicker = QLabel(self.tr("ARTIST"))
         self._kicker.setStyleSheet(self._kicker_qss())
         apply_type(self._kicker, TYPE_MICRO)
         meta.addWidget(self._kicker)
 
-        self._name = QLabel("Loading…")
+        self._name = QLabel(self.tr("Loading…"))
         self._name.setFont(font(TYPE_DISPLAY))
         self._name.setStyleSheet(self._name_qss())
         self._name.setWordWrap(True)
@@ -305,9 +306,11 @@ class ArtistPage(QWidget):
         # empty) reads as "no albums" instead of a blank grid.
         self._empty_state = EmptyState(
             glyph="♪",
-            headline="No albums for this artist",
-            sub="The artist is in your library but no albums "
-            "are showing — try refreshing or going back.",
+            headline=self.tr("No albums for this artist"),
+            sub=self.tr(
+                "The artist is in your library but no albums "
+                "are showing — try refreshing or going back."
+            ),
             parent=self,
         )
         self._grid_stack = QStackedWidget(self)
@@ -537,7 +540,7 @@ class ArtistPage(QWidget):
         # empty state doesn't linger on the new artist's load.
         self._grid_stack.setCurrentIndex(0)
         self._initial_albums_load_complete = False
-        self._name.setText("Loading…")
+        self._name.setText(self.tr("Loading…"))
         self._info.setText("")
         # Offline mode: resolve everything from the local snapshot graph
         # instead of hitting the provider. The provider would just time
@@ -597,7 +600,7 @@ class ArtistPage(QWidget):
             bits.append(genres[0])
         if self._initial_albums_load_complete:
             n = self._model.rowCount()
-            bits.append(f"{n} albums" if n != 1 else "1 album")
+            bits.append(self.tr("{0} albums").format(n) if n != 1 else self.tr("1 album"))
         self._info.setText("  ·  ".join(bits))
 
     @Slot(str, object)
@@ -605,10 +608,10 @@ class ArtistPage(QWidget):
         if artist_id != self._artist_id:
             return  # stale; user moved on
         if meta is None:
-            self._name.setText("Couldn't load artist")
+            self._name.setText(self.tr("Couldn't load artist"))
             return
         self._artist_meta = meta
-        self._name.setText(meta.get("Name") or "Unknown")
+        self._name.setText(meta.get("Name") or self.tr("Unknown"))
         # Rebuild from shared state so this handler doesn't clobber the
         # album count _on_albums_loaded may have already set. Both async
         # handlers call _rebuild_info(), so meta + albums can resolve in

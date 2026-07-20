@@ -81,8 +81,10 @@ class DownloadsLibraryView(QWidget):
         page_layout.addWidget(self._scroll, 1)
 
         self._empty = QLabel(
-            "No downloads yet.\nRight-click an album, playlist, artist, or "
-            "track to download it."
+            self.tr(
+                "No downloads yet.\nRight-click an album, playlist, artist, or "
+                "track to download it."
+            )
         )
         self._empty.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._empty.setStyleSheet(
@@ -211,14 +213,20 @@ class DownloadsLibraryView(QWidget):
         row = self._rows.get(item_id)
         kind = row._kind if row is not None else ""
         if kind in _CASCADE_KINDS:
-            kind_label = {"album": "album", "artist": "artist", "playlist": "playlist"}[kind]
+            kind_label = {
+                "album": self.tr("album"),
+                "artist": self.tr("artist"),
+                "playlist": self.tr("playlist"),
+            }[kind]
             from jellytoast.frosted_dialog import frosted_confirm
 
             if not frosted_confirm(
                 self,
-                "Remove download",
-                f"Remove this {kind_label} and every downloaded track inside it?",
-                confirm_text="Remove",
+                self.tr("Remove download"),
+                self.tr(
+                    "Remove this {0} and every downloaded track inside it?"
+                ).format(kind_label),
+                confirm_text=self.tr("Remove"),
                 destructive=True,
             ):
                 return

@@ -99,7 +99,7 @@ class TagEditorDialog(QDialog):
         self._new_cover_bytes: Optional[bytes] = None
         self._new_cover_mime: str = ""
 
-        self.setWindowTitle("Edit tags")
+        self.setWindowTitle(self.tr("Edit tags"))
         self.setModal(True)
         self.setMinimumWidth(520)
         # Live-accent: re-stamp baked QSS on theme_changed. With
@@ -128,7 +128,9 @@ class TagEditorDialog(QDialog):
         from jellytoast.ui_helpers import TEXT_DIM as _TEXT_DIM
         from jellytoast.ui_helpers import TEXT_FAINT as _TEXT_FAINT
 
-        hint = QLabel("Artists and Genres are comma-separated. 0 leaves a number unset.")
+        hint = QLabel(
+            self.tr("Artists and Genres are comma-separated. 0 leaves a number unset.")
+        )
         hint.setWordWrap(True)
         hint.setStyleSheet(f"color: {_TEXT_FAINT}; {type_qss(TYPE_CAPTION)}")
         self._tinted.append((hint, "TEXT_FAINT"))
@@ -139,7 +141,9 @@ class TagEditorDialog(QDialog):
         # the single-track flow only, never a checkbox we can't honor.
         self._bulk_check: Optional[QCheckBox] = None
         if self._album_id:
-            self._bulk_check = QCheckBox("Apply changes to all tracks on this album")
+            self._bulk_check = QCheckBox(
+                self.tr("Apply changes to all tracks on this album")
+            )
             self._bulk_check.setStyleSheet(
                 f"QCheckBox {{ color: {_TEXT_DIM}; {type_qss(TYPE_CAPTION)} }}"
             )
@@ -228,7 +232,7 @@ class TagEditorDialog(QDialog):
         self._render_cover_placeholder()
         col.addWidget(self._cover_label, 0, Qt.AlignmentFlag.AlignTop)
 
-        self._cover_button = QPushButton("Replace cover…")
+        self._cover_button = QPushButton(self.tr("Replace cover…"))
         self._cover_button.clicked.connect(self._on_pick_cover)
         # No album id → no cover endpoint to write to. Disable rather
         # than hide so the layout stays stable across track types.
@@ -262,13 +266,13 @@ class TagEditorDialog(QDialog):
         self._year.setRange(0, 9999)
         self._year.setValue(int(self._track.get("ProductionYear") or 0))
 
-        form.addRow(self._label("Title"), self._name)
-        form.addRow(self._label("Artists"), self._artists)
-        form.addRow(self._label("Album"), self._album)
-        form.addRow(self._label("Album artist"), self._album_artist)
-        form.addRow(self._label("Genres"), self._genres)
-        form.addRow(self._label("Track no."), self._track_no)
-        form.addRow(self._label("Year"), self._year)
+        form.addRow(self._label(self.tr("Title")), self._name)
+        form.addRow(self._label(self.tr("Artists")), self._artists)
+        form.addRow(self._label(self.tr("Album")), self._album)
+        form.addRow(self._label(self.tr("Album artist")), self._album_artist)
+        form.addRow(self._label(self.tr("Genres")), self._genres)
+        form.addRow(self._label(self.tr("Track no.")), self._track_no)
+        form.addRow(self._label(self.tr("Year")), self._year)
         return form
 
     def _label(self, text: str) -> QLabel:
@@ -284,7 +288,7 @@ class TagEditorDialog(QDialog):
     def _render_cover_placeholder(self) -> None:
         from jellytoast.ui_helpers import TEXT_FAINT as _TEXT_FAINT
 
-        self._cover_label.setText("No cover")
+        self._cover_label.setText(self.tr("No cover"))
         self._cover_label.setStyleSheet(
             self._cover_label.styleSheet()
             + f" QLabel {{ color: {_TEXT_FAINT}; {type_qss(TYPE_CAPTION)} }}"
@@ -337,35 +341,37 @@ class TagEditorDialog(QDialog):
     def _on_pick_cover(self) -> None:
         path, _ = QFileDialog.getOpenFileName(
             self,
-            "Choose cover image",
+            self.tr("Choose cover image"),
             "",
-            "Images (*.png *.jpg *.jpeg *.webp)",
+            self.tr("Images (*.png *.jpg *.jpeg *.webp)"),
         )
         if not path:
             return
         try:
             data = Path(path).read_bytes()
         except OSError as exc:
-            self._status.setText(f"Couldn't read that file: {exc}")
+            self._status.setText(self.tr("Couldn't read that file: {0}").format(exc))
             return
         # 25 MB is a generous ceiling. Jellyfin will base64-encode the
         # body which inflates the wire payload ~33%; anything over this
         # is almost certainly a mistake (RAW from a camera, video file).
         if len(data) > 25 * 1024 * 1024:
             self._status.setText(
-                "That image is over 25 MB — pick something smaller."
+                self.tr("That image is over 25 MB — pick something smaller.")
             )
             return
         self._new_cover_bytes = data
         self._new_cover_mime = _mime_from_path(path)
         pix = QPixmap()
         if not pix.loadFromData(data):
-            self._status.setText("Couldn't decode that image — try a different file.")
+            self._status.setText(
+                self.tr("Couldn't decode that image — try a different file.")
+            )
             self._new_cover_bytes = None
             self._new_cover_mime = ""
             return
         self._set_cover_pixmap(pix)
-        self._status.setText("Cover will be uploaded when you click Save.")
+        self._status.setText(self.tr("Cover will be uploaded when you click Save."))
 
     # ── Edit collection + save ──────────────────────────────────────────
 
@@ -410,25 +416,25 @@ class TagEditorDialog(QDialog):
     def _confirm_bulk(self, edits: Dict[str, Any]) -> bool:
         """Block on a Yes/No confirm before rewriting every track on
         the album. Skipped when bulk isn't requested."""
-        fields = ", ".join(sorted(edits.keys())) if edits else "(none)"
-        msg = (
-            f"Apply these field changes to every track on the album "
-            f'"{self._track.get("Album") or self._album_id}"?\n\n'
-            f"Fields: {fields}\n\n"
+        fields = ", ".join(sorted(edits.keys())) if edits else self.tr("(none)")
+        msg = self.tr(
+            "Apply these field changes to every track on the album "
+            '"{0}"?\n\n'
+            "Fields: {1}\n\n"
             "Per-track cover art will not be changed by this bulk write."
-        )
+        ).format(self._track.get("Album") or self._album_id, fields)
         from jellytoast.frosted_dialog import frosted_confirm
 
         return frosted_confirm(
             self,
-            "Apply to whole album",
+            self.tr("Apply to whole album"),
             msg,
-            confirm_text="Apply",
+            confirm_text=self.tr("Apply"),
         )
 
     def _on_save(self) -> None:
         if not self._item_id:
-            self._status.setText("This track has no id — can't save.")
+            self._status.setText(self.tr("This track has no id — can't save."))
             return
         edits = self.collect_edits()
         has_cover = self._new_cover_bytes is not None
@@ -444,7 +450,7 @@ class TagEditorDialog(QDialog):
             return
 
         self._buttons.setEnabled(False)
-        self._status.setText("Saving…")
+        self._status.setText(self.tr("Saving…"))
 
         prov = get_provider()
         item_id = self._item_id
@@ -502,21 +508,25 @@ class TagEditorDialog(QDialog):
         if failed_list and cover_error:
             self._buttons.setEnabled(True)
             self._status.setText(
-                f"Saved {n_total - n_failed} of {n_total} tracks "
-                f"({n_failed} failed); cover upload also failed."
+                self.tr(
+                    "Saved {0} of {1} tracks "
+                    "({2} failed); cover upload also failed."
+                ).format(n_total - n_failed, n_total, n_failed)
             )
             return
         if failed_list:
             self._buttons.setEnabled(True)
             self._status.setText(
-                f"Saved {n_total - n_failed} of {n_total} tracks — "
-                f"{n_failed} failed. See server logs."
+                self.tr(
+                    "Saved {0} of {1} tracks — "
+                    "{2} failed. See server logs."
+                ).format(n_total - n_failed, n_total, n_failed)
             )
             return
         if cover_error:
             self._buttons.setEnabled(True)
             self._status.setText(
-                "Metadata saved, but the cover upload failed."
+                self.tr("Metadata saved, but the cover upload failed.")
             )
             return
         self.accept()
@@ -524,8 +534,10 @@ class TagEditorDialog(QDialog):
     def _on_save_error(self, _exc) -> None:
         self._buttons.setEnabled(True)
         self._status.setText(
-            "Couldn't save — the server rejected the edit (admin rights "
-            "are required to edit metadata on Jellyfin)."
+            self.tr(
+                "Couldn't save — the server rejected the edit (admin rights "
+                "are required to edit metadata on Jellyfin)."
+            )
         )
 
 

@@ -209,7 +209,7 @@ class NowPlayingBar(QWidget):
         self.fav_btn = CoverOverlayButton(self.thumb, size=26, margin=6, bordered=False)
         self.fav_btn.setIcon(icon("favorite_outline"))
         self.fav_btn.setIconSize(QSize(14, 14))
-        self.fav_btn.setToolTip("Favorite")
+        self.fav_btn.setToolTip(self.tr("Favorite"))
         self.fav_btn.clicked.connect(self._toggle_favorite)
 
         # Title above artist, tight (2px gap), vertically centered against
@@ -225,7 +225,7 @@ class NowPlayingBar(QWidget):
         # cluster enough that "Artist · Album (Anniversary edition…)"
         # would otherwise get cut off mid-word. Stays static when the
         # text fits.
-        self.title = MarqueeLabel("Nothing Playing")
+        self.title = MarqueeLabel(self.tr("Nothing Playing"))
         # Idle title color matches the inactive icon color
         # (icons.ICON_DIM = #a8a8a8) so "Nothing Playing" reads at
         # the same visual weight as the transport buttons next to
@@ -251,10 +251,10 @@ class NowPlayingBar(QWidget):
         # Mini-player / cast / volume buttons are built here so the
         # NowPlayingBar exposes them as instance attributes; they're
         # added to the right cluster further down.
-        self.mini_btn = _icon_btn("miniplayer", "Open mini player")
+        self.mini_btn = _icon_btn("miniplayer", self.tr("Open mini player"))
         self.mini_btn.clicked.connect(lambda: self.show_mini_requested.emit())
 
-        self.cast_btn = _icon_btn("cast", "Cast")
+        self.cast_btn = _icon_btn("cast", self.tr("Cast"))
         self.cast_btn.clicked.connect(lambda: self.cast_requested.emit())
         # Right-click → quick menu of hearted devices + Disconnect,
         # handled by the main window (it owns the cast logic).
@@ -267,7 +267,7 @@ class NowPlayingBar(QWidget):
         # accent-tinted while a timer is armed and the tooltip carries
         # the live countdown. Backed by PlayerBackend's session-scoped
         # timer via the sleep_timer_* bus signals.
-        self.sleep_btn = _icon_btn("moon", "Sleep timer")
+        self.sleep_btn = _icon_btn("moon", self.tr("Sleep timer"))
         self.sleep_btn.clicked.connect(self._open_sleep_menu)
         self._sleep_deadline: float | None = None
         self._sleep_total: int = 0
@@ -319,22 +319,24 @@ class NowPlayingBar(QWidget):
         center.setSpacing(6)
         center.addStretch(1)
 
-        self.shuffle_btn = _icon_btn("shuffle", "Shuffle")
+        self.shuffle_btn = _icon_btn("shuffle", self.tr("Shuffle"))
         self.shuffle_btn.setCheckable(True)
         self.shuffle_btn.toggled.connect(self._on_shuffle_toggled)
 
-        self.prev_btn = _icon_btn("prev", "Previous (Ctrl+Left)")
+        self.prev_btn = _icon_btn("prev", self.tr("Previous (Ctrl+Left)"))
         self.prev_btn.clicked.connect(lambda: self.bus.prev_track.emit())
 
         # Play is the primary control — slightly larger than the others
         # so the eye lands on it first.
-        self.play_btn = _icon_btn("play", "Play / Pause (Space)", size=44, icon_size=22)
+        self.play_btn = _icon_btn(
+            "play", self.tr("Play / Pause (Space)"), size=44, icon_size=22
+        )
         self.play_btn.clicked.connect(lambda: self.bus.pause_toggled.emit())
 
-        self.next_btn = _icon_btn("next", "Next (Ctrl+Right)")
+        self.next_btn = _icon_btn("next", self.tr("Next (Ctrl+Right)"))
         self.next_btn.clicked.connect(lambda: self.bus.next_track.emit())
 
-        self.repeat_btn = _icon_btn("repeat", "Repeat")
+        self.repeat_btn = _icon_btn("repeat", self.tr("Repeat"))
         self.repeat_btn.setCheckable(True)
         self._repeat_state = "off"
         self.repeat_btn.clicked.connect(self._cycle_repeat)
@@ -421,7 +423,7 @@ class NowPlayingBar(QWidget):
         _live_lp.setSpacing(8)
         self._live_dot = QLabel(self.live_pip)
         self._live_dot.setFixedSize(8, 8)
-        self._live_text = QLabel("LIVE", self.live_pip)
+        self._live_text = QLabel(self.tr("LIVE"), self.live_pip)
         _live_lp.addWidget(self._live_dot, 0, Qt.AlignmentFlag.AlignVCenter)
         _live_lp.addWidget(self._live_text, 0, Qt.AlignmentFlag.AlignVCenter)
         _live_lp.addStretch(1)
@@ -619,16 +621,19 @@ class NowPlayingBar(QWidget):
         # tooltip below describes which path the user will hit.
         bp_active = self.bus.bit_perfect_active
         preset_tip = (
-            "Finishes the current song after the timer fires (no fade)."
+            self.tr("Finishes the current song after the timer fires (no fade).")
             if bp_active
-            else "Finishes the current song after the timer fires, "
-                 "fading out over its last seconds."
+            else self.tr(
+                "Finishes the current song after the timer fires, "
+                "fading out over its last seconds."
+            )
         )
 
         for minutes in self._SLEEP_PRESETS:
-            label = f"{minutes} minutes" if minutes < 60 else (
-                "1 hour" if minutes == 60 else f"{minutes // 60} h {minutes % 60} min"
-                if minutes % 60 else f"{minutes // 60} hours"
+            label = self.tr("{0} minutes").format(minutes) if minutes < 60 else (
+                self.tr("1 hour") if minutes == 60
+                else self.tr("{0} h {1} min").format(minutes // 60, minutes % 60)
+                if minutes % 60 else self.tr("{0} hours").format(minutes // 60)
             )
             act = menu.addAction(label)
             act.setCheckable(True)
@@ -640,7 +645,7 @@ class NowPlayingBar(QWidget):
             )
 
         menu.addSeparator()
-        eot = menu.addAction("Stop after current track")
+        eot = menu.addAction(self.tr("Stop after current track"))
         eot.triggered.connect(
             lambda: self.bus.sleep_timer_requested.emit(0, "end_of_track")
         )
@@ -648,7 +653,9 @@ class NowPlayingBar(QWidget):
         if active:
             menu.addSeparator()
             remaining = self._sleep_remaining()
-            cancel = menu.addAction(f"Cancel timer  ({fmt_time(remaining * 1000)} left)")
+            cancel = menu.addAction(
+                self.tr("Cancel timer  ({0} left)").format(fmt_time(remaining * 1000))
+            )
             cancel.triggered.connect(
                 lambda: self.bus.sleep_timer_cancel_requested.emit()
             )
@@ -679,7 +686,7 @@ class NowPlayingBar(QWidget):
             self._refresh_sleep_tooltip()
         else:
             self._sleep_tick.stop()
-            self.sleep_btn.setToolTip("Sleep timer — stops after this track")
+            self.sleep_btn.setToolTip(self.tr("Sleep timer — stops after this track"))
 
     @Slot()
     def _on_sleep_cleared(self):
@@ -687,7 +694,7 @@ class NowPlayingBar(QWidget):
         self._sleep_total = 0
         self._sleep_tick.stop()
         self.sleep_btn.setIcon(icon("moon"))
-        self.sleep_btn.setToolTip("Sleep timer")
+        self.sleep_btn.setToolTip(self.tr("Sleep timer"))
 
     @Slot()
     def _refresh_sleep_tooltip(self):
@@ -695,7 +702,7 @@ class NowPlayingBar(QWidget):
         if remaining <= 0:
             self._sleep_tick.stop()
             return
-        text = f"Sleep timer — {fmt_time(remaining * 1000)} left"
+        text = self.tr("Sleep timer — {0} left").format(fmt_time(remaining * 1000))
         self.sleep_btn.setToolTip(text)
         # A tooltip that's already on-screen doesn't re-read the text set via
         # setToolTip() — it stays frozen until the next hover. While the button
@@ -874,7 +881,9 @@ class NowPlayingBar(QWidget):
         # a track playing on the cast device, so there's nothing to
         # wait for and clearing it would just blank the indicator.
         if self._casting:
-            self.streaming_info.setText(f"Casting to {self._casting_device}")
+            self.streaming_info.setText(
+                self.tr("Casting to {0}").format(self._casting_device)
+            )
         else:
             self.streaming_info.setText("")
         self._position_streaming_info()
@@ -1027,11 +1036,17 @@ class NowPlayingBar(QWidget):
         # restore / inactive queue) just carries the station name.
         station = (state.station_name or "").strip()
         if state.is_live:
-            text = f"LIVE  ·  {station}" if station else "LIVE"
+            text = (
+                self.tr("LIVE  ·  {0}").format(station) if station else self.tr("LIVE")
+            )
             self._style_live_pip(ACCENT)
             self._set_live_pip(True, text)
         elif state.playback_state == "paused":
-            text = f"PAUSED  ·  {station}" if station else "PAUSED"
+            text = (
+                self.tr("PAUSED  ·  {0}").format(station)
+                if station
+                else self.tr("PAUSED")
+            )
             self._style_live_pip(TEXT_FAINT)
             self._set_live_pip(False, text)
         else:
@@ -1098,15 +1113,19 @@ class NowPlayingBar(QWidget):
         indicator, shown regardless of the streaming-info setting
         (where the audio is going matters more than a bitrate)."""
         self._casting = True
-        self._casting_device = device_name or "device"
-        self.streaming_info.setText(f"Casting to {self._casting_device}")
+        self._casting_device = device_name or self.tr("device")
+        self.streaming_info.setText(
+            self.tr("Casting to {0}").format(self._casting_device)
+        )
         self.streaming_info.setVisible(True)
         self._position_streaming_info()
         # Reflect the active cast on the cast button itself (accent tint +
         # tooltip) so it reads as "on" like shuffle/repeat do — without this
         # the button stays its inactive glyph through the whole cast session.
         self.cast_btn.setIcon(accent_icon("cast"))
-        self.cast_btn.setToolTip(f"Casting to {self._casting_device}")
+        self.cast_btn.setToolTip(
+            self.tr("Casting to {0}").format(self._casting_device)
+        )
 
     def _on_cast_stopped(self):
         """Cast ended — drop the indicator and repaint the local
@@ -1121,7 +1140,7 @@ class NowPlayingBar(QWidget):
             self._last_streaming_codec, self._last_streaming_kbps
         )
         self.cast_btn.setIcon(icon("cast"))
-        self.cast_btn.setToolTip("Cast")
+        self.cast_btn.setToolTip(self.tr("Cast"))
 
     def _on_streaming_info_updated(self, codec: str, kbps: int):
         """Fired by MpvController via the bus as soon as the actual
@@ -1160,10 +1179,14 @@ class NowPlayingBar(QWidget):
         from jellytoast.settings import get_settings as _gs
 
         s = _gs()
-        prefix = "Local playback" if get_now_playing().is_local else "Streaming"
+        prefix = (
+            self.tr("Local playback")
+            if get_now_playing().is_local
+            else self.tr("Streaming")
+        )
         segments = [prefix]
         if self.bus.bit_perfect_active and s.streaming_info_show_bit_perfect:
-            segments.append("Bit Perfect")
+            segments.append(self.tr("Bit Perfect"))
         elif not self.bus.bit_perfect_active:
             # DSP segments — signal-chain order (RG → EQ → Crossfade).
             # ReplayGain reads as "Normalized" in the badge: matches the
@@ -1171,15 +1194,15 @@ class NowPlayingBar(QWidget):
             # describes a state (the audio IS normalized) instead of the
             # underlying spec name (ReplayGain).
             if s.streaming_info_show_replaygain and (s.replaygain or "no") != "no":
-                segments.append("Normalized")
+                segments.append(self.tr("Normalized"))
             if s.streaming_info_show_eq and s.eq_enabled:
                 segments.append("EQ")
             if s.streaming_info_show_crossfade and s.crossfade_enabled:
-                segments.append("Crossfade")
+                segments.append(self.tr("Crossfade"))
         if codec and s.streaming_info_show_codec:
             segments.append(codec.upper())
         if kbps and kbps > 0 and s.streaming_info_show_bitrate:
-            segments.append(f"{kbps} kbps")
+            segments.append(self.tr("{0} kbps").format(kbps))
         # If everything past the prefix is hidden + we have no codec/
         # bitrate, fall back to a blank line so we don't render a
         # stranded "Streaming" with no readout. Matches the previous
@@ -1425,7 +1448,7 @@ class NowPlayingBar(QWidget):
         # Text content per mode. Title always carries the song name (or
         # the placeholder) so the row is never blank when visible.
         is_idle = not bool(self._track_title)
-        self.title.setText(self._track_title or "Nothing Playing")
+        self.title.setText(self._track_title or self.tr("Nothing Playing"))
         # Idle title matches the inactive icon color (#a8a8a8 — see
         # icons.ICON_DIM) so the placeholder visually pairs with the
         # transport buttons next to it instead of competing with real

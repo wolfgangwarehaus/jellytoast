@@ -214,13 +214,15 @@ class _RuleChip(QFrame):
         for k in FIELDS:
             label = _FIELD_LABELS.get(k, k)
             if k in unsupported:
-                label += " — not on this server"
+                label = self.tr("{0} — not on this server").format(label)
             self._field.addItem(label, k)
             if k in unsupported:
                 self._field.setItemData(
                     self._field.count() - 1,
-                    "Your server doesn't provide this data, so this rule "
-                    "never matches anything here.",
+                    self.tr(
+                        "Your server doesn't provide this data, so this rule "
+                        "never matches anything here."
+                    ),
                     Qt.ItemDataRole.ToolTipRole,
                 )
         row.addWidget(self._field)
@@ -234,7 +236,7 @@ class _RuleChip(QFrame):
         # a bool checkbox, a day-count (in_the_last), or a date picker
         # (before / after).
         self._value = QLineEdit()
-        self._value.setPlaceholderText("value")
+        self._value.setPlaceholderText(self.tr("value"))
         row.addWidget(self._value, 1)
 
         self._value_low = QSpinBox()
@@ -259,7 +261,7 @@ class _RuleChip(QFrame):
         self._value_days = QSpinBox()
         self._value_days.setRange(1, 3650)
         self._value_days.setValue(30)
-        self._value_days.setSuffix(" days")
+        self._value_days.setSuffix(self.tr(" days"))
         self._value_days.hide()
         row.addWidget(self._value_days)
 
@@ -273,7 +275,7 @@ class _RuleChip(QFrame):
 
         # Bool-field value widget (used by ``is_favorite``). Only one of
         # _value / spin pair / _value_bool is visible at a time.
-        self._value_bool = QCheckBox("yes")
+        self._value_bool = QCheckBox(self.tr("yes"))
         self._value_bool.hide()
         row.addWidget(self._value_bool)
 
@@ -351,7 +353,9 @@ class _RuleChip(QFrame):
         self._value_days.setVisible(is_days)
         self._value_date.setVisible(is_date)
         if is_text:
-            self._value.setPlaceholderText("number" if ftype is int else "text")
+            self._value.setPlaceholderText(
+                self.tr("number") if ftype is int else self.tr("text")
+            )
 
     def value(self) -> Dict[str, Any]:
         field = self._field.currentData()
@@ -502,19 +506,19 @@ class SmartPlaylistEditorDialog(QDialog):
         left.setSpacing(SPACE_SM)
         outer.addLayout(left, 3)
 
-        left.addWidget(_label("Name", dim=False))
+        left.addWidget(_label(self.tr("Name"), dim=False))
         _initial_name = str((entry or {}).get("name") or "") or str(suggested_name or "")
         self._name = QLineEdit(_initial_name)
-        self._name.setPlaceholderText("e.g. Recent favorites")
+        self._name.setPlaceholderText(self.tr("e.g. Recent favorites"))
         left.addWidget(self._name)
 
         # Preset picker — loads a starter rule set. Saved as "Custom"
         # once the user touches anything.
         preset_row = QHBoxLayout()
         preset_row.setSpacing(SPACE_SM)
-        preset_row.addWidget(_label("Preset"))
+        preset_row.addWidget(_label(self.tr("Preset")))
         self._preset = Selector()
-        self._preset.addItem("Custom", "")
+        self._preset.addItem(self.tr("Custom"), "")
         for name, _description, _friendly, _rules in PRESETS:
             self._preset.addItem(name, name)
         self._preset.currentIndexChanged.connect(self._on_preset_changed)
@@ -524,20 +528,20 @@ class SmartPlaylistEditorDialog(QDialog):
         # Match-mode + sort row
         match_row = QHBoxLayout()
         match_row.setSpacing(SPACE_SM)
-        match_row.addWidget(_label("Match"))
+        match_row.addWidget(_label(self.tr("Match")))
         self._match = Selector()
-        self._match.addItem("all rules (AND)", "all")
-        self._match.addItem("any rule (OR)", "any")
+        self._match.addItem(self.tr("all rules (AND)"), "all")
+        self._match.addItem(self.tr("any rule (OR)"), "any")
         self._match.currentIndexChanged.connect(lambda _i: self._queue_preview())
         match_row.addWidget(self._match)
         match_row.addSpacing(SPACE_MD)
-        match_row.addWidget(_label("Sort"))
+        match_row.addWidget(_label(self.tr("Sort")))
         self._sort = Selector()
         for s in _SORT_OPTIONS:
-            self._sort.addItem(_SORT_LABELS.get(s, s or "default"), s)
+            self._sort.addItem(_SORT_LABELS.get(s, s or self.tr("default")), s)
         self._sort.currentIndexChanged.connect(lambda _i: self._queue_preview())
         match_row.addWidget(self._sort)
-        self._sort_desc = QCheckBox("descending")
+        self._sort_desc = QCheckBox(self.tr("descending"))
         self._sort_desc.stateChanged.connect(lambda _s: self._queue_preview())
         match_row.addWidget(self._sort_desc)
         match_row.addStretch(1)
@@ -546,10 +550,10 @@ class SmartPlaylistEditorDialog(QDialog):
         # Limit
         limit_row = QHBoxLayout()
         limit_row.setSpacing(SPACE_SM)
-        limit_row.addWidget(_label("Limit"))
+        limit_row.addWidget(_label(self.tr("Limit")))
         self._limit = QSpinBox()
         self._limit.setRange(0, 5000)
-        self._limit.setSpecialValueText("no limit")
+        self._limit.setSpecialValueText(self.tr("no limit"))
         self._limit.setValue(0)
         self._limit.valueChanged.connect(lambda _v: self._queue_preview())
         limit_row.addWidget(self._limit)
@@ -557,7 +561,7 @@ class SmartPlaylistEditorDialog(QDialog):
         left.addLayout(limit_row)
 
         # Rules
-        left.addWidget(_label("Rules", dim=False))
+        left.addWidget(_label(self.tr("Rules"), dim=False))
         # Optional pre-seed hint — used when a right-click "More like
         # X" recipe couldn't fill in every rule it wanted (e.g. the
         # source album has no genres tagged on the server). Tells the
@@ -585,7 +589,7 @@ class SmartPlaylistEditorDialog(QDialog):
         left.addWidget(scroll, 1)
 
         self._chips: List[_RuleChip] = []
-        add_btn = QPushButton("+ Add rule")
+        add_btn = QPushButton(self.tr("+ Add rule"))
         add_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         add_btn.clicked.connect(lambda: self._add_chip(None))
         left.addWidget(add_btn)
@@ -595,7 +599,7 @@ class SmartPlaylistEditorDialog(QDialog):
         right.setSpacing(SPACE_SM)
         outer.addLayout(right, 2)
 
-        right.addWidget(_label("Preview", dim=False))
+        right.addWidget(_label(self.tr("Preview"), dim=False))
         self._preview_status = _label("")
         right.addWidget(self._preview_status)
         self._preview_list = QListWidget()
@@ -618,11 +622,11 @@ class SmartPlaylistEditorDialog(QDialog):
         footer_row.setContentsMargins(0, 0, 0, 0)
         footer_row.setSpacing(SPACE_SM)
         footer_row.addStretch(1)
-        self._cancel_btn = QPushButton("Cancel")
+        self._cancel_btn = QPushButton(self.tr("Cancel"))
         self._cancel_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self._cancel_btn.clicked.connect(self.reject)
         footer_row.addWidget(self._cancel_btn)
-        self._save_btn = QPushButton("Save")
+        self._save_btn = QPushButton(self.tr("Save"))
         self._save_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self._save_btn.clicked.connect(self._on_accept)
         footer_row.addWidget(self._save_btn)
@@ -632,7 +636,7 @@ class SmartPlaylistEditorDialog(QDialog):
         # `&&` escapes Qt's keyboard-accelerator-marker meaning of a
         # single `&`; without the escape the button renders as
         # "Save  Play" with the P underlined for Alt-P access.
-        self._save_play_btn = QPushButton("Save && Play")
+        self._save_play_btn = QPushButton(self.tr("Save && Play"))
         self._save_play_btn.setObjectName("accent")
         self._save_play_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self._save_play_btn.setDefault(True)
@@ -751,7 +755,7 @@ class SmartPlaylistEditorDialog(QDialog):
             self._preview_status.setText(f"⚠ {errors[0]}")
             self._preview_list.clear()
             return
-        self._preview_status.setText("…matching")
+        self._preview_status.setText(self.tr("…matching"))
         self._preview_list.clear()
         self._preview_gen += 1
         gen = self._preview_gen
@@ -768,7 +772,7 @@ class SmartPlaylistEditorDialog(QDialog):
             _go,
             on_result=lambda items, g=gen: self._on_preview_result(items, g),
             on_error=lambda _e, g=gen: (
-                self._preview_status.setText("preview unavailable")
+                self._preview_status.setText(self.tr("preview unavailable"))
                 if g == self._preview_gen
                 else None
             ),
@@ -789,13 +793,15 @@ class SmartPlaylistEditorDialog(QDialog):
             if bad:
                 labels = ", ".join(_FIELD_LABELS.get(f, f) for f in bad)
                 self._preview_status.setText(
-                    f"0 matches — {labels} can't match on this server"
+                    self.tr("0 matches — {0} can't match on this server").format(
+                        labels
+                    )
                 )
             else:
-                self._preview_status.setText("0 matches")
+                self._preview_status.setText(self.tr("0 matches"))
             return
         for it in items:
-            title = it.get("Name") or it.get("Title") or "(untitled)"
+            title = it.get("Name") or it.get("Title") or self.tr("(untitled)")
             artist = (
                 it.get("Artist")
                 or (it.get("Artists") or [None])[0]
@@ -805,9 +811,20 @@ class SmartPlaylistEditorDialog(QDialog):
             text = f"{title}  ·  {artist}" if artist else str(title)
             self._preview_list.addItem(QListWidgetItem(text))
         cap = self.rules_dict().get("limit")
-        tail = f" (capped at {_PREVIEW_LIMIT})" if len(items) >= _PREVIEW_LIMIT else ""
-        cap_note = f", saved limit {cap}" if isinstance(cap, int) and cap > 0 else ""
-        self._preview_status.setText(f"{len(items)} match{'es' if len(items) != 1 else ''}{tail}{cap_note}")
+        tail = (
+            self.tr(" (capped at {0})").format(_PREVIEW_LIMIT)
+            if len(items) >= _PREVIEW_LIMIT
+            else ""
+        )
+        cap_note = (
+            self.tr(", saved limit {0}").format(cap)
+            if isinstance(cap, int) and cap > 0
+            else ""
+        )
+        count_text = (
+            self.tr("{0} matches") if len(items) != 1 else self.tr("{0} match")
+        ).format(len(items))
+        self._preview_status.setText(f"{count_text}{tail}{cap_note}")
 
     # ── Save ────────────────────────────────────────────────────────
 
@@ -826,13 +843,15 @@ class SmartPlaylistEditorDialog(QDialog):
     def _on_accept(self) -> None:
         name = self._name.text().strip()
         if not name:
-            frosted_warning(self, "Missing name", "Give the playlist a name.")
+            frosted_warning(
+                self, self.tr("Missing name"), self.tr("Give the playlist a name.")
+            )
             self._name.setFocus()
             return
         rules = self.rules_dict()
         errors = validate_rules(rules)
         if errors:
-            frosted_warning(self, "Invalid rules", "\n".join(errors[:5]))
+            frosted_warning(self, self.tr("Invalid rules"), "\n".join(errors[:5]))
             return
         self.accept()
 
@@ -853,18 +872,20 @@ class SmartPlaylistEditorDialog(QDialog):
         # Validate first; bail without entering loading if invalid.
         name = self._name.text().strip()
         if not name:
-            frosted_warning(self, "Missing name", "Give the playlist a name.")
+            frosted_warning(
+                self, self.tr("Missing name"), self.tr("Give the playlist a name.")
+            )
             self._name.setFocus()
             return
         rules = self.rules_dict()
         errors = validate_rules(rules)
         if errors:
-            frosted_warning(self, "Invalid rules", "\n".join(errors[:5]))
+            frosted_warning(self, self.tr("Invalid rules"), "\n".join(errors[:5]))
             return
         # Loading state: disable Save + Save & Play, swap S&P label.
         # Cancel stays active — user can abort if the resolve hangs.
         self._save_play_btn.setEnabled(False)
-        self._save_play_btn.setText("Loading…")
+        self._save_play_btn.setText(self.tr("Loading…"))
         self._save_btn.setEnabled(False)
         # Mark which button was used so the parent helper's `finished`
         # handler knows not to also fire on_save (handler already
@@ -936,7 +957,11 @@ class SmartPlaylistEditorDialog(QDialog):
             WASH_HOVER as _WASH_HOVER_TB,
         )
 
-        title = QLabel("Edit smart playlist" if self._is_edit else "New smart playlist")
+        title = QLabel(
+            self.tr("Edit smart playlist")
+            if self._is_edit
+            else self.tr("New smart playlist")
+        )
         title.setStyleSheet(f"color: {_TEXT_TB}; {type_qss(TYPE_SUBHEAD)}")
         h.addWidget(title)
         h.addStretch(1)

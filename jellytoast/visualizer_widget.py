@@ -447,7 +447,7 @@ class VisualizerWidget(QWidget):
         arrived. Matches the cast-placeholder typography so the widget
         has a single visual idiom for 'paused / not-yet-active'."""
         self._paint_caption(
-            painter, w, h, color, "Visualizer · waiting for audio signal"
+            painter, w, h, color, self.tr("Visualizer · waiting for audio signal")
         )
 
     def _paint_caption(
@@ -488,7 +488,9 @@ class VisualizerWidget(QWidget):
         from jellytoast.design_tokens import TYPE_CAPTION
 
         caption = (
-            f"Casting to {self._cast_device}" if self._cast_device else "Casting"
+            self.tr("Casting to {0}").format(self._cast_device)
+            if self._cast_device
+            else self.tr("Casting")
         )
         font = QFont(painter.font())
         font.setPixelSize(TYPE_CAPTION.size_px)

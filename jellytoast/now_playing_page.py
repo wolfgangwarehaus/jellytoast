@@ -19,6 +19,7 @@ visible.
 from typing import Dict, List, Optional
 
 from PySide6.QtCore import (
+    QCoreApplication,
     QEasingCurve,
     QPoint,
     QPropertyAnimation,
@@ -379,7 +380,7 @@ class NowPlayingPage(_LeftPaneMixin, _LyricsMixin, QWidget):
         )
         self._fav_cta.setIcon(icon("favorite_outline"))
         self._fav_cta.setIconSize(QSize(16, 16))
-        self._fav_cta.setToolTip("Favorite")
+        self._fav_cta.setToolTip(self.tr("Favorite"))
 
         self._download_cta = _DownloadButton(self._cover)
 
@@ -396,7 +397,7 @@ class NowPlayingPage(_LeftPaneMixin, _LyricsMixin, QWidget):
         # QLabel's default Preferred vertical policy lets them grow into
         # any unclaimed space (e.g. when lyrics are hidden), pulling
         # them away from the cover and away from the CTAs below them.
-        self._title = QLabel("Nothing Playing")
+        self._title = QLabel(self.tr("Nothing Playing"))
         self._title.setFont(font(TYPE_TITLE))
         # Idle styling — TEXT_DIM-equivalent so the placeholder reads
         # as inactive. _refresh_now_playing swaps to the bright
@@ -448,7 +449,7 @@ class NowPlayingPage(_LeftPaneMixin, _LyricsMixin, QWidget):
         # the live queue and starts playback (the page transitions back
         # to live mode automatically on playback_started). In live mode
         # there's no Play here — the bottom transport bar already plays.
-        self._play_cta = QPushButton(" Play")
+        self._play_cta = QPushButton(self.tr(" Play"))
         self._play_cta.setIcon(icon("play"))
         self._play_cta.setIconSize(QSize(16, 16))
         self._play_cta.setStyleSheet(button_qss(BTN_PRIMARY))
@@ -504,7 +505,7 @@ class NowPlayingPage(_LeftPaneMixin, _LyricsMixin, QWidget):
         toggle_row.setContentsMargins(SPACE_LG, 0, SPACE_LG, 0)
         toggle_row.setSpacing(0)
         toggle_row.addStretch(1)
-        self._lyrics_toggle_btn = QPushButton("Hide lyrics")
+        self._lyrics_toggle_btn = QPushButton(self.tr("Hide lyrics"))
         self._lyrics_toggle_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self._lyrics_toggle_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self._lyrics_toggle_btn.setStyleSheet(_lyrics_caption_btn_qss())
@@ -531,7 +532,7 @@ class NowPlayingPage(_LeftPaneMixin, _LyricsMixin, QWidget):
         live_row.setContentsMargins(SPACE_LG, 0, SPACE_LG, 0)
         live_row.setSpacing(0)
         live_row.addStretch(1)
-        self._live_btn = QPushButton("● Live")
+        self._live_btn = QPushButton(self.tr("● Live"))
         self._live_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self._live_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self._live_btn.setStyleSheet(_lyrics_caption_btn_qss())
@@ -613,7 +614,7 @@ class NowPlayingPage(_LeftPaneMixin, _LyricsMixin, QWidget):
         # kind/source-label concatenation in _refresh_track_list ("ALBUM ·
         # Currents") keeps its mixed casing — QFont's AllUppercase would
         # force-uppercase the source label too.
-        self._right_kicker = QLabel("UP NEXT")
+        self._right_kicker = QLabel(self.tr("UP NEXT"))
         # Bumped from TYPE_MICRO (11px) to 13px bold so the kicker
         # reads as a real heading at glance distance, brighter color
         # (0.55 → 0.78) so it doesn't disappear against the frosted
@@ -667,8 +668,8 @@ class NowPlayingPage(_LeftPaneMixin, _LyricsMixin, QWidget):
         # instead of a silent blank.
         self._tracks_empty_state = EmptyState(
             glyph="♪",
-            headline="Nothing queued",
-            sub="Pick an album, playlist, or song to start the queue.",
+            headline=self.tr("Nothing queued"),
+            sub=self.tr("Pick an album, playlist, or song to start the queue."),
             parent=self,
         )
         self._tracks_stack = QStackedWidget()
@@ -869,7 +870,7 @@ class NowPlayingPage(_LeftPaneMixin, _LyricsMixin, QWidget):
             return
         from jellytoast import ui_helpers as _u
 
-        self._title.setText("Nothing Playing")
+        self._title.setText(self.tr("Nothing Playing"))
         # Re-dim the title to the idle styling (the active-track
         # path in _refresh_now_playing brightens it back). Read the live
         # ui_helpers token so a dark↔light flip while idle re-stamps it.
@@ -887,7 +888,7 @@ class NowPlayingPage(_LeftPaneMixin, _LyricsMixin, QWidget):
         the regular logic in _refresh_track_list picks the correct
         label (ALBUM / PLAYLIST / QUEUE if modified)."""
         if dragging:
-            self._right_kicker.setText("QUEUE")
+            self._right_kicker.setText(self.tr("QUEUE"))
         elif not self._preview_id:
             self._refresh_track_list()
 
@@ -993,7 +994,7 @@ class NowPlayingPage(_LeftPaneMixin, _LyricsMixin, QWidget):
             return
 
         # Title + subtitle.
-        self._title.setText(state.display_title or "Unknown")
+        self._title.setText(state.display_title or self.tr("Unknown"))
         self._title.setStyleSheet(f"color: {ink_alpha(0.95)};")
         if state.display_subtitle:
             self._subtitle.setText(state.display_subtitle)
@@ -1056,7 +1057,7 @@ class NowPlayingPage(_LeftPaneMixin, _LyricsMixin, QWidget):
         # / cover-lookup events land.
         if getattr(self, "_is_radio", False):
             return
-        self._title.setText(np.title or "Unknown")
+        self._title.setText(np.title or self.tr("Unknown"))
         # Brighten the title — _on_playback_stopped dims it for the
         # "Nothing Playing" idle state; an active track needs the
         # full-weight color.
@@ -1120,16 +1121,16 @@ class NowPlayingPage(_LeftPaneMixin, _LyricsMixin, QWidget):
         # happen when the user previews the same album they're listening
         # to).
         if self._preview_id:
-            label = self._preview_meta.get("Name", "") or "Loading…"
+            label = self._preview_meta.get("Name", "") or self.tr("Loading…")
             # Kind-specific kicker (ALBUM / PLAYLIST / ARTIST) — the
             # "browsing vs now-playing" distinction lives in the top
             # bar now, so the kicker focuses on *what kind of content*
             # the user is looking at.
             preview_kicker = {
-                "album": "ALBUM",
-                "playlist": "PLAYLIST",
-                "artist": "ARTIST",
-            }.get(self._preview_kind, "BROWSING")
+                "album": self.tr("ALBUM"),
+                "playlist": self.tr("PLAYLIST"),
+                "artist": self.tr("ARTIST"),
+            }.get(self._preview_kind, self.tr("BROWSING"))
             self._right_kicker.setText(f"{preview_kicker}  ·  {label}")
             self._displayed_items_kind = "source"
             highlight_index = self._preview_current_highlight_index()
@@ -1157,17 +1158,17 @@ class NowPlayingPage(_LeftPaneMixin, _LyricsMixin, QWidget):
         # "QUEUE" so the label can't lie.
         is_modified = getattr(self.queue_mgr._q, "is_modified", False)
         if is_modified:
-            self._right_kicker.setText("QUEUE")
+            self._right_kicker.setText(self.tr("QUEUE"))
         else:
             kind_label, default_label = {
-                QueueKind.ALBUM: ("ALBUM", "Album"),
-                QueueKind.PLAYLIST: ("PLAYLIST", "Playlist"),
-                QueueKind.ARTIST: ("ARTIST", "Artist"),
-                QueueKind.SHUFFLE: ("LIBRARY SHUFFLE", "Library shuffle"),
-                QueueKind.SEARCH: ("SEARCH RESULTS", "Search"),
-                QueueKind.MANUAL: ("QUEUE", "Up next"),
-                QueueKind.INSTANT_MIX: ("INSTANT MIX", "Instant mix"),
-            }.get(ctx.kind, ("QUEUE", "Up next"))
+                QueueKind.ALBUM: (self.tr("ALBUM"), "Album"),
+                QueueKind.PLAYLIST: (self.tr("PLAYLIST"), "Playlist"),
+                QueueKind.ARTIST: (self.tr("ARTIST"), "Artist"),
+                QueueKind.SHUFFLE: (self.tr("LIBRARY SHUFFLE"), "Library shuffle"),
+                QueueKind.SEARCH: (self.tr("SEARCH RESULTS"), "Search"),
+                QueueKind.MANUAL: (self.tr("QUEUE"), "Up next"),
+                QueueKind.INSTANT_MIX: (self.tr("INSTANT MIX"), "Instant mix"),
+            }.get(ctx.kind, (self.tr("QUEUE"), "Up next"))
             if ctx.source_label and ctx.source_label != default_label:
                 self._right_kicker.setText(f"{kind_label}  ·  {ctx.source_label}")
             else:
@@ -1291,8 +1292,8 @@ class NowPlayingPage(_LeftPaneMixin, _LyricsMixin, QWidget):
                 self._tracks_stack.setCurrentIndex(0)
             else:
                 self._tracks_empty_state.set_state(
-                    headline="Nothing queued",
-                    sub="Pick an album, playlist, or song to start the queue.",
+                    headline=self.tr("Nothing queued"),
+                    sub=self.tr("Pick an album, playlist, or song to start the queue."),
                 )
                 self._tracks_stack.setCurrentIndex(1)
         else:
@@ -1376,12 +1377,12 @@ class NowPlayingPage(_LeftPaneMixin, _LyricsMixin, QWidget):
         from jellytoast.ui_helpers import opaque_menu
 
         menu = opaque_menu(self._list_container)
-        play_next = menu.addAction("Play next")
-        add_end = menu.addAction("Add to queue")
+        play_next = menu.addAction(self.tr("Play next"))
+        add_end = menu.addAction(self.tr("Add to queue"))
         remove_act = None
         if not self._preview_id:
             menu.addSeparator()
-            remove_act = menu.addAction("Remove from queue")
+            remove_act = menu.addAction(self.tr("Remove from queue"))
         chosen = menu.exec(global_pos)
         if chosen is play_next:
             self.bus.queue_add_next.emit([item])
@@ -1505,12 +1506,12 @@ class NowPlayingPage(_LeftPaneMixin, _LyricsMixin, QWidget):
             # Mirror the library grid's confirm for a cascade removal.
             from jellytoast.frosted_dialog import frosted_confirm
 
-            name = self._preview_meta.get("Name") or "this album"
+            name = self._preview_meta.get("Name") or self.tr("this album")
             if not frosted_confirm(
                 self,
-                "Remove download",
-                f"Remove the downloaded copy of “{name}”?",
-                confirm_text="Remove",
+                self.tr("Remove download"),
+                self.tr("Remove the downloaded copy of “{0}”?").format(name),
+                confirm_text=self.tr("Remove"),
                 destructive=True,
             ):
                 return
@@ -1667,7 +1668,7 @@ class NowPlayingPage(_LeftPaneMixin, _LyricsMixin, QWidget):
             self._on_preview_tracks_loaded(item_id, cached["tracks"])
         else:
             # Cold path — placeholders while we wait on the network.
-            self._title.setText("Loading…")
+            self._title.setText(self.tr("Loading…"))
             self._subtitle.setText("")
             self._refresh_track_list()
             self._refresh_meta_line()
@@ -1736,12 +1737,12 @@ class NowPlayingPage(_LeftPaneMixin, _LyricsMixin, QWidget):
             # that's followed by a network failure should keep the
             # cached snapshot up.
             if not self._preview_meta:
-                self._title.setText("Couldn't load")
+                self._title.setText(self.tr("Couldn't load"))
             return
         self._preview_meta = meta
         # Render preview header — title is the album/playlist name,
         # subtitle is the artist (or curator for playlists).
-        self._title.setText(meta.get("Name") or "Unknown")
+        self._title.setText(meta.get("Name") or self.tr("Unknown"))
         # AlbumArtists is a list of {Id, Name} dicts (both providers) — a
         # bare ", ".join would raise TypeError on dicts; extract Name.
         artist = meta.get("AlbumArtist") or ", ".join(
@@ -1802,10 +1803,18 @@ class NowPlayingPage(_LeftPaneMixin, _LyricsMixin, QWidget):
             cur = _radio_state.current()
             station = (self._radio_station_name or "").strip()
             if cur is not None and cur.is_live:
-                text = f"●  LIVE  ·  {station}" if station else "●  LIVE"
+                text = (
+                    self.tr("●  LIVE  ·  {0}").format(station)
+                    if station
+                    else self.tr("●  LIVE")
+                )
                 color = ACCENT
             elif cur is not None and cur.playback_state == "paused":
-                text = f"PAUSED  ·  {station}" if station else "PAUSED"
+                text = (
+                    self.tr("PAUSED  ·  {0}").format(station)
+                    if station
+                    else self.tr("PAUSED")
+                )
                 color = ink_alpha(0.42)
             else:
                 text = station
@@ -1828,8 +1837,11 @@ class NowPlayingPage(_LeftPaneMixin, _LyricsMixin, QWidget):
         total_ticks = sum(int(t.get("RunTimeTicks") or 0) for t in tracks)
         # Compose like Apple Music's album header: "12 SONGS · 47 MIN".
         # Use SONG / TRACKS depending on kind for accuracy.
-        unit = "song" if self._preview_kind != QueueKind.PLAYLIST else "track"
-        count_part = f"{count} {unit}{'s' if count != 1 else ''}"
+        if self._preview_kind != QueueKind.PLAYLIST:
+            unit = self.tr("song") if count == 1 else self.tr("songs")
+        else:
+            unit = self.tr("track") if count == 1 else self.tr("tracks")
+        count_part = f"{count} {unit}"
         if total_ticks <= 0:
             self._meta_line.setText(count_part.upper())
         else:
@@ -1848,10 +1860,14 @@ class NowPlayingPage(_LeftPaneMixin, _LyricsMixin, QWidget):
         if hours <= 0:
             # Round up to 1 min for any non-zero runtime so a
             # 12-second sample album doesn't read as "0 min".
-            return f"{max(1, minutes)} min"
+            return QCoreApplication.translate("NowPlayingPage", "{0} min").format(
+                max(1, minutes)
+            )
         if minutes == 0:
-            return f"{hours} hr"
-        return f"{hours} hr {minutes} min"
+            return QCoreApplication.translate("NowPlayingPage", "{0} hr").format(hours)
+        return QCoreApplication.translate("NowPlayingPage", "{0} hr {1} min").format(
+            hours, minutes
+        )
 
     def _maybe_save_preview_cache(self):
         """Persist the (meta, tracks) pair once both halves have landed

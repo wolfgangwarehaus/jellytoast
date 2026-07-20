@@ -15,7 +15,7 @@ from __future__ import annotations
 
 from typing import Callable, Optional
 
-from PySide6.QtCore import Qt, QTimer
+from PySide6.QtCore import QCoreApplication, Qt, QTimer
 from PySide6.QtGui import QFont, QFontDatabase
 from PySide6.QtWidgets import QApplication, QHBoxLayout, QLabel, QPushButton, QWidget
 
@@ -43,7 +43,16 @@ class AppearanceRevertDialog(FrostedDialog):
         on_revert: Callable[[], None],
         seconds: int = 10,
     ) -> None:
-        super().__init__(parent, title="Keep this look?", icon_name="info", min_width=380)
+        super().__init__(
+            parent,
+            # QCoreApplication.translate, not self.tr — the QObject side of
+            # ``self`` isn't initialised until super().__init__ returns.
+            title=QCoreApplication.translate(
+                "AppearanceRevertDialog", "Keep this look?"
+            ),
+            icon_name="info",
+            min_width=380,
+        )
         # Non-modal + .show() (NOT .exec()) so the countdown runs under the
         # normal event loop and the user can see the app behind the prompt.
         self.setModal(False)
@@ -56,7 +65,9 @@ class AppearanceRevertDialog(FrostedDialog):
         from jellytoast.design_tokens import BTN_PRIMARY, button_qss
         from jellytoast.ui_helpers import TEXT, TEXT_DIM
 
-        msg = QLabel("Applied your new look. Keep it, or revert to the previous one?")
+        msg = QLabel(
+            self.tr("Applied your new look. Keep it, or revert to the previous one?")
+        )
         msg.setWordWrap(True)
         msg.setFont(_safe_qfont())
         msg.setStyleSheet(
@@ -73,7 +84,7 @@ class AppearanceRevertDialog(FrostedDialog):
 
         row = QHBoxLayout()
         row.addStretch(1)
-        revert = QPushButton("Revert now")
+        revert = QPushButton(self.tr("Revert now"))
         revert.setObjectName("ghost")
         revert.setFont(_safe_qfont())
         revert.setStyleSheet(f"QPushButton {{ font-family: {_SAFE_STACK}; font-size: 14px; }}")
@@ -81,7 +92,7 @@ class AppearanceRevertDialog(FrostedDialog):
         revert.clicked.connect(self.reject)  # not kept → _finish reverts
         row.addWidget(revert)
 
-        keep = QPushButton("Keep")
+        keep = QPushButton(self.tr("Keep"))
         keep.setObjectName("accent")
         keep.setFont(_safe_qfont(bold=True))
         # button_qss for the accent look (Breeze default-button footgun), then a
@@ -102,7 +113,7 @@ class AppearanceRevertDialog(FrostedDialog):
         self._timer.start()
 
     def _count_text(self) -> str:
-        return f"Reverting automatically in {self._remaining}s…"
+        return self.tr("Reverting automatically in {0}s…").format(self._remaining)
 
     def _tick(self) -> None:
         self._remaining -= 1

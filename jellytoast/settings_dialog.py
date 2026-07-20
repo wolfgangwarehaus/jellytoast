@@ -15,7 +15,7 @@ are emitted as signals; the host listens and acts.
 
 import sys
 
-from PySide6.QtCore import QPointF, QSize, Qt, QTimer, Signal
+from PySide6.QtCore import QCoreApplication, QPointF, QSize, Qt, QTimer, Signal
 from PySide6.QtGui import QColor, QPainter, QPainterPath
 from PySide6.QtWidgets import (
     QButtonGroup,
@@ -141,7 +141,7 @@ class _EyedropperSwatch(_AccentSwatch):
     def __init__(self, parent=None):
         super().__init__("#000000", parent)
         self._fill = None  # None = empty (not yet used)
-        self.setToolTip("Pick a colour from the screen")
+        self.setToolTip(self.tr("Pick a colour from the screen"))
 
     def set_picked(self, hex_color, checked: bool = True) -> None:
         """Load a sampled colour into the swatch (or clear with None)."""
@@ -372,10 +372,12 @@ class _AboutDialog(QDialog):
         v.addSpacing(8)
 
         desc = QLabel(
-            "Native desktop client for Jellyfin and Subsonic / Navidrome — "
-            "all-PySide6 surfaces with bit-perfect mpv playback, MPRIS2, "
-            "system tray, floating mini player, and Chromecast/AirPlay "
-            "casting."
+            self.tr(
+                "Native desktop client for Jellyfin and Subsonic / Navidrome — "
+                "all-PySide6 surfaces with bit-perfect mpv playback, MPRIS2, "
+                "system tray, floating mini player, and Chromecast/AirPlay "
+                "casting."
+            )
         )
         desc.setWordWrap(True)
         desc.setStyleSheet(f"color: {TEXT_DIM}; {type_qss(TYPE_BODY)}")
@@ -383,7 +385,7 @@ class _AboutDialog(QDialog):
         self._lbl_desc = desc
 
         v.addSpacing(12)
-        close_btn = QPushButton("Close")
+        close_btn = QPushButton(self.tr("Close"))
         close_btn.setObjectName("ghost")
         close_btn.clicked.connect(self.accept)
         v.addWidget(close_btn, 0, Qt.AlignmentFlag.AlignRight)
@@ -408,7 +410,7 @@ class _AboutDialog(QDialog):
         h.setContentsMargins(16, 0, 8, 0)
         h.setSpacing(10)
 
-        title = QLabel("About jellytoast")
+        title = QLabel(self.tr("About jellytoast"))
         title.setStyleSheet(f"color: {TEXT}; {type_qss(TYPE_CAPTION)}")
         h.addWidget(title)
         self._tb_title = title
@@ -596,26 +598,36 @@ def bit_perfect_path_hint(
         alsa_word = "ALSA"
         if on_auto and resolved_family:
             if on_alsa:
-                alsa_word = "Auto → ALSA"
+                alsa_word = QCoreApplication.translate("SettingsDialog", "Auto → ALSA")
             elif resolved_family in ("pipewire", "pulse"):
                 pw_word = (
-                    "Auto → PipeWire"
+                    QCoreApplication.translate("SettingsDialog", "Auto → PipeWire")
                     if resolved_family == "pipewire"
-                    else "Auto → Pulse"
+                    else QCoreApplication.translate("SettingsDialog", "Auto → Pulse")
                 )
         pw_text = (
-            "sample-rate config installed."
+            QCoreApplication.translate(
+                "SettingsDialog", "sample-rate config installed."
+            )
             if pw_conf_installed
-            else "install the sample-rate config below."
-        ) + (
+            else QCoreApplication.translate(
+                "SettingsDialog", "install the sample-rate config below."
+            )
+        ) + QCoreApplication.translate(
+            "SettingsDialog",
             "<br>Sharing the playback device with other audio sources "
-            "will degrade the bit-perfect path."
+            "will degrade the bit-perfect path.",
         )
         alsa_text = (
-            "selecting an ALSA device claims it exclusively — other "
-            "audio sources won't play."
+            QCoreApplication.translate(
+                "SettingsDialog",
+                "selecting an ALSA device claims it exclusively — other "
+                "audio sources won't play.",
+            )
             if has_alsa_direct
-            else "no direct device detected on this system."
+            else QCoreApplication.translate(
+                "SettingsDialog", "no direct device detected on this system."
+            )
         )
         return _table(
             _row(AUDIO_FAMILY_GREEN, pw_word, pw_text, not on_alsa),
@@ -627,7 +639,10 @@ def bit_perfect_path_hint(
                 _row(
                     AUDIO_FAMILY_GREEN,
                     "WASAPI",
-                    "Exclusive output on — bit-perfect end to end.",
+                    QCoreApplication.translate(
+                        "SettingsDialog",
+                        "Exclusive output on — bit-perfect end to end.",
+                    ),
                     True,
                 )
             )
@@ -635,8 +650,11 @@ def bit_perfect_path_hint(
             _row(
                 AUDIO_FAMILY_GREEN,
                 "WASAPI",
-                "turn on Exclusive output — it hands jellytoast the device "
-                "directly, skipping the Windows mixer.",
+                QCoreApplication.translate(
+                    "SettingsDialog",
+                    "turn on Exclusive output — it hands jellytoast the device "
+                    "directly, skipping the Windows mixer.",
+                ),
                 True,
             )
         )
@@ -1084,7 +1102,7 @@ class SettingsDialog(QDialog):
         h.addWidget(cog)
         self._title_cog = cog
 
-        title = QLabel("Settings")
+        title = QLabel(self.tr("Settings"))
         title.setStyleSheet(f"color: {TEXT}; {type_qss(TYPE_SUBHEAD)}")
         h.addWidget(title)
         self._title_label = title
@@ -1097,7 +1115,7 @@ class SettingsDialog(QDialog):
         about_btn.setIcon(icon("info"))
         about_btn.setIconSize(QSize(18, 18))
         about_btn.setFixedSize(32, 28)
-        about_btn.setToolTip("About jellytoast")
+        about_btn.setToolTip(self.tr("About jellytoast"))
         about_btn.setStyleSheet(self._title_about_qss())
         about_btn.clicked.connect(self._show_about)
         h.addWidget(about_btn)
@@ -1159,18 +1177,20 @@ class SettingsDialog(QDialog):
         # ── Server (folded in from the old Account page) ───────────────
         # Most surveyed players (Supersonic, Apple Music) treat server
         # / account as a row in General rather than its own peer page.
-        v.addWidget(self._section_header("SERVER"))
+        v.addWidget(self._section_header(self.tr("SERVER")))
         username = self.s.username
         signed_in = bool(self.s.access_token)
         provider_kind = (self.s.provider_kind or "jellyfin").lower()
         provider_display = "Navidrome" if provider_kind == "subsonic" else "Jellyfin"
         if signed_in:
             if username:
-                status_text = f"Signed in to {provider_display} as {username}."
+                status_text = self.tr("Signed in to {0} as {1}.").format(
+                    provider_display, username
+                )
             else:
-                status_text = f"Signed in to {provider_display}."
+                status_text = self.tr("Signed in to {0}.").format(provider_display)
         else:
-            status_text = "Not signed in."
+            status_text = self.tr("Not signed in.")
         status = QLabel(status_text)
         status.setStyleSheet(f"color: {TEXT}; {type_qss(TYPE_BODY)}")
         v.addWidget(status)
@@ -1188,7 +1208,7 @@ class SettingsDialog(QDialog):
         # QInputDialog popup, but a modal-over-modal hiding the very
         # field you're editing is worse than letting the row accept
         # text inline.
-        url = self.s.server_url or "Not configured"
+        url = self.s.server_url or self.tr("Not configured")
         self._url_edit = QLineEdit(url)
         self._url_edit.setObjectName("serverUrlField")
         self._url_edit.setReadOnly(True)
@@ -1284,13 +1304,13 @@ class SettingsDialog(QDialog):
         # fixed-height (820×540) General page.
         btn_row.setContentsMargins(0, 4, 0, 0)
         btn_row.setSpacing(_BTN_ROW_GAP)
-        self._change_btn = QPushButton("Change server URL…")
+        self._change_btn = QPushButton(self.tr("Change server URL…"))
         self._change_btn.setObjectName("ghost")
         self._change_btn.setFixedHeight(_CTRL_H)
         self._change_btn.setMinimumWidth(_CHANGE_BTN_W)
         self._change_btn.clicked.connect(self._on_change_server_clicked)
         btn_row.addWidget(self._change_btn)
-        signout_btn = QPushButton("Sign out")
+        signout_btn = QPushButton(self.tr("Sign out"))
         signout_btn.setObjectName("ghost")
         signout_btn.setFixedHeight(_CTRL_H)
         signout_btn.setMinimumWidth(_SIGNOUT_BTN_W)
@@ -1308,7 +1328,7 @@ class SettingsDialog(QDialog):
 
         # ── Startup ───────────────────────────────────────────────────
         # Boot-time behaviour — what happens when jellytoast launches.
-        v.addWidget(self._section_header("STARTUP"))
+        v.addWidget(self._section_header(self.tr("STARTUP")))
 
         # Disk truth (whether the autostart .desktop file exists) wins
         # over the persisted flag — they can drift if the user nukes
@@ -1316,12 +1336,12 @@ class SettingsDialog(QDialog):
         # fulfil the toggle (Windows/macOS) — a no-op checkbox reads
         # as a broken one.
         if _autostart.is_supported():
-            self._autostart_check = QCheckBox("Launch jellytoast at login")
+            self._autostart_check = QCheckBox(self.tr("Launch jellytoast at login"))
             self._autostart_check.setChecked(_autostart.is_enabled())
             self._autostart_check.toggled.connect(self._on_autostart_toggled)
             v.addWidget(self._autostart_check)
 
-        self._mini_check = QCheckBox("Show mini player on startup")
+        self._mini_check = QCheckBox(self.tr("Show mini player on startup"))
         self._mini_check.setChecked(self.s.show_mini_on_start)
         self._mini_check.toggled.connect(lambda val: setattr(self.s, "show_mini_on_start", val))
         v.addWidget(self._mini_check)
@@ -1332,7 +1352,7 @@ class SettingsDialog(QDialog):
         # Behaviour of the open windows themselves — stacking + close
         # semantics. Both toggles change WHERE jellytoast lives on the
         # desktop, not what it does at boot.
-        v.addWidget(self._section_header("WINDOW"))
+        v.addWidget(self._section_header(self.tr("WINDOW")))
 
         # Wayland-only: xdg-shell forbids apps from setting their own
         # stacking, so Qt.WindowStaysOnTopHint is a no-op there. We
@@ -1342,7 +1362,7 @@ class SettingsDialog(QDialog):
         # (On Windows / macOS this row will be replaced by the host-OS
         # equivalent when those backends land.)
         if keep_above_supported():
-            self._keep_above_check = QCheckBox("Keep mini player on top")
+            self._keep_above_check = QCheckBox(self.tr("Keep mini player on top"))
             self._keep_above_check.setChecked(self.s.mini_player_keep_above)
             self._keep_above_check.toggled.connect(self._on_keep_above_toggled)
             v.addWidget(self._keep_above_check)
@@ -1351,7 +1371,9 @@ class SettingsDialog(QDialog):
         # toggle of the group (kills the close-X exit semantics) so it
         # gets the bottom slot where the eye naturally lands on a
         # "biggest commitment" row.
-        self._tray_check = QCheckBox("Hide to system tray when window is closed")
+        self._tray_check = QCheckBox(
+            self.tr("Hide to system tray when window is closed")
+        )
         self._tray_check.setChecked(self.s.minimize_to_tray)
         self._tray_check.toggled.connect(lambda val: setattr(self.s, "minimize_to_tray", val))
         v.addWidget(self._tray_check)
@@ -1365,9 +1387,9 @@ class SettingsDialog(QDialog):
         from jellytoast import notifications as _notifications
 
         if _notifications.is_supported():
-            v.addWidget(self._section_header("NOTIFICATIONS"))
+            v.addWidget(self._section_header(self.tr("NOTIFICATIONS")))
             self._track_notify_check = QCheckBox(
-                "Show a notification when the track changes"
+                self.tr("Show a notification when the track changes")
             )
             self._track_notify_check.setChecked(self.s.notify_on_track_change)
             self._track_notify_check.toggled.connect(
@@ -1380,7 +1402,7 @@ class SettingsDialog(QDialog):
         # ── Home page ─────────────────────────────────────────────────
         # The view jellytoast lands on at launch. Section header alone
         # labels what the combo does, so no inline label needed.
-        v.addWidget(self._section_header("HOME PAGE"))
+        v.addWidget(self._section_header(self.tr("HOME PAGE")))
 
         self._home_combo = _Selector()
         for label, key in HOME_DESTINATIONS:
@@ -1417,12 +1439,12 @@ class SettingsDialog(QDialog):
             # follows the Home-page combo BOX, which needs more air beneath it
             # than the plain checkboxes the other headers follow.
             v.addSpacing(16)
-            v.addWidget(self._section_header("UPDATES"))
+            v.addWidget(self._section_header(self.tr("UPDATES")))
             v.addSpacing(4)
             up_row = QHBoxLayout()
             up_row.setContentsMargins(0, 0, 0, 0)
             up_row.setSpacing(10)
-            self._update_check = QCheckBox("Check for updates")
+            self._update_check = QCheckBox(self.tr("Check for updates"))
             self._update_check.setChecked(self.s.check_for_updates_enabled)
             self._update_check.toggled.connect(
                 lambda val: setattr(self.s, "check_for_updates_enabled", val)
@@ -1430,16 +1452,18 @@ class SettingsDialog(QDialog):
             up_row.addWidget(self._update_check)
             up_row.addWidget(
                 self._info_button(
-                    "Check for updates",
-                    "Once a day, jellytoast quietly checks GitHub for a newer "
-                    "release and shows a small chip in the top bar if one's out. "
-                    "Manual installs only — the Microsoft Store / Mac App Store "
-                    "builds update themselves. Uses GitHub's public API; no "
-                    "account or personal data.",
+                    self.tr("Check for updates"),
+                    self.tr(
+                        "Once a day, jellytoast quietly checks GitHub for a newer "
+                        "release and shows a small chip in the top bar if one's out. "
+                        "Manual installs only — the Microsoft Store / Mac App Store "
+                        "builds update themselves. Uses GitHub's public API; no "
+                        "account or personal data."
+                    ),
                 )
             )
             up_row.addStretch(1)
-            self._update_check_now = QPushButton("Check now")
+            self._update_check_now = QPushButton(self.tr("Check now"))
             self._update_check_now.clicked.connect(self._on_check_updates_now)
             up_row.addWidget(self._update_check_now)
             v.addLayout(up_row)
@@ -1503,7 +1527,7 @@ class SettingsDialog(QDialog):
         # setCursorPosition (not selectAll) so the user can type/paste
         # at the end without first clearing the field.
         self._url_edit.setCursorPosition(len(self._url_edit.text()))
-        self._change_btn.setText("Save URL")
+        self._change_btn.setText(self.tr("Save URL"))
 
     def _commit_server_url_edit(self):
         """Apply the inline edit. Emits with the trimmed URL; the
@@ -1523,10 +1547,10 @@ class SettingsDialog(QDialog):
 
     def _exit_url_edit_mode(self):
         self._url_edit.setReadOnly(True)
-        self._url_edit.setText(self.s.server_url or "Not configured")
+        self._url_edit.setText(self.s.server_url or self.tr("Not configured"))
         self._url_edit.setCursorPosition(0)
         self._apply_url_edit_chrome(editing=False)
-        self._change_btn.setText("Change server URL…")
+        self._change_btn.setText(self.tr("Change server URL…"))
 
     def _apply_url_edit_chrome(self, *, editing: bool) -> None:
         """Toggle the field's border + fill between "looks like text"
@@ -1634,12 +1658,12 @@ class SettingsDialog(QDialog):
         # list comes from the LIVE player handle; before playback init
         # (rare — the dialog opens post-boot) the picker offers Auto +
         # the persisted value. See docs/research/audio_output_routing.md.
-        v.addWidget(self._section_header("AUDIO OUTPUT"))
+        v.addWidget(self._section_header(self.tr("AUDIO OUTPUT")))
         out_row = QHBoxLayout()
         out_row.setContentsMargins(0, 0, 0, 0)
         out_row.setSpacing(10)
         self._audio_out_combo = _Selector()
-        self._audio_out_combo.addItem("Auto (recommended)", "auto")
+        self._audio_out_combo.addItem(self.tr("Auto (recommended)"), "auto")
         current_out = self.s.audio_output_device
         listed = {"auto"}
         for name, desc in self._audio_device_choices():
@@ -1654,7 +1678,7 @@ class SettingsDialog(QDialog):
             # unplugged, or no live handle yet) — keep it selectable so
             # opening the dialog never silently rewrites the choice.
             self._audio_out_combo.addItem(
-                f"{current_out} (not connected)",
+                self.tr("{0} (not connected)").format(current_out),
                 current_out,
                 dot_color=audio_family_dot_color(current_out),
             )
@@ -1663,11 +1687,13 @@ class SettingsDialog(QDialog):
         out_row.addWidget(self._audio_out_combo)
         out_row.addWidget(
             self._info_button(
-                "Audio output",
-                "Where audio goes. Auto follows the system default. Direct "
-                "ALSA devices bypass the PipeWire mixer — the bit-perfect "
-                "path — but hold the device exclusively. Applies on the "
-                "next track; falls back to Auto if the device won't open.",
+                self.tr("Audio output"),
+                self.tr(
+                    "Where audio goes. Auto follows the system default. Direct "
+                    "ALSA devices bypass the PipeWire mixer — the bit-perfect "
+                    "path — but hold the device exclusively. Applies on the "
+                    "next track; falls back to Auto if the device won't open."
+                ),
             )
         )
         out_row.addStretch(1)
@@ -1685,20 +1711,22 @@ class SettingsDialog(QDialog):
         # surfaces it gates listen to PlayerBus.bit_perfect_changed.
         # See `docs/research/bit_perfect_playback.md` §7 (T2) and the
         # user-facing `docs/bit_perfect.md` for the PipeWire side.
-        v.addWidget(self._section_header("BIT-PERFECT"))
+        v.addWidget(self._section_header(self.tr("BIT-PERFECT")))
         bp_row = QHBoxLayout()
         bp_row.setContentsMargins(0, 0, 0, 0)
         bp_row.setSpacing(10)
-        self._bit_perfect_check = QCheckBox("Bit-perfect mode")
+        self._bit_perfect_check = QCheckBox(self.tr("Bit-perfect mode"))
         self._bit_perfect_check.setChecked(self.s.bit_perfect_mode)
         self._bit_perfect_check.toggled.connect(self._on_bit_perfect_toggled)
         bp_row.addWidget(self._bit_perfect_check)
         bp_row.addWidget(
             self._info_button(
-                "Bit-perfect mode",
-                "Plays the file's exact bits: locks volume at 100% and turns "
-                "off Normalization, Equalizer, and Crossfade. The hint below "
-                "covers the OS side of the path.",
+                self.tr("Bit-perfect mode"),
+                self.tr(
+                    "Plays the file's exact bits: locks volume at 100% and turns "
+                    "off Normalization, Equalizer, and Crossfade. The hint below "
+                    "covers the OS side of the path."
+                ),
             )
         )
         bp_row.addStretch(1)
@@ -1726,7 +1754,7 @@ class SettingsDialog(QDialog):
             excl_row = QHBoxLayout()
             excl_row.setContentsMargins(0, 0, 0, 0)  # aligned under Bit-perfect mode
             excl_row.setSpacing(10)
-            self._audio_exclusive_check = QCheckBox("Exclusive output")
+            self._audio_exclusive_check = QCheckBox(self.tr("Exclusive output"))
             self._audio_exclusive_check.setChecked(self.s.audio_exclusive)
             self._audio_exclusive_check.toggled.connect(
                 self._on_audio_exclusive_toggled
@@ -1734,11 +1762,13 @@ class SettingsDialog(QDialog):
             excl_row.addWidget(self._audio_exclusive_check)
             excl_row.addWidget(
                 self._info_button(
-                    "Exclusive output",
-                    "Hands jellytoast the device (WASAPI Exclusive · "
-                    "CoreAudio HogMode) — other apps go silent. Applies on "
-                    "the next track; falls back to shared if the device "
-                    "refuses.",
+                    self.tr("Exclusive output"),
+                    self.tr(
+                        "Hands jellytoast the device (WASAPI Exclusive · "
+                        "CoreAudio HogMode) — other apps go silent. Applies on "
+                        "the next track; falls back to shared if the device "
+                        "refuses."
+                    ),
                 )
             )
             excl_row.addStretch(1)
@@ -1778,11 +1808,13 @@ class SettingsDialog(QDialog):
             pw_row.addWidget(self._pw_install_btn)
             pw_row.addWidget(
                 self._info_button(
-                    "PipeWire sample-rate config",
-                    "Lets PipeWire follow the source sample rate so 44.1 kHz "
-                    "files stop resampling to 48 kHz. Takes effect after "
-                    "PipeWire restarts (or next login). Not needed on a "
-                    "direct ALSA output.",
+                    self.tr("PipeWire sample-rate config"),
+                    self.tr(
+                        "Lets PipeWire follow the source sample rate so 44.1 kHz "
+                        "files stop resampling to 48 kHz. Takes effect after "
+                        "PipeWire restarts (or next login). Not needed on a "
+                        "direct ALSA output."
+                    ),
                 )
             )
             pw_row.addStretch(1)
@@ -1804,7 +1836,7 @@ class SettingsDialog(QDialog):
         # belong together: both decide what the SOURCE stream looks like
         # before it hits the decoder. Header gives the page a consistent
         # rhythm with the Crossfade / Equalizer blocks below.
-        v.addWidget(self._section_header("AUDIO"))
+        v.addWidget(self._section_header(self.tr("AUDIO")))
 
         # Single shared form so Quality and Normalization labels +
         # combo boxes column-align cleanly.
@@ -1838,7 +1870,7 @@ class SettingsDialog(QDialog):
         # Stashed on self so _build_eq_section can reuse it.
         self._playback_label_w = 130
 
-        q_label = self._field_label("Quality:")
+        q_label = self._field_label(self.tr("Quality:"))
         q_label.setMinimumWidth(self._playback_label_w)
         self._quality_combo = _Selector()
         for label, key in AUDIO_QUALITIES:
@@ -1858,7 +1890,7 @@ class SettingsDialog(QDialog):
         # ReplayGain is the canonical tag spec, but the user-facing
         # label reads as "Normalization" since that's the effect users
         # recognise (and what other players call it).
-        n_label = self._field_label("Normalization:")
+        n_label = self._field_label(self.tr("Normalization:"))
         n_label.setMinimumWidth(self._playback_label_w)
         self._rg_combo = _Selector()
         for label, key in REPLAYGAIN_MODES:
@@ -1869,10 +1901,12 @@ class SettingsDialog(QDialog):
         # Short labels lose context; tooltips spell out the longer
         # description we used to bake into the label.
         self._rg_combo.setToolTip(
-            "Normalization mode:\n"
-            "  Off — play untouched.\n"
-            "  Track — match each song to a common loudness target.\n"
-            "  Album — preserve relative loudness within an album."
+            self.tr(
+                "Normalization mode:\n"
+                "  Off — play untouched.\n"
+                "  Track — match each song to a common loudness target.\n"
+                "  Album — preserve relative loudness within an album."
+            )
         )
         form.addRow(n_label, self._rg_combo)
 
@@ -1886,7 +1920,7 @@ class SettingsDialog(QDialog):
         # other label/combo rows. Sits between Crossfade and EQ so
         # the heaviest block (EQ — 11 sliders + header row) anchors
         # the bottom of the page.
-        v.addWidget(self._section_header("SHUFFLE"))
+        v.addWidget(self._section_header(self.tr("SHUFFLE")))
         shuffle_form = QFormLayout()
         shuffle_form.setLabelAlignment(Qt.AlignmentFlag.AlignLeft)
         shuffle_form.setFormAlignment(
@@ -1897,15 +1931,15 @@ class SettingsDialog(QDialog):
         shuffle_form.setFieldGrowthPolicy(
             QFormLayout.FieldGrowthPolicy.FieldsStayAtSizeHint
         )
-        sq_label = self._field_label("Queue size:")
+        sq_label = self._field_label(self.tr("Queue size:"))
         sq_label.setMinimumWidth(self._playback_label_w)
         self._shuffle_size_combo = _Selector()
         for label, key in (
-            ("50 tracks", 50),
-            ("100 tracks", 100),
-            ("250 tracks", 250),
-            ("500 tracks", 500),
-            ("1000 tracks", 1000),
+            (self.tr("50 tracks"), 50),
+            (self.tr("100 tracks"), 100),
+            (self.tr("250 tracks"), 250),
+            (self.tr("500 tracks"), 500),
+            (self.tr("1000 tracks"), 1000),
         ):
             self._shuffle_size_combo.addItem(label, key)
         self._select_combo_by_data(
@@ -1938,12 +1972,12 @@ class SettingsDialog(QDialog):
         # thread that isn't built for live restart, so it's honoured at
         # launch — hence the restart hint.
         v.addSpacing(8)
-        v.addWidget(self._section_header("MEDIA KEYS"))
+        v.addWidget(self._section_header(self.tr("MEDIA KEYS")))
         v.addSpacing(4)
         mk_row = QHBoxLayout()
         mk_row.setContentsMargins(0, 0, 0, 0)
         mk_row.setSpacing(10)
-        self._media_integration_check = QCheckBox("OS media integration")
+        self._media_integration_check = QCheckBox(self.tr("OS media integration"))
         self._media_integration_check.setChecked(self.s.media_integration_enabled)
         self._media_integration_check.toggled.connect(
             lambda val: setattr(self.s, "media_integration_enabled", val)
@@ -1951,11 +1985,13 @@ class SettingsDialog(QDialog):
         mk_row.addWidget(self._media_integration_check)
         mk_row.addWidget(
             self._info_button(
-                "OS media integration",
-                "Exposes jellytoast to your desktop's media controls — the "
-                "MPRIS widget and media keys on Linux, the SMTC volume-flyout "
-                "and hardware media keys on Windows. Turn off to keep "
-                "jellytoast out of the OS media UI. Takes effect on restart.",
+                self.tr("OS media integration"),
+                self.tr(
+                    "Exposes jellytoast to your desktop's media controls — the "
+                    "MPRIS widget and media keys on Linux, the SMTC volume-flyout "
+                    "and hardware media keys on Windows. Turn off to keep "
+                    "jellytoast out of the OS media UI. Takes effect on restart."
+                ),
             )
         )
         mk_row.addStretch(1)
@@ -1983,7 +2019,7 @@ class SettingsDialog(QDialog):
         wv.setContentsMargins(0, 0, 0, 0)
         wv.setSpacing(10)
 
-        wv.addWidget(self._section_header("CROSSFADE"))
+        wv.addWidget(self._section_header(self.tr("CROSSFADE")))
         # Breathing room under the section header before the toggles —
         # without it, the small-caps header sits visually attached to
         # the first checkbox.
@@ -1999,16 +2035,18 @@ class SettingsDialog(QDialog):
         # the sub-option reads as a distinct choice rather than
         # crowding the parent label.
         toggle_row.setSpacing(28)
-        self._xf_enabled = QCheckBox("Crossfade between tracks")
+        self._xf_enabled = QCheckBox(self.tr("Crossfade between tracks"))
         self._xf_enabled.setChecked(self.s.crossfade_enabled)
         self._xf_enabled.toggled.connect(self._on_xf_enabled_toggled)
         toggle_row.addWidget(self._xf_enabled)
 
-        self._xf_smart_album = QCheckBox("Skip on albums")
+        self._xf_smart_album = QCheckBox(self.tr("Skip on albums"))
         self._xf_smart_album.setToolTip(
-            "Skip the crossfade between tracks on the same album so "
-            "albums that flow as one piece (live sets, concept records) "
-            "stay seamless."
+            self.tr(
+                "Skip the crossfade between tracks on the same album so "
+                "albums that flow as one piece (live sets, concept records) "
+                "stay seamless."
+            )
         )
         self._xf_smart_album.setChecked(self.s.crossfade_smart_album_continuity)
         self._xf_smart_album.toggled.connect(
@@ -2038,7 +2076,7 @@ class SettingsDialog(QDialog):
         dur_row = QHBoxLayout()
         dur_row.setContentsMargins(0, 0, _CONTENT_RIGHT_PAD, 0)
         dur_row.setSpacing(16)
-        self._xf_duration_lbl = self._field_label("Duration:")
+        self._xf_duration_lbl = self._field_label(self.tr("Duration:"))
         self._xf_duration_lbl.setMinimumWidth(self._playback_label_w)
         dur_row.addWidget(self._xf_duration_lbl)
         self._xf_duration = QSlider(Qt.Orientation.Horizontal)
@@ -2094,7 +2132,9 @@ class SettingsDialog(QDialog):
         self._update_xf_duration_label()
 
     def _update_xf_duration_label(self):
-        self._xf_duration_label.setText(f"{self.s.crossfade_duration_ms / 1000.0:.1f} s")
+        self._xf_duration_label.setText(
+            self.tr("{0:.1f} s").format(self.s.crossfade_duration_ms / 1000.0)
+        )
 
     def _refresh_xf_enabled_state(self):
         """Gate the duration slider + same-album toggle on the enable
@@ -2118,7 +2158,10 @@ class SettingsDialog(QDialog):
         )
         if casting:
             self._xf_caption.setText(
-                "Casting — crossfade applies to local playback only and is inactive now."
+                self.tr(
+                    "Casting — crossfade applies to local playback only "
+                    "and is inactive now."
+                )
             )
             self._xf_caption.setVisible(True)
         else:
@@ -2222,20 +2265,24 @@ class SettingsDialog(QDialog):
         dt_row = QHBoxLayout()
         dt_row.setContentsMargins(0, 0, 0, 0)
         dt_row.setSpacing(10)
-        dt_row.addWidget(self._section_header("Device types"))
+        dt_row.addWidget(self._section_header(self.tr("Device types")))
         dt_row.addWidget(
             self._info_button(
-                "Cast devices not showing?",
+                self.tr("Cast devices not showing?"),
                 self._firewall_help_text(),
-                tooltip="Firewall help — why AirPlay/DLNA might not appear",
+                tooltip=self.tr(
+                    "Firewall help — why AirPlay/DLNA might not appear"
+                ),
             )
         )
         dt_row.addStretch(1)
         v.addLayout(dt_row)
 
         dt_caption = QLabel(
-            "Casting is off until you turn it on — nothing scans your "
-            "network until you enable a protocol below."
+            self.tr(
+                "Casting is off until you turn it on — nothing scans your "
+                "network until you enable a protocol below."
+            )
         )
         dt_caption.setWordWrap(True)
         dt_caption.setStyleSheet(f"color: {TEXT_FAINT}; {type_qss(TYPE_CAPTION)}")
@@ -2274,13 +2321,16 @@ class SettingsDialog(QDialog):
             if attr == "cast_sonos_enabled":
                 # Sonos carries the transport caveat in an ⓘ right next to it.
                 _sonos_info = self._info_button(
-                    "Sonos transport",
-                    "Mid-cast play/pause, volume, and seek (including the "
-                    "skip ± buttons, both directions) are implemented for "
-                    "Sonos — but Sonos transport hasn't been tested against "
-                    "real hardware yet.",
-                    tooltip="Sonos transport: implemented, not yet "
-                    "hardware-tested",
+                    self.tr("Sonos transport"),
+                    self.tr(
+                        "Mid-cast play/pause, volume, and seek (including the "
+                        "skip ± buttons, both directions) are implemented for "
+                        "Sonos — but Sonos transport hasn't been tested against "
+                        "real hardware yet."
+                    ),
+                    tooltip=self.tr(
+                        "Sonos transport: implemented, not yet hardware-tested"
+                    ),
                 )
                 # ⓘ in column 1, tight to "Sonos": every OTHER row spans all
                 # three columns (below) so it doesn't widen column 0 — that keeps
@@ -2298,10 +2348,10 @@ class SettingsDialog(QDialog):
         v.addSpacing(8)
 
         # ── Discovery timing ───────────────────────────────────────────
-        v.addWidget(self._section_header("Discovery timing"))
+        v.addWidget(self._section_header(self.tr("Discovery timing")))
 
-        self._discover_at_startup_radio = QRadioButton("Discover at startup")
-        self._discover_on_demand_radio = QRadioButton("Discover on cast")
+        self._discover_at_startup_radio = QRadioButton(self.tr("Discover at startup"))
+        self._discover_on_demand_radio = QRadioButton(self.tr("Discover on cast"))
         timing_group = QButtonGroup(self)
         timing_group.addButton(self._discover_at_startup_radio)
         timing_group.addButton(self._discover_on_demand_radio)
@@ -2341,7 +2391,7 @@ class SettingsDialog(QDialog):
         # picks per-server based on URL reachability. Three-radio form
         # matches the Discovery timing section above so the page reads
         # as a consistent stack of single-pick groups.
-        v.addWidget(self._section_header("Stream routing"))
+        v.addWidget(self._section_header(self.tr("Stream routing")))
 
         self._cast_routing_radios: dict = {}
         routing_group = QButtonGroup(self)
@@ -2587,7 +2637,7 @@ class SettingsDialog(QDialog):
             # stay aligned.
             self._audio_exclusive_check.setEnabled(on and quality_is_original)
         if on:
-            tip = "Disabled while Bit-perfect mode is on."
+            tip = self.tr("Disabled while Bit-perfect mode is on.")
         else:
             tip = ""
         for w in ("_quality_combo", "_rg_combo", "_xf_enabled", "_eq_enabled_check"):
@@ -2597,12 +2647,15 @@ class SettingsDialog(QDialog):
         if hasattr(self, "_audio_exclusive_check"):
             if not on:
                 self._audio_exclusive_check.setToolTip(
-                    "Enable Bit-perfect mode to use exclusive output."
+                    self.tr("Enable Bit-perfect mode to use exclusive output.")
                 )
             elif not quality_is_original:
                 self._audio_exclusive_check.setToolTip(
-                    "Exclusive output requires audio quality 'Original' — "
-                    "the server can't transcode and still ship bit-identical bits."
+                    self.tr(
+                        "Exclusive output requires audio quality 'Original' — "
+                        "the server can't transcode and still ship "
+                        "bit-identical bits."
+                    )
                 )
             else:
                 self._audio_exclusive_check.setToolTip("")
@@ -2611,10 +2664,12 @@ class SettingsDialog(QDialog):
         # via a separate path (page rebuild + the tooltip restore below).
         if not on and hasattr(self, "_rg_combo"):
             self._rg_combo.setToolTip(
-                "Normalization mode:\n"
-                "  Off — play untouched.\n"
-                "  Track — match each song to a common loudness target.\n"
-                "  Album — preserve relative loudness within an album."
+                self.tr(
+                    "Normalization mode:\n"
+                    "  Off — play untouched.\n"
+                    "  Track — match each song to a common loudness target.\n"
+                    "  Album — preserve relative loudness within an album."
+                )
             )
         self._refresh_bp_path_hint()
 
@@ -2683,14 +2738,18 @@ class SettingsDialog(QDialog):
         from jellytoast import pipewire_setup as _pws
 
         if _pws.is_installed():
-            self._pw_install_btn.setText("Remove PipeWire bit-perfect config")
+            self._pw_install_btn.setText(self.tr("Remove PipeWire bit-perfect config"))
             self._pw_install_btn.setToolTip(
-                f"Removes {_pws.conf_path()}. Restart pipewire to revert."
+                self.tr("Removes {0}. Restart pipewire to revert.").format(
+                    _pws.conf_path()
+                )
             )
         else:
-            self._pw_install_btn.setText("Install PipeWire bit-perfect config")
+            self._pw_install_btn.setText(self.tr("Install PipeWire bit-perfect config"))
             self._pw_install_btn.setToolTip(
-                f"Writes {_pws.conf_path()} with rate-matching properties."
+                self.tr("Writes {0} with rate-matching properties.").format(
+                    _pws.conf_path()
+                )
             )
 
     def _on_pipewire_install_clicked(self):
@@ -2703,12 +2762,15 @@ class SettingsDialog(QDialog):
         if _pws.is_installed():
             removed = _pws.uninstall()
             if removed:
-                msg = "Removed. Restart pipewire to revert the rate-matching properties."
+                msg = self.tr(
+                    "Removed. Restart pipewire to revert the rate-matching "
+                    "properties."
+                )
             else:
                 # uninstall() returns False if the file lacks our
                 # ID-stamp header — surface that honestly rather than
                 # claiming success.
-                msg = (
+                msg = self.tr(
                     "Did not remove — the file at that path wasn't "
                     "installed by jellytoast. Edit it by hand if you "
                     "want to revert."
@@ -2716,12 +2778,12 @@ class SettingsDialog(QDialog):
         else:
             try:
                 _pws.install()
-                msg = (
+                msg = self.tr(
                     "Installed. Restart pipewire (or log out / in) for "
                     "the rate-matching properties to take effect."
                 )
             except OSError as e:
-                msg = f"Install failed: {e}"
+                msg = self.tr("Install failed: {0}").format(e)
         self._pw_status_label.setText(msg)
         self._pw_status_label.setVisible(True)
         self._refresh_pipewire_button_label()
@@ -2745,7 +2807,7 @@ class SettingsDialog(QDialog):
         # a new theme / accent. Visible only after a dirty change.
         _ar2, _ag2, _ab2 = _hex_to_rgb(ACCENT)
         self._theme_restart_notice = QLabel(
-            "Restart jellytoast to apply your display changes."
+            self.tr("Restart jellytoast to apply your display changes.")
         )
         self._theme_restart_notice.setWordWrap(True)
         self._theme_restart_notice.setStyleSheet(
@@ -2767,7 +2829,7 @@ class SettingsDialog(QDialog):
         # (presets), chosen by the active family. Built by _build_theme_section
         # so the whole block re-evaluates on the page rebuild a family/mode
         # change triggers.
-        v.addWidget(self._section_header("Theme"))
+        v.addWidget(self._section_header(self.tr("Theme")))
         v.addLayout(self._build_theme_section())
 
         # Blur-availability hint — when a Frosted theme is active but this
@@ -2797,7 +2859,7 @@ class SettingsDialog(QDialog):
         # exposed — KDE Plasma's system-wide scale slider already
         # handles it via Qt 6's `wp_fractional_scale_v1` integration,
         # so adding a duplicate app-level knob would just diverge.
-        v.addWidget(self._section_header("Scaling"))
+        v.addWidget(self._section_header(self.tr("Scaling")))
 
         scaling_form = QFormLayout()
         scaling_form.setLabelAlignment(Qt.AlignmentFlag.AlignLeft)
@@ -2839,7 +2901,7 @@ class SettingsDialog(QDialog):
         self._font_size_combo.currentIndexChanged.connect(self._on_font_scale_changed)
         self._font_size_combo.setMinimumWidth(185)  # 281 left → 466 (eyedropper right)
         scaling_form.addRow(
-            self._field_label("Font size:"), _left(self._font_size_combo)
+            self._field_label(self.tr("Font size:")), _left(self._font_size_combo)
         )
 
         # Font family — app-wide UI text font. Lists installed families that
@@ -2851,7 +2913,7 @@ class SettingsDialog(QDialog):
         from PySide6.QtGui import QFont, QFontDatabase
 
         self._font_family_combo = _Selector()
-        self._font_family_combo.addItem("System default", "")
+        self._font_family_combo.addItem(self.tr("System default"), "")
         _latin = QFontDatabase.WritingSystem.Latin
         for _fam in QFontDatabase.families():
             if QFontDatabase.isPrivateFamily(_fam):
@@ -2867,7 +2929,9 @@ class SettingsDialog(QDialog):
         self._select_combo_by_data(self._font_family_combo, self._initial_font_family)
         self._font_family_combo.currentIndexChanged.connect(self._on_font_family_changed)
         self._font_family_combo.setMinimumWidth(185)
-        scaling_form.addRow(self._field_label("Font:"), _left(self._font_family_combo))
+        scaling_form.addRow(
+            self._field_label(self.tr("Font:")), _left(self._font_family_combo)
+        )
 
         # Lyrics font size — wires live to PlayerBus, no restart needed.
         self._lyrics_size_combo = _Selector()
@@ -2877,7 +2941,8 @@ class SettingsDialog(QDialog):
         self._lyrics_size_combo.currentIndexChanged.connect(self._on_lyrics_size_changed)
         self._lyrics_size_combo.setMinimumWidth(185)  # 281 left → 466 (eyedropper right)
         scaling_form.addRow(
-            self._field_label("Lyrics font size:"), _left(self._lyrics_size_combo)
+            self._field_label(self.tr("Lyrics font size:")),
+            _left(self._lyrics_size_combo),
         )
 
         v.addLayout(scaling_form)
@@ -2891,7 +2956,7 @@ class SettingsDialog(QDialog):
         # ReplayGain + Crossfade off because the people who use them
         # already know they're using them.
         v.addSpacing(4)
-        v.addWidget(self._section_header("Now-playing info"))
+        v.addWidget(self._section_header(self.tr("Now-playing info")))
 
         def _badge_toggle(attr: str, label: str) -> QCheckBox:
             cb = QCheckBox(label)
@@ -2905,20 +2970,20 @@ class SettingsDialog(QDialog):
             return cb
 
         self._badge_bit_perfect = _badge_toggle(
-            "streaming_info_show_bit_perfect", "Bit Perfect"
+            "streaming_info_show_bit_perfect", self.tr("Bit Perfect")
         )
         self._badge_eq = _badge_toggle("streaming_info_show_eq", "EQ")
         self._badge_replaygain = _badge_toggle(
-            "streaming_info_show_replaygain", "Normalized"
+            "streaming_info_show_replaygain", self.tr("Normalized")
         )
         self._badge_crossfade = _badge_toggle(
-            "streaming_info_show_crossfade", "Crossfade"
+            "streaming_info_show_crossfade", self.tr("Crossfade")
         )
         self._badge_codec = _badge_toggle(
-            "streaming_info_show_codec", "Codec (FLAC, MP3, …)"
+            "streaming_info_show_codec", self.tr("Codec (FLAC, MP3, …)")
         )
         self._badge_bitrate = _badge_toggle(
-            "streaming_info_show_bitrate", "Bitrate (kbps)"
+            "streaming_info_show_bitrate", self.tr("Bitrate (kbps)")
         )
         # Two columns (3 + 3) so this section stays compact vertically and
         # the Display page fits without the badges pushing it tall.
@@ -2942,7 +3007,7 @@ class SettingsDialog(QDialog):
 
         # ── Interface ──────────────────────────────────────────────────
         v.addSpacing(4)
-        v.addWidget(self._section_header("Interface"))
+        v.addWidget(self._section_header(self.tr("Interface")))
 
         # Language — the UI language override (#232). "System default" ('')
         # follows the OS locale; explicit picks are bare codes ("es").
@@ -2955,7 +3020,7 @@ class SettingsDialog(QDialog):
         lang_row.setContentsMargins(0, 0, 0, 0)
         lang_row.setSpacing(10)
         self._language_combo = _Selector()
-        self._language_combo.addItem("System default", "")
+        self._language_combo.addItem(self.tr("System default"), "")
         self._language_combo.addItem("English", "en")
         for _code, _en_name, _native in SHIPPED_LANGUAGES:
             self._language_combo.addItem(_native, _code)
@@ -2963,15 +3028,15 @@ class SettingsDialog(QDialog):
         self._select_combo_by_data(self._language_combo, self._initial_language)
         self._language_combo.currentIndexChanged.connect(self._on_language_changed)
         self._language_combo.setMinimumWidth(185)
-        lang_row.addWidget(self._field_label("Language:"))
+        lang_row.addWidget(self._field_label(self.tr("Language:")))
         lang_row.addWidget(self._language_combo)
-        lang_hint = QLabel("(needs restart)")
+        lang_hint = QLabel(self.tr("(needs restart)"))
         lang_hint.setStyleSheet(f"color: {TEXT_FAINT}; {type_qss(TYPE_CAPTION)}")
         lang_row.addWidget(lang_hint)
         lang_row.addStretch(1)
         v.addLayout(lang_row)
 
-        self._tooltips_check = QCheckBox("Show hover tooltips")
+        self._tooltips_check = QCheckBox(self.tr("Show hover tooltips"))
         self._tooltips_check.setChecked(self.s.show_tooltips)
         self._tooltips_check.toggled.connect(lambda val: setattr(self.s, "show_tooltips", val))
         # Nest in a left-packed HBox so it shares the x of the NOW-PLAYING INFO
@@ -2997,13 +3062,13 @@ class SettingsDialog(QDialog):
             nb_row = QHBoxLayout()
             nb_row.setContentsMargins(0, 0, 0, 0)
             nb_row.setSpacing(10)
-            self._native_border_check = QCheckBox("Use native window border")
+            self._native_border_check = QCheckBox(self.tr("Use native window border"))
             self._native_border_check.setChecked(self.s.native_window_border)
             self._native_border_check.toggled.connect(
                 lambda val: setattr(self.s, "native_window_border", val)
             )
             nb_row.addWidget(self._native_border_check)
-            nb_hint = QLabel("(needs restart)")
+            nb_hint = QLabel(self.tr("(needs restart)"))
             nb_hint.setStyleSheet(f"color: {TEXT_FAINT}; {type_qss(TYPE_CAPTION)}")
             nb_row.addWidget(nb_hint)
             nb_row.addStretch(1)
@@ -3017,12 +3082,12 @@ class SettingsDialog(QDialog):
         sc_row = QHBoxLayout()
         sc_row.setContentsMargins(0, 0, 0, 0)
         sc_row.setSpacing(10)
-        self._square_corners_check = QCheckBox("Square corners")
+        self._square_corners_check = QCheckBox(self.tr("Square corners"))
         self._initial_square_corners = self.s.square_corners
         self._square_corners_check.setChecked(self._initial_square_corners)
         self._square_corners_check.toggled.connect(self._on_square_corners_changed)
         sc_row.addWidget(self._square_corners_check)
-        sc_hint = QLabel("(needs restart)")
+        sc_hint = QLabel(self.tr("(needs restart)"))
         sc_hint.setStyleSheet(f"color: {TEXT_FAINT}; {type_qss(TYPE_CAPTION)}")
         sc_row.addWidget(sc_hint)
         sc_row.addStretch(1)
@@ -3164,7 +3229,11 @@ class SettingsDialog(QDialog):
             and not IS_MACOS
             and blur.status() is not blur.BlurStatus.ACTIVE
         ):
-            hint.setText(f"Frosted glass needs compositor blur — {blur.reason()}.")
+            hint.setText(
+                self.tr("Frosted glass needs compositor blur — {0}.").format(
+                    blur.reason()
+                )
+            )
             hint.show()
         else:
             hint.hide()
@@ -3223,10 +3292,12 @@ class SettingsDialog(QDialog):
             lambda _=0: self._on_family_changed()
         )
         top.addWidget(self._family_combo)
-        imp = QPushButton("Import…")
+        imp = QPushButton(self.tr("Import…"))
         imp.setObjectName("ghost")
         imp.setFixedWidth(self._theme_btn_w)
-        imp.setToolTip("Import a base16 .yaml colour scheme (≈250 community themes)")
+        imp.setToolTip(
+            self.tr("Import a base16 .yaml colour scheme (≈250 community themes)")
+        )
         imp.clicked.connect(self._on_import_theme)
         top.addWidget(imp)
         top.addStretch(1)
@@ -3246,7 +3317,7 @@ class SettingsDialog(QDialog):
             mode_row = QHBoxLayout()
             mode_row.setContentsMargins(0, 0, 0, 0)
             mode_row.setSpacing(10)
-            mode_label = self._field_label("Mode:")
+            mode_label = self._field_label(self.tr("Mode:"))
             mode_row.addWidget(mode_label)
             mode_row.addWidget(self._mode_combo)
             mode_row.addStretch(1)
@@ -3258,10 +3329,10 @@ class SettingsDialog(QDialog):
             self._mode_combo = None
 
         # Frosted / Opaque — always present.
-        self._frosted_check = QCheckBox("Frosted glass")
+        self._frosted_check = QCheckBox(self.tr("Frosted glass"))
         self._frosted_check.setChecked(self.s.frosted)
         self._frosted_check.setToolTip(
-            "Translucent, blurred body (Frosted) vs a solid opaque body."
+            self.tr("Translucent, blurred body (Frosted) vs a solid opaque body.")
         )
         self._frosted_check.toggled.connect(self._on_frosted_toggled)
         box.addWidget(self._frosted_check)
@@ -3275,13 +3346,15 @@ class SettingsDialog(QDialog):
         if not is_preset:
             # Accent row + follow-system-accent (jellytoast owns its accent).
             box.addSpacing(2)
-            box.addWidget(self._section_header("Accent color"))
+            box.addWidget(self._section_header(self.tr("Accent color")))
             box.addLayout(self._build_accent_row())
-            self._follow_accent_check = QCheckBox("Follow system accent")
+            self._follow_accent_check = QCheckBox(self.tr("Follow system accent"))
             self._follow_accent_check.setChecked(self.s.follow_system_accent)
             self._follow_accent_check.setToolTip(
-                "Adopt your desktop's accent colour "
-                "(KDE Plasma / GNOME 47+ / Windows / macOS)."
+                self.tr(
+                    "Adopt your desktop's accent colour "
+                    "(KDE Plasma / GNOME 47+ / Windows / macOS)."
+                )
             )
             self._follow_accent_check.toggled.connect(
                 self._on_follow_system_accent_toggled
@@ -3294,14 +3367,14 @@ class SettingsDialog(QDialog):
             base16 = self._current_member_base16()
             if base16:
                 box.addSpacing(2)
-                box.addWidget(self._section_header("Palette"))
+                box.addWidget(self._section_header(self.tr("Palette")))
                 box.addWidget(self._base16_grid(base16), 0, Qt.AlignmentFlag.AlignLeft)
 
         # Follow pywal / wallust — Linux ricing loop (any family: following
         # re-themes onto the imported family on the next wallpaper change). The
         # ⓘ carries the "what is this" so the label stays terse.
         if sys.platform.startswith("linux"):
-            self._follow_pywal_check = QCheckBox("Follow pywal / wallust")
+            self._follow_pywal_check = QCheckBox(self.tr("Follow pywal / wallust"))
             self._follow_pywal_check.setChecked(self.s.follow_pywal)
             self._follow_pywal_check.toggled.connect(self._on_follow_pywal_toggled)
             pywal_row = QHBoxLayout()
@@ -3310,9 +3383,11 @@ class SettingsDialog(QDialog):
             pywal_row.addWidget(self._follow_pywal_check)
             pywal_row.addWidget(
                 self._info_button(
-                    "Follow pywal / wallust",
-                    "pywal / wallust are tools that build themes from your "
-                    "wallpaper.",
+                    self.tr("Follow pywal / wallust"),
+                    self.tr(
+                        "pywal / wallust are tools that build themes from your "
+                        "wallpaper."
+                    ),
                 )
             )
             pywal_row.addStretch(1)
@@ -3339,7 +3414,10 @@ class SettingsDialog(QDialog):
         from PySide6.QtGui import QFontMetrics
 
         fm = QFontMetrics(font(TYPE_BODY))
-        text = max(fm.horizontalAdvance("Import…"), fm.horizontalAdvance("Default"))
+        text = max(
+            fm.horizontalAdvance(self.tr("Import…")),
+            fm.horizontalAdvance(self.tr("Default")),
+        )
         return text + 2 * 14 + 2  # ghost padding (6px 14px) + 1px border each side
 
     def _glass_is_preset(self) -> bool:
@@ -3366,7 +3444,7 @@ class SettingsDialog(QDialog):
         head = QHBoxLayout()
         head.setContentsMargins(0, 0, 0, 0)
         head.setSpacing(8)
-        head.addWidget(self._section_header("Glass opacity"))
+        head.addWidget(self._section_header(self.tr("Glass opacity")))
         self._glass_readout = QLabel()
         self._glass_readout.setStyleSheet(f"color: {TEXT_FAINT}; {type_qss(TYPE_CAPTION)}")
         head.addWidget(self._glass_readout)
@@ -3392,10 +3470,10 @@ class SettingsDialog(QDialog):
         srow.setContentsMargins(0, 0, 0, 0)
         srow.setSpacing(10)
         srow.addWidget(self._glass_slider)
-        reset_btn = QPushButton("Default")
+        reset_btn = QPushButton(self.tr("Default"))
         reset_btn.setObjectName("ghost")
         reset_btn.setFixedWidth(getattr(self, "_theme_btn_w", self._theme_button_width()))
-        reset_btn.setToolTip("Reset glass opacity to this theme's default")
+        reset_btn.setToolTip(self.tr("Reset glass opacity to this theme's default"))
         reset_btn.clicked.connect(self._reset_glass_alpha)
         srow.addWidget(reset_btn)
         srow.addStretch(1)
@@ -3494,7 +3572,7 @@ class SettingsDialog(QDialog):
         ):
             # One-off import (or pywal) — not represented by a folder row.
             imp = imported_preset_from_settings()
-            label = imp.name if imp else "Imported scheme"
+            label = imp.name if imp else self.tr("Imported scheme")
             ic = self._palette_icon(imp) if imp else None
             items.append((label, "imported", ic))
         return items
@@ -3719,23 +3797,27 @@ class SettingsDialog(QDialog):
             e["action_id"]: e["label"] for e in _hotkeys.registry_actions()
         }
 
-        v.addWidget(self._section_header("In-app shortcuts"))
+        v.addWidget(self._section_header(self.tr("In-app shortcuts")))
         for entry in _hotkeys.registry_actions():
             v.addWidget(self._editable_hotkey_row(entry))
 
-        reset_all = QPushButton("Reset all to defaults")
+        reset_all = QPushButton(self.tr("Reset all to defaults"))
         reset_all.setObjectName("ghost")
         reset_all.clicked.connect(self._on_hotkeys_reset_all)
         v.addWidget(reset_all, 0, Qt.AlignmentFlag.AlignLeft)
 
         v.addSpacing(8)
-        v.addWidget(self._section_header("Media keys"))
-        v.addLayout(self._hotkey_row("Play / Pause", "Media Play"))
-        v.addLayout(self._hotkey_row("Next track", "Media Next"))
-        v.addLayout(self._hotkey_row("Previous track", "Media Previous"))
+        v.addWidget(self._section_header(self.tr("Media keys")))
+        v.addLayout(self._hotkey_row(self.tr("Play / Pause"), self.tr("Media Play")))
+        v.addLayout(self._hotkey_row(self.tr("Next track"), self.tr("Media Next")))
+        v.addLayout(
+            self._hotkey_row(self.tr("Previous track"), self.tr("Media Previous"))
+        )
         note = QLabel(
-            "Media keys route through MPRIS and your desktop's own "
-            "shortcut settings — they can't be rebound here."
+            self.tr(
+                "Media keys route through MPRIS and your desktop's own "
+                "shortcut settings — they can't be rebound here."
+            )
         )
         note.setWordWrap(True)
         # Wrap to the page's content width (no maxWidth): capping the render
@@ -3785,7 +3867,7 @@ class SettingsDialog(QDialog):
         )
         row.addWidget(edit)
 
-        reset_btn = QPushButton("Reset")
+        reset_btn = QPushButton(self.tr("Reset"))
         reset_btn.setObjectName("ghost")
         reset_btn.clicked.connect(
             lambda _=False, aid=action_id: self._on_hotkey_reset(aid)
@@ -3828,7 +3910,9 @@ class SettingsDialog(QDialog):
         )
         if conflict:
             other = self._hotkey_labels.get(conflict, conflict)
-            warn.setText(f"Already used by “{other}” — pick another.")
+            warn.setText(
+                self.tr("Already used by “{0}” — pick another.").format(other)
+            )
             warn.setVisible(True)
             # Snap the field back to the persisted binding.
             edit.blockSignals(True)
@@ -3941,26 +4025,26 @@ class SettingsDialog(QDialog):
                 services.append("Last.fm")
             if srv_lb:
                 services.append("ListenBrainz")
-            joined = " and ".join(services)
-            warning_text = (
-                f"Your server is scrobbling {joined} for you — "
+            joined = self.tr(" and ").join(services)
+            warning_text = self.tr(
+                "Your server is scrobbling {0} for you — "
                 "the in-app option for that service is turned off so "
                 "tracks aren't counted twice."
-            )
+            ).format(joined)
             # Confirmatory state → accent-tinted. Derived from the LIVE
             # accent (not the old hardcoded purple) + re-stamped on accent
             # change so it follows a swatch swap like every other tinted
             # surface.
             self._scrobble_banner_accent = True
         elif is_navidrome and not check_done:
-            warning_text = (
+            warning_text = self.tr(
                 "This is a Navidrome server. If you've already enabled "
                 "Last.fm or ListenBrainz scrobbling there, leave these "
                 "off — otherwise every track is counted twice."
             )
             self._scrobble_banner_accent = False
         else:
-            warning_text = (
+            warning_text = self.tr(
                 "If your music server already scrobbles "
                 "(e.g. Navidrome's built-in Last.fm / ListenBrainz "
                 "integration), leave these off — otherwise every "
@@ -3982,7 +4066,7 @@ class SettingsDialog(QDialog):
         # listens for the boot check to catch.
         recheck_row = QHBoxLayout()
         recheck_row.setSpacing(8)
-        self._scrobble_recheck_btn = QPushButton("Re-check server scrobbling")
+        self._scrobble_recheck_btn = QPushButton(self.tr("Re-check server scrobbling"))
         self._scrobble_recheck_btn.setObjectName("ghost")
         self._scrobble_recheck_status = QLabel("")
         self._scrobble_recheck_status.setWordWrap(True)
@@ -3995,7 +4079,7 @@ class SettingsDialog(QDialog):
 
             self._scrobble_recheck_btn.setEnabled(False)
             self._scrobble_recheck_status.setText(
-                "Checking your recent ListenBrainz listens…"
+                self.tr("Checking your recent ListenBrainz listens…")
             )
 
             def _done(res):
@@ -4003,19 +4087,27 @@ class SettingsDialog(QDialog):
                     self._scrobble_recheck_btn.setEnabled(True)
                     if not getattr(res, "checked", False):
                         self._scrobble_recheck_status.setText(
-                            "Couldn't check — ListenBrainz isn't configured, or "
-                            "the server was unreachable."
+                            self.tr(
+                                "Couldn't check — ListenBrainz isn't configured, "
+                                "or the server was unreachable."
+                            )
                         )
                     elif getattr(res, "server_scrobbles", False):
-                        who = ", ".join(res.foreign_clients) or "another client"
+                        who = ", ".join(res.foreign_clients) or self.tr(
+                            "another client"
+                        )
                         self._scrobble_recheck_status.setText(
-                            f"Detected another scrobbler ({who}) on your account "
-                            "— in-app ListenBrainz paused to avoid duplicates. "
-                            "Reopen this page to refresh the controls."
+                            self.tr(
+                                "Detected another scrobbler ({0}) on your account "
+                                "— in-app ListenBrainz paused to avoid duplicates. "
+                                "Reopen this page to refresh the controls."
+                            ).format(who)
                         )
                     else:
                         self._scrobble_recheck_status.setText(
-                            "No second scrobbler found in your recent listens."
+                            self.tr(
+                                "No second scrobbler found in your recent listens."
+                            )
                         )
                 except RuntimeError:
                     pass  # dialog closed before the probe returned
@@ -4030,7 +4122,7 @@ class SettingsDialog(QDialog):
         # ── ListenBrainz ──────────────────────────────────────────────
         v.addWidget(self._section_header("ListenBrainz"))
 
-        self._lb_enabled = QCheckBox("Enable ListenBrainz scrobbling")
+        self._lb_enabled = QCheckBox(self.tr("Enable ListenBrainz scrobbling"))
         self._lb_enabled.setChecked(self.s.listenbrainz_enabled)
         self._lb_enabled.toggled.connect(lambda v: setattr(self.s, "listenbrainz_enabled", v))
         v.addWidget(self._lb_enabled)
@@ -4039,20 +4131,24 @@ class SettingsDialog(QDialog):
             # detected. Tooltip surfaces the *why* on hover.
             self._lb_enabled.setEnabled(False)
             self._lb_enabled.setToolTip(
-                "A second scrobbler (your server) is already submitting "
-                "these listens to ListenBrainz. In-app scrobbling is paused "
-                "to avoid duplicates."
+                self.tr(
+                    "A second scrobbler (your server) is already submitting "
+                    "these listens to ListenBrainz. In-app scrobbling is paused "
+                    "to avoid duplicates."
+                )
             )
             # Escape hatch: if the detected 'other' scrobbler is actually a
             # different app (not this server), the user can force jellytoast
             # to scrobble anyway (accepting duplicates).
-            self._lb_override = QCheckBox("Scrobble from jellytoast anyway")
+            self._lb_override = QCheckBox(self.tr("Scrobble from jellytoast anyway"))
             self._lb_override.setChecked(self.s.scrobble_in_app_anyway)
             self._lb_override.setToolTip(
-                "Submit listens from jellytoast even though another scrobbler "
-                "was detected on your ListenBrainz account. Only use this if "
-                "that other scrobbler isn't your music server — otherwise "
-                "every track is counted twice."
+                self.tr(
+                    "Submit listens from jellytoast even though another scrobbler "
+                    "was detected on your ListenBrainz account. Only use this if "
+                    "that other scrobbler isn't your music server — otherwise "
+                    "every track is counted twice."
+                )
             )
             self._lb_override.toggled.connect(
                 lambda val: setattr(self.s, "scrobble_in_app_anyway", val)
@@ -4061,11 +4157,13 @@ class SettingsDialog(QDialog):
 
         token_row = QHBoxLayout()
         token_row.setSpacing(8)
-        token_row.addWidget(self._field_label("User token"))
+        token_row.addWidget(self._field_label(self.tr("User token")))
         self._lb_token_edit = QLineEdit()
         self._lb_token_edit.setEchoMode(QLineEdit.EchoMode.Password)
         self._lb_token_edit.setText(self.s.listenbrainz_token)
-        self._lb_token_edit.setPlaceholderText("Paste from listenbrainz.org/profile/")
+        self._lb_token_edit.setPlaceholderText(
+            self.tr("Paste from listenbrainz.org/profile/")
+        )
         self._lb_token_edit.editingFinished.connect(self._on_lb_token_changed)
         # Cap the token + URL line edits at a sensible width — at full
         # row stretch (the previous setup) they read absurdly wide
@@ -4074,7 +4172,7 @@ class SettingsDialog(QDialog):
         # edge to match.
         self._lb_token_edit.setMaximumWidth(260)
         token_row.addWidget(self._lb_token_edit)
-        self._lb_validate_btn = QPushButton("Validate")
+        self._lb_validate_btn = QPushButton(self.tr("Validate"))
         self._lb_validate_btn.setObjectName("ghost")
         self._lb_validate_btn.clicked.connect(self._on_lb_validate)
         token_row.addWidget(self._lb_validate_btn)
@@ -4088,7 +4186,7 @@ class SettingsDialog(QDialog):
 
         url_row = QHBoxLayout()
         url_row.setSpacing(8)
-        url_row.addWidget(self._field_label("Server URL"))
+        url_row.addWidget(self._field_label(self.tr("Server URL")))
         self._lb_url_edit = QLineEdit()
         self._lb_url_edit.setText(self.s.listenbrainz_url)
         self._lb_url_edit.setPlaceholderText("https://api.listenbrainz.org")
@@ -4113,16 +4211,18 @@ class SettingsDialog(QDialog):
         # ListenBrainz above is the supported scrobbling path.
         if _lastfm.is_configured():
             v.addWidget(self._section_header("Last.fm"))
-            self._lf_enabled = QCheckBox("Enable Last.fm scrobbling")
+            self._lf_enabled = QCheckBox(self.tr("Enable Last.fm scrobbling"))
             self._lf_enabled.setChecked(self.s.lastfm_enabled)
             self._lf_enabled.toggled.connect(lambda v: setattr(self.s, "lastfm_enabled", v))
             v.addWidget(self._lf_enabled)
             if srv_lf:
                 self._lf_enabled.setEnabled(False)
                 self._lf_enabled.setToolTip(
-                    "Your Navidrome server is already scrobbling to "
-                    "Last.fm. Disable it there to use jellytoast's "
-                    "Last.fm client instead."
+                    self.tr(
+                        "Your Navidrome server is already scrobbling to "
+                        "Last.fm. Disable it there to use jellytoast's "
+                        "Last.fm client instead."
+                    )
                 )
 
             lf_row = QHBoxLayout()
@@ -4131,11 +4231,11 @@ class SettingsDialog(QDialog):
             self._lf_status.setStyleSheet(f"color: {TEXT_FAINT}; {type_qss(TYPE_CAPTION)}")
             lf_row.addWidget(self._lf_status, 1)
             if self.s.lastfm_session_key:
-                self._lf_action_btn = QPushButton("Disconnect")
+                self._lf_action_btn = QPushButton(self.tr("Disconnect"))
                 self._lf_action_btn.setObjectName("ghost")
                 self._lf_action_btn.clicked.connect(self._on_lf_disconnect)
             else:
-                self._lf_action_btn = QPushButton("Connect to Last.fm…")
+                self._lf_action_btn = QPushButton(self.tr("Connect to Last.fm…"))
                 self._lf_action_btn.setObjectName("ghost")
                 self._lf_action_btn.clicked.connect(self._on_lf_connect)
             lf_row.addWidget(self._lf_action_btn)
@@ -4149,16 +4249,16 @@ class SettingsDialog(QDialog):
     def _lb_status_text(self) -> str:
         name = self.s.listenbrainz_username
         if name:
-            return f"Connected as {name}."
+            return self.tr("Connected as {0}.").format(name)
         if self.s.listenbrainz_token:
-            return "Token saved — click Validate to confirm."
-        return "Not validated yet."
+            return self.tr("Token saved — click Validate to confirm.")
+        return self.tr("Not validated yet.")
 
     def _lf_status_text(self) -> str:
         name = self.s.lastfm_username
         if name:
-            return f"Connected as {name}."
-        return "Not connected."
+            return self.tr("Connected as {0}.").format(name)
+        return self.tr("Not connected.")
 
     def _on_lb_token_changed(self):
         new_token = (self._lb_token_edit.text() or "").strip()
@@ -4177,13 +4277,13 @@ class SettingsDialog(QDialog):
         token = (self._lb_token_edit.text() or "").strip()
         url = (self._lb_url_edit.text() or "").strip() or _lb.DEFAULT_BASE_URL
         if not token:
-            self._lb_status.setText("Enter a token, then click Validate.")
+            self._lb_status.setText(self.tr("Enter a token, then click Validate."))
             return
         # Persist whatever the user typed so a successful validate can
         # be acted on immediately by the manager.
         self.s.listenbrainz_token = token
         self.s.listenbrainz_url = url
-        self._lb_status.setText("Validating…")
+        self._lb_status.setText(self.tr("Validating…"))
         self._lb_validate_btn.setEnabled(False)
         run_async(
             _lb.validate_token,
@@ -4197,10 +4297,12 @@ class SettingsDialog(QDialog):
         self._lb_validate_btn.setEnabled(True)
         if username:
             self.s.listenbrainz_username = username
-            self._lb_status.setText(f"Connected as {username}.")
+            self._lb_status.setText(self.tr("Connected as {0}.").format(username))
         else:
             self.s.listenbrainz_username = ""
-            self._lb_status.setText("Couldn't validate — check the token and try again.")
+            self._lb_status.setText(
+                self.tr("Couldn't validate — check the token and try again.")
+            )
 
     def _on_lf_connect(self):
         from PySide6.QtCore import QUrl
@@ -4213,11 +4315,13 @@ class SettingsDialog(QDialog):
         # poll auth.getSession every 3s until the user authorizes (or
         # cancels via the dialog's Close).
         self._lf_action_btn.setEnabled(False)
-        self._lf_status.setText("Requesting token…")
+        self._lf_status.setText(self.tr("Requesting token…"))
 
         def _on_token(token):
             if not token:
-                self._lf_status.setText("Couldn't reach Last.fm — try again later.")
+                self._lf_status.setText(
+                    self.tr("Couldn't reach Last.fm — try again later.")
+                )
                 self._lf_action_btn.setEnabled(True)
                 return
             QDesktopServices.openUrl(QUrl(_lf.auth_url(token)))
@@ -4234,26 +4338,28 @@ class SettingsDialog(QDialog):
         from jellytoast.scrobble import lastfm as _lf
 
         dlg = QDialog(self)
-        dlg.setWindowTitle("Connect to Last.fm")
+        dlg.setWindowTitle(self.tr("Connect to Last.fm"))
         dlg.setFixedWidth(380)
         dlg.setModal(True)
         v = QVBoxLayout(dlg)
         v.setContentsMargins(20, 20, 20, 20)
         v.setSpacing(10)
         msg = QLabel(
-            'We\'ve opened Last.fm in your browser. Click "Allow" '
-            "there, then come back — jellytoast will detect the "
-            "approval automatically."
+            self.tr(
+                'We\'ve opened Last.fm in your browser. Click "Allow" '
+                "there, then come back — jellytoast will detect the "
+                "approval automatically."
+            )
         )
         msg.setWordWrap(True)
         msg.setStyleSheet(f"color: {TEXT}; {type_qss(TYPE_BODY)}")
         v.addWidget(msg)
-        status = QLabel("Waiting for authorization…")
+        status = QLabel(self.tr("Waiting for authorization…"))
         status.setStyleSheet(f"color: {TEXT_FAINT}; {type_qss(TYPE_CAPTION)}")
         v.addWidget(status)
         btn_row = QHBoxLayout()
         btn_row.addStretch(1)
-        cancel_btn = QPushButton("Cancel")
+        cancel_btn = QPushButton(self.tr("Cancel"))
         cancel_btn.setObjectName("ghost")
         cancel_btn.clicked.connect(dlg.reject)
         btn_row.addWidget(cancel_btn)
@@ -4277,7 +4383,7 @@ class SettingsDialog(QDialog):
                     self.s.lastfm_session_key = sess["key"]
                     self.s.lastfm_username = sess.get("name", "")
                     self.s.lastfm_enabled = True
-                    self._lf_action_btn.setText("Disconnect")
+                    self._lf_action_btn.setText(self.tr("Disconnect"))
                     try:
                         self._lf_action_btn.clicked.disconnect()
                     except Exception:
@@ -4300,14 +4406,14 @@ class SettingsDialog(QDialog):
         dlg.exec()
         timer.stop()
         if not self.s.lastfm_session_key:
-            self._lf_status.setText("Connection cancelled.")
+            self._lf_status.setText(self.tr("Connection cancelled."))
             self._lf_action_btn.setEnabled(True)
 
     def _on_lf_disconnect(self):
         self.s.lastfm_session_key = ""
         self.s.lastfm_username = ""
         self.s.lastfm_enabled = False
-        self._lf_action_btn.setText("Connect to Last.fm…")
+        self._lf_action_btn.setText(self.tr("Connect to Last.fm…"))
         try:
             self._lf_action_btn.clicked.disconnect()
         except Exception:
@@ -4365,7 +4471,7 @@ class SettingsDialog(QDialog):
         btn.setIconSize(QSize(15, 15))
         btn.setFixedSize(20, 20)
         btn.setToolTip(text if tooltip is None else tooltip)
-        btn.setAccessibleName(f"About {title}")
+        btn.setAccessibleName(self.tr("About {0}").format(title))
         from jellytoast.ui_helpers import ACCENT
 
         btn.setStyleSheet(
@@ -4387,6 +4493,8 @@ class SettingsDialog(QDialog):
         appear (Chromecast usually still works — the tell). Pre-fills the host's
         real LAN subnet so the allow rule is copy-paste ready, and tailors the
         steps to the running OS."""
+        from PySide6.QtCore import QCoreApplication
+
         from jellytoast.cast_manager import _lan_cidrs
         from jellytoast.platform_compat import IS_MACOS, IS_WINDOWS
 
@@ -4396,16 +4504,22 @@ class SettingsDialog(QDialog):
             _PROXY_PORT = 8943
 
         cidrs = _lan_cidrs()
-        subnet = cidrs[0] if cidrs else "your local subnet"
+        subnet = cidrs[0] if cidrs else QCoreApplication.translate(
+            "SettingsDialog",
+            "your local subnet")
 
-        intro = (
+        intro = QCoreApplication.translate(
+            "SettingsDialog",
+            
             "AirPlay and DLNA devices are found by sending discovery requests "
             "on your local network. A firewall can allow the request out but "
             "block the reply, so those devices never appear. If Chromecast "
             "works but AirPlay/DLNA don't, a firewall is the likely cause.\n\n"
         )
         if IS_WINDOWS:
-            body = (
+            body = QCoreApplication.translate(
+            "SettingsDialog",
+            
                 "Windows\n"
                 "When Windows asks on first launch, click “Allow access” "
                 "for private networks. To change it later: Windows Security → "
@@ -4413,24 +4527,30 @@ class SettingsDialog(QDialog):
                 "→ enable jellytoast on Private networks."
             )
         elif IS_MACOS:
-            body = (
+            body = QCoreApplication.translate(
+            "SettingsDialog",
+            
                 "macOS\n"
                 "System Settings → Network → Firewall → Options → "
                 "allow incoming connections for jellytoast (or click "
                 "“Allow” if prompted on launch)."
             )
         else:
-            body = (
-                f"Linux — ufw\n    sudo ufw allow from {subnet}\n\n"
+            body = QCoreApplication.translate(
+            "SettingsDialog",
+            
+                "Linux — ufw\n    sudo ufw allow from {0}\n\n"
                 "Linux — firewalld\n"
                 "    sudo firewall-cmd --permanent --add-rich-rule="
-                f"'rule family=ipv4 source address={subnet} accept'\n"
+                "'rule family=ipv4 source address={0} accept'\n"
                 "    sudo firewall-cmd --reload"
-            )
-        ports = (
+            ).format(subnet)
+        ports = QCoreApplication.translate(
+            "SettingsDialog",
+            
             "\n\nPorts used: UDP 5353 (mDNS / AirPlay), UDP 1900 (SSDP / DLNA), "
-            f"TCP {_PROXY_PORT} (cast proxy)."
-        )
+            "TCP {0} (cast proxy)."
+        ).format(_PROXY_PORT)
         return intro + body + ports
 
     def _palette_icon(self, preset, w: int = 52, h: int = 16):
@@ -4487,9 +4607,9 @@ class SettingsDialog(QDialog):
 
         path, _ = QFileDialog.getOpenFileName(
             self,
-            "Import a base16 theme",
+            self.tr("Import a base16 theme"),
             "",
-            "base16 schemes (*.yaml *.yml);;All files (*)",
+            self.tr("base16 schemes (*.yaml *.yml);;All files (*)"),
         )
         if not path:
             return
@@ -4499,8 +4619,10 @@ class SettingsDialog(QDialog):
         except (OSError, UnicodeDecodeError, Base16ParseError) as exc:
             QMessageBox.warning(
                 self,
-                "Import failed",
-                f"Couldn't read that as a base16 colour scheme:\n\n{exc}",
+                self.tr("Import failed"),
+                self.tr("Couldn't read that as a base16 colour scheme:\n\n{0}").format(
+                    exc
+                ),
             )
             return
 
@@ -4545,8 +4667,10 @@ class SettingsDialog(QDialog):
 
             QMessageBox.warning(
                 self,
-                "Couldn't apply that theme",
-                f"Couldn't read {path} as a base16 colour scheme:\n\n{exc}",
+                self.tr("Couldn't apply that theme"),
+                self.tr("Couldn't read {0} as a base16 colour scheme:\n\n{1}").format(
+                    path, exc
+                ),
             )
             QTimer.singleShot(0, self._rebuild_pages_for_theme)  # reset the combo
             return
@@ -4594,9 +4718,11 @@ class SettingsDialog(QDialog):
 
             QMessageBox.information(
                 self,
-                "pywal palette not found",
-                f"{msg}\n\nRun pywal (or wallust) once so it generates a "
-                "palette, then turn this back on.",
+                self.tr("pywal palette not found"),
+                self.tr(
+                    "{0}\n\nRun pywal (or wallust) once so it generates a "
+                    "palette, then turn this back on."
+                ).format(msg),
             )
 
         pywal_apply_once(on_missing=_missing)
@@ -4619,9 +4745,11 @@ class SettingsDialog(QDialog):
 
             QMessageBox.information(
                 self,
-                "No system accent",
-                "Your desktop didn't report an accent colour — this works on "
-                "KDE Plasma and GNOME 47+.",
+                self.tr("No system accent"),
+                self.tr(
+                    "Your desktop didn't report an accent colour — this works "
+                    "on KDE Plasma and GNOME 47+."
+                ),
             )
             self._follow_accent_check.blockSignals(True)
             self._follow_accent_check.setChecked(False)

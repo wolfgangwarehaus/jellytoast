@@ -145,7 +145,7 @@ class OfflineChip(QPushButton):
     def _render_connecting(self) -> None:
         dots = "." * self._dot_phase
         # Pad so the chip width doesn't bounce as dots cycle.
-        self.setText(f"Connecting{dots:<3}")
+        self.setText(self.tr("Connecting{0}").format(f"{dots:<3}"))
 
     # ── Bus handlers ────────────────────────────────────────────────────
 
@@ -165,20 +165,20 @@ class OfflineChip(QPushButton):
         is_offline = offline.is_offline_mode()
         reachable = offline.is_server_reachable()
         if is_offline and reachable:
-            self.setText("Offline")
-            self.setToolTip("Click to go online")
+            self.setText(self.tr("Offline"))
+            self.setToolTip(self.tr("Click to go online"))
             self.setCursor(Qt.CursorShape.PointingHandCursor)
             self.setEnabled(True)
             self.setVisible(True)
         elif is_offline and not reachable:
-            self.setText("Offline")
-            self.setToolTip("Server unreachable — click to try reconnecting")
+            self.setText(self.tr("Offline"))
+            self.setToolTip(self.tr("Server unreachable — click to try reconnecting"))
             self.setCursor(Qt.CursorShape.PointingHandCursor)
             self.setEnabled(True)
             self.setVisible(True)
         elif not is_offline and not reachable:
-            self.setText("No connection")
-            self.setToolTip("Server unreachable — click to try reconnecting")
+            self.setText(self.tr("No connection"))
+            self.setToolTip(self.tr("Server unreachable — click to try reconnecting"))
             self.setCursor(Qt.CursorShape.PointingHandCursor)
             self.setEnabled(True)
             self.setVisible(True)

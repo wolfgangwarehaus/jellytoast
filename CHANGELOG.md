@@ -12,11 +12,12 @@ developer-facing history lives in [`docs/CHANGELOG.md`](docs/CHANGELOG.md).
      should stand alone: the Store "What's new" shows just the title (+ first
      sentence in --detail mode). -->
 
-- **jellytoast is learning new languages.** First steps toward a translated app:
-  the sign-in screen now speaks Spanish, and there's a Language picker under
-  Settings → Display (follows your system language by default). More of the app
-  — and more languages — will translate over the next releases, and translation
-  help is welcome.
+- **jellytoast habla español.** The whole app is now translatable, with Spanish
+  as the first language — sign-in, settings, the library, now playing, casting,
+  downloads, the tray, all of it. There's a Language picker under Settings →
+  Display (follows your system language by default). Native speakers: the
+  Spanish is a first draft, and corrections — or whole new languages — are very
+  welcome (see docs/TRANSLATING.md).
 
 ## [0.2.1] — 2026-07-14
 

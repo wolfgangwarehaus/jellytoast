@@ -100,7 +100,7 @@ class _CastDeviceRow(QWidget):
         # device as "AirPlay" (those sections were added after
         # this row was first written) — e.g. a DLNA renderer read
         # "192.168.x.x · AirPlay". Found during the 2026-05-28 GUI cast walk.
-        kind = SECTION_LABELS.get(dev.device_type, (dev.device_type or "Cast").title())
+        kind = SECTION_LABELS.get(dev.device_type, (dev.device_type or self.tr("Cast")).title())
         glyph_name = {"chromecast": "cast", "airplay": "airplay"}.get(dev.device_type, "cast")
         glyph = QLabel()
         glyph.setPixmap(icon(glyph_name).pixmap(QSize(18, 18)))
@@ -134,7 +134,9 @@ class _CastDeviceRow(QWidget):
             self._heart.setIcon(icon("favorite_outline"))
         else:
             self._heart.setIcon(QIcon())
-        self._heart.setToolTip("Unpin from top" if self._is_favorite else "Pin to top")
+        self._heart.setToolTip(
+            self.tr("Unpin from top") if self._is_favorite else self.tr("Pin to top")
+        )
 
     def _toggle(self):
         self._is_favorite = not self._is_favorite
@@ -348,11 +350,11 @@ class _CastSection(QWidget):
         self._chevron.setText("▸" if self._collapsed else "▾")
         n = len(self._devices)
         if n == 0:
-            self._count_label.setText("none discovered")
+            self._count_label.setText(self.tr("none discovered"))
         elif n == 1:
-            self._count_label.setText("1 device")
+            self._count_label.setText(self.tr("1 device"))
         else:
-            self._count_label.setText(f"{n} devices")
+            self._count_label.setText(self.tr("{0} devices").format(n))
 
     # ── Public API ─────────────────────────────────────────────────────
     def set_devices(self, devices: list, favs: set):
@@ -519,16 +521,16 @@ class CastDialog(QDialog):
         self._apply_banner_qss()
         v.addWidget(self._active_banner)
 
-        v.addWidget(self._section_header("Available devices"))
+        v.addWidget(self._section_header(self.tr("Available devices")))
 
-        sub = QLabel("Pick a Chromecast, AirPlay, DLNA, or Sonos receiver.")
+        sub = QLabel(self.tr("Pick a Chromecast, AirPlay, DLNA, or Sonos receiver."))
         sub.setStyleSheet(f"color: {TEXT_DIM}; {type_qss(TYPE_CAPTION)}")
         sub.setWordWrap(True)
         v.addWidget(sub)
 
         # Scanning state — visible while we wait for the first device to
         # come back. Replaced by the section column as soon as one shows up.
-        self._scanning_label = QLabel("Scanning your network…")
+        self._scanning_label = QLabel(self.tr("Scanning your network…"))
         self._scanning_label.setStyleSheet(self._scanning_label_qss())
         self._scanning_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         v.addWidget(self._scanning_label)
@@ -600,7 +602,7 @@ class CastDialog(QDialog):
 
         btns = QHBoxLayout()
         btns.setSpacing(6)
-        self.scan_btn = QPushButton("Rescan")
+        self.scan_btn = QPushButton(self.tr("Rescan"))
         self.scan_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self.scan_btn.setStyleSheet(action_btn_css)
         self.scan_btn.clicked.connect(self.scan)
@@ -611,25 +613,27 @@ class CastDialog(QDialog):
         # pairing dialog. Lives next to Rescan because both are "fix
         # the list" actions; Cancel / Cast are the dialog's primary
         # decision pair.
-        self.forget_btn = QPushButton("Forget")
+        self.forget_btn = QPushButton(self.tr("Forget"))
         self.forget_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self.forget_btn.setStyleSheet(action_btn_css)
         self.forget_btn.setEnabled(False)
         self.forget_btn.setToolTip(
-            "Clear stored pairing credentials for the selected "
-            "AirPlay 2 device so it can be re-paired."
+            self.tr(
+                "Clear stored pairing credentials for the selected "
+                "AirPlay 2 device so it can be re-paired."
+            )
         )
         self.forget_btn.clicked.connect(self._on_forget_clicked)
         btns.addWidget(self.forget_btn)
         btns.addStretch()
 
-        cancel = QPushButton("Cancel")
+        cancel = QPushButton(self.tr("Cancel"))
         cancel.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         cancel.setStyleSheet(action_btn_css)
         cancel.clicked.connect(self.reject)
         btns.addWidget(cancel)
 
-        self.cast_btn = QPushButton("Cast")
+        self.cast_btn = QPushButton(self.tr("Cast"))
         self.cast_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self.cast_btn.setStyleSheet(cast_btn_css)
         self.cast_btn.setEnabled(False)
@@ -705,7 +709,7 @@ class CastDialog(QDialog):
         h.addWidget(cast_glyph)
         self._cast_glyph = cast_glyph
 
-        title = QLabel("Cast to device")
+        title = QLabel(self.tr("Cast to device"))
         title.setStyleSheet(f"color: {TEXT}; {type_qss(TYPE_SUBHEAD)}")
         h.addWidget(title)
         self._title_label = title
@@ -801,7 +805,7 @@ class CastDialog(QDialog):
         # we already have devices from a previous scan, leave them
         # visible while a fresh discovery runs in the background.
         if not self._any_devices_loaded():
-            self._scanning_label.setText("Scanning your network…")
+            self._scanning_label.setText(self.tr("Scanning your network…"))
             self._scanning_label.show()
             self._sections_scroll.hide()
             self._scan_giveup_timer.start()
@@ -892,7 +896,10 @@ class CastDialog(QDialog):
         if self._any_devices_loaded():
             return
         self._scanning_label.setText(
-            "No devices found on your network.\nTry Rescan, or check that your devices are awake."
+            self.tr(
+                "No devices found on your network.\n"
+                "Try Rescan, or check that your devices are awake."
+            )
         )
         self._scanning_label.show()
         self._sections_scroll.hide()
@@ -910,7 +917,7 @@ class CastDialog(QDialog):
         text_wrap.setSpacing(1)
         # Mixed-case text + font(TYPE_MICRO) — QFont applies the uppercase
         # transform and letter-spacing that QSS would silently ignore.
-        kicker = QLabel("Casting to")
+        kicker = QLabel(self.tr("Casting to"))
         kicker.setFont(font(TYPE_MICRO))
         kicker.setStyleSheet(f"color: {TEXT_FAINT};")
         text_wrap.addWidget(kicker)
@@ -923,7 +930,7 @@ class CastDialog(QDialog):
         # Explicit outline — the bare "ghost" object-name styling left
         # the button floating with no edge against the accent-tinted
         # banner. A 1px border gives it a clear hit target.
-        self._disconnect_btn = QPushButton("Disconnect")
+        self._disconnect_btn = QPushButton(self.tr("Disconnect"))
         self._disconnect_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self._disconnect_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self._disconnect_btn.setStyleSheet(self._disconnect_btn_qss())
@@ -946,7 +953,9 @@ class CastDialog(QDialog):
         # SECTION_LABELS lookup resolves correctly.
         from jellytoast.cast_dialog_sections import SECTION_LABELS
 
-        kind = SECTION_LABELS.get(active.device_type, (active.device_type or "Cast").title())
+        kind = SECTION_LABELS.get(
+            active.device_type, (active.device_type or self.tr("Cast")).title()
+        )
         self._active_label.setText(f"{active.name}   ·   {kind}")
         self._active_banner.show()
 

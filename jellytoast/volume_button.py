@@ -457,7 +457,10 @@ class _VolumeSliderPopup(QFrame):
         self.slider.setStyleSheet(self._slider_qss(locked=locked))
         if locked:
             self.slider.setToolTip(
-                "Bit-perfect mode locks volume at 100%. Disable in Settings → Playback to adjust."
+                self.tr(
+                    "Bit-perfect mode locks volume at 100%. "
+                    "Disable in Settings → Playback to adjust."
+                )
             )
             if self._lock_overlay is None:
                 self._lock_overlay = QLabel(self)
@@ -1055,7 +1058,7 @@ class _GroupVolumePopup(QFrame):
             for m in members:
                 col = _SpeakerColumn(
                     m.get("uuid", ""),
-                    m.get("name") or "Speaker",
+                    m.get("name") or self.tr("Speaker"),
                     int(m.get("volume", 50)),
                     bool(m.get("available")),
                 )
@@ -1065,7 +1068,7 @@ class _GroupVolumePopup(QFrame):
                 self._speaker_layout.addWidget(col)
                 self._member_cols.append(col)
         else:
-            empty = QLabel("No speakers found")
+            empty = QLabel(self.tr("No speakers found"))
             empty.setStyleSheet(f"color: {TEXT_FAINT}; {type_qss(TYPE_CAPTION)}")
             self._speaker_layout.addWidget(empty)
             self._empty_label = empty
@@ -1223,7 +1226,7 @@ class VolumeButton(IconButton):
         self.setIcon(icon("volume"))
         self.setIconSize(QSize(icon_px, icon_px))
         self.setFixedSize(size, size)
-        self.setToolTip("Mute / unmute · scroll to adjust · hover for slider")
+        self.setToolTip(self.tr("Mute / unmute · scroll to adjust · hover for slider"))
         # Hover + pressed pull from the app-wide WASH tokens so every
         # highlightable surface in the bar shares one fill — button +
         # popup read as one continuous shape when the popup is open
@@ -1310,11 +1313,11 @@ class VolumeButton(IconButton):
         in that case — same wording as when the setting is off."""
         if self.bus.bit_perfect_active:
             self.setToolTip(
-                "Mute / unmute · volume locked at 100% (Bit-perfect mode)"
+                self.tr("Mute / unmute · volume locked at 100% (Bit-perfect mode)")
             )
         else:
             self.setToolTip(
-                "Mute / unmute · scroll to adjust · hover for slider"
+                self.tr("Mute / unmute · scroll to adjust · hover for slider")
             )
 
     @Slot(bool)

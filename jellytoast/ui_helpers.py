@@ -13,6 +13,7 @@ logger = logging.getLogger(__name__)
 
 from PySide6.QtCore import (
     Property,
+    QCoreApplication,
     QEvent,
     QPropertyAnimation,
     QRect,
@@ -2638,24 +2639,28 @@ def open_create_smart_playlist(
     hint: "Optional[str]" = None
     if kind == "artist":
         rules = _presets.from_artist(name)
-        suggested = f"Deep Cuts: {name}"
+        suggested = QCoreApplication.translate("UiHelpers", "Deep Cuts: {0}").format(name)
     elif kind == "album":
         rules = _presets.from_album(item if item is not None else name)
-        suggested = f"More like {name}"
+        suggested = QCoreApplication.translate("UiHelpers", "More like {0}").format(name)
         # Surface the missing-metadata case so the user knows WHY the
         # recipe only has a year rule. The album / track recipes both
         # rely on Genres for the "more like" feel — a library without
         # genre tags makes the recipe degrade to era-only.
         if isinstance(item, dict) and not (item.get("Genres") or []):
-            hint = f"{name} has no genre tags, add some to help suggestions."
+            hint = QCoreApplication.translate(
+                "UiHelpers", "{0} has no genre tags, add some to help suggestions."
+            ).format(name)
     elif kind == "genre":
         rules = _presets.from_genre(name)
-        suggested = f"{name} Discoveries"
+        suggested = QCoreApplication.translate("UiHelpers", "{0} Discoveries").format(name)
     elif kind == "track":
         rules = _presets.from_track(item if item is not None else name)
-        suggested = f"More like {name}"
+        suggested = QCoreApplication.translate("UiHelpers", "More like {0}").format(name)
         if isinstance(item, dict) and not (item.get("Genres") or []):
-            hint = f"{name} has no genre tags, add some to help suggestions."
+            hint = QCoreApplication.translate(
+                "UiHelpers", "{0} has no genre tags, add some to help suggestions."
+            ).format(name)
     else:
         return
 

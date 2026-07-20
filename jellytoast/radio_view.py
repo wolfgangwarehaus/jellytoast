@@ -20,7 +20,7 @@ from __future__ import annotations
 
 from typing import Dict, List, Optional
 
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import QCoreApplication, Qt, Signal
 from PySide6.QtWidgets import (
     QDialog,
     QDialogButtonBox,
@@ -82,7 +82,9 @@ class _StationFormDialog(FrostedDialog):
         is_edit = bool(station)
         super().__init__(
             parent,
-            title="Edit station" if is_edit else "Add station",
+            title=QCoreApplication.translate("RadioView", "Edit station")
+            if is_edit
+            else QCoreApplication.translate("RadioView", "Add station"),
             min_width=420,
         )
         from jellytoast import ui_helpers as _u
@@ -101,17 +103,17 @@ class _StationFormDialog(FrostedDialog):
             )
             return lab
 
-        v.addWidget(_label("Name"))
+        v.addWidget(_label(self.tr("Name")))
         self._name = QLineEdit(str(self._station.get("name") or ""))
-        self._name.setPlaceholderText("e.g. SomaFM Groove Salad")
+        self._name.setPlaceholderText(self.tr("e.g. SomaFM Groove Salad"))
         v.addWidget(self._name)
 
-        v.addWidget(_label("Stream URL"))
+        v.addWidget(_label(self.tr("Stream URL")))
         self._stream = QLineEdit(str(self._station.get("streamUrl") or ""))
         self._stream.setPlaceholderText("https://… or http://…")
         v.addWidget(self._stream)
 
-        v.addWidget(_label("Home page URL (optional)"))
+        v.addWidget(_label(self.tr("Home page URL (optional)")))
         self._home = QLineEdit(str(self._station.get("homePageUrl") or ""))
         self._home.setPlaceholderText("https://example.com")
         v.addWidget(self._home)
@@ -129,7 +131,9 @@ class _StationFormDialog(FrostedDialog):
         name = self._name.text().strip()
         stream = self._stream.text().strip()
         if not name:
-            frosted_warning(self, "Missing name", "Give the station a name.")
+            frosted_warning(
+                self, self.tr("Missing name"), self.tr("Give the station a name.")
+            )
             self._name.setFocus()
             return
         if not stream or not (
@@ -137,8 +141,8 @@ class _StationFormDialog(FrostedDialog):
         ):
             frosted_warning(
                 self,
-                "Stream URL required",
-                "Paste a direct stream URL — http:// or https://.",
+                self.tr("Stream URL required"),
+                self.tr("Paste a direct stream URL — http:// or https://."),
             )
             self._stream.setFocus()
             return
@@ -196,7 +200,9 @@ class _PopularStationRow(QFrame):
             f"QPushButton:disabled {{ color: {TEXT_FAINT}; "
             f"border-color: {TEXT_FAINT}; }}"
         )
-        self._add_btn = QPushButton("Added" if already_added else "Add")
+        self._add_btn = QPushButton(
+            self.tr("Added") if already_added else self.tr("Add")
+        )
         self._add_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self._add_btn.setStyleSheet(_ghost_btn_qss)
         self._add_btn.setEnabled(not already_added)
@@ -206,7 +212,7 @@ class _PopularStationRow(QFrame):
     def mark_added(self) -> None:
         """Flip the button to its added/disabled state — called after
         the provider confirms the create succeeded."""
-        self._add_btn.setText("Added")
+        self._add_btn.setText(self.tr("Added"))
         self._add_btn.setEnabled(False)
 
 
@@ -224,7 +230,11 @@ class _PopularPickerDialog(FrostedDialog):
         already_added_urls: set,
         parent: Optional[QWidget] = None,
     ):
-        super().__init__(parent, title="Popular stations", min_width=520)
+        super().__init__(
+            parent,
+            title=QCoreApplication.translate("RadioView", "Popular stations"),
+            min_width=520,
+        )
         from jellytoast import ui_helpers as _u
 
         self.setMinimumHeight(480)
@@ -238,8 +248,10 @@ class _PopularPickerDialog(FrostedDialog):
         outer.setSpacing(SPACE_SM)
 
         intro = QLabel(
-            "Hand-picked publicly-streaming stations. Click Add to copy "
-            "one into your library — you can edit or remove it later."
+            self.tr(
+                "Hand-picked publicly-streaming stations. Click Add to copy "
+                "one into your library — you can edit or remove it later."
+            )
         )
         intro.setWordWrap(True)
         intro.setStyleSheet(
@@ -343,19 +355,19 @@ class _StationRow(QFrame):
 
         text_col = QVBoxLayout()
         text_col.setSpacing(2)
-        self._name = QLabel(self._station.get("name") or "Unnamed station")
+        self._name = QLabel(self._station.get("name") or self.tr("Unnamed station"))
         self._sub = QLabel(self._station.get("streamUrl") or "")
         self._sub.setTextInteractionFlags(Qt.TextInteractionFlag.NoTextInteraction)
         text_col.addWidget(self._name)
         text_col.addWidget(self._sub)
         row.addLayout(text_col, 1)
 
-        self._edit_btn = QPushButton("Edit")
+        self._edit_btn = QPushButton(self.tr("Edit"))
         self._edit_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self._edit_btn.clicked.connect(self._on_edit)
         row.addWidget(self._edit_btn, 0, Qt.AlignmentFlag.AlignVCenter)
 
-        self._remove_btn = QPushButton("Remove")
+        self._remove_btn = QPushButton(self.tr("Remove"))
         self._remove_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self._remove_btn.clicked.connect(self._on_remove)
         row.addWidget(self._remove_btn, 0, Qt.AlignmentFlag.AlignVCenter)
@@ -404,7 +416,7 @@ class _StationRow(QFrame):
         """Mutate-in-place after an edit so the row repaints without a
         full reload of the page."""
         self._station = dict(station)
-        self._name.setText(self._station.get("name") or "Unnamed station")
+        self._name.setText(self._station.get("name") or self.tr("Unnamed station"))
         self._sub.setText(self._station.get("streamUrl") or "")
 
     def mousePressEvent(self, e):
@@ -469,11 +481,11 @@ class RadioView(QWidget):
         # No page title: the top-bar "Radio" nav label already names this
         # surface, so a second heading is redundant. Actions stay right-aligned.
         header.addStretch(1)
-        self._browse_btn = QPushButton("Browse popular")
+        self._browse_btn = QPushButton(self.tr("Browse popular"))
         self._browse_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self._browse_btn.clicked.connect(self._on_browse_popular)
         header.addWidget(self._browse_btn)
-        self._add_btn = QPushButton("Add station")
+        self._add_btn = QPushButton(self.tr("Add station"))
         self._add_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self._add_btn.clicked.connect(self._on_add)
         header.addWidget(self._add_btn)
@@ -500,8 +512,10 @@ class RadioView(QWidget):
         page.addWidget(self._scroll, 1)
 
         self._empty = QLabel(
-            "No radio stations yet.\nClick “Add station” to paste in a "
-            "stream URL — SomaFM, NTS, your local public radio's stream, …"
+            self.tr(
+                "No radio stations yet.\nClick “Add station” to paste in a "
+                "stream URL — SomaFM, NTS, your local public radio's stream, …"
+            )
         )
         self._empty.setAlignment(Qt.AlignmentFlag.AlignCenter)
         page.addWidget(self._empty, 1)
@@ -617,8 +631,8 @@ class RadioView(QWidget):
             self._populate([])
             frosted_warning(
                 self,
-                "Couldn't load stations",
-                f"The provider returned an error:\n{exc}",
+                self.tr("Couldn't load stations"),
+                self.tr("The provider returned an error:\n{0}").format(exc),
             )
 
         run_async(self._api().get_internet_radio_stations, on_result=_on_result, on_error=_on_error)
@@ -749,12 +763,12 @@ class RadioView(QWidget):
         )
 
     def _on_remove(self, station: Dict) -> None:
-        name = station.get("name") or "this station"
+        name = station.get("name") or self.tr("this station")
         if not frosted_confirm(
             self,
-            "Remove station",
-            f"Remove “{name}” from your radio list?",
-            confirm_text="Remove",
+            self.tr("Remove station"),
+            self.tr("Remove “{0}” from your radio list?").format(name),
+            confirm_text=self.tr("Remove"),
             destructive=True,
         ):
             return
@@ -785,16 +799,18 @@ class RadioView(QWidget):
         if isinstance(exc, NotImplementedError):
             frosted_info(
                 self,
-                "Not supported",
-                "This server doesn't support managing radio stations.\n"
-                "Subsonic requires admin permission for create / edit / "
-                "delete.",
+                self.tr("Not supported"),
+                self.tr(
+                    "This server doesn't support managing radio stations.\n"
+                    "Subsonic requires admin permission for create / edit / "
+                    "delete."
+                ),
             )
             return
         frosted_warning(
             self,
-            f"Couldn't {verb} station",
-            f"The provider returned an error:\n{exc}",
+            self.tr("Couldn't {0} station").format(verb),
+            self.tr("The provider returned an error:\n{0}").format(exc),
         )
 
     # ── Play ─────────────────────────────────────────────────────────────

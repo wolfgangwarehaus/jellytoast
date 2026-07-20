@@ -23,6 +23,7 @@ from collections import OrderedDict
 from typing import Dict, List, Optional
 
 from PySide6.QtCore import (
+    QCoreApplication,
     QEasingCurve,
     QEvent,
     QObject,
@@ -165,12 +166,18 @@ class _LyricsMixin:
             from jellytoast import offline as _offline
 
             if _offline.is_offline_mode():
-                self._set_lyrics_text("Lyrics unavailable offline", muted=True)
+                self._set_lyrics_text(
+                    QCoreApplication.translate("NowPlayingPage", "Lyrics unavailable offline"),
+                    muted=True,
+                )
                 return
         except Exception:
             pass
         self._lyrics_loading_for = item_id
-        self._set_lyrics_text("Loading lyrics…", muted=True)
+        self._set_lyrics_text(
+            QCoreApplication.translate("NowPlayingPage", "Loading lyrics…"),
+            muted=True,
+        )
         # Fetch on the shared QThreadPool; `_lyrics_loaded` is wired to
         # `_on_lyrics_loaded` and dispatches on the GUI thread.
         run_async(
@@ -193,11 +200,17 @@ class _LyricsMixin:
 
     def _render_lyrics_payload(self, payload: Optional[Dict]):
         if not payload:
-            self._set_lyrics_text("No lyrics available", muted=True)
+            self._set_lyrics_text(
+                QCoreApplication.translate("NowPlayingPage", "No lyrics available"),
+                muted=True,
+            )
             return
         lines = payload.get("Lyrics") or []
         if not lines:
-            self._set_lyrics_text("No lyrics available", muted=True)
+            self._set_lyrics_text(
+                QCoreApplication.translate("NowPlayingPage", "No lyrics available"),
+                muted=True,
+            )
             return
 
         # Synced if any line carries a non-zero `Start` (Jellyfin returns

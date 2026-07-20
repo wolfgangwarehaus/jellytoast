@@ -263,7 +263,7 @@ class _CompactBar(QWidget):
         self.fav_btn = CoverOverlayButton(self.thumb, size=24, margin=6, bordered=False)
         self.fav_btn.setIcon(icon("favorite_outline"))
         self.fav_btn.setIconSize(QSize(13, 13))
-        self.fav_btn.setToolTip("Favorite")
+        self.fav_btn.setToolTip(self.tr("Favorite"))
         self.fav_btn.clicked.connect(self._toggle_favorite)
         self.bus.favorite_toggled.connect(self._on_favorite_toggled)
         layout.addWidget(self.thumb)
@@ -276,7 +276,7 @@ class _CompactBar(QWidget):
         # whole right side reads as a tidy card. Marquees only when the title
         # is too long for the strip.
         self.title = _MarqueeLabel()
-        self.title.setText("Nothing Playing")
+        self.title.setText(self.tr("Nothing Playing"))
         # TYPE_CAPTION carries the 12px size; the 500-weight override
         # gives the title a slight emphasis over the subtitle without
         # promoting it to TYPE_BODY (which would push to 13px). Idle
@@ -467,7 +467,7 @@ class _ExpandedPanel(QWidget):
         self.fav_btn = CoverOverlayButton(self.cover, size=28, margin=10, bordered=False)
         self.fav_btn.setIcon(icon("favorite_outline"))
         self.fav_btn.setIconSize(QSize(16, 16))
-        self.fav_btn.setToolTip("Favorite")
+        self.fav_btn.setToolTip(self.tr("Favorite"))
         self.fav_btn.clicked.connect(self._toggle_favorite)
         self.bus.favorite_toggled.connect(self._on_favorite_toggled)
         layout.addWidget(self.cover)
@@ -481,7 +481,7 @@ class _ExpandedPanel(QWidget):
         right.setSpacing(2)
 
         self.title = _MarqueeLabel()
-        self.title.setText("Nothing Playing")
+        self.title.setText(self.tr("Nothing Playing"))
         # Mirrors the compact panel's idle styling — matches the
         # inactive icon color (#a8a8a8) so the placeholder pairs
         # visually with the transport buttons. FloatingMiniPlayer
@@ -758,11 +758,11 @@ class FloatingMiniPlayer(QWidget):
         # Icon previews the target shape — _apply_mode_size keeps it in
         # sync; "view_tall" is the compact-mode default (click to grow).
         self.toggle_btn = _icon_button("view_tall", 20, icon_size=14)
-        self.toggle_btn.setToolTip("Toggle compact / expanded")
+        self.toggle_btn.setToolTip(self.tr("Toggle compact / expanded"))
         self.toggle_btn.clicked.connect(self.toggle_mode)
 
         self.open_btn = _icon_button("open_window", 20, icon_size=14)
-        self.open_btn.setToolTip("Open main window")
+        self.open_btn.setToolTip(self.tr("Open main window"))
         self.open_btn.clicked.connect(lambda: self.bus.open_main_window.emit())
 
         # Volume — small variant of the now-playing bar's button. The popup is
@@ -1355,10 +1355,18 @@ class FloatingMiniPlayer(QWidget):
 
         station = (state.station_name or "").strip()
         if state.is_live:
-            badge = f"● LIVE · {station}" if station else "● LIVE"
+            badge = (
+                self.tr("● LIVE · {0}").format(station)
+                if station
+                else self.tr("● LIVE")
+            )
             tint = _uih.ACCENT
         elif state.playback_state == "paused":
-            badge = f"PAUSED · {station}" if station else "PAUSED"
+            badge = (
+                self.tr("PAUSED · {0}").format(station)
+                if station
+                else self.tr("PAUSED")
+            )
             tint = _uih.TEXT_DIM
         else:
             badge = station
@@ -1581,7 +1589,7 @@ class FloatingMiniPlayer(QWidget):
     @Slot()
     def _on_stopped(self):
         for panel in (self.compact, self.expanded):
-            panel.title.setText("Nothing Playing")
+            panel.title.setText(self.tr("Nothing Playing"))
             # Idle state — match inactive icon color (#a8a8a8) so
             # the title pairs with the transport buttons next to it.
             panel.title.setStyleSheet(f"color: {IDLE_TEXT}; {type_qss(TYPE_CAPTION)} font-weight: 500;")

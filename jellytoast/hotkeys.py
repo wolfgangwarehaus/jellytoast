@@ -34,7 +34,7 @@ import logging
 import os
 from typing import Any, Callable, Optional
 
-from PySide6.QtCore import QSettings
+from PySide6.QtCore import QCoreApplication, QSettings
 from PySide6.QtGui import QKeySequence, QShortcut
 from PySide6.QtWidgets import QWidget
 
@@ -104,7 +104,7 @@ def _build_registry_impl(mw: Any) -> list[dict]:
         {
             "action_id": "all_music",
             "default_seq": "Ctrl+Shift+L",
-            "label": "Open all music",
+            "label": QCoreApplication.translate("Hotkeys", "Open all music"),
             "callable": lambda: mw._show_native_music_grid(),
             "context": "global",
         },
@@ -116,14 +116,14 @@ def _build_registry_impl(mw: Any) -> list[dict]:
         {
             "action_id": "search_find",
             "default_seq": "Ctrl+F",
-            "label": "Focus search",
+            "label": QCoreApplication.translate("Hotkeys", "Focus search"),
             "callable": lambda: mw._show_search_view(),
             "context": "global",
         },
         {
             "action_id": "search_slash",
             "default_seq": "/",
-            "label": "Focus search (slash)",
+            "label": QCoreApplication.translate("Hotkeys", "Focus search (slash)"),
             "callable": lambda: mw._show_search_view(),
             "context": "global",
         },
@@ -132,7 +132,7 @@ def _build_registry_impl(mw: Any) -> list[dict]:
             "default_seq": "Ctrl+Q",
             # close() so the existing closeEvent logic (minimize-to-
             # tray vs. hard exit) decides what actually happens.
-            "label": "Quit",
+            "label": QCoreApplication.translate("Hotkeys", "Quit"),
             "callable": lambda: mw.close(),
             "context": "global",
         },
@@ -147,7 +147,7 @@ def _build_registry_impl(mw: Any) -> list[dict]:
             {
                 "action_id": "native_album",
                 "default_seq": "Ctrl+Shift+A",
-                "label": "Open currently-playing album",
+                "label": QCoreApplication.translate("Hotkeys", "Open currently-playing album"),
                 "callable": lambda: mw._open_currently_playing_album(),
                 "context": "global",
             }

@@ -71,8 +71,8 @@ class UpdateChip(QPushButton):
         self._version = version
         self._download_url = download_url
         self._notes_url = notes_url
-        self.setText(f"Update {version}")
-        self.setToolTip(f"jellytoast {version} is available")
+        self.setText(self.tr("Update {0}").format(version))
+        self.setToolTip(self.tr("jellytoast {0} is available").format(version))
         self.setVisible(True)
 
     # ── Interaction ─────────────────────────────────────────────────────
@@ -80,14 +80,14 @@ class UpdateChip(QPushButton):
         if not self._version:
             return
         menu = opaque_menu(self)
-        download = QAction("Download", menu)
+        download = QAction(self.tr("Download"), menu)
         download.triggered.connect(lambda: self._open(self._download_url))
         menu.addAction(download)
-        notes = QAction("What's new", menu)
+        notes = QAction(self.tr("What's new"), menu)
         notes.triggered.connect(lambda: self._open(self._notes_url))
         menu.addAction(notes)
         menu.addSeparator()
-        dismiss = QAction("Dismiss", menu)
+        dismiss = QAction(self.tr("Dismiss"), menu)
         dismiss.triggered.connect(self._dismiss)
         menu.addAction(dismiss)
         self._menu = menu  # prevent GC during the non-blocking popup

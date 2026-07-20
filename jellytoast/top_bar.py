@@ -150,10 +150,10 @@ class JtTopBar(QWidget):
         left_layout.setContentsMargins(0, 0, 0, 0)
         left_layout.setSpacing(2)
 
-        self.back_btn = self._icon_btn("back", "Back")
-        self.fwd_btn = self._icon_btn("forward", "Forward")
-        self.home_btn = self._icon_btn("home", "Home")
-        self.settings_btn = self._icon_btn("settings", "Settings")
+        self.back_btn = self._icon_btn("back", self.tr("Back"))
+        self.fwd_btn = self._icon_btn("forward", self.tr("Forward"))
+        self.home_btn = self._icon_btn("home", self.tr("Home"))
+        self.settings_btn = self._icon_btn("settings", self.tr("Settings"))
         self.back_btn.clicked.connect(lambda: self.nav_requested.emit("back"))
         self.fwd_btn.clicked.connect(lambda: self.nav_requested.emit("forward"))
         self.home_btn.clicked.connect(lambda: self.nav_requested.emit("home"))
@@ -190,7 +190,7 @@ class JtTopBar(QWidget):
         self.library_btn.setIcon(icon("chevron_down"))
         self.library_btn.setIconSize(QSize(13, 13))
         self.library_btn.setLayoutDirection(Qt.LayoutDirection.RightToLeft)
-        self.library_btn.setToolTip("Choose which libraries to load")
+        self.library_btn.setToolTip(self.tr("Choose which libraries to load"))
         self.library_btn.setFixedHeight(34)
         # Same overflow guard as title_label — a long library name in a big font
         # can't push the rest of the bar off-screen. QPushButton elides its label
@@ -240,7 +240,7 @@ class JtTopBar(QWidget):
         self.view_btn.setIcon(icon("chevron_down"))
         self.view_btn.setIconSize(QSize(14, 14))
         self.view_btn.setLayoutDirection(Qt.LayoutDirection.RightToLeft)
-        self.view_btn.setToolTip("Switch library view")
+        self.view_btn.setToolTip(self.tr("Switch library view"))
         # Defensive cap so a big font can't blow the absolutely-positioned
         # center cluster past its width clamp (see _position_center_cluster).
         # View names are short, so this only bites in extreme fonts.
@@ -276,7 +276,7 @@ class JtTopBar(QWidget):
         lc.setContentsMargins(8, 0, 0, 0)
         lc.setSpacing(2)
 
-        self.shuffle_all_btn = self._icon_btn("shuffle", "Shuffle all")
+        self.shuffle_all_btn = self._icon_btn("shuffle", self.tr("Shuffle all"))
         self.shuffle_all_btn.clicked.connect(self.shuffle_all_requested.emit)
         lc.addWidget(self.shuffle_all_btn)
 
@@ -292,7 +292,7 @@ class JtTopBar(QWidget):
         self._view_mode = _gs_view().library_view_mode
         self.view_mode_btn = self._icon_btn(
             self._view_mode,
-            "Toggle grid / list",
+            self.tr("Toggle grid / list"),
         )
         self.view_mode_btn.clicked.connect(self._on_view_toggle)
         lc.addWidget(self.view_mode_btn)
@@ -360,7 +360,7 @@ class JtTopBar(QWidget):
         self.search_btn.setIcon(icon("search"))
         self.search_btn.setIconSize(QSize(20, 20))
         self.search_btn.setFixedSize(34, 34)
-        self.search_btn.setToolTip("Search")
+        self.search_btn.setToolTip(self.tr("Search"))
         self.search_btn.setStyleSheet(self._search_btn_qss())
         self.search_btn.clicked.connect(lambda: self.nav_requested.emit("search"))
         right_layout.addWidget(self.search_btn)
@@ -371,11 +371,11 @@ class JtTopBar(QWidget):
         # wash, no destructive-red special case on close.
         if titlebar_mode:
             right_layout.addSpacing(8)
-            self.min_btn = self._icon_btn("win_minimize", "Minimize")
+            self.min_btn = self._icon_btn("win_minimize", self.tr("Minimize"))
             self.min_btn.clicked.connect(lambda: self.window().showMinimized())
-            self.max_btn = self._icon_btn("win_maximize", "Maximize")
+            self.max_btn = self._icon_btn("win_maximize", self.tr("Maximize"))
             self.max_btn.clicked.connect(self._toggle_max)
-            self.close_btn = self._icon_btn("win_close", "Close")
+            self.close_btn = self._icon_btn("win_close", self.tr("Close"))
             self.close_btn.clicked.connect(lambda: self.window().close())
             for b in (self.min_btn, self.max_btn, self.close_btn):
                 right_layout.addWidget(b)
@@ -661,7 +661,10 @@ class JtTopBar(QWidget):
             menu.addAction(act)
         menu.addSeparator()
         # Section 2: sort order. Same menu, two more checkable items.
-        for order_label, order_key in (("Ascending", "ascending"), ("Descending", "descending")):
+        for order_label, order_key in (
+            (self.tr("Ascending"), "ascending"),
+            (self.tr("Descending"), "descending"),
+        ):
             act = QAction(order_label, menu)
             act.setCheckable(True)
             act.setChecked(self._sort_order == order_key)
@@ -701,7 +704,9 @@ class JtTopBar(QWidget):
         # button surfaces what's selected (the menu is the canonical
         # place to see + change it, but a tooltip is faster to glance).
         order_label = self._sort_order.capitalize()
-        self.sort_btn.setToolTip(f"Sort: {self._current_sort[0]} ({order_label})")
+        self.sort_btn.setToolTip(
+            self.tr("Sort: {0} ({1})").format(self._current_sort[0], order_label)
+        )
 
     def _exec_menu_with_kbd_grab(self, menu: QMenu, pos) -> None:
         """Show ``menu`` at ``pos`` with a hard keyboard grab so arrow
@@ -994,7 +999,7 @@ class JtTopBar(QWidget):
 
         # "All libraries" reset row — checked when nothing specific is
         # selected. Picking it clears the selection (→ all).
-        all_act = QAction("All libraries", menu)
+        all_act = QAction(self.tr("All libraries"), menu)
         all_act.setCheckable(True)
         all_act.setChecked(not selected)
         all_act.triggered.connect(lambda _checked=False: self._on_library_toggled(None))

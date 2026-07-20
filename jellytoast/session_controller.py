@@ -17,7 +17,7 @@ exactly as before.
 
 import logging
 
-from PySide6.QtCore import QTimer
+from PySide6.QtCore import QCoreApplication, QTimer
 from PySide6.QtWidgets import QApplication
 
 from jellytoast.async_io import run_async
@@ -305,9 +305,13 @@ class _SessionMixin:
 
         name = (label or "").strip() or "Primary"
         if name == "Primary":
-            message = "Reconnected to the primary server"
+            message = QCoreApplication.translate(
+                "SessionController", "Reconnected to the primary server"
+            )
         else:
-            message = f"Switched to alternate server · {name}"
+            message = QCoreApplication.translate(
+                "SessionController", "Switched to alternate server · {0}"
+            ).format(name)
         show_toast(self, message, bottom_margin=128)
 
     def _on_verify_session_done(self, ok: bool):

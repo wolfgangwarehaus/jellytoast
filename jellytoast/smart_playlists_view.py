@@ -13,7 +13,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Optional
 
-from PySide6.QtCore import Qt, Slot
+from PySide6.QtCore import QCoreApplication, Qt, Slot
 from PySide6.QtWidgets import (
     QFrame,
     QHBoxLayout,
@@ -45,13 +45,31 @@ def _rule_summary(rules: Dict[str, Any]) -> str:
     out: List[str] = []
     match = rules.get("match", "all")
     n = len(rules.get("rules") or [])
-    out.append(f"{n} rule{'s' if n != 1 else ''} ({'AND' if match == 'all' else 'OR'})")
+    count_text = (
+        QCoreApplication.translate("SmartPlaylistsView", "{0} rules")
+        if n != 1
+        else QCoreApplication.translate("SmartPlaylistsView", "{0} rule")
+    ).format(n)
+    out.append(f"{count_text} ({'AND' if match == 'all' else 'OR'})")
     limit = rules.get("limit")
     if isinstance(limit, int) and limit > 0:
-        out.append(f"limit {limit}")
+        out.append(
+            QCoreApplication.translate("SmartPlaylistsView", "limit {0}").format(limit)
+        )
     sort = rules.get("sort")
     if sort:
-        out.append(f"sort {sort}" + (" desc" if rules.get("sort_desc") else ""))
+        if rules.get("sort_desc"):
+            out.append(
+                QCoreApplication.translate(
+                    "SmartPlaylistsView", "sort {0} desc"
+                ).format(sort)
+            )
+        else:
+            out.append(
+                QCoreApplication.translate("SmartPlaylistsView", "sort {0}").format(
+                    sort
+                )
+            )
     return "  ·  ".join(out)
 
 
@@ -73,7 +91,7 @@ class _SmartPlaylistRow(QFrame):
         # Title + summary
         text_col = QVBoxLayout()
         text_col.setSpacing(2)
-        self._name_label = QLabel(str(entry.get("name") or "Untitled"))
+        self._name_label = QLabel(str(entry.get("name") or self.tr("Untitled")))
         text_col.addWidget(self._name_label)
         self._summary_label = QLabel(_rule_summary(entry.get("rules") or {}))
         text_col.addWidget(self._summary_label)
@@ -84,15 +102,15 @@ class _SmartPlaylistRow(QFrame):
         # so each owns its label colour across every state — otherwise KDE
         # Breeze repaints bare-button labels from the palette in light
         # themes and they wash out to low-contrast grey.
-        self.play_btn = QPushButton("Play")
+        self.play_btn = QPushButton(self.tr("Play"))
         self.play_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         row.addWidget(self.play_btn)
 
-        self.edit_btn = QPushButton("Edit")
+        self.edit_btn = QPushButton(self.tr("Edit"))
         self.edit_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         row.addWidget(self.edit_btn)
 
-        self.delete_btn = QPushButton("Delete")
+        self.delete_btn = QPushButton(self.tr("Delete"))
         self.delete_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         row.addWidget(self.delete_btn)
 
@@ -170,7 +188,7 @@ class SmartPlaylistsView(QWidget):
         head = QHBoxLayout()
         head.setSpacing(SPACE_MD)
         head.addStretch(1)
-        self._new_btn = QPushButton("+ New smart playlist")
+        self._new_btn = QPushButton(self.tr("+ New smart playlist"))
         self._new_btn.setObjectName("accent")
         self._new_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self._new_btn.clicked.connect(self._on_new)
@@ -181,7 +199,9 @@ class SmartPlaylistsView(QWidget):
         # it fills the area the rows would occupy and sits dead-centre instead
         # of stranded top-left.
         self._empty_caption = QLabel(
-            "No smart playlists yet. Click \"+ New smart playlist\" to define one."
+            self.tr(
+                'No smart playlists yet. Click "+ New smart playlist" to define one.'
+            )
         )
         self._empty_caption.setStyleSheet(f"color: {TEXT_DIM}; {type_qss(TYPE_CAPTION)}")
         self._empty_caption.setWordWrap(True)
@@ -327,9 +347,9 @@ class SmartPlaylistsView(QWidget):
 
         if not frosted_confirm(
             self,
-            "Delete smart playlist?",
-            f"Delete \"{entry.get('name')}\"? This can't be undone.",
-            confirm_text="Delete",
+            self.tr("Delete smart playlist?"),
+            self.tr('Delete "{0}"? This can\'t be undone.').format(entry.get("name")),
+            confirm_text=self.tr("Delete"),
             destructive=True,
         ):
             return
@@ -387,10 +407,10 @@ class SmartPlaylistsView(QWidget):
         from jellytoast.smart_playlists.play import play_entry
 
         play_btn.setEnabled(False)
-        play_btn.setText("Loading…")
+        play_btn.setText(self.tr("Loading…"))
 
         def _restore() -> None:
             play_btn.setEnabled(True)
-            play_btn.setText("Play")
+            play_btn.setText(self.tr("Play"))
 
         play_entry(entry, self, on_complete=_restore)

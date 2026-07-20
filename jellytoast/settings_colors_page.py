@@ -27,7 +27,7 @@ from __future__ import annotations
 import re
 from typing import Any
 
-from PySide6.QtCore import QSize, Qt, QTimer
+from PySide6.QtCore import QCoreApplication, QSize, Qt, QTimer
 from PySide6.QtGui import QColor, QPainter, QPainterPath
 from PySide6.QtWidgets import (
     QFileDialog,
@@ -243,7 +243,7 @@ class _ColorTokenRow(QWidget):
         )
         header.addWidget(self._readout)
 
-        reset_btn = QPushButton("Reset")
+        reset_btn = QPushButton(self.tr("Reset"))
         reset_btn.setFixedHeight(22)
         reset_btn.setStyleSheet(
             f"""
@@ -445,8 +445,11 @@ def build_colors_page() -> QWidget:
 
     # Top blurb explaining what this page is.
     intro = QLabel(
-        "Adjust UI colors live. Changes persist across launches. "
-        "Use Reset on a row to restore that token's default."
+        QCoreApplication.translate(
+            "ColorsPage",
+            "Adjust UI colors live. Changes persist across launches. "
+            "Use Reset on a row to restore that token's default.",
+        )
     )
     intro.setWordWrap(True)
     intro.setStyleSheet(
@@ -487,7 +490,11 @@ def build_colors_page() -> QWidget:
     dropper_btn.setIcon(icon("eyedropper"))
     dropper_btn.setIconSize(QSize(16, 16))
     dropper_btn.setStyleSheet(btn_qss)
-    dropper_btn.setToolTip("Pick an accent colour from the screen")
+    dropper_btn.setToolTip(
+        QCoreApplication.translate(
+            "ColorsPage", "Pick an accent colour from the screen"
+        )
+    )
     dropper_btn.clicked.connect(lambda: pick_screen_color(_on_accent_sampled))
     toolbar.addWidget(dropper_btn)
     toolbar.addSpacing(8)
@@ -500,8 +507,12 @@ def build_colors_page() -> QWidget:
 
     palettes_combo = _Selector()
     palettes_combo.setMinimumWidth(160)
-    palettes_combo.setToolTip("Apply a saved palette")
-    _PALETTE_PLACEHOLDER = "— saved palettes —"
+    palettes_combo.setToolTip(
+        QCoreApplication.translate("ColorsPage", "Apply a saved palette")
+    )
+    _PALETTE_PLACEHOLDER = QCoreApplication.translate(
+        "ColorsPage", "— saved palettes —"
+    )
 
     def _refresh_palettes_combo():
         palettes_combo.blockSignals(True)
@@ -523,7 +534,9 @@ def build_colors_page() -> QWidget:
             ct.load_palette(name)
         except Exception as exc:
             QMessageBox.warning(
-                None, "Couldn't load palette", f"{name}: {exc}"
+                None,
+                QCoreApplication.translate("ColorsPage", "Couldn't load palette"),
+                f"{name}: {exc}",
             )
             return
         for r in rows:
@@ -539,13 +552,19 @@ def build_colors_page() -> QWidget:
     palettes_combo.currentIndexChanged.connect(_on_palette_picked)
     toolbar.addWidget(palettes_combo)
 
-    save_btn = QPushButton("Save…")
+    save_btn = QPushButton(QCoreApplication.translate("ColorsPage", "Save…"))
     save_btn.setStyleSheet(btn_qss)
-    save_btn.setToolTip("Snapshot the current colors as a named palette")
+    save_btn.setToolTip(
+        QCoreApplication.translate(
+            "ColorsPage", "Snapshot the current colors as a named palette"
+        )
+    )
 
     def _on_save_palette():
         name, ok = QInputDialog.getText(
-            None, "Save palette", "Palette name:"
+            None,
+            QCoreApplication.translate("ColorsPage", "Save palette"),
+            QCoreApplication.translate("ColorsPage", "Palette name:"),
         )
         if not ok:
             return
@@ -555,15 +574,19 @@ def build_colors_page() -> QWidget:
         if "/" in name or "\\" in name:
             QMessageBox.warning(
                 None,
-                "Invalid name",
-                "Palette names can't contain slashes.",
+                QCoreApplication.translate("ColorsPage", "Invalid name"),
+                QCoreApplication.translate(
+                    "ColorsPage", "Palette names can't contain slashes."
+                ),
             )
             return
         if name in ct.list_palettes():
             ans = QMessageBox.question(
                 None,
-                "Overwrite palette",
-                f"Palette '{name}' already exists. Overwrite?",
+                QCoreApplication.translate("ColorsPage", "Overwrite palette"),
+                QCoreApplication.translate(
+                    "ColorsPage", "Palette '{0}' already exists. Overwrite?"
+                ).format(name),
                 QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             )
             if ans != QMessageBox.StandardButton.Yes:
@@ -574,17 +597,30 @@ def build_colors_page() -> QWidget:
     save_btn.clicked.connect(_on_save_palette)
     toolbar.addWidget(save_btn)
 
-    delete_btn = QPushButton("Delete…")
+    delete_btn = QPushButton(QCoreApplication.translate("ColorsPage", "Delete…"))
     delete_btn.setStyleSheet(btn_qss)
-    delete_btn.setToolTip("Remove a saved palette")
+    delete_btn.setToolTip(
+        QCoreApplication.translate("ColorsPage", "Remove a saved palette")
+    )
 
     def _on_delete_palette():
         names = ct.list_palettes()
         if not names:
-            QMessageBox.information(None, "No palettes", "No saved palettes to delete.")
+            QMessageBox.information(
+                None,
+                QCoreApplication.translate("ColorsPage", "No palettes"),
+                QCoreApplication.translate(
+                    "ColorsPage", "No saved palettes to delete."
+                ),
+            )
             return
         name, ok = QInputDialog.getItem(
-            None, "Delete palette", "Pick a palette:", names, 0, False
+            None,
+            QCoreApplication.translate("ColorsPage", "Delete palette"),
+            QCoreApplication.translate("ColorsPage", "Pick a palette:"),
+            names,
+            0,
+            False,
         )
         if not ok or not name:
             return
@@ -596,15 +632,20 @@ def build_colors_page() -> QWidget:
 
     toolbar.addSpacing(8)
 
-    export_btn = QPushButton("Export…")
+    export_btn = QPushButton(QCoreApplication.translate("ColorsPage", "Export…"))
     export_btn.setStyleSheet(btn_qss)
-    export_btn.setToolTip("Save current colors to a JSON file")
+    export_btn.setToolTip(
+        QCoreApplication.translate("ColorsPage", "Save current colors to a JSON file")
+    )
 
     def _on_export():
         import json
 
         path, _ = QFileDialog.getSaveFileName(
-            None, "Export palette", "jellytoast-palette.json", "JSON (*.json)"
+            None,
+            QCoreApplication.translate("ColorsPage", "Export palette"),
+            "jellytoast-palette.json",
+            QCoreApplication.translate("ColorsPage", "JSON (*.json)"),
         )
         if not path:
             return
@@ -612,20 +653,29 @@ def build_colors_page() -> QWidget:
             with open(path, "w", encoding="utf-8") as f:
                 json.dump(ct.export_palette(), f, indent=2)
         except Exception as exc:
-            QMessageBox.warning(None, "Export failed", str(exc))
+            QMessageBox.warning(
+                None,
+                QCoreApplication.translate("ColorsPage", "Export failed"),
+                str(exc),
+            )
 
     export_btn.clicked.connect(_on_export)
     toolbar.addWidget(export_btn)
 
-    import_btn = QPushButton("Import…")
+    import_btn = QPushButton(QCoreApplication.translate("ColorsPage", "Import…"))
     import_btn.setStyleSheet(btn_qss)
-    import_btn.setToolTip("Load colors from a JSON file")
+    import_btn.setToolTip(
+        QCoreApplication.translate("ColorsPage", "Load colors from a JSON file")
+    )
 
     def _on_import():
         import json
 
         path, _ = QFileDialog.getOpenFileName(
-            None, "Import palette", "", "JSON (*.json)"
+            None,
+            QCoreApplication.translate("ColorsPage", "Import palette"),
+            "",
+            QCoreApplication.translate("ColorsPage", "JSON (*.json)"),
         )
         if not path:
             return
@@ -634,14 +684,22 @@ def build_colors_page() -> QWidget:
                 palette = json.load(f)
             applied = ct.import_palette(palette)
         except Exception as exc:
-            QMessageBox.warning(None, "Import failed", str(exc))
+            QMessageBox.warning(
+                None,
+                QCoreApplication.translate("ColorsPage", "Import failed"),
+                str(exc),
+            )
             return
         for r in rows:
             r.refresh()
         QMessageBox.information(
             None,
-            "Palette imported",
-            f"Applied {applied} color{'s' if applied != 1 else ''}.",
+            QCoreApplication.translate("ColorsPage", "Palette imported"),
+            (
+                QCoreApplication.translate("ColorsPage", "Applied {0} color.")
+                if applied == 1
+                else QCoreApplication.translate("ColorsPage", "Applied {0} colors.")
+            ).format(applied),
         )
 
     import_btn.clicked.connect(_on_import)
@@ -649,9 +707,13 @@ def build_colors_page() -> QWidget:
 
     toolbar.addStretch(1)
 
-    reset_all_btn = QPushButton("Reset all")
+    reset_all_btn = QPushButton(QCoreApplication.translate("ColorsPage", "Reset all"))
     reset_all_btn.setStyleSheet(btn_qss)
-    reset_all_btn.setToolTip("Restore every token to its shipped default")
+    reset_all_btn.setToolTip(
+        QCoreApplication.translate(
+            "ColorsPage", "Restore every token to its shipped default"
+        )
+    )
 
     def _on_reset_all():
         ct.reset_all()

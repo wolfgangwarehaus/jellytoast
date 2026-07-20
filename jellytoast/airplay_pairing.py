@@ -104,7 +104,7 @@ class PairingDialog(QDialog):
         self._error_text: str = ""
         self.result_credentials: str = ""
 
-        self.setWindowTitle("Pair AirPlay 2 device")
+        self.setWindowTitle(self.tr("Pair AirPlay 2 device"))
         self.setFixedSize(self._FIXED_W, self._FIXED_H)
         self.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.Dialog)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
@@ -118,7 +118,7 @@ class PairingDialog(QDialog):
         # Header — title + device name. Stays the same across every
         # state, so it's built once in __init__ rather than rebuilt
         # on transitions.
-        self._title = QLabel("Pair AirPlay 2 device")
+        self._title = QLabel(self.tr("Pair AirPlay 2 device"))
         self._title.setStyleSheet(f"color: {TEXT}; {type_qss(TYPE_TITLE)}")
         outer.addWidget(self._title)
 
@@ -206,8 +206,10 @@ class PairingDialog(QDialog):
 
     def _render_begin(self):
         msg = QLabel(
-            "Asking the receiver for a PIN. Look at the device's "
-            "screen — a 4-digit code should appear shortly."
+            self.tr(
+                "Asking the receiver for a PIN. Look at the device's "
+                "screen — a 4-digit code should appear shortly."
+            )
         )
         msg.setWordWrap(True)
         msg.setStyleSheet(f"color: {TEXT_FAINT}; {type_qss(TYPE_CAPTION)} padding-top: 6px;")
@@ -217,13 +219,13 @@ class PairingDialog(QDialog):
         btn_row = QHBoxLayout()
         btn_row.setSpacing(8)
         btn_row.addStretch(1)
-        cancel = self._ghost_button("Cancel")
+        cancel = self._ghost_button(self.tr("Cancel"))
         cancel.clicked.connect(self.reject)
         btn_row.addWidget(cancel)
         self._body_layout.addLayout(btn_row)
 
     def _render_prompt(self):
-        instr = QLabel("Enter the 4-digit PIN shown on the device:")
+        instr = QLabel(self.tr("Enter the 4-digit PIN shown on the device:"))
         instr.setStyleSheet(f"color: {TEXT}; {type_qss(TYPE_BODY)}")
         self._body_layout.addWidget(instr)
 
@@ -262,16 +264,16 @@ class PairingDialog(QDialog):
         btn_row = QHBoxLayout()
         btn_row.setSpacing(8)
         btn_row.addStretch(1)
-        cancel = self._ghost_button("Cancel")
+        cancel = self._ghost_button(self.tr("Cancel"))
         cancel.clicked.connect(self.reject)
         btn_row.addWidget(cancel)
-        pair_btn = self._primary_button("Pair")
+        pair_btn = self._primary_button(self.tr("Pair"))
         pair_btn.clicked.connect(self._submit_pin)
         btn_row.addWidget(pair_btn)
         self._body_layout.addLayout(btn_row)
 
     def _render_finish(self):
-        msg = QLabel("Finalising pairing…")
+        msg = QLabel(self.tr("Finalising pairing…"))
         msg.setStyleSheet(f"color: {TEXT}; {type_qss(TYPE_BODY)}")
         self._body_layout.addWidget(msg)
         self._body_layout.addStretch(1)
@@ -280,7 +282,7 @@ class PairingDialog(QDialog):
         # Distinguish "device asked for credentials we already had but
         # they're stale" from "user typed the wrong PIN" via the
         # message — both end up here, but the user-facing fix differs.
-        msg = QLabel(self._error_text or "Pairing failed. Please try again.")
+        msg = QLabel(self._error_text or self.tr("Pairing failed. Please try again."))
         msg.setWordWrap(True)
         msg.setStyleSheet(
             f"color: {TEXT}; {type_qss(TYPE_BODY)} "
@@ -293,10 +295,10 @@ class PairingDialog(QDialog):
         btn_row = QHBoxLayout()
         btn_row.setSpacing(8)
         btn_row.addStretch(1)
-        cancel = self._ghost_button("Cancel")
+        cancel = self._ghost_button(self.tr("Cancel"))
         cancel.clicked.connect(self.reject)
         btn_row.addWidget(cancel)
-        retry = self._primary_button("Try again")
+        retry = self._primary_button(self.tr("Try again"))
         retry.clicked.connect(self._start_begin)
         btn_row.addWidget(retry)
         self._body_layout.addLayout(btn_row)
@@ -329,11 +331,11 @@ class PairingDialog(QDialog):
                 type(err).__name__,
                 err,
             )
-            self._error_text = (
-                f"Couldn't start pairing: {err}\n\n"
+            self._error_text = self.tr(
+                "Couldn't start pairing: {0}\n\n"
                 "Make sure the receiver is reachable and not paired "
                 "to another device right now."
-            )
+            ).format(err)
             self._set_state(_State.ERROR)
 
         run_async(_go, on_result=_on_result, on_error=_on_error)
@@ -357,7 +359,7 @@ class PairingDialog(QDialog):
         def _on_result(creds: str):
             logger.debug("dialog: _submit_pin success creds_len=%s", len(creds))
             if not creds:
-                self._error_text = (
+                self._error_text = self.tr(
                     "The receiver accepted the handshake but didn't "
                     "return credentials. Try pairing again."
                 )
@@ -383,12 +385,12 @@ class PairingDialog(QDialog):
                 type(err).__name__,
                 err,
             )
-            self._error_text = (
-                f"Pairing failed: {err}\n\n"
+            self._error_text = self.tr(
+                "Pairing failed: {0}\n\n"
                 "Double-check the PIN — common cause is a typo or a "
                 "stale code (the receiver rotates them after a few "
                 "minutes)."
-            )
+            ).format(err)
             # Reset the handle so Try-again re-runs begin from scratch
             # rather than reusing the (now-dead) handler.
             self._handle = None

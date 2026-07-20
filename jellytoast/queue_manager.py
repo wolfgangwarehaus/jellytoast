@@ -669,7 +669,7 @@ class QueueManager(QObject):
         return NowPlaying(
             item_id=item_id,
             image_id=image_id,
-            title=item.get("Name", "Unknown"),
+            title=item.get("Name", self.tr("Unknown")),
             subtitle=subtitle,
             album=item.get("Album", ""),
             year=str(item.get("ProductionYear") or ""),

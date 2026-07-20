@@ -110,7 +110,7 @@ class _SongsSection(QWidget):
         outer.setContentsMargins(0, 0, 0, SPACE_LG)
         outer.setSpacing(SPACE_SM)
 
-        self._header = QLabel("Songs")
+        self._header = QLabel(self.tr("Songs"))
         self._header.setStyleSheet(self._header_qss())
         apply_type(self._header, TYPE_MICRO)
         outer.addWidget(self._header)
@@ -298,7 +298,7 @@ class SearchView(QWidget):
         input_layout.setSpacing(SPACE_MD)
 
         self._input = _SearchInput()
-        self._input.setPlaceholderText("Search music…")
+        self._input.setPlaceholderText(self.tr("Search music…"))
         self._input.setClearButtonEnabled(True)
         self._input.setStyleSheet(self._input_qss())
         self._input.textChanged.connect(self._on_text_changed)
@@ -313,7 +313,7 @@ class SearchView(QWidget):
         self._close_btn = QPushButton("✕")
         self._close_btn.setFixedSize(36, 36)
         self._close_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self._close_btn.setToolTip("Close search")
+        self._close_btn.setToolTip(self.tr("Close search"))
         self._close_btn.setStyleSheet(self._close_btn_qss())
         self._close_btn.clicked.connect(self.dismiss_requested.emit)
         input_layout.addWidget(self._close_btn)
@@ -348,7 +348,7 @@ class SearchView(QWidget):
 
         # Empty state — shown when no query, replaced by sections + a
         # "no results" label as the user types.
-        self._status = QLabel("Type to search your library")
+        self._status = QLabel(self.tr("Type to search your library"))
         self._status.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._status.setStyleSheet(self._status_qss())
         col.addWidget(self._status)
@@ -363,7 +363,7 @@ class SearchView(QWidget):
         from jellytoast.horizontal_rail import HorizontalRail
 
         self._albums_rail = HorizontalRail(
-            "Albums",
+            self.tr("Albums"),
             kind="album",
             cache_namespace="searchtile",
         )
@@ -374,7 +374,7 @@ class SearchView(QWidget):
         # Artists rail — kind="artist" suppresses the play overlay (no
         # canonical "play an artist" action), so only browse fires.
         self._artists_rail = HorizontalRail(
-            "Artists",
+            self.tr("Artists"),
             kind="artist",
             cache_namespace="searchtile",
         )
@@ -499,7 +499,7 @@ class SearchView(QWidget):
         """Clear the input + result sections — used when the host is
         about to show search fresh (e.g. after dismissing an old query)."""
         self._input.clear()
-        self._show_empty_state("Type to search your library")
+        self._show_empty_state(self.tr("Type to search your library"))
 
     def _show_empty_state(self, text: str):
         self._status.setText(text)
@@ -516,7 +516,7 @@ class SearchView(QWidget):
         self._current_query = text.strip()
         if not self._current_query:
             self._debounce.stop()
-            self._show_empty_state("Type to search your library")
+            self._show_empty_state(self.tr("Type to search your library"))
             return
         self._debounce.start()
 
@@ -557,7 +557,7 @@ class SearchView(QWidget):
             return
         self._nonce += 1
         nonce = self._nonce
-        self._show_empty_state("Searching…")
+        self._show_empty_state(self.tr("Searching…"))
 
         # Offline mode: skip the network entirely and match against
         # downloaded metadata in-process. Results land on the same
@@ -763,9 +763,9 @@ class SearchView(QWidget):
         # rather than the raw exception (the route through async_io
         # has already logged it for diagnostics).
         if errored:
-            self._show_empty_state("Search failed — check your connection and try again.")
+            self._show_empty_state(self.tr("Search failed — check your connection and try again."))
         else:
-            self._show_empty_state(f'No results for "{self._current_query}"')
+            self._show_empty_state(self.tr('No results for "{0}"').format(self._current_query))
 
     def keyPressEvent(self, event: QKeyEvent):
         # Defense-in-depth: if focus has wandered off the input, Escape

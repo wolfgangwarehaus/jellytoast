@@ -20,7 +20,7 @@ instance.
 to ``QWidget.eventFilter`` — identical to before the split.
 """
 
-from PySide6.QtCore import QEvent
+from PySide6.QtCore import QCoreApplication, QEvent
 from PySide6.QtGui import QCursor
 
 
@@ -232,10 +232,10 @@ class _LeftPaneMixin:
         self._lyrics_toggle_eligible = True
         nxt = self._next_left_pane_mode(mode)
         next_label = {
-            "lyrics": "Show lyrics",
-            "visualizer": "Show visualizer",
-            "cover": "Hide pane",
-        }.get(nxt, "Show lyrics")
+            "lyrics": QCoreApplication.translate("NowPlayingPage", "Show lyrics"),
+            "visualizer": QCoreApplication.translate("NowPlayingPage", "Show visualizer"),
+            "cover": QCoreApplication.translate("NowPlayingPage", "Hide pane"),
+        }.get(nxt, QCoreApplication.translate("NowPlayingPage", "Show lyrics"))
         self._lyrics_toggle_btn.setText(next_label)
         self._sync_lyrics_toggle_visibility()
 

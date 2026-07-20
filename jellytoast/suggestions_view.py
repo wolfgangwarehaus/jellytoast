@@ -123,27 +123,27 @@ class SuggestionsView(QWidget):
         from jellytoast.horizontal_rail import HorizontalRail
 
         self._latest = HorizontalRail(
-            "Latest",
+            self.tr("Latest"),
             kind="album",
             cache_namespace="suggesttile",
         )
         self._favorites = HorizontalRail(
-            "Favorites",
+            self.tr("Favorites"),
             kind="album",
             cache_namespace="suggesttile",
         )
         self._recent = HorizontalRail(
-            "Recently played",
+            self.tr("Recently played"),
             kind="album",
             cache_namespace="suggesttile",
         )
         self._frequent = HorizontalRail(
-            "Frequently played",
+            self.tr("Frequently played"),
             kind="album",
             cache_namespace="suggesttile",
         )
         self._random = HorizontalRail(
-            "Random",
+            self.tr("Random"),
             kind="album",
             cache_namespace="suggesttile",
         )
@@ -179,7 +179,7 @@ class SuggestionsView(QWidget):
         # in-page status when nothing else is visible.
         self._status = EmptyState(
             glyph="♪",
-            headline="Loading suggestions…",
+            headline=self.tr("Loading suggestions…"),
             sub="",
             action_label=None,
         )
@@ -258,7 +258,7 @@ class SuggestionsView(QWidget):
         self._rail_status = {k: "pending" for k in _RAIL_KEYS}
         self._status.set_state(
             glyph="♪",
-            headline="Loading suggestions…",
+            headline=self.tr("Loading suggestions…"),
             sub="",
             action_label="",
         )
@@ -415,9 +415,9 @@ class SuggestionsView(QWidget):
         if all(s == "errored" for s in statuses):
             self._status.set_state(
                 glyph="⚠",
-                headline="Couldn't load suggestions",
-                sub="Check your connection to the server, then try again.",
-                action_label="Try again",
+                headline=self.tr("Couldn't load suggestions"),
+                sub=self.tr("Check your connection to the server, then try again."),
+                action_label=self.tr("Try again"),
             )
         else:
             # Some empty, maybe some errored, but no full success
@@ -426,8 +426,8 @@ class SuggestionsView(QWidget):
             # new server; a transient outage will hit retry naturally.
             self._status.set_state(
                 glyph="♪",
-                headline="Nothing here yet",
-                sub="Add music to your server to see Suggestions.",
-                action_label="Refresh",
+                headline=self.tr("Nothing here yet"),
+                sub=self.tr("Add music to your server to see Suggestions."),
+                action_label=self.tr("Refresh"),
             )
         self._status.setVisible(True)
