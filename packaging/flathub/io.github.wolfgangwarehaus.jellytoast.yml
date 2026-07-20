@@ -1,0 +1,487 @@
+# Flathub submission manifest for jellytoast.
+#
+# Derived from the working self-distributed CI manifest
+# (packaging/flatpak/io.github.wolfgangwarehaus.jellytoast.yml) with the
+# one change Flathub requires: NO network during build. Every Python
+# dependency is a declared source (exact wheel/sdist URL + sha256,
+# resolved for the runtime's Python 3.13 on x86_64 + aarch64) and pip
+# runs with --no-index against the local download dir. jellytoast itself
+# builds from the v0.2.1 release tarball, hash-pinned, with
+# external-data-checker metadata so new tags open update PRs
+# automatically once the app is on Flathub.
+#
+# Load-bearing invariants carried over from the CI manifest — do not
+# "simplify" these away:
+#   * PySide6 comes from io.qt.PySide.BaseApp (built against the
+#     runtime's Qt) and must NEVER be pip-installed: the PyPI wheel
+#     bundles its own Qt with the same SONAMEs, KF6 WindowSystem then
+#     binds the wrong libQt6, the Wayland native interface mismatches,
+#     and the KWin blur silently no-ops while reporting ACTIVE
+#     (issue #229). Hence: deps installed explicitly, jellytoast
+#     installed with --no-deps.
+#   * ffmpeg is built --enable-gnutls: without a TLS backend FFmpeg
+#     silently drops the https protocol and every TLS media URL fails
+#     as `loading failed` (0.2.0 Steam Deck QA).
+#   * --talk-name=org.kde.KWin: read-only blur-honesty D-Bus check so
+#     the app can tell whether KWin's Blur effect is actually on.
+#
+# Regenerating the Python sources after a dependency change: see
+# packaging/flathub/README.md ("Regenerating the pinned Python sources").
+
+app-id: io.github.wolfgangwarehaus.jellytoast
+runtime: org.kde.Platform
+runtime-version: '6.10'
+sdk: org.kde.Sdk
+# PySide6 prebuilt against the runtime's Qt — ONE Qt in the process, so
+# KF6 WindowSystem binds the same Qt and the ctypes blur backend
+# (jellytoast/blur/_kwin.py) finds a compatible library.
+base: io.qt.PySide.BaseApp
+base-version: '6.10'
+command: jellytoast
+
+build-options:
+  env:
+    # jellytoast imports no QtWebEngine — let the BaseApp cleanup script
+    # drop the whole web stack (~300 MB installed).
+    BASEAPP_REMOVE_WEBENGINE: '1'
+
+# Required by the BaseApp: strips PySide6 dev tools / docs and (with the
+# env above) QtWebEngine. NB: do NOT also set BASEAPP_DISABLE_NUMPY —
+# the app needs numpy (visualizer FFT) and deliberately uses the
+# BaseApp's copy instead of pip-installing its own (same site-packages
+# prefix; two copies would just shadow each other).
+cleanup-commands:
+  - /app/cleanup-BaseApp.sh
+
+finish-args:
+  - --socket=wayland
+  - --socket=fallback-x11
+  - --share=ipc
+  - --share=network            # the media server + casting live on the network
+  - --socket=pulseaudio        # PipeWire's pulse interface on modern distros
+  - --device=dri               # GPU for Qt RHI + mpv vo=gpu
+  - --own-name=org.mpris.MediaPlayer2.jellytoast   # media keys / MPRIS
+  - --talk-name=org.freedesktop.Notifications      # track-change toasts
+  - --talk-name=org.kde.StatusNotifierWatcher      # tray icon
+  - --talk-name=org.freedesktop.secrets            # keyring (server login)
+  # Blur HONESTY check (read-only queries: isEffectLoaded / compositing
+  # active). KWin's Wayland blur protocol stays advertised even when the
+  # Blur desktop effect is OFF, so without this grant the sandbox can't
+  # tell, trusts the capability bit, and paints full-transparency glass
+  # over an UNBLURRED desktop (0.2.0 Steam Deck report). With it,
+  # blur/_kwin.py's D-Bus cross-check works and the app demotes to the
+  # near-opaque frosted fallback.
+  - --talk-name=org.kde.KWin
+  # NOTE — deliberately absent vs the self-distributed manifest:
+  # --filesystem=~/.config/autostart:create. The Flathub linter rejects
+  # it (finish-args-autostart-filesystem-access); until the app migrates
+  # launch-at-login to the Background/Autostart portal, the toggle
+  # degrades gracefully (autostart/_linux.py enable() returns False on
+  # the denied write) — the feature is simply unavailable on Flathub.
+
+modules:
+  - name: libass
+    buildsystem: meson
+    config-opts: [-Ddefault_library=shared]
+    sources:
+      - type: archive
+        url: https://github.com/libass/libass/releases/download/0.17.3/libass-0.17.3.tar.xz
+        sha256: eae425da50f0015c21f7b3a9c7262a910f0218af469e22e2931462fed3c50959
+
+  - name: ffmpeg-lgpl
+    buildsystem: autotools
+    config-opts:
+      - --enable-shared
+      - --disable-static
+      - --disable-gpl
+      - --disable-nonfree
+      - --disable-programs
+      - --disable-doc
+      - --disable-postproc
+      - --disable-avdevice
+      - --disable-encoders
+      - --disable-muxers
+      # TLS backend — see header. gnutls is the GPL-compatible choice
+      # (OpenSSL's Apache-2.0 is not, for this project's GPL-2.0+); the
+      # KDE runtime ships libgnutls, the SDK the headers.
+      - --enable-gnutls
+    sources:
+      - type: git
+        url: https://github.com/FFmpeg/FFmpeg.git
+        tag: n7.1
+        commit: b08d7969c550a804a59511c7b83f2dd8cc0499b8
+
+  - name: libplacebo
+    # mpv >=0.37 hard-requires libplacebo at build even for audio. This
+    # is a music player — it never uses libplacebo's GPU video renderer —
+    # so vulkan is off (its bundled Vulkan-Headers wrap's codegen doesn't
+    # resolve under the KDE SDK, and we'd never exercise it anyway).
+    buildsystem: meson
+    config-opts:
+      - -Ddemos=false
+      - -Dvulkan=disabled
+      - -Dd3d11=disabled
+    sources:
+      - type: git
+        url: https://code.videolan.org/videolan/libplacebo.git
+        tag: v7.349.0
+        commit: 1fd3c7bde7b943fe8985c893310b5269a09b46c5
+
+  - name: libmpv
+    buildsystem: meson
+    config-opts:
+      - -Dgpl=false
+      - -Dlibmpv=true
+      - -Dcplayer=false
+      - -Dlua=disabled
+      - -Djavascript=disabled
+      - -Dvapoursynth=disabled
+      - -Ddefault_library=shared
+    sources:
+      - type: git
+        url: https://github.com/mpv-player/mpv.git
+        tag: v0.39.0
+        commit: a0fba7be57f3822d967b04f0f6b6d6341e7516e7
+
+  - name: extra-cmake-modules
+    buildsystem: cmake-ninja
+    config-opts: [-DBUILD_TESTING=OFF]
+    cleanup: ['*']
+    sources:
+      - type: git
+        url: https://invent.kde.org/frameworks/extra-cmake-modules.git
+        tag: v6.27.0
+        commit: fa262097a48f0f84529498741afcc7040e93b271
+
+  - name: kwindowsystem
+    # Supplies libKF6WindowSystem.so.6 for the ctypes blur backend —
+    # true KWin blur instead of faux frost inside the sandbox.
+    buildsystem: cmake-ninja
+    config-opts: [-DBUILD_TESTING=OFF]
+    sources:
+      - type: git
+        url: https://invent.kde.org/frameworks/kwindowsystem.git
+        tag: v6.27.0
+        commit: 97aadfe443fcd097d78f9926d4c0fb8c52011727
+
+  - name: python3-dependencies
+    # Offline mirror of jellytoast's runtime Python deps (everything in
+    # pyproject's [project].dependencies with a linux-true marker EXCEPT
+    # PySide6 — see header — and numpy, which the BaseApp provides).
+    # Pinned by resolving with the runtime's own pip/Python 3.13, then
+    # wheel URLs+hashes selected for cp313 x86_64 + aarch64 via
+    # req2flatpak. Regeneration steps: packaging/flathub/README.md.
+    #
+    # Two pip invocations, deliberately: miniaudio (pyatv dep) ships no
+    # linux-aarch64 wheel, so on aarch64 it builds from the sdist under
+    # --no-build-isolation, which needs cffi ALREADY importable — so
+    # cffi (+pycparser) install first.
+    buildsystem: simple
+    build-commands:
+      - pip3 install --verbose --no-index --find-links="file://${PWD}"
+        --prefix=${FLATPAK_DEST} --no-build-isolation cffi pycparser
+      - pip3 install --verbose --no-index --find-links="file://${PWD}"
+        --prefix=${FLATPAK_DEST} --no-build-isolation aiohappyeyeballs aiohttp
+        aiosignal annotated-types appdirs async_upnp_client attrs casttube
+        certifi chacha20poly1305-reuseable charset-normalizer cryptography
+        dbus-next defusedxml frozenlist idna ifaddr jaraco.classes
+        jaraco.context jaraco.functools jeepney keyring lxml miniaudio
+        more-itertools multidict propcache protobuf pyatv PyChromecast
+        pydantic pydantic_core python-didl-lite python-mpv python-xlib
+        requests SecretStorage six soco srptools tabulate tinytag
+        typing-inspection typing_extensions urllib3 voluptuous xmltodict
+        yarl zeroconf
+    sources:
+      - type: file
+        url: https://files.pythonhosted.org/packages/71/43/1947f06babed6b3f1d7f38b0c767f52df66bfb2bc10b468c4a7de9eceff2/aiohappyeyeballs-2.7.1-py3-none-any.whl
+        sha256: 9243213661e29250eb41368e5daa826fc017156c3b8a11440826b2e3ed376472
+      - type: file
+        url: https://files.pythonhosted.org/packages/e8/ed/3c0fb5c500fdd8e7ebc10d1889c04384fffa1a9163eac1356088ca9da1b1/aiohttp-3.14.1-cp313-cp313-manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64.whl
+        sha256: bd869c427324e5cb15195793de951295710db28be7d818247f3097b4ab5d4b96
+        only-arches: [aarch64]
+      - type: file
+        url: https://files.pythonhosted.org/packages/9d/6e/dbf1d0625dc711fb2851f4f3c3055c39ed58bae92082d8c627dbe6013736/aiohttp-3.14.1-cp313-cp313-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl
+        sha256: faccab372e66bc76d5731525e7f1143c922271725b9d38c9f97edcc66266b451
+        only-arches: [x86_64]
+      - type: file
+        url: https://files.pythonhosted.org/packages/fb/76/641ae371508676492379f16e2fa48f4e2c11741bd63c48be4b12a6b09cba/aiosignal-1.4.0-py3-none-any.whl
+        sha256: 053243f8b92b990551949e63930a839ff0cf0b0ebbe0597b0f3fb19e1a0fe82e
+      - type: file
+        url: https://files.pythonhosted.org/packages/78/b6/6307fbef88d9b5ee7421e68d78a9f162e0da4900bc5f5793f6d3d0e34fb8/annotated_types-0.7.0-py3-none-any.whl
+        sha256: 1f02e8b43a8fbbc3f3e0d4f0f4bfc8131bcb4eebe8849b8e5c773f3a1c582a53
+      - type: file
+        url: https://files.pythonhosted.org/packages/3b/00/2344469e2084fb287c2e0b57b72910309874c3245463acd6cf5e3db69324/appdirs-1.4.4-py2.py3-none-any.whl
+        sha256: a841dacd6b99318a741b166adb07e19ee71a274450e68237b4650ca1055ab128
+      - type: file
+        url: https://files.pythonhosted.org/packages/88/27/37f09d39fb4a7617a5ded95d1013b3a498c25857ca9445f3d8661f6e0ac6/async_upnp_client-0.47.0-py3-none-any.whl
+        sha256: a879b1041b03b347dcf009c243e084b9ecb19e9c521c39bd435438229dd99602
+      - type: file
+        url: https://files.pythonhosted.org/packages/64/b4/17d4b0b2a2dc85a6df63d1157e028ed19f90d4cd97c36717afef2bc2f395/attrs-26.1.0-py3-none-any.whl
+        sha256: c647aa4a12dfbad9333ca4e71fe62ddc36f4e63b2d260a37a8b83d2f043ac309
+      - type: file
+        url: https://files.pythonhosted.org/packages/0a/d2/0f5006892e07ea342d57dbeda46027e99a097ffb6218bee1e37f9776ed95/casttube-0.2.1-py3-none-any.whl
+        sha256: 36f118007f9eead3959cf30de03c1640b53a263569ff2a3971c0521826c835b2
+      - type: file
+        url: https://files.pythonhosted.org/packages/ef/2f/c5464532e965badff2f4c4c1a3a83f5697f0d7c407ed0cda44aaa99bb451/certifi-2026.6.17-py3-none-any.whl
+        sha256: 2227dcbaafe0d2f59279d1762ddddc37783ed4354594f194ffc31d20f41fc3db
+      - type: file
+        url: https://files.pythonhosted.org/packages/3a/a6/e879bb68cc23a2bc9ba8f4b7d8019f0c2694bad2ab6c4a3701d429439f58/cffi-2.1.0-cp313-cp313-manylinux2014_aarch64.manylinux_2_17_aarch64.whl
+        sha256: ff067a8d8d880e7809e4ac88eb009bb848870115317b306666502ccad30b147f
+        only-arches: [aarch64]
+      - type: file
+        url: https://files.pythonhosted.org/packages/6f/08/f2e7d62c460faae0926f2d6e423694aa409ced3bc1fe2927a0a6e5f05416/cffi-2.1.0-cp313-cp313-manylinux2014_x86_64.manylinux_2_17_x86_64.whl
+        sha256: 799416bae98336e400981ff6e532d67d5c709cfb30afb79865a1315f94b0e224
+        only-arches: [x86_64]
+      - type: file
+        url: https://files.pythonhosted.org/packages/fa/30/a4e44159996e832512f93ec6db89756ed72fe454ce3de1978e3a39c10bcd/chacha20poly1305_reuseable-0.13.2-py3-none-any.whl
+        sha256: c7dba7c3604a9fa51bcfef9e4bfdaa3bfaadd88b6c5436a27be1c7e9c4081048
+      - type: file
+        url: https://files.pythonhosted.org/packages/d0/39/8ff066c672434225f8d25f8b739f992af250944392173dcc88362681c9bf/charset_normalizer-3.4.9-cp313-cp313-manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64.whl
+        sha256: 21e764fd1e70b6a3e205a0e46f3051701f98a8cb3fad66eeb80e48bb502f8698
+        only-arches: [aarch64]
+      - type: file
+        url: https://files.pythonhosted.org/packages/ea/f8/72eb13dcabe7257035cea8aefd922caad2f110d252bf9f67c4c2ca763aee/charset_normalizer-3.4.9-cp313-cp313-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl
+        sha256: 84fd18bcc17526fc2b3c1af7d2b9217d32c9c04448c16ec693b9b4f1985c3d33
+        only-arches: [x86_64]
+      - type: file
+        url: https://files.pythonhosted.org/packages/6d/88/05563c7fe2e914e87d1a536d06fe83e66b4e1d95cb593e05aea375531da8/cryptography-49.0.0-cp311-abi3-manylinux_2_34_aarch64.whl
+        sha256: ccac2bfebc306b862133e3bb71f3f6ee8bb525240089b2d952e4144b3a6d5da7
+        only-arches: [aarch64]
+      - type: file
+        url: https://files.pythonhosted.org/packages/a9/3c/f3ad17eecc1a57b0ba236dc01f90e783c51f4a2f35f64777cc4f47a184b2/cryptography-49.0.0-cp311-abi3-manylinux_2_34_x86_64.whl
+        sha256: cbc77da8c523d5abd028635ba850a6966fcee2c82e2bf65a41d1d8afe0f98be9
+        only-arches: [x86_64]
+      - type: file
+        url: https://files.pythonhosted.org/packages/d2/fc/c0a3f4c4eaa5a22fbef91713474666e13d0ea2a69c84532579490a9f2cc8/dbus_next-0.2.3-py3-none-any.whl
+        sha256: 58948f9aff9db08316734c0be2a120f6dc502124d9642f55e90ac82ffb16a18b
+      - type: file
+        url: https://files.pythonhosted.org/packages/07/6c/aa3f2f849e01cb6a001cd8554a88d4c77c5c1a31c95bdf1cf9301e6d9ef4/defusedxml-0.7.1-py2.py3-none-any.whl
+        sha256: a352e7e428770286cc899e2542b6cdaedb2b4953ff269a210103ec58f6198a61
+      - type: file
+        url: https://files.pythonhosted.org/packages/d5/4e/e4691508f9477ce67da2015d8c00acd751e6287739123113a9fca6f1604e/frozenlist-1.8.0-cp313-cp313-manylinux1_x86_64.manylinux_2_28_x86_64.manylinux_2_5_x86_64.whl
+        sha256: fb30f9626572a76dfe4293c7194a09fb1fe93ba94c7d4f720dfae3b646b45027
+        only-arches: [x86_64]
+      - type: file
+        url: https://files.pythonhosted.org/packages/40/76/c202df58e3acdf12969a7895fd6f3bc016c642e6726aa63bd3025e0fc71c/frozenlist-1.8.0-cp313-cp313-manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64.whl
+        sha256: eaa352d7047a31d87dafcacbabe89df0aa506abb5b1b85a2fb91bc3faa02d822
+        only-arches: [aarch64]
+      - type: file
+        url: https://files.pythonhosted.org/packages/1e/5e/d4e9f1a599fb8e573b7b87160658329fbf28d19eac2718f51fc3def3aa5a/idna-3.18-py3-none-any.whl
+        sha256: 7f952cbe720b688055e3f87de14f5c3e5fdaa8bc3928985c4077ca689de849a2
+      - type: file
+        url: https://files.pythonhosted.org/packages/9c/1f/19ebc343cc71a7ffa78f17018535adc5cbdd87afb31d7c34874680148b32/ifaddr-0.2.0-py3-none-any.whl
+        sha256: 085e0305cfe6f16ab12d72e2024030f5d52674afad6911bb1eee207177b8a748
+      - type: file
+        url: https://files.pythonhosted.org/packages/7f/66/b15ce62552d84bbfcec9a4873ab79d993a1dd4edb922cbfccae192bd5b5f/jaraco.classes-3.4.0-py3-none-any.whl
+        sha256: f662826b6bed8cace05e7ff873ce0f9283b5c924470fe664fff1c2f00f581790
+      - type: file
+        url: https://files.pythonhosted.org/packages/f2/58/bc8954bda5fcda97bd7c19be11b85f91973d67a706ed4a3aec33e7de22db/jaraco_context-6.1.2-py3-none-any.whl
+        sha256: bf8150b79a2d5d91ae48629d8b427a8f7ba0e1097dd6202a9059f29a36379535
+      - type: file
+        url: https://files.pythonhosted.org/packages/02/36/ecc85bc96c273dc8a11273ed4782272975e6338d4a3e9228621175edf0e3/jaraco_functools-4.6.0-py3-none-any.whl
+        sha256: 99e3dc0060c5cbe8fcd1cdb36258e2a65ca40f1566b2033b12abb1bb44dd3c30
+      - type: file
+        url: https://files.pythonhosted.org/packages/b2/a3/e137168c9c44d18eff0376253da9f1e9234d0239e0ee230d2fee6cea8e55/jeepney-0.9.0-py3-none-any.whl
+        sha256: 97e5714520c16fc0a45695e5365a2e11b81ea79bba796e26f9f1d178cb182683
+      - type: file
+        url: https://files.pythonhosted.org/packages/81/db/e655086b7f3a705df045bf0933bdd9c2f79bb3c97bfef1384598bb79a217/keyring-25.7.0-py3-none-any.whl
+        sha256: be4a0b195f149690c166e850609a477c532ddbfbaed96a404d4e43f8d5e2689f
+      - type: file
+        url: https://files.pythonhosted.org/packages/f0/b6/0608f7d61a3b96cc67e5648a3d906e31a5082093e10e7be65b3886289938/lxml-6.1.1-cp313-cp313-manylinux_2_26_aarch64.manylinux_2_28_aarch64.whl
+        sha256: a088f287f7d8275a33c07f2cac6c50b9319309a0200a39e7e75d80c707723099
+        only-arches: [aarch64]
+      - type: file
+        url: https://files.pythonhosted.org/packages/a6/76/dbe4a00b50385e40194231dcfe5a12c059de7cf90e89c83407d2b085b719/lxml-6.1.1-cp313-cp313-manylinux_2_26_x86_64.manylinux_2_28_x86_64.whl
+        sha256: 1d4962d4c66bf830a7e59ed6cfc17d148149898a3aefa8ec6e59763e6e3ed085
+        only-arches: [x86_64]
+      - type: file
+        url: https://files.pythonhosted.org/packages/46/24/5873a569451cae5686fb656ebd78ffe0b5eebe48ca21ef61e227d237d20a/miniaudio-1.71-cp313-cp313-manylinux_2_24_x86_64.manylinux_2_28_x86_64.whl
+        sha256: 12bc33e7e61072b4b541c14e10ef76119d5643e6bbb98e2dec0c0738889438fb
+        only-arches: [x86_64]
+      - type: file
+        url: https://files.pythonhosted.org/packages/d8/d5/e5439dc08561f73656bfeb3340fc64ab63163e101426593d8fb9a025ff1e/miniaudio-1.71.tar.gz
+        sha256: ff51e2887bb673e2e757752b586b3dc924d59aa5fbcae9bbc45f4a111bd3262b
+        only-arches: [aarch64]  # no linux-aarch64 wheel upstream; built from sdist (cffi installed first)
+      - type: file
+        url: https://files.pythonhosted.org/packages/e8/3d/1087453384dbde46a8c7f9356eead2c58be8a7bf156bca40243377c85715/more_itertools-11.1.0-py3-none-any.whl
+        sha256: 4b65538ae22f6fed0ce4874efd317463a7489796a0939fa66824dd542125a192
+      - type: file
+        url: https://files.pythonhosted.org/packages/f6/32/befed7f74c458b4a525e60519fe8d87eef72bb1e99924fa2b0f9d97a221e/multidict-6.7.1-cp313-cp313-manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64.whl
+        sha256: e82d14e3c948952a1a85503817e038cba5905a3352de76b9a465075d072fba23
+        only-arches: [aarch64]
+      - type: file
+        url: https://files.pythonhosted.org/packages/b0/73/6e1b01cbeb458807aa0831742232dbdd1fa92bfa33f52a3f176b4ff3dc11/multidict-6.7.1-cp313-cp313-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl
+        sha256: 9d624335fd4fa1c08a53f8b4be7676ebde19cd092b3895c421045ca87895b429
+        only-arches: [x86_64]
+      - type: file
+        url: https://files.pythonhosted.org/packages/a9/19/7fa086f5764c59ec8a8e157cd93aa8497acc00aba9dcdec56bfffb32602d/propcache-0.5.2-cp313-cp313-manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64.whl
+        sha256: a6ae2198be502c10f09b2516e7b5d019816924bc3183a43ce792a7bd6625e6f4
+        only-arches: [aarch64]
+      - type: file
+        url: https://files.pythonhosted.org/packages/8b/c6/979176efdaa3d239e36d503d5af63a0a773b36662ed8f52e5b6a6d9fd40e/propcache-0.5.2-cp313-cp313-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl
+        sha256: 4db0ba63d693afd40d249bd93f842b5f144f8fcbb83de05660373bcf30517b1d
+        only-arches: [x86_64]
+      - type: file
+        url: https://files.pythonhosted.org/packages/37/4b/dfb89eb0e652a1ff073c39a59fb5e3a83cfe9b57a2c83fa6d78270101767/protobuf-7.35.1-cp310-abi3-manylinux2014_aarch64.whl
+        sha256: 11d6b0ec246892d85215b0a13ca6e0233cf5284b68f0ac02646427f4ff88a799
+        only-arches: [aarch64]
+      - type: file
+        url: https://files.pythonhosted.org/packages/e4/be/5b3cfe508bfab6761414ff944e3366eb13be4fd71efcd69450f89ba39f43/protobuf-7.35.1-cp310-abi3-manylinux2014_x86_64.whl
+        sha256: 74758715c53d7158fb76caf4f0cfdacc5329a4b1bb994f865d6cf302d413a1c4
+        only-arches: [x86_64]
+      - type: file
+        url: https://files.pythonhosted.org/packages/89/fa/5334e26d22cacd518a5d58836f48f1372126aba2711e93dca239906ed6ce/pyatv-0.18.0-py3-none-any.whl
+        sha256: 3df6af5679eea809ff17954cf9f5d33c7e5ed5a8d1c90fa14090a0425ce5cd8a
+      - type: file
+        url: https://files.pythonhosted.org/packages/1f/61/f0f176622e2b4df06318a3abb2a27cc4c2fee8d40d7a0db8d60034785c09/pychromecast-14.0.10-py2.py3-none-any.whl
+        sha256: f5ea52b1db0edc3019ec72c9f5354c7e77c2564ecd44f809a6d2f4f518a02e67
+      - type: file
+        url: https://files.pythonhosted.org/packages/0c/c3/44f3fbbfa403ea2a7c779186dc20772604442dde72947e7d01069cbe98e3/pycparser-3.0-py3-none-any.whl
+        sha256: b727414169a36b7d524c1c3e31839a521725078d7b2ff038656844266160a992
+      - type: file
+        url: https://files.pythonhosted.org/packages/fd/7b/122376b1fd3c62c1ed9dc80c931ace4844b3c55407b6fb2d199377c9736f/pydantic-2.13.4-py3-none-any.whl
+        sha256: 45a282cde31d808236fd7ea9d919b128653c8b38b393d1c4ab335c62924d9aba
+      - type: file
+        url: https://files.pythonhosted.org/packages/03/d5/fd02da45b659668b05923b17ba3a0100a0a3d5541e3bd8fcc4ecb711309e/pydantic_core-2.46.4-cp313-cp313-manylinux_2_17_aarch64.manylinux2014_aarch64.whl
+        sha256: f027324c56cd5406ca49c124b0db10e56c69064fec039acc571c29020cc87c76
+        only-arches: [aarch64]
+      - type: file
+        url: https://files.pythonhosted.org/packages/07/f8/41db9de19d7987d6b04715a02b3b40aea467000275d9d758ffaa31af7d50/pydantic_core-2.46.4-cp313-cp313-manylinux_2_17_x86_64.manylinux2014_x86_64.whl
+        sha256: 9551187363ffc0de2a00b2e47c25aeaeb1020b69b668762966df15fc5659dd5a
+        only-arches: [x86_64]
+      - type: file
+        url: https://files.pythonhosted.org/packages/13/24/a5f4a5e69cac8eb3be721a2b3271042fc8b785eb696f1c58ef79c5b003f9/python_didl_lite-1.5.0-py3-none-any.whl
+        sha256: 88023b04458019e88cc3c64445a1da4d11bae0fbe1cd96f49888e53862610a97
+      - type: file
+        url: https://files.pythonhosted.org/packages/22/f3/4c632eaacebfc62ab9414586137aecf6c0ea2a1e99708cf5a4c0dec13ae0/python_mpv-1.0.8-py3-none-any.whl
+        sha256: b5296403e990fb7348df4ca2211937a030f524bf638657bda7e45a00bc2df0cd
+      - type: file
+        url: https://files.pythonhosted.org/packages/fc/b8/ff33610932e0ee81ae7f1269c890f697d56ff74b9f5b2ee5d9b7fa2c5355/python_xlib-0.33-py2.py3-none-any.whl
+        sha256: c3534038d42e0df2f1392a1b30a15a4ff5fdc2b86cfa94f072bf11b10a164398
+      - type: file
+        url: https://files.pythonhosted.org/packages/a0/f4/c67b0b3f1b9245e8d266f0f112c500d50e5b4e83cb6f3b71b6528104182a/requests-2.34.2-py3-none-any.whl
+        sha256: 2a0d60c172f83ac6ab31e4554906c0f3b3588d37b5cb939b1c061f4907e278e0
+      - type: file
+        url: https://files.pythonhosted.org/packages/b7/46/f5af3402b579fd5e11573ce652019a67074317e18c1935cc0b4ba9b35552/secretstorage-3.5.0-py3-none-any.whl
+        sha256: 0ce65888c0725fcb2c5bc0fdb8e5438eece02c523557ea40ce0703c266248137
+      - type: file
+        url: https://files.pythonhosted.org/packages/b7/ce/149a00dd41f10bc29e5921b496af8b574d8413afcd5e30dfa0ed46c2cc5e/six-1.17.0-py2.py3-none-any.whl
+        sha256: 4721f391ed90541fddacab5acf947aa0d3dc7d27b2e1e8eda2be8970586c3274
+      - type: file
+        url: https://files.pythonhosted.org/packages/30/3b/a1099a0184454372d3e8784814bb46dc1e61c5c6691c6348e291138b9208/soco-0.31.1-py3-none-any.whl
+        sha256: d3907b60e58f59e4942da092defd54b6a20f38c0371315d0c26d3f5dc29a1979
+      - type: file
+        url: https://files.pythonhosted.org/packages/8d/b8/3f935d7f7d6bc25a88859beb0a6e246313012a12ae4844665322f771a5cb/srptools-1.0.1-py2.py3-none-any.whl
+        sha256: fccb44c949eb2507ba19f349a3087cb8fed2393014d7f0887b06c3186f19d1e9
+      - type: file
+        url: https://files.pythonhosted.org/packages/99/55/db07de81b5c630da5cbf5c7df646580ca26dfaefa593667fc6f2fe016d2e/tabulate-0.10.0-py3-none-any.whl
+        sha256: f0b0622e567335c8fabaaa659f1b33bcb6ddfe2e496071b743aa113f8774f2d3
+      - type: file
+        url: https://files.pythonhosted.org/packages/ce/34/d50e338631baaf65ec5396e70085e5de0b52b24b28db1ffbc1c6e82190dc/tinytag-2.2.1-py3-none-any.whl
+        sha256: ed8b1e6d25367937e3321e054f4974f9abfde1a3e0a538824c87da377130c2b6
+      - type: file
+        url: https://files.pythonhosted.org/packages/49/d3/b8441a820a491ddfc024b0b0cf0393375b75ea13866d9c66727e54c2fc80/typing_extensions-4.16.0-py3-none-any.whl
+        sha256: 481caa481374e813c1b176ada14e97f1f67a4539ce9cfeb3f350d78d6370c2e8
+      - type: file
+        url: https://files.pythonhosted.org/packages/dc/9b/47798a6c91d8bdb567fe2698fe81e0c6b7cb7ef4d13da4114b41d239f65d/typing_inspection-0.4.2-py3-none-any.whl
+        sha256: 4ed1cacbdc298c220f1bd249ed5287caa16f34d44ef4e9c3d0cbad5b521545e7
+      - type: file
+        url: https://files.pythonhosted.org/packages/7f/3e/5db95bcf282c52709639744ca2a8b149baccf648e39c8cc87553df9eae0c/urllib3-2.7.0-py3-none-any.whl
+        sha256: 9fb4c81ebbb1ce9531cce37674bbc6f1360472bc18ca9a553ede278ef7276897
+      - type: file
+        url: https://files.pythonhosted.org/packages/d1/00/0e0da784245c93cf346150ab67634177bf277f93b7a162bb56c928c39c04/voluptuous-0.16.0-py3-none-any.whl
+        sha256: ee342095263e1b5afbd4d418cb5adc92810eebfd07696bb033a261210df33db4
+      - type: file
+        url: https://files.pythonhosted.org/packages/38/34/98a2f52245f4d47be93b580dae5f9861ef58977d73a79eb47c58f1ad1f3a/xmltodict-1.0.4-py3-none-any.whl
+        sha256: a4a00d300b0e1c59fc2bfccb53d7b2e88c32f200df138a0dd2229f842497026a
+      - type: file
+        url: https://files.pythonhosted.org/packages/05/1a/a851a0f94aaaf379dd4f901bfc80f634280bec51eb260b47363e2a4cd62e/yarl-1.24.5-cp313-cp313-manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64.whl
+        sha256: ebb0ec7f17803063d5aeb982f3b1bd2b2f4e4fae6751226cbd6ba1fcfe9e63ff
+        only-arches: [aarch64]
+      - type: file
+        url: https://files.pythonhosted.org/packages/0a/43/8e55ae7538ba5f28ccb3c845c6dd4549cf7016d5992e5326512519107cdd/yarl-1.24.5-cp313-cp313-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl
+        sha256: d46b86567dd4e248c6c159fcbcdcce01e0a5c8a7cd2334a0fff759d0fa075b16
+        only-arches: [x86_64]
+      - type: file
+        url: https://files.pythonhosted.org/packages/84/78/83b5825eb1d7fd4d32b7acbff5f3becca11c544403fc7f05835d9b3aa3f3/zeroconf-0.150.0-cp313-cp313-manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64.whl
+        sha256: 8f9ba6980ad92820f56a02a5035e21338c116145db44749462fc46f8f50028bb
+        only-arches: [aarch64]
+      - type: file
+        url: https://files.pythonhosted.org/packages/43/2d/60a04c3cf7e243e47d60152394a5e29a4839ea8fd1c260868ff7af08240d/zeroconf-0.150.0-cp313-cp313-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl
+        sha256: 489a51320d20e7f07b2f447cd515f3645d17ceced0212f7249a83ce6d3b748e0
+        only-arches: [x86_64]
+
+  - name: jellytoast
+    buildsystem: simple
+    build-commands:
+      # Drift guard: every linux-relevant dependency from pyproject must
+      # already be installed (by the offline module above, the BaseApp,
+      # or the runtime). Fails the build loudly if a new dep lands in
+      # pyproject without the pinned sources being regenerated.
+      - |
+        python3 - <<'PY'
+        import re, tomllib, importlib.metadata as md
+        deps = tomllib.load(open("pyproject.toml", "rb"))["project"]["dependencies"]
+        missing = []
+        for dep in deps:
+            req, _, marker = dep.partition(";")
+            if marker and ("win32" in marker or "darwin" in marker) and "!=" not in marker:
+                continue  # windows/macos-only dep
+            name = re.match(r"\s*([A-Za-z0-9._-]+)", req).group(1)
+            try:
+                md.distribution(name)
+            except md.PackageNotFoundError:
+                missing.append(name)
+        assert not missing, (
+            f"deps missing from the offline set: {missing} — regenerate "
+            "the python3-dependencies sources (packaging/flathub/README.md)"
+        )
+        PY
+      # --no-deps: PySide6 must stay the BaseApp's build (see header);
+      # everything else is already installed by python3-dependencies.
+      - pip3 install --no-index --no-build-isolation --prefix=${FLATPAK_DEST}
+        --no-deps .
+      - install -Dm755 launcher.sh /app/bin/jellytoast
+      - install -Dm644 packaging/io.github.wolfgangwarehaus.jellytoast.desktop
+        /app/share/applications/io.github.wolfgangwarehaus.jellytoast.desktop
+      # Metainfo comes from the file checked into the Flathub app repo,
+      # NOT the tarball: the v0.2.1 tarball's copy references four
+      # since-removed screenshot URLs (radio/downloads/settings/
+      # mini-compact, all 404) and Flathub's screenshot mirroring would
+      # trip over them. Drop this override (and the file source below)
+      # once a release >= 0.2.2 ships the fixed metainfo in-tree.
+      - install -Dm644 metainfo-override.xml
+        /app/share/metainfo/io.github.wolfgangwarehaus.jellytoast.metainfo.xml
+      - |
+        for sz in 16 24 32 48 64 128 256 512; do
+          f="packaging/icons/hicolor/${sz}x${sz}/apps/io.github.wolfgangwarehaus.jellytoast.png"
+          if [ -f "$f" ]; then
+            install -Dm644 "$f" \
+              "/app/share/icons/hicolor/${sz}x${sz}/apps/io.github.wolfgangwarehaus.jellytoast.png"
+          fi
+        done
+      - install -Dm644 packaging/icons/jellytoast.svg
+        /app/share/icons/hicolor/scalable/apps/io.github.wolfgangwarehaus.jellytoast.svg
+    sources:
+      - type: archive
+        url: https://github.com/wolfgangwarehaus/jellytoast/archive/refs/tags/v0.2.1.tar.gz
+        sha256: caae1a6d624fb98760f050e2988ffd3326a4491aa08241ef25d6b3c203b5bb78
+        # flathub/flatpak-external-data-checker: opens an update PR on
+        # the app's Flathub repo when a new GitHub release tag appears.
+        # NB: it bumps only this source — the pinned Python sources above
+        # must be regenerated manually when pyproject deps change.
+        x-checker-data:
+          type: json
+          url: https://api.github.com/repos/wolfgangwarehaus/jellytoast/releases/latest
+          version-query: .tag_name | sub("^v"; "")
+          url-query: '"https://github.com/wolfgangwarehaus/jellytoast/archive/refs/tags/" + .tag_name + ".tar.gz"'
+      - type: file
+        path: io.github.wolfgangwarehaus.jellytoast.metainfo.xml
+        dest-filename: metainfo-override.xml
+      - type: script
+        dest-filename: launcher.sh
+        commands:
+          # Prefer native Wayland with an xcb fallback — same policy as
+          # dev/run.sh; without it Qt tries xcb first inside the sandbox.
+          - export QT_QPA_PLATFORM="${QT_QPA_PLATFORM:-wayland;xcb}"
+          - exec python3 -m jellytoast "$@"
