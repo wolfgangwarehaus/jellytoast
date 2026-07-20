@@ -43,7 +43,7 @@ Latest builds are on [**Releases**][rel].
   - [AppImage][dl-appimage]
   - [.deb][dl-deb]
   - [Flatpak][dl-flatpak]
-  - AUR *(soon)*
+  - [AUR][aur] — `yay -S jellytoast`
 - **macOS**
   - [App Store][mas]
   - [.dmg][dl-dmg] *(universal — Apple Silicon + Intel, macOS 15+)*
@@ -67,6 +67,7 @@ Want to contribute? [`CONTRIBUTING.md`](.github/CONTRIBUTING.md) has the dev set
 [rel]: https://github.com/wolfgangwarehaus/jellytoast/releases/latest
 [store]: https://apps.microsoft.com/detail/9PNLTPXGHN79
 [mas]: https://apps.apple.com/app/id6784370624
+[aur]: https://aur.archlinux.org/packages/jellytoast
 <!-- Direct-download aliases: versionless names the release workflow
      attaches to every release, so /latest/download/ links never break. -->
 [dl-appimage]: https://github.com/wolfgangwarehaus/jellytoast/releases/latest/download/jellytoast-x86_64.AppImage
