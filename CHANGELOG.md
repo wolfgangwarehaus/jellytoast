@@ -12,6 +12,16 @@ developer-facing history lives in [`docs/CHANGELOG.md`](docs/CHANGELOG.md).
      should stand alone: the Store "What's new" shows just the title (+ first
      sentence in --detail mode). -->
 
+- **Stopping a cast can't freeze the app anymore.** Hitting Stop or Disconnect
+  against a DLNA or Sonos speaker that had dropped off the network could hang
+  the whole window for up to 10 seconds. The goodbye now happens in the
+  background — the app moves on instantly.
+- **A pile of small playback fixes.** Radio queues no longer sneak stale
+  tracks into a playlist you just started; mute now sticks when pressed
+  during a crossfade (and unmute restores the right volume); a rare
+  double-audio echo during crossfades is gone; and desktop media controls
+  (play/pause keys, the media widget) now recover on slow logins instead of
+  staying dead for the session.
 - **jellytoast habla español.** The whole app is now translatable, with Spanish
   as the first language — sign-in, settings, the library, now playing, casting,
   downloads, the tray, all of it. There's a Language picker under Settings →

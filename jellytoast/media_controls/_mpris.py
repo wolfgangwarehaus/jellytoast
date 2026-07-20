@@ -350,9 +350,13 @@ class MprisService(QObject):
         # it can't be a pool job.
         self._thread = threading.Thread(target=self._run_loop, daemon=True)
         self._thread.start()
-        # Wait briefly for setup
-        if self._ready.wait(timeout=3.0):
-            self._connect_signals()
+        # Wait briefly so the common case starts fully wired, but connect
+        # the Qt signals EITHER WAY: every slot already guards on
+        # ``self._player``/``self._loop``, so pre-ready emissions no-op —
+        # whereas skipping the connects on a slow session bus (>3 s) left
+        # MPRIS permanently dead even after setup eventually succeeded.
+        self._ready.wait(timeout=3.0)
+        self._connect_signals()
 
     def _run_loop(self):
         self._loop = asyncio.new_event_loop()

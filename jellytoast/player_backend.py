@@ -1323,6 +1323,14 @@ class MpvController(_CastTransportMixin, QObject):
         no media loaded."""
         if self._mpv is None or self._cast_active():
             return
+        # Mid-crossfade, appending would re-arm exactly the doubled-audio
+        # path _on_crossfade_started just cleared: the outgoing handle's
+        # real EOF would gaplessly advance INTO the appended next track
+        # while the sibling is already playing it. The swap re-emits
+        # prefetch_request once the fade lands, so nothing is lost.
+        cf = getattr(self, "_crossfader", None)
+        if cf is not None and cf.state == CrossfadeState.CROSSFADING:
+            return
         # Drop any previously-queued prefetch first so we don't pile up
         # stale "next" candidates from a queue state that has since
         # changed (e.g. user toggled shuffle mid-track).
@@ -2035,16 +2043,31 @@ class MpvController(_CastTransportMixin, QObject):
         if self._mpv is None:
             return
         try:
+            # Mirror set_volume's crossfade branch: mid-fade the 50 ms ramp
+            # tick would overwrite the volume write within one tick (it
+            # rescales the arm-time snapshot), so the fade must be
+            # retargeted too — and the stash must be the user's baseline
+            # (settings.volume), because the handle's live volume is a ramp
+            # transient that unmute would otherwise "restore".
+            cf = getattr(self, "_crossfader", None)
+            fading = cf is not None and cf.state == CrossfadeState.CROSSFADING
             if self._muted_volume is None:
-                # Muting: stash the live volume, drop to zero.
-                self._muted_volume = int(self._mpv["volume"])
+                # Muting: stash the level to come back to, drop to zero.
+                self._muted_volume = (
+                    int(self.settings.volume) if fading else int(self._mpv["volume"])
+                )
                 self._mpv["volume"] = 0
+                if fading:
+                    cf.set_target_volume(0)
                 self.bus.mute_state.emit(True)
             else:
-                # Unmuting: restore the stashed volume.
+                # Unmuting: restore the stashed volume. (set_target_volume
+                # no-ops unless actively fading, same as set_volume's path.)
                 restored = self._muted_volume
                 self._muted_volume = None
                 self._mpv["volume"] = restored
+                if cf is not None:
+                    cf.set_target_volume(restored)
                 self.bus.mute_state.emit(False)
         except Exception:
             pass

@@ -223,29 +223,42 @@ class _OtherProtocolsMixin:
     def dlna_stop(self):
         """Stop the active DLNA renderer. Delegates to the backend
         ``DlnaController`` — transport lives there, not here. Also stop
-        the transport poll started by ``cast_to_dlna``."""
-        try:
+        the transport poll started by ``cast_to_dlna``.
+
+        The session drops on the GUI thread immediately; the SOAP stop
+        (``submit_blocking`` with a 10 s timeout inside the controller)
+        runs off-thread, because against an unreachable renderer it
+        otherwise freezes Stop/Disconnect/Quit for the full timeout.
+        ``stop_polling`` is lock-guarded task cancellation, so it's safe
+        off the GUI thread too."""
+        self.active_cast = None
+
+        def _network():
             from jellytoast.cast import dlna as _dlna
 
             controller = _dlna.get_dlna_controller()
             controller.stop_polling()
             controller.stop_renderer()
-        except Exception as e:
-            logger.warning("DLNA stop: %s", e)
-        self.active_cast = None
+
+        self._run_off_thread(_network)
 
     def sonos_stop(self):
         """Stop the active Sonos zone. The ``SonosZone`` carried in
         ``cast_object`` is what the backend's ``stop_sonos`` resolves to
-        a coordinator."""
-        try:
+        a coordinator. The zone is captured before the session drops
+        (the off-thread network goodbye still needs it), for the same
+        no-GUI-freeze reason as ``dlna_stop``."""
+        zone = self.active_cast.cast_object if self.active_cast is not None else None
+        self.active_cast = None
+        if zone is None:
+            return
+
+        def _network():
             from jellytoast.cast import sonos as _sonos
 
-            if self.active_cast is not None:
-                _sonos.stop_sonos(self.active_cast.cast_object)
-        except Exception as e:
-            logger.warning("Sonos stop: %s", e)
-        self.active_cast = None
+            _sonos.stop_sonos(zone)
+
+        self._run_off_thread(_network)
 
     # ── Transport control (DLNA + Sonos) ─────────────────────────────
     # The transport surface lives in the backends (DlnaController.pause/

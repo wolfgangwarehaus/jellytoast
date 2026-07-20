@@ -222,6 +222,11 @@ class QueueManager(QObject):
             return
         if context is None:
             context = QueueContext()  # MANUAL default
+        # Invalidate any in-flight radio refill (same as clear()): its
+        # callback would otherwise append up to a batch of stale radio
+        # tracks into this replacement queue — and persist them.
+        self._refill_gen += 1
+        self._refilling = False
         self._q = Queue(
             context=context,
             original_items=list(items),

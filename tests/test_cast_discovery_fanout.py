@@ -342,6 +342,9 @@ def test_stop_cast_routes_dlna(cm, monkeypatch):
         sys.modules["jellytoast.cast.dlna"], "get_dlna_controller", lambda: _Ctl()
     )
     m.active_cast = CastDevice("TV", "h", 0, "dlna", uuid="uuid:a")
+    # stop_cast now defers the SOAP goodbye off-thread (#234 finding 1);
+    # run it inline so the routing assertion below still observes it.
+    monkeypatch.setattr(m, "_run_off_thread", lambda fn: fn())
     m.stop_cast()
     assert stopped["dlna"] is True
     assert m.active_cast is None
@@ -359,6 +362,9 @@ def test_stop_cast_routes_sonos(cm, monkeypatch):
     monkeypatch.setattr(sys.modules["jellytoast.cast.sonos"], "stop_sonos", _stop_sonos)
     zone = _FakeSonosZone("rincon:1", "Kitchen")
     m.active_cast = CastDevice("Kitchen", "h", 0, "sonos", cast_object=zone)
+    # stop_cast now defers the SOAP goodbye off-thread (#234 finding 1);
+    # run it inline so the routing assertion below still observes it.
+    monkeypatch.setattr(m, "_run_off_thread", lambda fn: fn())
     m.stop_cast()
     assert stopped["sonos"] is zone
     assert m.active_cast is None
