@@ -2285,6 +2285,16 @@ class LibraryGrid(_PaginatorMixin, QWidget):
         if self._refresh_after_offline_toggle:
             self._refresh_after_offline_toggle = False
             self.load_items(self._parent_id, self._genre_id, self._year)
+        # Re-arm the visible-cover pass on every show. Idempotent (rows
+        # with resident pixmaps are skipped) and load-bearing after a
+        # clear-while-hidden: a DevicePixelRatioChange delivered while
+        # the window sat in the tray drops every decoded cover, the
+        # hidden reload can't see any rows, and without this the grid
+        # showed placeholders until a resize/scroll happened to fire
+        # the coalesced pass. singleShot(0): let the view finish laying
+        # out this show first so the visible range is real.
+        if self._model.rowCount() > 0:
+            QTimer.singleShot(0, self._load_visible_covers)
 
     def set_view_mode(self, mode: str):
         """Switch between "grid" (multi-column tile grid) and "list"
@@ -2409,6 +2419,15 @@ class LibraryGrid(_PaginatorMixin, QWidget):
         rc = self._model.rowCount()
         if rc == 0:
             return
+        if not self.isVisible():
+            # Hidden (tray, minimized): the visible range is empty, so
+            # retrying here just burns the retry budget. Mark the pass
+            # dirty and let showEvent re-run it — this is the restore-
+            # from-tray blank-art bug: a DPR change while hidden cleared
+            # every cover, the reload found no visible rows, and nothing
+            # re-armed on show (only a resize/scroll did).
+            self._covers_dirty_while_hidden = True
+            return
         first, last = self._visible_row_range()
         if first >= last:
             # Layout not ready (just after a model reset) — retry at
@@ -2422,6 +2441,7 @@ class LibraryGrid(_PaginatorMixin, QWidget):
                 QTimer.singleShot(50, self._load_visible_covers)
             return
         self._visible_retry_tries = 0
+        self._covers_dirty_while_hidden = False
         for row in range(first, last):
             # Skip a row only if it's loaded AND its pixmap is still resident.
             # A row marked loaded whose cover the model LRU later EVICTED (or

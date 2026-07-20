@@ -133,15 +133,11 @@ def test_normal_priority_load_is_gated_high_bypasses(monkeypatch):
         assert len(uih._deferred_normal) == 1
         assert len(uih._deferred_low) == 0
 
-        uih._after_disk_miss(
-            "kL|1x1|r=0", "kL", "http://x", 1, 1, 0, lambda p: None, None, "low"
-        )
+        uih._after_disk_miss("kL|1x1|r=0", "kL", "http://x", 1, 1, 0, lambda p: None, None, "low")
         assert len(uih._deferred_low) == 1  # LOW defers to its own queue
 
         # HIGH priority bypasses the gate entirely (rare, user-facing).
-        uih._after_disk_miss(
-            "kH|1x1|r=0", "kH", "http://x", 1, 1, 0, lambda p: None, None, "high"
-        )
+        uih._after_disk_miss("kH|1x1|r=0", "kH", "http://x", 1, 1, 0, lambda p: None, None, "high")
         assert len(fired) == 1
     finally:
         uih._gated_in_flight = 0
@@ -156,6 +152,7 @@ def test_normal_priority_load_is_gated_high_bypasses(monkeypatch):
 def test_evicted_visible_cover_is_rearmed(qapp, monkeypatch):
     g = lg.LibraryGrid("album")
     g._model.set_items([{"Id": f"a{i}"} for i in range(3)])
+    g.show()  # the loader defers while hidden (tray-restore fix)
     monkeypatch.setattr(g.api, "get_image_url", lambda *a, **k: "http://x/cover")
     monkeypatch.setattr(g, "_visible_row_range", lambda: (0, 3))
     fired = []
@@ -182,6 +179,7 @@ def test_evicted_visible_cover_is_rearmed(qapp, monkeypatch):
 def test_artless_row_does_not_spin_on_revisit(qapp, monkeypatch):
     g = lg.LibraryGrid("album")
     g._model.set_items([{"Id": "a0"}, {"Id": ""}])  # row 1 has no art id
+    g.show()  # the loader defers while hidden (tray-restore fix)
     monkeypatch.setattr(g.api, "get_image_url", lambda *a, **k: "http://x/cover")
     monkeypatch.setattr(g, "_visible_row_range", lambda: (0, 2))
     fired = []
@@ -262,3 +260,40 @@ def test_disk_cache_cap_holds_a_real_library():
     # well above the old 200MB so the disk tier converges between launches
     # instead of evicting faster than it fills ("rebooted twice, still broken").
     assert image_cache._DISK_CACHE_MAX_BYTES >= 1024 * 1024 * 1024
+
+
+# ── tray-restore blank art: clear-while-hidden re-arms on show ───────────────
+
+
+def test_dpr_clear_while_hidden_rearms_on_show(qapp, monkeypatch):
+    """The restore-from-tray bug: a DevicePixelRatioChange delivered while
+    the window is hidden clears every decoded cover and the reload pass
+    can't see any rows — before the fix, nothing re-armed on show and the
+    grid sat on placeholders until a resize/scroll."""
+    g = lg.LibraryGrid("album")
+    g._model.set_items([{"Id": f"a{i}"} for i in range(3)])
+    g.show()
+    monkeypatch.setattr(g.api, "get_image_url", lambda *a, **k: "http://x/cover")
+    monkeypatch.setattr(g, "_visible_row_range", lambda: (0, 3))
+    fired = []
+    monkeypatch.setattr(
+        lg,
+        "load_image_async",
+        lambda key, url, w, h, on_pix, on_error=None, **kw: fired.append(key),
+    )
+    g._load_visible_covers()
+    assert len(fired) == 3  # baseline pass fired
+
+    g.hide()
+    fired.clear()
+    g._on_dpr_changed()  # clears covers; hidden → defers, burns no retries
+    assert fired == []
+    assert g._covers_dirty_while_hidden
+    assert getattr(g, "_visible_retry_tries", 0) == 0
+
+    g.show()  # showEvent schedules the coalesced pass via singleShot(0)
+    qapp.processEvents()
+    # Set, not list: the DPR handler also restarts the prefetch timer,
+    # which can re-fire rows during processEvents — production coalesces
+    # duplicates on cache_key, so coverage is the contract here.
+    assert set(fired) == {"a0|albumtile", "a1|albumtile", "a2|albumtile"}
