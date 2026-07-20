@@ -300,12 +300,19 @@ class JellyfinAPI:
         r.raise_for_status()
         return r.json() if r.content else {}
 
-    def _post(self, path: str, payload: Optional[Dict] = None) -> Optional[Dict]:
+    def _post(
+        self, path: str, payload: Optional[Dict] = None, *, strict: bool = False
+    ) -> Optional[Dict]:
         """POST wrapper. Same reachability semantics as _get — a
         bare-except path silently dropping the failure used to mask
         network outages; we now classify the exception so timeouts /
         connection errors feed the offline tracker while still
-        preserving the no-throw contract callers depend on."""
+        preserving the no-throw contract callers depend on.
+
+        ``strict=True`` opts OUT of that contract for callers that need
+        to know the write landed (favorite toggles roll the UI back on
+        failure): network errors re-raise after feeding the tracker, and
+        a non-2xx status raises RuntimeError."""
         url = f"{self.server_url}{path}"
         import requests
 
@@ -320,16 +327,22 @@ class JellyfinAPI:
             )
         except requests.exceptions.RequestException as e:
             self._note_transport_failure(e)
+            if strict:
+                raise
             return None
         except Exception:
             # Any non-network failure (JSON encode, etc.) leaves the
             # tracker alone — connectivity isn't the right signal here.
+            if strict:
+                raise
             return None
         _offline.note_request_success()
         if r.status_code in (401, 403):
             _offline.note_auth_failure()
         elif 200 <= r.status_code < 300:
             _offline.note_auth_success()
+        if strict and not (200 <= r.status_code < 300):
+            raise RuntimeError(f"POST {path} -> HTTP {r.status_code}")
         try:
             return r.json() if r.content else None
         except ValueError:
@@ -663,18 +676,20 @@ class JellyfinAPI:
         # is now stale (mirrors toggle_favorite's invalidation).
         self.invalidate_meta_cache(item_id)
 
-    def _delete(self, path: str, what: str) -> None:
+    def _delete(self, path: str, what: str, *, strict: bool = False) -> None:
         """Best-effort DELETE with the same reachability semantics as
         _get/_post: network failures feed the offline tracker and get a
-        warning line (the UI has already flipped optimistically — a
-        silent miss leaves local state diverged from the server with no
-        trace), while the no-throw contract is preserved."""
+        warning line, while the no-throw contract is preserved.
+
+        ``strict=True`` re-raises network errors and raises on non-2xx —
+        for callers (favorite toggles) whose UI flipped optimistically
+        and rolls back on failure instead of silently diverging."""
         import requests
 
         from jellytoast import offline as _offline
 
         try:
-            self.session.delete(
+            r = self.session.delete(
                 f"{self.server_url}{path}",
                 headers=self._headers(),
                 timeout=self._split_timeout(5),
@@ -682,11 +697,17 @@ class JellyfinAPI:
         except requests.exceptions.RequestException as e:
             self._note_transport_failure(e)
             logger.warning("%s failed (server unreachable?): %s", what, e)
+            if strict:
+                raise
             return
         except Exception as e:
             logger.warning("%s failed: %s", what, e)
+            if strict:
+                raise
             return
         _offline.note_request_success()
+        if strict and not (200 <= r.status_code < 300):
+            raise RuntimeError(f"DELETE {path} -> HTTP {r.status_code}")
 
     def mark_unplayed(self, item_id: str):
         self._delete(f"/Users/{self.user_id}/PlayedItems/{item_id}", "mark-unplayed")
@@ -696,10 +717,18 @@ class JellyfinAPI:
         self.invalidate_meta_cache(item_id)
 
     def toggle_favorite(self, item_id: str, favorite: bool):
+        # strict: the UI flips optimistically and needs the failure to
+        # propagate so it can roll back (audit #234 finding 8) — the
+        # default no-throw contract would leave the heart silently
+        # diverged from the server.
         if favorite:
-            self._post(f"/Users/{self.user_id}/FavoriteItems/{item_id}")
+            self._post(f"/Users/{self.user_id}/FavoriteItems/{item_id}", strict=True)
         else:
-            self._delete(f"/Users/{self.user_id}/FavoriteItems/{item_id}", "unfavorite")
+            self._delete(
+                f"/Users/{self.user_id}/FavoriteItems/{item_id}",
+                "unfavorite",
+                strict=True,
+            )
         # The cached `get_item` snapshot for this id carries a stale
         # `UserData.IsFavorite` until we drop it.
         self.invalidate_meta_cache(item_id)

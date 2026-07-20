@@ -84,13 +84,25 @@ class _FakeFavBtn:
 
 def _bare_page(monkeypatch, *, live_source="album-7", live_fav=False):
     """A NowPlayingPage with only the attributes _on_favorite_cta touches,
-    and module-level run_async / icon helpers neutralised."""
+    and module-level run_async / icon helpers neutralised.
+
+    The favorite dispatch now routes through
+    ``ui_helpers.toggle_favorite_async`` (rollback support, #234 finding
+    8), which resolves ``get_provider()`` at call time and dispatches via
+    ``async_io.run_async`` — stub both there; ``page.api`` stays the same
+    recorder object so the assertions don't change."""
+    import jellytoast.async_io as aio_mod
+    import jellytoast.providers as providers_mod
+
+    provider = _RecordingProvider()
+    monkeypatch.setattr(providers_mod, "_PROVIDER", provider)
+    monkeypatch.setattr(aio_mod, "run_async", _fake_run_async)
     monkeypatch.setattr(npp_mod, "run_async", _fake_run_async)
     monkeypatch.setattr(npp_mod, "accent_icon", lambda name: ("accent", name))
     monkeypatch.setattr(npp_mod, "icon", lambda name: ("plain", name))
 
     page = NowPlayingPage.__new__(NowPlayingPage)
-    page.api = _RecordingProvider()
+    page.api = provider
     page.bus = _Bus()
     page.queue_mgr = _QueueMgr(live_source)
     page._preview_id = ""

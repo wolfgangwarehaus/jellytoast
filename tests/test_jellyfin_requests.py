@@ -416,7 +416,9 @@ class TestMutations:
     def test_favorite_off_deletes(self):
         api = _api()
         api._post = MagicMock()
-        api.session.delete = MagicMock()
+        # strict=True (#234 finding 8) checks the response status — give
+        # the mocked DELETE a real 2xx so the raise path stays quiet.
+        api.session.delete = MagicMock(return_value=MagicMock(status_code=204))
         api.toggle_favorite("it1", False)
         url = api.session.delete.call_args.args[0]
         assert url == "http://jf.test/Users/u1/FavoriteItems/it1"

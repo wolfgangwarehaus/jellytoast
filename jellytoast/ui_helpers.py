@@ -1264,15 +1264,25 @@ def _after_disk_miss(
         global _gated_in_flight
         if _gated_in_flight >= _GATED_MAX_INFLIGHT:
             queue = _deferred_low if priority == "low" else _deferred_normal
+            # Tuple, not a bare lambda: promotion needs the cache_key +
+            # geometry to fan the failure out to this load's subscribers
+            # if the deferred fire itself blows up (see
+            # _promote_next_deferred).
             queue.append(
-                lambda: _fire_image_request(
+                (
                     cache_key,
-                    sem_key,
-                    url,
                     target_w,
                     target_h,
                     rounded_radius,
-                    priority,
+                    lambda: _fire_image_request(
+                        cache_key,
+                        sem_key,
+                        url,
+                        target_w,
+                        target_h,
+                        rounded_radius,
+                        priority,
+                    ),
                 )
             )
             return
@@ -1290,13 +1300,114 @@ def _after_disk_miss(
         )
     except Exception:
         # The request failed to even start (QNAM teardown, bad URL) AFTER we
-        # claimed a gate slot — release it so the gate can't ratchet
-        # permanently shut over a long session (5 leaks would wedge it). HIGH
-        # loads never took a slot, so only release for gated priorities.
-        # (_gated_in_flight is already declared global above in this function.)
+        # registered as the in-flight owner — both halves of that claim must
+        # be unwound or the session degrades permanently (audit #234 #7):
+        #  * the subscriber entry: left in place, every future load of this
+        #    cache_key coalesces onto a reply that doesn't exist, wedging
+        #    the key (and its widgets) for the whole session;
+        #  * the gate slot (gated priorities only — HIGH never took one):
+        #    5 leaks would ratchet the gate shut. And since the finish
+        #    handler that normally promotes the next deferred will never
+        #    run for THIS load, promote here too — if this was the last
+        #    in-flight load, the deferred queue would otherwise strand.
+        _fail_inflight(cache_key, target_w, target_h, rounded_radius)
         if priority != "high":
             _gated_in_flight -= 1
+            _promote_next_deferred()
         raise
+
+
+def toggle_favorite_async(item_id: str, new_state: bool, on_rollback=None) -> None:
+    """Dispatch a favorite flip to the provider WITH rollback.
+
+    Every heart in the app flips optimistically at its call site (and
+    broadcasts ``favorite_toggled`` so the other surfaces repaint) — but
+    until #234 finding 8 a failed server write was swallowed, leaving the
+    heart silently diverged until the next metadata refetch. Both
+    providers now raise on failure; this helper is the one place that
+    handles it: restore the shared NowPlaying flag, run the call site's
+    own state restore (``on_rollback``), re-broadcast the OLD state so
+    every subscribed surface flips back, and toast the active window.
+    """
+    from jellytoast.async_io import run_async
+    from jellytoast.player_state import PlayerBus, get_now_playing
+    from jellytoast.providers import get_provider
+
+    def _on_error(_exc) -> None:
+        old_state = not new_state
+        np = get_now_playing()
+        if np.item_id == item_id:
+            np.is_favorite = old_state
+        if on_rollback is not None:
+            try:
+                on_rollback()
+            except Exception:
+                pass
+        PlayerBus.get().favorite_toggled.emit(item_id, old_state)
+        try:
+            from PySide6.QtCore import QCoreApplication
+            from PySide6.QtWidgets import QApplication
+
+            from jellytoast.toast import show_toast
+
+            win = QApplication.activeWindow()
+            if win is not None:
+                show_toast(
+                    win,
+                    QCoreApplication.translate(
+                        "UiHelpers",
+                        "Couldn't update favorite — check your connection.",
+                    ),
+                )
+        except Exception:
+            pass
+
+    run_async(get_provider().toggle_favorite, item_id, new_state, on_error=_on_error)
+
+
+def _fail_inflight(cache_key: str, target_w: int, target_h: int, radius: int) -> None:
+    """Fan a start-failure out to every subscriber of ``cache_key`` and
+    forget the key. on_error subscribers get their callback; legacy
+    callers get the placeholder pixmap (never cached), mirroring the
+    finish handler's failure fan-out."""
+    waiters = _inflight_subscribers.pop(cache_key, [])
+    ph_pix = None
+    for cb, err in waiters:
+        try:
+            if err is not None:
+                err()
+                continue
+            if ph_pix is None:
+                ph = _placeholder_image(target_w, target_h)
+                ph_pix = QPixmap.fromImage(ph)
+                if radius > 0:
+                    ph_pix = _round_corners(ph_pix, radius)
+            cb(ph_pix)
+        except Exception:
+            pass
+
+
+def _promote_next_deferred() -> None:
+    """Claim a gate slot and fire the next deferred load — NORMAL before
+    LOW, so a visible tile beats a prefetch. Loops on start-failure: the
+    failed load's subscribers get the error fan-out and the next deferred
+    is tried, so one bad URL can't strand the rest of the queue."""
+    global _gated_in_flight
+    while True:
+        if _deferred_normal:
+            entry = _deferred_normal.pop(0)
+        elif _deferred_low:
+            entry = _deferred_low.pop(0)
+        else:
+            return
+        cache_key, w, h, radius, fire = entry
+        _gated_in_flight += 1
+        try:
+            fire()
+            return
+        except Exception:
+            _gated_in_flight -= 1
+            _fail_inflight(cache_key, w, h, radius)
 
 
 # Query params that ask the server to RESIZE the image before sending it.
@@ -1467,20 +1578,7 @@ def _on_image_reply_finished(reply: QNetworkReply):
     if priority != "high":
         global _gated_in_flight
         _gated_in_flight -= 1
-        next_fn = None
-        if _deferred_normal:
-            next_fn = _deferred_normal.pop(0)
-        elif _deferred_low:
-            next_fn = _deferred_low.pop(0)
-        if next_fn is not None:
-            _gated_in_flight += 1
-            try:
-                next_fn()
-            except Exception:
-                # The promoted load failed to even start (QNAM teardown,
-                # bad URL). Release the slot we just claimed so the gate
-                # can't ratchet permanently shut over a long session.
-                _gated_in_flight -= 1
+        _promote_next_deferred()
     try:
         # `ok`/`src` were decoded at the top (the reply buffer is already
         # consumed, so we can't re-read it here).

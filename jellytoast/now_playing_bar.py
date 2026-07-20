@@ -65,7 +65,6 @@ def _round_corners(pix: QPixmap, tl: int, tr: int, br: int, bl: int) -> QPixmap:
     return out
 
 
-from jellytoast.async_io import run_async
 from jellytoast.design_tokens import (
     RADIUS_WINDOW,
     TYPE_BODY,
@@ -1341,7 +1340,10 @@ class NowPlayingBar(QWidget):
         if not np.item_id:
             return
         new_state = not np.is_favorite
-        run_async(self.api.toggle_favorite, np.item_id, new_state)
+        # Central dispatch with rollback (#234 finding 8).
+        from jellytoast.ui_helpers import toggle_favorite_async
+
+        toggle_favorite_async(np.item_id, new_state)
         np.is_favorite = new_state
         self.bus.favorite_toggled.emit(np.item_id, new_state)
 

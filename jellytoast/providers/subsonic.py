@@ -1198,9 +1198,11 @@ class SubsonicProvider(MediaProvider):
         try:
             self._request(op, {"id": item_id})
         except Exception as e:
-            # The heart flips optimistically in the UI — a silent miss
-            # leaves it diverged from the server with nothing in the log.
+            # The heart flips optimistically in the UI — log AND re-raise
+            # so the caller's rollback fires (audit #234 finding 8);
+            # swallowing here left the heart silently diverged.
             logger.warning("%s failed for %s: %s", op, item_id, e)
+            raise
 
     def get_lyrics(self, item_id: str) -> Optional[Dict[str, Any]]:
         """Fetch lyrics via OpenSubsonic's getLyricsBySongId, projected
@@ -1495,12 +1497,25 @@ class SubsonicProvider(MediaProvider):
         if field == "genre" and op == "equals":
             batches: List[List[Dict[str, Any]]] = []
             for fid in folders:
-                params = _scoped({"genre": value, "count": 500, "offset": 0}, fid)
-                try:
-                    resp = self._request("getSongsByGenre", params)
-                except Exception:
-                    continue
-                songs = (resp.get("songsByGenre") or {}).get("song") or []
+                # Paginate — a single request silently capped the rule at
+                # 500 songs (audit #234 finding 6), so a genre with more
+                # tracks lost its tail. Same bounded-sweep shape as
+                # ``_broad_fetch_one``.
+                songs: List[Dict[str, Any]] = []
+                offset = 0
+                while offset < self._BROAD_FETCH_SONG_CAP:
+                    params = _scoped(
+                        {"genre": value, "count": 500, "offset": offset}, fid
+                    )
+                    try:
+                        resp = self._request("getSongsByGenre", params)
+                    except Exception:
+                        break
+                    page = (resp.get("songsByGenre") or {}).get("song") or []
+                    songs += page
+                    if len(page) < 500:
+                        break
+                    offset += 500
                 batches.append([self._adapt_song(s) for s in songs])
             return self._merge_folder_results(batches or [[]])
 
@@ -1513,21 +1528,30 @@ class SubsonicProvider(MediaProvider):
             from_year, to_year = _year_bounds(op, value)
             album_ids: List[str] = []
             for fid in folders:
-                params = _scoped(
-                    {
-                        "type": "byYear",
-                        "size": 500,
-                        "fromYear": from_year,
-                        "toYear": to_year,
-                    },
-                    fid,
-                )
-                try:
-                    resp = self._request("getAlbumList2", params)
-                except Exception:
-                    continue
-                albums = (resp.get("albumList2") or {}).get("album") or []
-                album_ids += [a.get("id", "") for a in albums]
+                # Paginate — getAlbumList2 caps each request at 500, so a
+                # broad year range on a big library lost every album past
+                # the first page (audit #234 finding 6).
+                offset = 0
+                while len(album_ids) < self._BROAD_FETCH_SONG_CAP:
+                    params = _scoped(
+                        {
+                            "type": "byYear",
+                            "size": 500,
+                            "offset": offset,
+                            "fromYear": from_year,
+                            "toYear": to_year,
+                        },
+                        fid,
+                    )
+                    try:
+                        resp = self._request("getAlbumList2", params)
+                    except Exception:
+                        break
+                    albums = (resp.get("albumList2") or {}).get("album") or []
+                    album_ids += [a.get("id", "") for a in albums]
+                    if len(albums) < 500:
+                        break
+                    offset += 500
             # An album can't live in two folders; keep order, drop dupes.
             album_ids = list(dict.fromkeys(a for a in album_ids if a))
             tracks = self._album_tracks_many(album_ids)

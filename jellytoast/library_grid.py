@@ -198,19 +198,28 @@ class _LibraryItemsModel(QAbstractListModel):
     # always-visible determinate progress ring.
     DownloadFractionRole = Qt.ItemDataRole.UserRole + 5
 
-    # Decoded-cover LRU bound. _covers holds a full-res QPixmap per album row
-    # (~0.13 MB at 1× DPR, ~0.5 MB at 2×); left unbounded it grew to GBs on a
-    # large library scrolled end-to-end. Cap it LRU-by-paint-access (see
-    # data() / set_cover): a painted tile is bumped to the most-recently-used
-    # end, so eviction only ever drops an OFF-screen cover — never a visible
-    # one. 512 keeps many screens of scroll-back instant; a re-scroll past that
-    # reloads from the persistent disk cache (~30 ms), not the network.
-    _COVER_CACHE_MAX = 512
+    # Decoded-cover LRU bound — in BYTES, not entries (audit #234 finding
+    # 9): a QPixmap's memory scales with its physical pixels, so a fixed
+    # entry count ballooned ~4× on a 2×-DPR screen (and the app hosts up
+    # to three grid instances). 64 MiB ≈ the old 512-entry behaviour at
+    # 1× DPR and a proportionally shorter (but memory-safe) scroll-back
+    # at HiDPI. Eviction is LRU-by-paint-access (see data() / set_cover):
+    # a painted tile is bumped to the MRU end, so eviction only ever
+    # drops an off-screen cover — a re-scroll reloads from the persistent
+    # disk cache (~30 ms), not the network.
+    _COVER_CACHE_BUDGET_BYTES = 64 * 1024 * 1024
+
+    @staticmethod
+    def _pix_bytes(pix: QPixmap) -> int:
+        # Physical pixels × 4 (ARGB32) — QPixmap.width()/height() report
+        # device pixels, so a 2×-DPR cover correctly costs 4× here.
+        return pix.width() * pix.height() * 4
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self._items: List[Dict] = []
         self._covers: "OrderedDict[int, QPixmap]" = OrderedDict()
+        self._covers_bytes = 0
         # Item ids whose download is in state ``complete``. Seeded from
         # offline.downloaded_item_ids() on set/append and patched off
         # the bus's download_progress signal so badges flip live without
@@ -277,6 +286,7 @@ class _LibraryItemsModel(QAbstractListModel):
         self.beginResetModel()
         self._items = list(items)
         self._covers = OrderedDict()
+        self._covers_bytes = 0
         self._reseed_downloaded()
         self.endResetModel()
 
@@ -388,14 +398,21 @@ class _LibraryItemsModel(QAbstractListModel):
             return
         if pix is None or pix.isNull():
             return
+        prev = self._covers.get(row)
+        if prev is not None:
+            self._covers_bytes -= self._pix_bytes(prev)
         self._covers[row] = pix
+        self._covers_bytes += self._pix_bytes(pix)
         self._covers.move_to_end(row)  # newest / just-updated → MRU end
-        # Evict the least-recently-painted cover(s) over the cap. Because data()
-        # bumps every visible tile to the MRU end, the LRU front is always an
-        # off-screen row — so this never drops a cover that's currently showing,
-        # and it scrolls back in from the disk cache if revisited.
-        while len(self._covers) > self._COVER_CACHE_MAX:
-            self._covers.popitem(last=False)
+        # Evict the least-recently-painted cover(s) over the byte budget.
+        # Because data() bumps every visible tile to the MRU end, the LRU
+        # front is always an off-screen row — so this never drops a cover
+        # that's currently showing, and it scrolls back in from the disk
+        # cache if revisited. (len > 1 guard: a single pathological pixmap
+        # over budget must stay resident rather than evict itself.)
+        while self._covers_bytes > self._COVER_CACHE_BUDGET_BYTES and len(self._covers) > 1:
+            _, evicted = self._covers.popitem(last=False)
+            self._covers_bytes -= self._pix_bytes(evicted)
         idx = self.index(row, 0)
         self.dataChanged.emit(idx, idx, [self.CoverRole])
 
@@ -412,6 +429,7 @@ class _LibraryItemsModel(QAbstractListModel):
         if not self._covers:
             return
         self._covers = OrderedDict()
+        self._covers_bytes = 0
         if self._items:
             top = self.index(0, 0)
             bot = self.index(len(self._items) - 1, 0)
@@ -1579,8 +1597,8 @@ class _LibraryListView(QListView):
     # model directly.
 
     def _toggle_favorite(self, item: Dict, item_id: str) -> None:
-        from jellytoast.async_io import run_async
         from jellytoast.player_state import PlayerBus
+        from jellytoast.ui_helpers import toggle_favorite_async
 
         ud = item.get("UserData")
         if not isinstance(ud, dict):
@@ -1588,11 +1606,14 @@ class _LibraryListView(QListView):
             item["UserData"] = ud
         new_state = not bool(ud.get("IsFavorite", False))
         ud["IsFavorite"] = new_state
-        try:
-            api = get_provider()
-            run_async(api.toggle_favorite, item_id, new_state)
-        except Exception:
-            pass
+        # Central dispatch WITH rollback (#234 finding 8): on a failed
+        # server write the helper restores this item dict via the
+        # closure, re-broadcasts the old state, and toasts.
+        toggle_favorite_async(
+            item_id,
+            new_state,
+            on_rollback=lambda: ud.__setitem__("IsFavorite", not new_state),
+        )
         PlayerBus.get().favorite_toggled.emit(item_id, new_state)
 
     def _toggle_download(self, item: Dict, item_id: str) -> None:

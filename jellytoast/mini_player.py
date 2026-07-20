@@ -20,7 +20,6 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from jellytoast.async_io import run_async
 from jellytoast.design_tokens import RADIUS_WINDOW, TYPE_CAPTION, TYPE_TINY, rad, type_qss
 from jellytoast.icon_button import IconButton
 from jellytoast.icons import accent_icon, icon
@@ -410,7 +409,11 @@ class _CompactBar(QWidget):
         if not np.item_id:
             return
         new_state = not np.is_favorite
-        run_async(get_provider().toggle_favorite, np.item_id, new_state)
+        # Central dispatch with rollback (#234 finding 8) — the helper
+        # restores np.is_favorite + re-broadcasts on a failed write.
+        from jellytoast.ui_helpers import toggle_favorite_async
+
+        toggle_favorite_async(np.item_id, new_state)
         np.is_favorite = new_state
         self.bus.favorite_toggled.emit(np.item_id, new_state)
 
@@ -597,7 +600,11 @@ class _ExpandedPanel(QWidget):
         if not np.item_id:
             return
         new_state = not np.is_favorite
-        run_async(get_provider().toggle_favorite, np.item_id, new_state)
+        # Central dispatch with rollback (#234 finding 8) — the helper
+        # restores np.is_favorite + re-broadcasts on a failed write.
+        from jellytoast.ui_helpers import toggle_favorite_async
+
+        toggle_favorite_async(np.item_id, new_state)
         np.is_favorite = new_state
         self.bus.favorite_toggled.emit(np.item_id, new_state)
 

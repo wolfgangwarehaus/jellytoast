@@ -16,6 +16,14 @@ developer-facing history lives in [`docs/CHANGELOG.md`](docs/CHANGELOG.md).
   against a DLNA or Sonos speaker that had dropped off the network could hang
   the whole window for up to 10 seconds. The goodbye now happens in the
   background — the app moves on instantly.
+- **Smart playlists see your whole library now.** On Subsonic/Navidrome, genre
+  and year rules quietly stopped at the first 500 matches — big libraries lost
+  the tail. They now page through everything.
+- **Hearts you can trust.** If favoriting a track fails (server down, network
+  blip), the heart flips back and tells you, instead of silently disagreeing
+  with your server. Cover loading also survives rare startup failures without
+  wedging a tile for the whole session, and cover memory now stays bounded on
+  HiDPI screens.
 - **A pile of small playback fixes.** Radio queues no longer sneak stale
   tracks into a playlist you just started; mute now sticks when pressed
   during a crossfade (and unmute restores the right volume); a rare

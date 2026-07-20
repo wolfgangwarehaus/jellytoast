@@ -1602,7 +1602,19 @@ class NowPlayingPage(_LeftPaneMixin, _LyricsMixin, QWidget):
         if not target_id:
             return
         new_state = not cur_fav
-        run_async(self.api.toggle_favorite, target_id, new_state)
+        # Central dispatch with rollback (#234 finding 8): this surface
+        # keeps its own authoritative flag (preview meta vs live source),
+        # so the rollback closure restores whichever one we flip below.
+        from jellytoast.ui_helpers import toggle_favorite_async
+
+        def _restore():
+            if self._preview_id == preview_id_at_flip and preview_id_at_flip:
+                self._preview_meta.setdefault("UserData", {})["IsFavorite"] = cur_fav
+            elif not preview_id_at_flip:
+                self._live_source_fav = cur_fav
+
+        preview_id_at_flip = self._preview_id
+        toggle_favorite_async(target_id, new_state, on_rollback=_restore)
         # Persist the new state to the authoritative source so a
         # subsequent read flips correctly.
         if self._preview_id:
