@@ -43,7 +43,7 @@ jobs:
         with:
           # release event → the published tag; manual run → the tag input.
           ref: ${{ github.event.release.tag_name || inputs.tag }}
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
 
