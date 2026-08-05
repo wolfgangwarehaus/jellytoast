@@ -12,11 +12,14 @@ developer-facing history lives in [`docs/CHANGELOG.md`](docs/CHANGELOG.md).
      should stand alone: the Store "What's new" shows just the title (+ first
      sentence in --detail mode). -->
 
-- **Album art loads what you're looking at, first.** Scrolling fast through a
-  big library could leave the rows you landed on artless for ages — their
-  requests were stuck in line behind every row you scrolled past. The queue
-  now puts visible tiles at the front, art that failed during a server hiccup
-  retries on its own a minute later, and art that's loaded stays loaded.
+- **Album art keeps loading as you scroll.** The big one: past a certain point
+  down a library, art simply stopped — always at the same album — and only a
+  window resize brought it back. The app had lost track of which tiles were on
+  screen once you scrolled, so it stopped asking for their art entirely.
+  Fixed, along with the rest of the art pipeline: what you're looking at now
+  loads first instead of queueing behind everything you scrolled past, art
+  that failed during a server hiccup retries itself a minute later, and art
+  that's loaded stays loaded.
 - **Stopping a cast can't freeze the app anymore.** Hitting Stop or Disconnect
   against a DLNA or Sonos speaker that had dropped off the network could hang
   the whole window for up to 10 seconds. The goodbye now happens in the
