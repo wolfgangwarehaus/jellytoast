@@ -297,3 +297,145 @@ def test_dpr_clear_while_hidden_rearms_on_show(qapp, monkeypatch):
     # which can re-fire rows during processEvents — production coalesces
     # duplicates on cache_key, so coverage is the contract here.
     assert set(fired) == {"a0|albumtile", "a1|albumtile", "a2|albumtile"}
+
+
+# ── 2026-07 art audit: viewport-first scheduling ─────────────────────────────
+
+
+def _entry(key, fired):
+    return (64, 64, 0, lambda: fired.append(key))
+
+
+def test_visible_coalesce_promotes_parked_key(qapp):
+    """The K's-stall fix: a normal-priority repeat for a key parked deep
+    in the deferred queue jumps it to the FRONT — the viewport must not
+    wait behind rows the user scrolled past."""
+    fired = []
+    uih._gated_in_flight = uih._GATED_MAX_INFLIGHT  # gate full
+    try:
+        for i in range(6):
+            uih._inflight_subscribers[f"stale{i}"] = [(lambda p: None, None)]
+            uih._deferred_normal[f"stale{i}"] = _entry(f"stale{i}", fired)
+        uih._inflight_subscribers["k-row"] = [(lambda p: None, None)]
+        uih._deferred_normal["k-row"] = _entry("k-row", fired)
+        # The user scrolls k-row into view → the visible pass re-requests it
+        # and coalesces; the coalesce path promotes.
+        uih._after_disk_miss("k-row", "k", "http://x", 64, 64, 0, lambda p: None, None, "normal")
+        uih._gated_in_flight -= 1  # a slot frees
+        uih._promote_next_deferred()
+        assert fired == ["k-row"]  # promoted past all six stale rows
+    finally:
+        uih._gated_in_flight = 0
+        uih._deferred_normal.clear()
+        uih._deferred_low.clear()
+        uih._inflight_subscribers.clear()
+
+
+def test_low_prefetch_upgrades_when_scrolled_to(qapp):
+    """A row prefetched at LOW that the user scrolls to must upgrade to
+    the front of NORMAL — the second starvation path."""
+    fired = []
+    uih._gated_in_flight = uih._GATED_MAX_INFLIGHT
+    try:
+        uih._inflight_subscribers["prefetched"] = [(lambda p: None, None)]
+        uih._deferred_low["prefetched"] = _entry("prefetched", fired)
+        uih._inflight_subscribers["other"] = [(lambda p: None, None)]
+        uih._deferred_normal["other"] = _entry("other", fired)
+        uih._after_disk_miss(
+            "prefetched", "p", "http://x", 64, 64, 0, lambda p: None, None, "normal"
+        )
+        assert "prefetched" not in uih._deferred_low
+        uih._gated_in_flight -= 1
+        uih._promote_next_deferred()
+        assert fired == ["prefetched"]  # beat the earlier normal entry
+    finally:
+        uih._gated_in_flight = 0
+        uih._deferred_normal.clear()
+        uih._deferred_low.clear()
+        uih._inflight_subscribers.clear()
+
+
+def test_low_queue_cap_drops_oldest_silently(qapp):
+    """The low backlog is bounded; overflow forgets the longest-parked
+    entry AND its subscribers (no callbacks — the visible re-arm covers
+    dropped rows), so the key can't wedge as phantom-in-flight."""
+    called = []
+    uih._gated_in_flight = uih._GATED_MAX_INFLIGHT
+    try:
+        for i in range(uih._DEFERRED_LOW_MAX + 3):
+            key = f"low{i}"
+            uih._after_disk_miss(
+                key,
+                key,
+                "http://x",
+                64,
+                64,
+                0,
+                called.append,
+                lambda: called.append("err"),
+                "low",
+            )
+        assert len(uih._deferred_low) == uih._DEFERRED_LOW_MAX
+        # The three oldest were dropped silently — no callbacks, keys freed.
+        assert called == []
+        for i in range(3):
+            assert f"low{i}" not in uih._inflight_subscribers
+            assert f"low{i}" not in uih._deferred_low
+        assert f"low{uih._DEFERRED_LOW_MAX + 2}" in uih._deferred_low
+    finally:
+        uih._gated_in_flight = 0
+        uih._deferred_normal.clear()
+        uih._deferred_low.clear()
+        uih._inflight_subscribers.clear()
+
+
+# ── 2026-07 art audit: capped-row forgiveness ────────────────────────────────
+
+
+def test_capped_row_forgiven_after_cooldown(qapp, monkeypatch):
+    """A row benched by 4 genuine failures gets a fresh chance when it's
+    visible again and its last failure is old — server recovery must not
+    leave session-permanent blank tiles."""
+    import time
+
+    g = lg.LibraryGrid("album")
+    g._model.set_items([{"Id": "a0"}])
+    g.show()
+    monkeypatch.setattr(g.api, "get_image_url", lambda *a, **k: "http://x/cover")
+    monkeypatch.setattr(g, "_visible_row_range", lambda: (0, 1))
+    fired = []
+    monkeypatch.setattr(
+        lg,
+        "load_image_async",
+        lambda key, url, w, h, on_pix, on_error=None, **kw: fired.append(key),
+    )
+    # Bench the row: at cap, with a failure wall stamped just now.
+    g._cover_retries[0] = g.COVER_RETRY_LIMIT
+    g._cover_retry_wall[0] = time.monotonic()
+    g._covers_loaded.add(0)
+    g._load_visible_covers()
+    assert fired == []  # cooldown not elapsed — stays benched
+
+    # Age the failure past the forgiveness window.
+    g._cover_retry_wall[0] = time.monotonic() - g.COVER_RETRY_FORGIVE_SEC - 1
+    g._load_visible_covers()
+    assert fired == ["a0|albumtile"]  # forgiven and re-fired
+    assert 0 not in g._cover_retries
+
+
+def test_artless_row_is_never_forgiven(qapp, monkeypatch):
+    """Rows with no art id bench WITHOUT a wall timestamp — forgiveness
+    must not spin on them."""
+    g = lg.LibraryGrid("album")
+    g._model.set_items([{"Id": ""}])
+    g.show()
+    monkeypatch.setattr(g, "_visible_row_range", lambda: (0, 1))
+    fired = []
+    monkeypatch.setattr(
+        lg,
+        "load_image_async",
+        lambda key, url, w, h, on_pix, on_error=None, **kw: fired.append(key),
+    )
+    g._load_visible_covers()  # benches it (no id)
+    g._load_visible_covers()  # revisit: no wall → stays benched
+    assert fired == []

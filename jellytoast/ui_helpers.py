@@ -984,12 +984,28 @@ _inflight_subscribers: dict = {}
 # timer) and is dispatched as replies complete. HIGH priority (now-playing
 # bar cover, hover prewarm — rare and user-facing) bypasses the gate so it
 # never waits behind a grid sweep. 5 leaves one of QNAM's ~6 sockets free
-# for a high-priority burst. Two FIFOs keep NORMAL (visible tiles) ahead of
+# for a high-priority burst. Two queues keep NORMAL (visible tiles) ahead of
 # LOW (off-screen prefetch) when a slot frees.
+#
+# The queues are ORDERED DICTS keyed by cache_key, not FIFO lists — the
+# 2026-07 "art stops loading mid-scroll" audit found session-length
+# starvation: a fast A→K scroll enqueued every intermediate row, and the
+# rows actually ON SCREEN coalesced onto entries parked at the BACK of the
+# line, draining 5-at-a-time behind hundreds of stale rows. Key-addressable
+# entries let a repeat request for a deferred key PROMOTE it to the front
+# (see _promote_deferred_key) — the viewport always wins. Front of each
+# dict = next to fire.
 _GATED_MAX_INFLIGHT = 5
 _gated_in_flight = 0
-_deferred_normal: list = []  # zero-arg callables — visible tiles
-_deferred_low: list = []  # zero-arg callables — off-screen prefetch
+_deferred_normal: "OrderedDict[str, tuple]" = OrderedDict()
+_deferred_low: "OrderedDict[str, tuple]" = OrderedDict()
+# LOW backlog cap. The grid's prefetch window re-anchors on every scroll,
+# so an unbounded low queue can hold hundreds of rows the user scrolled
+# away from. Overflow drops the OLDEST (frontmost = longest-parked) entry
+# SILENTLY — subscribers are discarded without callbacks; the visible
+# pass's has_cover() re-arm reloads any dropped row the moment it matters
+# (low priority is only used by the grid prefetch, which tolerates this).
+_DEFERRED_LOW_MAX = 64
 
 # Adaptive "this server is slow at resizing" latch (#cover-stall). We ask the
 # server to resize covers (getCoverArt `size=` / Jellyfin maxWidth) because a
@@ -1248,12 +1264,18 @@ def _after_disk_miss(
     # Coalesce: another caller may have already kicked off this exact
     # cache_key. Stack our (callback, on_error) onto the existing
     # waiter list and bail — the in-flight reply will fan out to all
-    # subscribers when it finishes.
+    # subscribers when it finishes. If the earlier request is still
+    # PARKED in a deferred queue, a normal/high repeat means the user
+    # is looking at it NOW — promote it to the front of the line (the
+    # anti-starvation half of the 2026-07 art audit).
     waiters = _inflight_subscribers.get(cache_key)
     if waiters is not None:
         waiters.append((callback, on_error))
+        if priority != "low":
+            _promote_deferred_key(cache_key)
         return
     _inflight_subscribers[cache_key] = [(callback, on_error)]
+    _ensure_cover_diag()
 
     # Concurrency gate: HIGH fires immediately. NORMAL/LOW go through the
     # shared in-flight cap (see _GATED_MAX_INFLIGHT) so a grid sweep can't
@@ -1264,27 +1286,31 @@ def _after_disk_miss(
         global _gated_in_flight
         if _gated_in_flight >= _GATED_MAX_INFLIGHT:
             queue = _deferred_low if priority == "low" else _deferred_normal
-            # Tuple, not a bare lambda: promotion needs the cache_key +
-            # geometry to fan the failure out to this load's subscribers
-            # if the deferred fire itself blows up (see
-            # _promote_next_deferred).
-            queue.append(
-                (
+            # Entry keeps the geometry so promotion can fan the failure
+            # out to this load's subscribers if the deferred fire itself
+            # blows up (see _promote_next_deferred).
+            queue[cache_key] = (
+                target_w,
+                target_h,
+                rounded_radius,
+                lambda: _fire_image_request(
                     cache_key,
+                    sem_key,
+                    url,
                     target_w,
                     target_h,
                     rounded_radius,
-                    lambda: _fire_image_request(
-                        cache_key,
-                        sem_key,
-                        url,
-                        target_w,
-                        target_h,
-                        rounded_radius,
-                        priority,
-                    ),
-                )
+                    priority,
+                ),
             )
+            if queue is _deferred_low:
+                while len(_deferred_low) > _DEFERRED_LOW_MAX:
+                    # Drop the longest-parked prefetch SILENTLY (no error
+                    # fan-out — see _DEFERRED_LOW_MAX). Subscribers must
+                    # still be forgotten or the key wedges as "in flight"
+                    # and every future request coalesces onto nothing.
+                    stale_key, _entry = _deferred_low.popitem(last=False)
+                    _inflight_subscribers.pop(stale_key, None)
             return
         _gated_in_flight += 1
 
@@ -1387,6 +1413,63 @@ def _fail_inflight(cache_key: str, target_w: int, target_h: int, radius: int) ->
             pass
 
 
+def cover_pipeline_stats() -> dict:
+    """Live pipeline counters — the JT_COVER_DIAG surface, also handy in
+    tests and the stress rigs. Cheap: reads module globals only."""
+    return {
+        "gate_in_flight": _gated_in_flight,
+        "deferred_normal": len(_deferred_normal),
+        "deferred_low": len(_deferred_low),
+        "inflight_keys": len(_inflight_subscribers),
+        "prefer_original_covers": _prefer_original_covers,
+        "resize_timeouts": _resize_timeouts,
+        "mem_pixmaps": len(_image_cache),
+        "mem_raws": len(_raw_image_cache),
+    }
+
+
+_diag_timer = None
+
+
+def _ensure_cover_diag() -> None:
+    """JT_COVER_DIAG=1: log the pipeline counters every 5 s (only while
+    something is pending, so an idle app stays quiet). Mirrors the
+    JT_BLUR_DIAG pattern — field reports of 'art stopped loading' become
+    diagnosable from a log tail instead of a repro session."""
+    global _diag_timer
+    import os
+
+    if _diag_timer is not None or os.environ.get("JT_COVER_DIAG") != "1":
+        return
+    from PySide6.QtCore import QTimer
+
+    _diag_timer = QTimer()
+    _diag_timer.setInterval(5000)
+
+    def _tick():
+        s = cover_pipeline_stats()
+        if s["gate_in_flight"] or s["deferred_normal"] or s["deferred_low"]:
+            logger.info("cover-diag: %s", s)
+
+    _diag_timer.timeout.connect(_tick)
+    _diag_timer.start()
+
+
+def _promote_deferred_key(cache_key: str) -> None:
+    """Move a parked load to the FRONT of the normal queue. Called when a
+    normal/high request coalesces onto a still-deferred key: the user is
+    looking at that tile right now, so it must not wait behind rows they
+    scrolled past — and a low-priority prefetch entry is UPGRADED to
+    normal, or the prefetched-then-scrolled-to row starves the same way."""
+    entry = _deferred_low.pop(cache_key, None)
+    if entry is None:
+        if cache_key not in _deferred_normal:
+            return  # already in flight (holds a gate slot) — nothing to do
+        entry = _deferred_normal.pop(cache_key)
+    _deferred_normal[cache_key] = entry
+    _deferred_normal.move_to_end(cache_key, last=False)
+
+
 def _promote_next_deferred() -> None:
     """Claim a gate slot and fire the next deferred load — NORMAL before
     LOW, so a visible tile beats a prefetch. Loops on start-failure: the
@@ -1395,12 +1478,12 @@ def _promote_next_deferred() -> None:
     global _gated_in_flight
     while True:
         if _deferred_normal:
-            entry = _deferred_normal.pop(0)
+            cache_key, entry = _deferred_normal.popitem(last=False)
         elif _deferred_low:
-            entry = _deferred_low.pop(0)
+            cache_key, entry = _deferred_low.popitem(last=False)
         else:
             return
-        cache_key, w, h, radius, fire = entry
+        w, h, radius, fire = entry
         _gated_in_flight += 1
         try:
             fire()

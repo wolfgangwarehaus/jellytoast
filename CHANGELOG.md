@@ -12,6 +12,11 @@ developer-facing history lives in [`docs/CHANGELOG.md`](docs/CHANGELOG.md).
      should stand alone: the Store "What's new" shows just the title (+ first
      sentence in --detail mode). -->
 
+- **Album art loads what you're looking at, first.** Scrolling fast through a
+  big library could leave the rows you landed on artless for ages — their
+  requests were stuck in line behind every row you scrolled past. The queue
+  now puts visible tiles at the front, art that failed during a server hiccup
+  retries on its own a minute later, and art that's loaded stays loaded.
 - **Stopping a cast can't freeze the app anymore.** Hitting Stop or Disconnect
   against a DLNA or Sonos speaker that had dropped off the network could hang
   the whole window for up to 10 seconds. The goodbye now happens in the

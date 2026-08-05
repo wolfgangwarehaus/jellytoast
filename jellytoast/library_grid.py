@@ -1892,6 +1892,9 @@ class LibraryGrid(_PaginatorMixin, QWidget):
     # prefetch pass rather than waiting for the user to scroll it back
     # into view. Capped so a genuinely offline grid stops eventually.
     COVER_RETRY_LIMIT = 4
+    # How long a capped row stays benched before a visible pass gives it
+    # a fresh retry budget (see _cover_retry_wall).
+    COVER_RETRY_FORGIVE_SEC = 60.0
 
     # On a first cold load, fire cover requests for the top-of-grid
     # rows immediately (before the QListView has computed its visible
@@ -2006,6 +2009,12 @@ class LibraryGrid(_PaginatorMixin, QWidget):
         # bounded number of idle-prefetch retries (COVER_RETRY_LIMIT)
         # before we give up on it.
         self._cover_retries: dict = {}
+        # row → monotonic() of its LAST failure. A row at the retry cap
+        # is forgiven once its last failure is COVER_RETRY_FORGIVE_SEC
+        # old AND it's visible again — so a transient server hiccup
+        # (Navidrome mid-scan 500s, a restart) doesn't blank tiles for
+        # the whole session (2026-07 art audit, F4).
+        self._cover_retry_wall: dict = {}
         # Rows whose cover load was DEFERRED because we were (auto-)
         # offline when it fired — the image gate short-circuits to a
         # synchronous error without touching the network. Kept marked
@@ -2219,6 +2228,7 @@ class LibraryGrid(_PaginatorMixin, QWidget):
         self._model.clear_covers()
         self._covers_loaded.clear()
         self._cover_retries.clear()
+        self._cover_retry_wall.clear()
         self._cover_failed.clear()
         self._prefetch_idx = 0
         self._load_visible_covers()
@@ -2234,6 +2244,7 @@ class LibraryGrid(_PaginatorMixin, QWidget):
         self._model.clear_covers()
         self._covers_loaded.clear()
         self._cover_retries.clear()
+        self._cover_retry_wall.clear()
         self._cover_failed.clear()
         self._prefetch_idx = 0
         self._load_visible_covers()
@@ -2268,6 +2279,7 @@ class LibraryGrid(_PaginatorMixin, QWidget):
         for r in self._cover_failed:
             self._covers_loaded.discard(r)
             self._cover_retries.pop(r, None)
+            self._cover_retry_wall.pop(r, None)
         self._cover_failed.clear()
         if self._model.rowCount() == 0:
             return
@@ -2455,7 +2467,18 @@ class LibraryGrid(_PaginatorMixin, QWidget):
             if row in self._cover_failed:
                 continue
             if self._cover_retries.get(row, 0) >= self.COVER_RETRY_LIMIT:
-                continue
+                # Benched — but forgive a capped row whose last failure is
+                # old: the server may have recovered (mid-scan 500s, a
+                # restart), and a visible tile deserves the fresh chance.
+                # Rows with NO art at all re-bench immediately (their
+                # _fire_cover_load short-circuits without a fetch).
+                import time as _time
+
+                wall = self._cover_retry_wall.get(row)
+                if wall is None or (_time.monotonic() - wall) < self.COVER_RETRY_FORGIVE_SEC:
+                    continue
+                self._cover_retries.pop(row, None)
+                self._cover_retry_wall.pop(row, None)
             self._covers_loaded.discard(row)
             self._fire_cover_load(row)
 
@@ -2500,6 +2523,7 @@ class LibraryGrid(_PaginatorMixin, QWidget):
             # is later EVICTED from the model LRU and re-armed on scroll-back,
             # it gets a fresh retry budget instead of inheriting old failures.
             self._cover_retries.pop(r, None)
+            self._cover_retry_wall.pop(r, None)
 
         def _on_err(r=row):
             # A cover load failed. Distinguish two cases:
@@ -2525,6 +2549,11 @@ class LibraryGrid(_PaginatorMixin, QWidget):
             tries = self._cover_retries.get(r, 0) + 1
             self._cover_retries[r] = tries
             if tries >= self.COVER_RETRY_LIMIT:
+                # Bench with a timestamp — the visible pass forgives the
+                # row after COVER_RETRY_FORGIVE_SEC (server recovery).
+                import time as _time
+
+                self._cover_retry_wall[r] = _time.monotonic()
                 return
             self._covers_loaded.discard(r)
             self._prefetch_idx = min(self._prefetch_idx, r)

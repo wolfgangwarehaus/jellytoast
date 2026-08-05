@@ -119,8 +119,9 @@ class TestImageStartFailure:
             raise RuntimeError("QNAM teardown")
 
         gate_before = uh._gated_in_flight
-        uh._deferred_normal.append(("bad", 64, 64, 0, _boom))
-        uh._deferred_normal.append(("good", 64, 64, 0, lambda: fired.append("good")))
+        # Queues are cache_key-addressable OrderedDicts now (art audit).
+        uh._deferred_normal["bad"] = (64, 64, 0, _boom)
+        uh._deferred_normal["good"] = (64, 64, 0, lambda: fired.append("good"))
         try:
             uh._promote_next_deferred()
             # The bad deferred failed its subscribers and the queue kept

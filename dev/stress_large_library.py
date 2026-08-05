@@ -89,6 +89,10 @@ class _FakeReply(QObject):
     def readAll(self) -> QByteArray:
         return QByteArray() if self._fail else QByteArray(_PNG)
 
+    def attribute(self, _attr):
+        # HttpStatusCodeAttribute — the finish handler logs it on failure.
+        return None if self._fail else 200
+
     def deleteLater(self):  # noqa: D401 - match QObject API used by the handler
         super().deleteLater()
 
@@ -177,7 +181,11 @@ def main() -> int:
 
     resident = len(grid._model._covers)
     covered = len(ever_loaded)
-    cap = lg._LibraryItemsModel._COVER_CACHE_MAX
+    # Byte-budgeted LRU (audit #234 finding 9): derive the effective
+    # entry cap from the budget and the rig's cover size.
+    _one = next(iter(grid._model._covers.values()), None)
+    _per = lg._LibraryItemsModel._pix_bytes(_one) if _one is not None else 1
+    cap = max(1, lg._LibraryItemsModel._COVER_CACHE_BUDGET_BYTES // _per)
 
     # AUTO offline flip must preserve the populated grid (no wipe).
     from jellytoast import offline as _offline
