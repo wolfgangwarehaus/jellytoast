@@ -439,3 +439,91 @@ def test_artless_row_is_never_forgiven(qapp, monkeypatch):
     g._load_visible_covers()  # benches it (no id)
     g._load_visible_covers()  # revisit: no wall → stays benched
     assert fired == []
+
+
+# ── 2026-07 field report: deep-scroll visible range (the K's stall) ──────────
+
+
+def _pin_geometry(g, monkeypatch, *, scroll, vp_h=950, vp_w=900, cell_h=246, cols=4):
+    """Pin the exact geometry the live app reported during the stall:
+    4 columns of 246px cells, 950px viewport, scrolled deep. Fakes the
+    viewport/scrollbar so the range math is exercised without depending
+    on offscreen layout."""
+    from types import SimpleNamespace
+
+    monkeypatch.setattr(
+        g._view, "viewport", lambda: SimpleNamespace(height=lambda: vp_h, width=lambda: vp_w)
+    )
+    monkeypatch.setattr(g._view, "verticalScrollBar", lambda: SimpleNamespace(value=lambda: scroll))
+    monkeypatch.setattr(g, "_cell_metrics", lambda: (cell_h, cols))
+
+
+def test_deep_scroll_range_is_not_blind(qapp, monkeypatch):
+    """THE regression: at a deep scroll offset the old corner-probe
+    implementation returned (0, 0) — the app could not see what was on
+    screen, so every cover trigger downstream went dead and art died at
+    a fixed row (the prefetch ceiling). Cell math must report the real
+    window."""
+    g = lg.LibraryGrid("album")
+    g._model.set_items([{"Id": f"a{i}"} for i in range(314)])
+    g.show()
+    _pin_geometry(g, monkeypatch, scroll=15468)
+
+    first, last = g._visible_row_range()
+
+    # Live-verified numbers: rows 248..267 were on screen (row 256 sat at
+    # viewport y=276), plus the 12-row prewarm buffer on each side.
+    assert (first, last) != (0, 0)
+    assert first <= 248 and last >= 268
+    assert 256 in range(first, last)
+
+
+def test_range_tracks_scroll_position(qapp, monkeypatch):
+    """Different scroll offsets must yield different windows — a range
+    that ignores scroll is the same blindness in another costume."""
+    g = lg.LibraryGrid("album")
+    g._model.set_items([{"Id": f"a{i}"} for i in range(314)])
+    g.show()
+    _pin_geometry(g, monkeypatch, scroll=0)
+    top = g._visible_row_range()
+    _pin_geometry(g, monkeypatch, scroll=15468)
+    deep = g._visible_row_range()
+    assert top[0] == 0
+    assert deep[0] > top[1]  # windows don't overlap — it really moved
+
+
+def test_overscroll_clamps_to_tail(qapp, monkeypatch):
+    """Scrolled past the last row (over-scroll, or a stale offset after
+    the model shrank): clamp to the final screenful instead of handing
+    back an out-of-range window that loads nothing."""
+    g = lg.LibraryGrid("album")
+    g._model.set_items([{"Id": f"a{i}"} for i in range(314)])
+    g.show()
+    _pin_geometry(g, monkeypatch, scroll=99999)
+
+    first, last = g._visible_row_range()
+
+    assert last == 314  # exclusive end == rowCount
+    assert first < 314
+
+
+def test_geometry_not_ready_stays_empty(qapp, monkeypatch):
+    """Before first layout the cell height is unknown — return the empty
+    range so callers retry, and NEVER (0, rc): treating unknown as 'all
+    rows' fires a cover load for the whole library."""
+    g = lg.LibraryGrid("album")
+    g._model.set_items([{"Id": f"a{i}"} for i in range(314)])
+    g.show()
+    _pin_geometry(g, monkeypatch, scroll=0, cell_h=0)
+
+    assert g._visible_row_range() == (0, 0)
+
+
+def test_alphabet_rail_shares_the_same_metrics(qapp, monkeypatch):
+    """The rail highlight and the cover window read one helper, so they
+    can't drift apart (they were duplicate implementations before)."""
+    g = lg.LibraryGrid("album")
+    g._model.set_items([{"Id": f"a{i}", "Name": f"N{i}"} for i in range(314)])
+    cell_h, cols = g._cell_metrics()
+    assert cols >= 1
+    assert cell_h == g._view._tile_delegate.CELL_H

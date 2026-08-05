@@ -2379,20 +2379,51 @@ class LibraryGrid(_PaginatorMixin, QWidget):
 
     # ── Cover loading ─────────────────────────────────────────────────
 
+    def _cell_metrics(self) -> "tuple[int, int]":
+        """``(cell_h, cols)`` for the active view mode — the geometry
+        both the cover-window math and the alphabet-rail highlight run
+        on, shared so the two can never drift out of lockstep. Returns
+        ``(0, 1)`` when the cell height isn't known yet (before first
+        layout), which callers treat as "geometry not ready"."""
+        cols = max(1, getattr(self._view, "_last_cols", 1) or 1)
+        if self._view_mode == "list":
+            # List mode is a fixed-height single-column row delegate;
+            # _last_grid_size is empty here, so read the row delegate.
+            cols = 1
+            rd = getattr(self._view, "_row_delegate", None)
+            cell_h = rd.ROW_HEIGHT if rd is not None else 0
+        else:
+            td = getattr(self._view, "_tile_delegate", None)
+            cell_h = td.CELL_H if td is not None else 0
+        return int(cell_h or 0), cols
+
     def _visible_row_range(self) -> "tuple[int, int]":
         """Inclusive-exclusive [first, last) row indices currently in
         (or near) the viewport. A small over-fetch buffer means a
         moderate kinetic-scroll fling stays ahead of the loader.
 
-        Returns ``(0, 0)`` (empty) when the layout hasn't computed yet —
-        both viewport-corner ``indexAt`` probes return invalid right
-        after a ``set_items`` model reset, before the QListView has
-        laid out new cells. The OLD fallback there was ``(0, rc)``
-        (treat unknown as "all rows"), which made ``_load_visible_covers``
-        fire a cover load for every item in the library — 292 fires
-        ×~25 ms each = ~6 s of GUI-thread blocking on every
-        offline-mode toggle. Empty-range now means "try again later";
-        the caller re-schedules and the prefetch timer fills any gaps."""
+        Computed from CELL MATH (scroll offset ÷ cell height × cols),
+        NOT ``QListView.indexAt()`` — the same reason
+        ``_update_alphabet_highlight`` does it this way: indexAt() in
+        IconMode + Wrapping + UniformItemSizes is unreliable on Wayland
+        Qt 6, because it hit-tests the view's internal layout index
+        (which goes stale after batched appends) while ``visualRect``
+        and painting stay correct arithmetic.
+
+        That unreliability WAS the 2026-07 "album art stops loading at
+        the same album every time" field report: scrolled deep into the
+        library BOTH corner probes returned invalid, so this returned
+        the empty range, so every cover trigger downstream went dead.
+        The only art that ever loaded was whatever the prefetch ceiling
+        (``_INITIAL_PRELOAD_ROWS + _PREFETCH_AHEAD``) happened to reach
+        — a fixed row count, hence the identical stall point each run.
+
+        Still returns ``(0, 0)`` when the geometry genuinely isn't known
+        yet (zero-size viewport, or cell height unavailable before the
+        first layout); callers treat that as "retry later". It must
+        never fall back to ``(0, rc)`` — treating unknown as "all rows"
+        fired a cover load for every item in the library (~6 s of
+        GUI-thread blocking on an offline-mode toggle)."""
         rc = self._model.rowCount()
         if rc == 0:
             return 0, 0
@@ -2401,21 +2432,18 @@ class LibraryGrid(_PaginatorMixin, QWidget):
         w = vp.width()
         if h <= 0 or w <= 0:
             return 0, 0
-        # Sample the corners of the viewport. With uniform item sizes
-        # and a left-to-right top-to-bottom flow, every item between
-        # top-left and bottom-right (in model order) is visible.
-        top_left = self._view.indexAt(QPoint(4, 0))
-        bot_right = self._view.indexAt(QPoint(w - 4, h - 1))
-        # Layout not yet computed — neither probe lands on a real row.
-        # Bail with empty range so the caller can retry once the view
-        # has had a chance to lay items out.
-        if not top_left.isValid() and not bot_right.isValid():
+        cell_h, cols = self._cell_metrics()
+        if cell_h <= 0:
             return 0, 0
-        first = top_left.row() if top_left.isValid() else 0
-        last = bot_right.row() if bot_right.isValid() else rc - 1
-        if first < 0:
-            first = 0
-        if last < 0:
+        # Scroll offset is in pixels (ScrollPerPixel — set on the view);
+        # item 0's top sits at content y=0, so line = offset // cell_h.
+        y = max(0, self._view.verticalScrollBar().value())
+        first = (y // cell_h) * cols
+        last = min(rc - 1, ((y + h - 1) // cell_h) * cols + cols - 1)
+        if first >= rc:
+            # Scrolled past the last row (over-scroll / stale range):
+            # clamp to the tail so the final screenful still loads.
+            first = max(0, rc - cols)
             last = rc - 1
         # Buffer rows on each side so off-screen tiles warm just
         # before they reach the viewport.
@@ -2724,17 +2752,10 @@ class LibraryGrid(_PaginatorMixin, QWidget):
             return
         sb = self._view.verticalScrollBar()
         y = sb.value()
-        cols = max(1, getattr(self._view, "_last_cols", 1) or 1)
-        if self._view_mode == "list":
-            # List mode is a fixed-height, single-column row delegate;
-            # _last_grid_size is empty here (cell_h would be 0), so derive it
-            # from the row delegate's ROW_HEIGHT with cols=1 — otherwise the
-            # highlight stops tracking + the jump falls back to flaky scrollTo.
-            cols = 1
-            rd = getattr(self._view, "_row_delegate", None)
-            cell_h = rd.ROW_HEIGHT if rd is not None else 0
-        else:
-            cell_h = self._view._tile_delegate.CELL_H
+        # Shared with _visible_row_range so the rail highlight and the
+        # cover window can't drift apart (list mode reads the row
+        # delegate's ROW_HEIGHT with cols=1; grid reads the tile cell).
+        cell_h, cols = self._cell_metrics()
         if cell_h <= 0:
             return
         top_row_idx = (y // cell_h) * cols

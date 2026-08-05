@@ -167,17 +167,94 @@ def main() -> int:
 
     grid._model.set_cover = _wrapped_set_cover
 
-    # Flood: request EVERY row at once (the worst case the old code choked on —
-    # an unbounded viewport burst). The gate must keep QNAM in-flight bounded;
-    # the grid's own retry path heals the simulated failures over time.
-    for row in range(N):
+    # ── Phase 1: flood ────────────────────────────────────────────────
+    # Request a big burst at once (the worst case the old code choked on —
+    # an unbounded viewport burst). The gate must keep QNAM in-flight
+    # bounded and the burst must fully drain (no stranded in-flight).
+    FLOOD = min(N, 600)
+    for row in range(FLOOD):
         grid._fire_cover_load(row, priority="normal")
+    budget = max(30.0, FLOOD * (1.5 * LATENCY_MS / 1000.0) / uih._GATED_MAX_INFLIGHT * 2.0)
+    flood_drained = _spin(
+        lambda: uih._gated_in_flight == 0 and not uih._deferred_normal, timeout_s=budget
+    )
 
-    # Drain budget scales with the simulated work: N requests, ~1.5×LATENCY
-    # each, GATED_MAX_INFLIGHT at a time, plus headroom for retries/healing.
-    budget = max(30.0, N * (1.5 * LATENCY_MS / 1000.0) / uih._GATED_MAX_INFLIGHT * 2.0)
-    drained = _spin(lambda: len(ever_loaded) >= N * 0.99, timeout_s=budget)
+    # ── Phase 2: the scroll walk ──────────────────────────────────────
+    # Walk the library the way a user does — a screenful at a time — and
+    # require that what is ON SCREEN gets covered before moving on.
+    #
+    # This phase exists because the old rig only flooded, and the flood
+    # passed for the WRONG reason: _visible_row_range() used to fall back
+    # to "every row is visible" whenever its indexAt() corner probes came
+    # back invalid, which is exactly the failure that let real art die
+    # mid-scroll (2026-07 field report: "stops loading in the K's").
+    # Geometry is pinned to the numbers the live app reported during that
+    # stall — 4 columns of 246px cells in a 950px viewport — and the
+    # scrollbar is driven directly, so the walk exercises the range math
+    # rather than offscreen QListView layout.
+    from types import SimpleNamespace
+
+    # The loader defers while the widget is hidden (tray-restore fix), so
+    # the walk has to run against a SHOWN grid — offscreen QPA makes this
+    # free while flipping isVisible() True.
+    grid.show()
+
+    VP_H, VP_W, CELL_H, COLS = 950, 900, 246, 4
+    scroll = {"y": 0}
+    _real_vp = grid._view.viewport
+    _real_sb = grid._view.verticalScrollBar
+    _real_cm = grid._cell_metrics
+    grid._view.viewport = lambda: SimpleNamespace(
+        height=lambda: VP_H, width=lambda: VP_W
+    )
+    grid._view.verticalScrollBar = lambda: SimpleNamespace(value=lambda: scroll["y"])
+    grid._cell_metrics = lambda: (CELL_H, COLS)
+
+    content_h = ((N + COLS - 1) // COLS) * CELL_H
+    # Sample stops across the whole depth rather than every screenful —
+    # 5000 albums is ~320 screenfuls, and the failure mode is depth-
+    # dependent, not step-count-dependent. A stride of several screens
+    # also mimics a kinetic fling, which is how the bug was hit.
+    MAX_STOPS = 24
+    span = max(0, content_h - VP_H)
+    stride = max(VP_H, span // MAX_STOPS) if span else VP_H
+    blind_stops = 0
+    missed: list = []
+    visited = 0
+    gap_total = 0
+    stops = 0
+    y = 0
+    while y <= span:
+        scroll["y"] = y
+        first, last = grid._visible_row_range()
+        if first == last:
+            blind_stops += 1  # the bug's signature: on screen, seen as empty
+        # Re-issue while draining: a simulated failure drops the row back
+        # to eligible, and the next pass re-fires it (as the app does).
+        def _covered(f=first, la=last):
+            grid._load_visible_covers()
+            return all(r in ever_loaded for r in range(f, la))
+
+        _spin(_covered, timeout_s=15.0)
+        gap = [r for r in range(first, last) if r not in ever_loaded]
+        visited += max(0, last - first)
+        gap_total += len(gap)
+        if gap:
+            missed.append((y, gap[:4]))
+        stops += 1
+        y += stride
+
+    # Restore the real accessors so teardown (focusOut, paint) doesn't hit
+    # the fakes.
+    grid._view.viewport = _real_vp
+    grid._view.verticalScrollBar = _real_sb
+    grid._cell_metrics = _real_cm
     grid._prefetch_timer.stop()
+
+    # With injected failures a few rows are legitimately still healing when
+    # we sample (the retry walks back through the prefetch pass). Strict at
+    # 0% failures; ≤1% of visited rows tolerated when failures are injected.
+    gap_budget = 0 if FAIL_PCT <= 0 else max(1, int(visited * 0.01))
 
     resident = len(grid._model._covers)
     covered = len(ever_loaded)
@@ -204,6 +281,12 @@ def main() -> int:
     print(f"completed ok/fail   : {stats['ok']}/{stats['fail']}")
     print(f"model resident covs : {resident}  (LRU cap {cap})")
     print(f"rows ever covered   : {covered}/{N}  (cumulative; LRU keeps {cap})")
+    print(
+        f"scroll walk stops   : {stops}  blind={blind_stops}  "
+        f"gap_rows={gap_total}/{visited}  (budget {gap_budget})"
+    )
+    if missed:
+        print(f"  first gaps        : {missed[:3]}")
     print(f"auto-offline reloads: {reloaded['n']}  (expect 0 = grid preserved)")
     print("─" * 56)
 
@@ -214,10 +297,11 @@ def main() -> int:
         ok = ok and cond
         print(f"  [{'PASS' if cond else 'FAIL'}] {label}")
 
-    check("converged without hanging (≥99% rows covered)", drained)
+    check("flood drained fully (no stranded in-flight / deferred)", flood_drained)
     check(f"gate bounded QNAM in-flight ≤ {uih._GATED_MAX_INFLIGHT}", stats["peak"] <= uih._GATED_MAX_INFLIGHT)
     check("model resident covers stayed within the LRU cap", resident <= cap)
-    check("every row loaded at some point (no permanent stall)", covered >= N * 0.99)
+    check("scroll walk: viewport was never reported empty", blind_stops == 0)
+    check("scroll walk: on-screen rows covered (within retry budget)", gap_total <= gap_budget)
     check("auto-offline did NOT wipe/reload the populated grid", reloaded["n"] == 0)
     print("─" * 56)
     print("RESULT:", "PASS ✓" if ok else "FAIL ✗")
