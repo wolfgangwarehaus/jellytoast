@@ -952,8 +952,11 @@ def clear_image_caches():
     cache keys collide on item id for short-id providers like
     Subsonic, where the new server may have entirely different
     art behind the same id."""
+    global _raw_cache_bytes
+
     _image_cache.clear()
     _raw_image_cache.clear()
+    _raw_cache_bytes = 0
 
 
 # In-flight QNetworkReply objects keyed to the load context the slot
@@ -1031,9 +1034,21 @@ _prefer_original_covers = False
 # image (e.g. now-playing bar wants 256 of an album the album grid
 # tile already loaded at 360) derive its target locally — scale +
 # round are sub-millisecond — instead of paying for another network
-# round-trip. Smaller LRU than L1 because raw QImages are large
-# (~1MB at 600×600 RGBA), so 32 entries caps memory at ~30MB.
-_RAW_IMAGE_CACHE_MAX = 32
+# round-trip.
+#
+# Bounded by BYTES (with a loose entry cap as a secondary guard), because
+# entry-counting silently blows up: a decoded source is ~1.2 MB at the
+# usual 540 px, but the slow-server latch (_prefer_original_covers)
+# fetches originals, and 32 entries of a 3000×3000 master is ~1.1 GB.
+# _RAW_MAX_DIM caps what we keep: the largest target any surface asks for
+# is the mini player's 960 px (320 × 3 DPR), so 1280 leaves headroom
+# while cutting an oversized master ~5×. Raising a consumer past
+# _RAW_MAX_DIM is safe but makes it miss this tier (it refetches rather
+# than deriving) — raise the constant with it.
+_RAW_MAX_DIM = 1280
+_RAW_CACHE_BUDGET_BYTES = 48 * 1024 * 1024
+_RAW_IMAGE_CACHE_MAX = 64
+_raw_cache_bytes = 0
 _raw_image_cache: "OrderedDict[str, QImage]" = OrderedDict()
 
 # A cached raw source is reused to derive a target even when it's
@@ -1083,23 +1098,55 @@ def _derive_pixmap(src: "QImage", target_w: int, target_h: int, radius: int) -> 
     return pix
 
 
+def _img_bytes(img: "QImage") -> int:
+    """Decoded footprint of a QImage — width × height × 4 (ARGB32)."""
+    return img.width() * img.height() * 4
+
+
 def _store_raw(sem_key: str, src: "QImage"):
-    """Cache the decoded source image under its semantic key, but
-    only if it's at least as big as anything already there — a later
-    caller asking for a smaller variant can downscale, but we never
-    upscale a small cached source for a larger requester."""
+    """Cache the decoded source image under its semantic key, but only
+    if it's at least as big as anything already there — a later caller
+    asking for a smaller variant can downscale, but we never upscale a
+    small cached source for a larger requester.
+
+    Bounded in BYTES, not entries. A plain count cap is fine while
+    sources are the usual ~540 px thumbnails (~1.2 MB each), but the
+    slow-server latch fetches FULL-SIZE originals, and 32 entries of a
+    3000×3000 master is ~1.1 GB resident. (Same failure shape as the
+    grid's cover LRU — audit #234 finding 9 — which this cache never
+    got converted for.) Oversized sources are also capped at
+    ``_RAW_MAX_DIM``; the pooled decode normally pre-caps, this is the
+    guard for raws read back from an older on-disk cache."""
     if not sem_key or src is None or src.isNull():
         return
+    if max(src.width(), src.height()) > _RAW_MAX_DIM:
+        src = src.scaled(
+            _RAW_MAX_DIM,
+            _RAW_MAX_DIM,
+            Qt.AspectRatioMode.KeepAspectRatio,
+            Qt.TransformationMode.SmoothTransformation,
+        )
+    global _raw_cache_bytes
     existing = _raw_image_cache.get(sem_key)
     if existing is not None and (
         existing.width() >= src.width() and existing.height() >= src.height()
     ):
         _raw_image_cache.move_to_end(sem_key)
         return
+    if existing is not None:
+        _raw_cache_bytes -= _img_bytes(existing)
     _raw_image_cache[sem_key] = src
+    _raw_cache_bytes += _img_bytes(src)
     _raw_image_cache.move_to_end(sem_key)
-    while len(_raw_image_cache) > _RAW_IMAGE_CACHE_MAX:
-        _raw_image_cache.popitem(last=False)
+    # Keep at least one entry resident even if a single source somehow
+    # exceeds the whole budget — evicting what we just stored would make
+    # the L2 tier useless for that image.
+    while (
+        _raw_cache_bytes > _RAW_CACHE_BUDGET_BYTES
+        or len(_raw_image_cache) > _RAW_IMAGE_CACHE_MAX
+    ) and len(_raw_image_cache) > 1:
+        _, evicted = _raw_image_cache.popitem(last=False)
+        _raw_cache_bytes -= _img_bytes(evicted)
 
 
 def load_image_async(
@@ -1425,6 +1472,7 @@ def cover_pipeline_stats() -> dict:
         "resize_timeouts": _resize_timeouts,
         "mem_pixmaps": len(_image_cache),
         "mem_raws": len(_raw_image_cache),
+        "mem_raw_mb": round(_raw_cache_bytes / 1048576, 1),
     }
 
 
@@ -1585,6 +1633,44 @@ def _fire_image_request(
     reply.finished.connect(lambda r=reply: _on_image_reply_finished(r))
 
 
+def _decode_and_scale(data: bytes, target_w: int, target_h: int):
+    """POOL THREAD: decode the reply body and pre-scale it.
+
+    Returns ``(raw_for_cache, scaled_for_target)`` as QImages — QImage is
+    thread-safe, QPixmap is not, so the GUI thread does only the pixmap
+    conversion (see ``_deliver_decoded``). Returns None if the body isn't
+    a decodable image (a server error page, an unsupported format).
+
+    Both steps used to run on the GUI thread at reply-finish time. That
+    is fine for a 540px thumbnail, but the slow-server latch
+    (``_prefer_original_covers``) fetches FULL-SIZE originals, and
+    decoding + smooth-scaling five concurrent multi-megapixel JPEGs on
+    the GUI thread is exactly the jank a user feels while scrolling. The
+    disk tier was moved to the pool for this same reason.
+
+    ``raw_for_cache`` is capped at ``_RAW_MAX_DIM``: nothing in the app
+    requests a target bigger than that, so keeping a 3000px master would
+    cost ~36 MB per entry to serve a 540px tile."""
+    src = QImage()
+    if not src.loadFromData(data) or src.isNull():
+        return None
+    raw = src
+    if max(src.width(), src.height()) > _RAW_MAX_DIM:
+        raw = src.scaled(
+            _RAW_MAX_DIM,
+            _RAW_MAX_DIM,
+            Qt.AspectRatioMode.KeepAspectRatio,
+            Qt.TransformationMode.SmoothTransformation,
+        )
+    scaled = src.scaled(
+        target_w,
+        target_h,
+        Qt.AspectRatioMode.KeepAspectRatioByExpanding,
+        Qt.TransformationMode.SmoothTransformation,
+    )
+    return raw, scaled
+
+
 def _on_image_reply_finished(reply: QNetworkReply):
     ctx = _pending_replies.pop(reply, None)
     if ctx is None:
@@ -1592,19 +1678,43 @@ def _on_image_reply_finished(reply: QNetworkReply):
         return
     cache_key, sem_key, target_w, target_h, radius, priority, url, fb_done = ctx
 
-    # Decode before deciding — a transport success can still fail to decode
-    # (server returned an error page / unsupported format).
     net_err = reply.error()
     http_status = reply.attribute(
         QNetworkRequest.Attribute.HttpStatusCodeAttribute
     )
-    ok = False
-    src: Optional[QImage] = None
-    if net_err == QNetworkReply.NetworkError.NoError:
-        data = bytes(reply.readAll())
-        src = QImage()
-        if src.loadFromData(data) and not src.isNull():
-            ok = True
+    # Read the body HERE (the reply is GUI-thread-owned and about to be
+    # deleted), then hand the bytes to the pool to decode. A transport
+    # success can still fail to decode, so the decode result — not just
+    # the transport status — decides success below.
+    data = (
+        bytes(reply.readAll())
+        if net_err == QNetworkReply.NetworkError.NoError
+        else b""
+    )
+    reply.deleteLater()
+    if not data:
+        _after_image_decode(
+            None, ctx, net_err, http_status
+        )
+        return
+
+    from jellytoast.async_io import run_async
+
+    run_async(
+        lambda: _decode_and_scale(data, target_w, target_h),
+        on_result=lambda res: _after_image_decode(res, ctx, net_err, http_status),
+        on_error=lambda _e: _after_image_decode(None, ctx, net_err, http_status),
+    )
+
+
+def _after_image_decode(res, ctx, net_err, http_status):
+    """GUI thread, once the pooled decode resolves. ``res`` is None when
+    the fetch failed or the body wasn't decodable — both take the same
+    recovery path (resize-fallback, then failure fan-out), which is why
+    the decision lives here rather than at reply-finish time."""
+    cache_key, sem_key, target_w, target_h, radius, priority, url, fb_done = ctx
+    ok = res is not None
+    raw_img, scaled_img = res if ok else (None, None)
 
     # FALLBACK: a sized cover request that FAILED (slow server-side resize
     # past the transfer timeout, a server that rejects the size param, or an
@@ -1632,7 +1742,6 @@ def _on_image_reply_finished(reply: QNetworkReply):
                 "cover load failed (%s, http=%s) — retrying without server "
                 "resize: %s", net_err.name, http_status, _redact_url(url),
             )
-            reply.deleteLater()
             # Keep the slot: re-fire under the same cache_key; _inflight_
             # subscribers[cache_key] is untouched so waiters still get served.
             try:
@@ -1654,7 +1763,6 @@ def _on_image_reply_finished(reply: QNetworkReply):
             _redact_url(url),
         )
 
-    waiters = _inflight_subscribers.pop(cache_key, [])
     # Release the gate slot for a gated (normal/low) load and promote the
     # next waiter — NORMAL before LOW so a visible tile beats a prefetch.
     # One at a time keeps the queue draining at the completion rate.
@@ -1662,61 +1770,52 @@ def _on_image_reply_finished(reply: QNetworkReply):
         global _gated_in_flight
         _gated_in_flight -= 1
         _promote_next_deferred()
-    try:
-        # `ok`/`src` were decoded at the top (the reply buffer is already
-        # consumed, so we can't re-read it here).
-        if ok:
-            # Stash the pre-scale source in L2 (in-memory + on-disk) so
-            # a future caller asking for a different size of the same
-            # image — including across launches — can derive locally
-            # instead of refetching. The on-disk raw is what makes the
-            # bar fast on a fresh launch when the album-grid tile last
-            # loaded this image in a prior session.
-            _store_raw(sem_key, src)
-            _disk_image_cache.put_raw(sem_key, src)
-            pix = _derive_pixmap(src, target_w, target_h, radius)
-            # Only cache real artwork — the prior version cached
-            # the placeholder pixmap on failure too, which made a
-            # transient server hiccup wedge the slot permanently
-            # (every retry returned the cached placeholder until
-            # 256 newer entries evicted it, which on a real library
-            # never happens).
-            _image_cache[cache_key] = pix
-            _image_cache.move_to_end(cache_key)
-            while len(_image_cache) > _IMAGE_CACHE_MAX:
-                _image_cache.popitem(last=False)
-            _disk_image_cache.put(cache_key, pix)
-            for cb, _err in waiters:
-                # Guard each subscriber independently: many widgets coalesce
-                # onto one in-flight reply, so a single callback raising
-                # (typically a deleted-widget RuntimeError when the widget
-                # was torn down mid-fetch) must NOT abort the loop and starve
-                # the remaining subscribers of their pixmap.
-                try:
-                    cb(pix)
-                except Exception:
-                    pass
-        else:
-            ph_pix = None
-            for cb, err in waiters:
-                try:
-                    if err is not None:
-                        err()
-                        continue
-                    # Legacy path: callers without on_error still see
-                    # the placeholder pixmap so their widget doesn't
-                    # sit blank. Crucially we do NOT cache it — next
-                    # request for this key re-fetches from the network.
-                    if ph_pix is None:
-                        ph = _placeholder_image(target_w, target_h)
-                        ph_pix = QPixmap.fromImage(ph)
-                        if radius > 0:
-                            ph_pix = _round_corners(ph_pix, radius)
-                    cb(ph_pix)
-                except Exception:
-                    pass
-    finally:
-        reply.deleteLater()
+    if ok:
+        _deliver_decoded(cache_key, sem_key, raw_img, scaled_img, radius)
+    else:
+        _fail_inflight(cache_key, target_w, target_h, radius)
+
+
+def _deliver_decoded(
+    cache_key: str,
+    sem_key: str,
+    raw_img: "QImage",
+    scaled_img: "QImage",
+    radius: int,
+) -> None:
+    """GUI-THREAD tail of a successful load. Everything expensive (decode
+    + smooth downscale) already ran on the pool; what's left genuinely
+    has to be here — QPixmap isn't thread-safe, and neither is the
+    QPainter pass that rounds the corners.
+
+    Stashes the (size-capped) source in L2 (in-memory + on-disk) so a
+    future caller wanting a different size of the same image — including
+    across launches — derives locally instead of refetching. The on-disk
+    raw is what makes the bar fast on a fresh launch when the album-grid
+    tile loaded this image in a prior session."""
+    _store_raw(sem_key, raw_img)
+    _disk_image_cache.put_raw(sem_key, raw_img)
+    pix = QPixmap.fromImage(scaled_img)
+    if radius > 0:
+        pix = _round_corners(pix, radius)
+    # Only cache real artwork — an older version cached the placeholder
+    # on failure too, which made a transient server hiccup wedge the slot
+    # permanently (every retry returned the cached placeholder until 256
+    # newer entries evicted it, which on a real library never happens).
+    _image_cache[cache_key] = pix
+    _image_cache.move_to_end(cache_key)
+    while len(_image_cache) > _IMAGE_CACHE_MAX:
+        _image_cache.popitem(last=False)
+    _disk_image_cache.put(cache_key, pix)
+    for cb, _err in _inflight_subscribers.pop(cache_key, []):
+        # Guard each subscriber independently: many widgets coalesce onto
+        # one in-flight reply, so a single callback raising (typically a
+        # deleted-widget RuntimeError when the widget was torn down
+        # mid-fetch) must NOT abort the loop and starve the rest.
+        try:
+            cb(pix)
+        except Exception:
+            pass
 
 
 def _placeholder_image(w: int, h: int) -> QImage:

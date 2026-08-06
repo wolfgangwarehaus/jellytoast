@@ -132,6 +132,26 @@ class TestImageReplyFanoutGuard:
     fan-out loop and starve the remaining subscribers of their pixmap.
     """
 
+    @pytest.fixture(autouse=True)
+    def _inline_pool(self, monkeypatch):
+        """Decoding moved to the worker pool (it was janking the GUI
+        thread on full-size originals), so the success fan-out is now
+        asynchronous. Run the pool inline to keep these assertions
+        synchronous — the fan-out logic under test is unchanged."""
+        import jellytoast.async_io as aio
+
+        def _inline(fn, *a, on_result=None, on_error=None, **kw):
+            try:
+                res = fn(*a)
+            except Exception as e:  # noqa: BLE001
+                if on_error is not None:
+                    on_error(e)
+                return
+            if on_result is not None:
+                on_result(res)
+
+        monkeypatch.setattr(aio, "run_async", _inline)
+
     def _drive(self, cache_key, waiters, data, error):
         reply = _FakeReply(data, error)
         sem_key = cache_key.split("|")[0]
@@ -194,9 +214,7 @@ class TestImageReplyFanoutGuard:
         # Both later on_error callbacks still fired despite the first raising.
         assert len(fired) == 2
 
-    def test_failure_placeholder_fanout_survives_a_raising_callback(
-        self, qapp, isolated_caches
-    ):
+    def test_failure_placeholder_fanout_survives_a_raising_callback(self, qapp, isolated_caches):
         from PySide6.QtCore import QByteArray
         from PySide6.QtNetwork import QNetworkReply
 
@@ -452,7 +470,8 @@ class TestCoverResizeFallback:
 
         fired = []
         monkeypatch.setattr(
-            ui_helpers, "_fire_image_request",
+            ui_helpers,
+            "_fire_image_request",
             lambda *a, **k: fired.append((a, k)),
         )
         reply = _FakeReply(b"", QNetworkReply.NetworkError.TimeoutError)
@@ -485,8 +504,8 @@ class TestCoverResizeFallback:
 
         ui_helpers._on_image_reply_finished(reply)
 
-        assert fired == []          # no further retry
-        assert errs == [1]          # terminal failure fanned out to on_error
+        assert fired == []  # no further retry
+        assert errs == [1]  # terminal failure fanned out to on_error
         assert "ck" not in ui_helpers._inflight_subscribers  # popped/finished
 
 
@@ -519,8 +538,14 @@ class TestSlowResizeAdaptation:
 
         reply = _FakeReply(b"", QNetworkReply.NetworkError.TimeoutError)
         ui_helpers._pending_replies[reply] = (
-            cache_key, cache_key, 100, 100, 0, "high",  # high → no gate accounting
-            "http://s/rest/getCoverArt?id=x&size=400", False,
+            cache_key,
+            cache_key,
+            100,
+            100,
+            0,
+            "high",  # high → no gate accounting
+            "http://s/rest/getCoverArt?id=x&size=400",
+            False,
         )
         ui_helpers._inflight_subscribers[cache_key] = [(lambda _p: None, None)]
         ui_helpers._on_image_reply_finished(reply)
@@ -538,8 +563,13 @@ class TestSlowResizeAdaptation:
         # Fresh fire now skips the sized request entirely — straight to original.
         urls.clear()
         ui_helpers._fire_image_request(
-            "ck-new", "ck-new", "http://s/rest/getCoverArt?id=y&size=400",
-            100, 100, 0, "normal",
+            "ck-new",
+            "ck-new",
+            "http://s/rest/getCoverArt?id=y&size=400",
+            100,
+            100,
+            0,
+            "normal",
         )
         assert urls and "size=" not in urls[-1] and "id=y" in urls[-1]
 

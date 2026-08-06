@@ -19,7 +19,9 @@ developer-facing history lives in [`docs/CHANGELOG.md`](docs/CHANGELOG.md).
   Fixed, along with the rest of the art pipeline: what you're looking at now
   loads first instead of queueing behind everything you scrolled past, art
   that failed during a server hiccup retries itself a minute later, and art
-  that's loaded stays loaded.
+  that's loaded stays loaded. Scrolling is smoother too: covers are now
+  decoded off the interface thread, and jellytoast holds far less memory when
+  your server hands back full-size artwork.
 - **Stopping a cast can't freeze the app anymore.** Hitting Stop or Disconnect
   against a DLNA or Sonos speaker that had dropped off the network could hang
   the whole window for up to 10 seconds. The goodbye now happens in the

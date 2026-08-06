@@ -527,3 +527,121 @@ def test_alphabet_rail_shares_the_same_metrics(qapp, monkeypatch):
     cell_h, cols = g._cell_metrics()
     assert cols >= 1
     assert cell_h == g._view._tile_delegate.CELL_H
+
+
+# ── 2026-08 pipeline optimization: pooled decode + bounded raw cache ─────────
+
+
+def _jpeg_bytes(side: int) -> bytes:
+    """An encoded image of a given pixel size (PNG — format is irrelevant,
+    the decode path is the same; what matters is the decoded dimensions)."""
+    from PySide6.QtCore import QBuffer, QByteArray
+    from PySide6.QtGui import QImage
+
+    img = QImage(side, side, QImage.Format.Format_RGB32)
+    img.fill(0x336699)
+    # Hold a Python ref to the QByteArray: QBuffer does NOT own it, and a
+    # temporary would be freed while the buffer still points at it.
+    ba = QByteArray()
+    buf = QBuffer(ba)
+    buf.open(QBuffer.OpenModeFlag.WriteOnly)
+    img.save(buf, "PNG")
+    buf.close()
+    return bytes(ba)
+
+
+class TestPooledDecode:
+    def test_decode_and_scale_runs_without_a_gui_thread(self, qapp):
+        """The pooled worker returns plain QImages (thread-safe); no
+        QPixmap is constructed off the GUI thread."""
+        from PySide6.QtGui import QImage
+
+        res = uih._decode_and_scale(_jpeg_bytes(600), 180, 180)
+        assert res is not None
+        raw, scaled = res
+        assert isinstance(raw, QImage) and isinstance(scaled, QImage)
+        assert scaled.width() == 180 and scaled.height() == 180
+
+    def test_undecodable_body_returns_none(self, qapp):
+        """A server error page must read as a failure, not a blank cover."""
+        assert uih._decode_and_scale(b"<html>500</html>", 180, 180) is None
+
+    def test_oversized_source_is_capped_before_caching(self, qapp):
+        """The raw kept for L2 is capped; the delivered target is not."""
+        res = uih._decode_and_scale(_jpeg_bytes(uih._RAW_MAX_DIM * 2), 180, 180)
+        assert res is not None
+        raw, scaled = res
+        assert max(raw.width(), raw.height()) == uih._RAW_MAX_DIM
+        assert scaled.width() == 180  # target unaffected by the cap
+
+    def test_source_within_cap_is_kept_whole(self, qapp):
+        res = uih._decode_and_scale(_jpeg_bytes(600), 180, 180)
+        raw, _ = res
+        assert raw.width() == 600  # no needless rescale
+
+
+class TestRawCacheBudget:
+    def _fresh(self):
+        uih._raw_image_cache.clear()
+        uih._raw_cache_bytes = 0
+
+    def test_budget_bounds_memory_not_entry_count(self, qapp, monkeypatch):
+        """The regression that motivated this: 32 entries of a 3000px
+        master is ~1.1 GB. Bytes, not entries, must be the bound."""
+        from PySide6.QtGui import QImage
+
+        self._fresh()
+        monkeypatch.setattr(uih, "_RAW_CACHE_BUDGET_BYTES", 8 * 1024 * 1024)
+        big = QImage(1024, 1024, QImage.Format.Format_ARGB32)  # 4 MB each
+        big.fill(0)
+        for i in range(10):
+            uih._store_raw(f"sem{i}", big.copy())
+        assert uih._raw_cache_bytes <= uih._RAW_CACHE_BUDGET_BYTES
+        assert len(uih._raw_image_cache) < 10  # evicted well before 32
+        self._fresh()
+
+    def test_small_sources_still_get_many_slots(self, qapp):
+        """Byte-budgeting must not punish the normal case — ordinary
+        540px thumbnails should keep MORE entries resident than the old
+        32-entry cap allowed."""
+        from PySide6.QtGui import QImage
+
+        self._fresh()
+        small = QImage(540, 540, QImage.Format.Format_ARGB32)  # ~1.1 MB
+        small.fill(0)
+        for i in range(40):
+            uih._store_raw(f"small{i}", small.copy())
+        assert len(uih._raw_image_cache) >= 32
+        assert uih._raw_cache_bytes <= uih._RAW_CACHE_BUDGET_BYTES
+        self._fresh()
+
+    def test_legacy_oversized_disk_raw_is_capped_on_store(self, qapp):
+        """Raws read back from an older on-disk cache bypass the pooled
+        pre-cap, so _store_raw guards too."""
+        from PySide6.QtGui import QImage
+
+        self._fresh()
+        huge = QImage(uih._RAW_MAX_DIM * 2, uih._RAW_MAX_DIM * 2, QImage.Format.Format_ARGB32)
+        huge.fill(0)
+        uih._store_raw("legacy", huge)
+        stored = uih._raw_image_cache["legacy"]
+        assert max(stored.width(), stored.height()) == uih._RAW_MAX_DIM
+        self._fresh()
+
+    def test_accounting_survives_replacement(self, qapp):
+        """Replacing a key with a bigger source must not double-count."""
+        from PySide6.QtGui import QImage
+
+        self._fresh()
+        for side in (300, 600):
+            img = QImage(side, side, QImage.Format.Format_ARGB32)
+            img.fill(0)
+            uih._store_raw("same", img)
+        assert uih._raw_cache_bytes == 600 * 600 * 4
+        self._fresh()
+
+    def test_cap_covers_the_largest_consumer(self):
+        """_RAW_MAX_DIM must stay above the biggest target any surface
+        requests (mini player: 320 × 3 DPR = 960) — below it, that
+        surface would miss this tier forever and refetch every time."""
+        assert uih._RAW_MAX_DIM >= 960
