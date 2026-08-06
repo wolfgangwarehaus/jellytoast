@@ -104,13 +104,30 @@ def last_input_was_keyboard() -> bool:
 def _seed_first_index(view) -> None:
     """Seed ``currentIndex`` to the top visible row if nothing is current
     yet — so the focus wash paints immediately and arrow keys step from a
-    sensible base (Qt's default Down would otherwise just scroll)."""
+    sensible base (Qt's default Down would otherwise just scroll).
+
+    Prefers a view-supplied ``first_visible_row()`` when the view offers
+    one. ``indexAt`` is the fallback, but it is unreliable in IconMode +
+    Wrapping + UniformItemSizes (it hit-tests a layout index that goes
+    stale after batched appends), where it would silently seed row 0 —
+    dropping a keyboard user at the top of the library instead of at the
+    tile they had scrolled to."""
     if view.currentIndex().isValid():
         return
     model = view.model()
     if model is None or model.rowCount() == 0:
         return
-    seed = view.indexAt(view.viewport().rect().topLeft())
+    seed = None
+    hook = getattr(view, "first_visible_row", None)
+    if callable(hook):
+        try:
+            row = hook()
+        except Exception:
+            row = -1
+        if row is not None and row >= 0:
+            seed = model.index(row, 0)
+    if seed is None or not seed.isValid():
+        seed = view.indexAt(view.viewport().rect().topLeft())
     if not seed.isValid():
         seed = model.index(0, 0)
     view.setCurrentIndex(seed)
@@ -153,6 +170,10 @@ def keyboard_arrow_press(view, event) -> bool:
     the cursor normally."""
     if event.key() not in _ARROW_KEYS:
         return False
+    # Seed only when there is no cursor at all. A cursor that already
+    # exists was put there by a real interaction (clicking a tile), and
+    # stepping from it is what the user expects — do NOT re-seed to the
+    # top just because the ring wasn't showing.
     need_seed = not view.currentIndex().isValid()
     if not getattr(view, "_keyboard_mode", False):
         view._keyboard_mode = True

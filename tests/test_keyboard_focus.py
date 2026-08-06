@@ -240,9 +240,7 @@ def test_install_row_grid_nav(qapp):
     for r in rows:
         nav.wire(r)
 
-    assert all(
-        b.focusPolicy() == Qt.FocusPolicy.TabFocus for r in rows for b in (r.b0, r.b1)
-    )
+    assert all(b.focusPolicy() == Qt.FocusPolicy.TabFocus for r in rows for b in (r.b0, r.b1))
 
     moved = []
     for r in rows:
@@ -414,3 +412,116 @@ class TestFocusModality:
         assert kf.last_input_was_keyboard() is True
         kf.note_pointer_input()
         assert kf.last_input_was_keyboard() is False
+
+
+# ── The album grid specifically ─────────────────────────────────────────────
+#
+# The grid kept its OWN copy of the focus rule (the shared helpers were
+# extracted from it but it was never migrated), so fixing keyboard_focus
+# alone did not fix the reported bug. These pin the real view.
+
+
+class TestLibraryGridFocusRing:
+    def _grid(self, qapp, rows=40):
+        from jellytoast.library_grid import LibraryGrid
+
+        g = LibraryGrid("album")
+        g._model.set_items([{"Id": f"a{i}", "Name": f"A{i}"} for i in range(rows)])
+        return g
+
+    def test_grid_uses_the_shared_rule_after_a_click(self, qapp):
+        """Click-driven navigation: Qt reassigns focus with
+        OtherFocusReason when the previous page hides — no ring."""
+        from PySide6.QtCore import Qt
+        from PySide6.QtGui import QFocusEvent
+
+        g = self._grid(qapp)
+        kf.note_pointer_input()
+        g._view.focusInEvent(QFocusEvent(QFocusEvent.Type.FocusIn, Qt.FocusReason.OtherFocusReason))
+        assert g._view._keyboard_mode is False
+        # Qt's own QAbstractItemView sets a current index whenever the view
+        # takes focus; that is invisible (the delegate gates the ring on
+        # keyboard mode) and the first arrow press re-seeds over it — see
+        # test_first_arrow_after_a_click_seeds_the_visible_row.
+
+    def test_grid_rings_for_keyboard_driven_navigation(self, qapp):
+        from PySide6.QtCore import Qt
+        from PySide6.QtGui import QFocusEvent
+
+        g = self._grid(qapp)
+        kf.note_keyboard_input()
+        g._view.focusInEvent(QFocusEvent(QFocusEvent.Type.FocusIn, Qt.FocusReason.OtherFocusReason))
+        assert g._view._keyboard_mode is True
+        assert g._view.currentIndex().isValid()
+
+    def test_grid_rings_on_tab_even_after_a_click(self, qapp):
+        from PySide6.QtCore import Qt
+        from PySide6.QtGui import QFocusEvent
+
+        g = self._grid(qapp)
+        kf.note_pointer_input()
+        g._view.focusInEvent(QFocusEvent(QFocusEvent.Type.FocusIn, Qt.FocusReason.TabFocusReason))
+        assert g._view._keyboard_mode is True
+
+    def test_arrow_key_engages_the_ring(self, qapp):
+        """Pressing a navigation key is always an explicit request for
+        the keyboard cursor, whatever came before it."""
+        from PySide6.QtCore import QEvent, Qt
+        from PySide6.QtGui import QKeyEvent
+
+        g = self._grid(qapp)
+        kf.note_pointer_input()
+        g._view.keyPressEvent(
+            QKeyEvent(QEvent.Type.KeyPress, Qt.Key.Key_Down, Qt.KeyboardModifier.NoModifier)
+        )
+        assert g._view._keyboard_mode is True
+
+    def test_seed_uses_the_visible_row_not_row_zero(self, qapp, monkeypatch):
+        """first_visible_row() replaces the indexAt probe, which is
+        unreliable in this view — a keyboard user who scrolled deep must
+        not have the cursor yanked back to the top of the library."""
+        from PySide6.QtCore import Qt
+        from PySide6.QtGui import QFocusEvent
+
+        g = self._grid(qapp, rows=400)
+        monkeypatch.setattr(g._view, "first_visible_row", lambda: 120)
+        kf.note_keyboard_input()
+        g._view.focusInEvent(QFocusEvent(QFocusEvent.Type.FocusIn, Qt.FocusReason.OtherFocusReason))
+        assert g._view.currentIndex().row() == 120
+
+    def test_arrow_with_no_cursor_seeds_the_visible_row(self, qapp, monkeypatch):
+        """Real click-Home flow: the stack switch leaves no cursor, so the
+        first Down lands on the tile on screen — not row 0, and not one
+        row past an invisible cursor."""
+        from PySide6.QtCore import QEvent, Qt
+        from PySide6.QtGui import QKeyEvent
+
+        g = self._grid(qapp, rows=400)
+        monkeypatch.setattr(g._view, "first_visible_row", lambda: 88)
+        kf.note_pointer_input()
+        assert not g._view.currentIndex().isValid()
+        assert g._view._keyboard_mode is False  # click → no ring
+
+        g._view.keyPressEvent(
+            QKeyEvent(QEvent.Type.KeyPress, Qt.Key.Key_Down, Qt.KeyboardModifier.NoModifier)
+        )
+        assert g._view._keyboard_mode is True  # a nav key always rings
+        assert g._view.currentIndex().row() == 88
+
+    def test_existing_cursor_is_not_yanked_back(self, qapp, monkeypatch):
+        """A cursor set by clicking a tile must survive the first arrow
+        press — stepping continues from what the user clicked."""
+        from PySide6.QtCore import QEvent, Qt
+        from PySide6.QtGui import QKeyEvent
+
+        g = self._grid(qapp, rows=400)
+        monkeypatch.setattr(g._view, "first_visible_row", lambda: 88)
+        g._view.setCurrentIndex(g._model.index(200, 0))
+        kf.note_pointer_input()
+
+        handled = kf.keyboard_arrow_press(
+            g._view,
+            QKeyEvent(QEvent.Type.KeyPress, Qt.Key.Key_Down, Qt.KeyboardModifier.NoModifier),
+        )
+        assert handled is False  # defer to super() so it MOVES from 200
+        assert g._view.currentIndex().row() == 200

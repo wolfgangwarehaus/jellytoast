@@ -81,6 +81,11 @@ from jellytoast.design_tokens import (
     rad,
     type_qss,
 )
+from jellytoast.keyboard_focus import (
+    keyboard_arrow_press,
+    keyboard_focus_in,
+    keyboard_focus_out,
+)
 from jellytoast.library_paginator import _PaginatorMixin
 from jellytoast.providers import get_provider
 from jellytoast.sort_utils import (
@@ -1730,32 +1735,50 @@ class _LibraryListView(QListView):
         ):
             offline.remove(item_id)
 
+    def first_visible_row(self) -> int:
+        """Top-left row currently on screen, from cell math — the hook
+        ``keyboard_focus._seed_first_index`` prefers over ``indexAt``,
+        which is unreliable in IconMode + Wrapping + UniformItemSizes
+        (it hit-tests a layout index that goes stale after batched
+        appends). Without this, pressing Down after scrolling deep into
+        the library seeded the cursor at row 0 instead of the tile the
+        user is looking at. Returns -1 when the geometry isn't known."""
+        model = self.model()
+        if model is None or model.rowCount() == 0:
+            return -1
+        cell_h = getattr(getattr(self, "_tile_delegate", None), "CELL_H", 0)
+        if self._mode == "list":
+            rd = getattr(self, "_row_delegate", None)
+            cell_h = getattr(rd, "ROW_HEIGHT", 0)
+            cols = 1
+        else:
+            cols = max(1, getattr(self, "_last_cols", 1) or 1)
+        if not cell_h:
+            return -1
+        y = max(0, self.verticalScrollBar().value())
+        row = (y // cell_h) * cols
+        return min(row, model.rowCount() - 1)
+
     def focusInEvent(self, e):
-        """Flip into "keyboard mode" when focus arrives via Tab /
-        Shortcut / programmatic setFocus; stay out of it when focus
-        came from a mouse click. Mode toggles whether the delegate
-        paints the accent focus ring — the ring is a keyboard
-        affordance, not a click feedback."""
-        keyboard_reasons = (
-            Qt.FocusReason.TabFocusReason,
-            Qt.FocusReason.BacktabFocusReason,
-            Qt.FocusReason.ShortcutFocusReason,
-            Qt.FocusReason.OtherFocusReason,
-        )
-        if e.reason() in keyboard_reasons:
-            self._keyboard_mode = True
-            if (
-                not self.currentIndex().isValid()
-                and self.model() is not None
-                and self.model().rowCount() > 0
-            ):
-                self.setCurrentIndex(self.model().index(0, 0))
-            self.viewport().update()
+        """Flip into "keyboard mode" when focus arrived by KEYBOARD; stay
+        out of it for a mouse click. Mode toggles whether the delegate
+        paints the accent focus ring — the ring is a keyboard affordance,
+        not click feedback.
+
+        Delegates to the shared ``keyboard_focus`` helpers rather than
+        keeping its own copy of the rule. This view is where the recipe
+        was first proven and the helpers were extracted FROM it, but it
+        was never migrated — so it kept an independent reasons list that
+        still counted Qt's OtherFocusReason as keyboard. That is the
+        reason clicking Home out of the now-playing page lit a ring on
+        the first album: hiding the focused page makes Qt hand this view
+        focus with exactly that reason. The helper now gates it on the
+        user's last input being a key."""
+        keyboard_focus_in(self, e)
         super().focusInEvent(e)
 
     def focusOutEvent(self, e):
-        self._keyboard_mode = False
-        self.viewport().update()
+        keyboard_focus_out(self, e)
         super().focusOutEvent(e)
 
     def keyPressEvent(self, e):
@@ -1763,32 +1786,12 @@ class _LibraryListView(QListView):
         to the first visible tile if nothing's selected yet. Enter
         opens the focused tile (browse, not play — keyboard users
         commit twice to start playback)."""
-        arrow_keys = (
-            Qt.Key.Key_Down,
-            Qt.Key.Key_Up,
-            Qt.Key.Key_Left,
-            Qt.Key.Key_Right,
-        )
-        if e.key() in arrow_keys:
-            # Engage keyboard mode so the focus ring paints, and
-            # seed currentIndex to the top-left visible tile if
-            # nothing's selected (otherwise Qt's default Down just
-            # scrolls the viewport rather than snapping to a tile).
-            need_seed = (
-                not self.currentIndex().isValid()
-                and self.model() is not None
-                and self.model().rowCount() > 0
-            )
-            if not self._keyboard_mode:
-                self._keyboard_mode = True
-                self.viewport().update()
-            if need_seed:
-                seed = self.indexAt(self.viewport().rect().topLeft())
-                if not seed.isValid():
-                    seed = self.model().index(0, 0)
-                self.setCurrentIndex(seed)
-                e.accept()
-                return
+        # Arrow keys engage keyboard mode and seed the cursor to the
+        # top-left VISIBLE tile (Qt's default Down would just scroll).
+        # Shared helper — same rule as every other list surface.
+        if keyboard_arrow_press(self, e):
+            e.accept()
+            return
         if e.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
             idx = self.currentIndex()
             if idx.isValid():
