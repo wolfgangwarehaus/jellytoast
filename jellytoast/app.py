@@ -2144,6 +2144,18 @@ def main():
     app.setWindowIcon(QIcon(make_app_icon(64)))
     app.setQuitOnLastWindowClosed(False)
 
+    # Rotating file log (~1 MB × 3) under the app data dir. Installed HERE:
+    # after the identity names above, because AppDataLocation only resolves to
+    # the per-app dir once they're set — and before the heavy boot work below,
+    # so the log actually captures the startup it's usually asked about. Also
+    # drops the console to WARNING (unless JT_LOG/JT_LOG_LEVEL says otherwise),
+    # so the INFO diagnostics land in the file instead of the terminal. Never
+    # raises: an unwritable state dir just means no file log.
+    from jellytoast import log as _jt_log
+
+    _jt_log.install()
+    _boot_mark("file log installed")
+
     # Install translation catalogs (Settings override → system locale) before
     # ANY widget is built — Qt translates at construction time. Never raises;
     # a missing catalog just leaves the English source strings. (#232)

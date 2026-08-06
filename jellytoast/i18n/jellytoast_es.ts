@@ -32,48 +32,48 @@
 <context>
     <name>ArtistPage</name>
     <message>
-        <location filename="../artist_page.py" line="151"/>
+        <location filename="../artist_page.py" line="152"/>
         <source>Unknown artist</source>
         <translation>Artista desconocido</translation>
     </message>
     <message>
-        <location filename="../artist_page.py" line="232"/>
+        <location filename="../artist_page.py" line="233"/>
         <source>ARTIST</source>
         <translation>ARTISTA</translation>
     </message>
     <message>
-        <location filename="../artist_page.py" line="237"/>
-        <location filename="../artist_page.py" line="543"/>
+        <location filename="../artist_page.py" line="238"/>
+        <location filename="../artist_page.py" line="544"/>
         <source>Loading…</source>
         <translation>Cargando…</translation>
     </message>
     <message>
-        <location filename="../artist_page.py" line="309"/>
+        <location filename="../artist_page.py" line="310"/>
         <source>No albums for this artist</source>
         <translation>No hay álbumes de este artista</translation>
     </message>
     <message>
-        <location filename="../artist_page.py" line="311"/>
+        <location filename="../artist_page.py" line="312"/>
         <source>The artist is in your library but no albums are showing — try refreshing or going back.</source>
         <translation>El artista está en tu biblioteca pero no aparecen álbumes — prueba a actualizar o volver atrás.</translation>
     </message>
     <message>
-        <location filename="../artist_page.py" line="603"/>
+        <location filename="../artist_page.py" line="604"/>
         <source>{0} albums</source>
         <translation>{0} álbumes</translation>
     </message>
     <message>
-        <location filename="../artist_page.py" line="603"/>
+        <location filename="../artist_page.py" line="604"/>
         <source>1 album</source>
         <translation>1 álbum</translation>
     </message>
     <message>
-        <location filename="../artist_page.py" line="611"/>
+        <location filename="../artist_page.py" line="612"/>
         <source>Couldn&apos;t load artist</source>
         <translation>No se pudo cargar el artista</translation>
     </message>
     <message>
-        <location filename="../artist_page.py" line="614"/>
+        <location filename="../artist_page.py" line="615"/>
         <source>Unknown</source>
         <translation>Desconocido</translation>
     </message>
@@ -427,89 +427,89 @@ Haz clic derecho en un álbum, lista, artista o pista para descargarlo.</transla
 <context>
     <name>DownloadsView</name>
     <message>
-        <location filename="../downloads_view.py" line="596"/>
-        <location filename="../downloads_view.py" line="925"/>
-        <location filename="../downloads_view.py" line="963"/>
-        <location filename="../downloads_view.py" line="983"/>
+        <location filename="../downloads_view.py" line="598"/>
+        <location filename="../downloads_view.py" line="927"/>
+        <location filename="../downloads_view.py" line="965"/>
+        <location filename="../downloads_view.py" line="985"/>
         <source>Download entire library</source>
         <translation>Descargar toda la biblioteca</translation>
     </message>
     <message>
-        <location filename="../downloads_view.py" line="612"/>
-        <location filename="../downloads_view.py" line="942"/>
+        <location filename="../downloads_view.py" line="614"/>
+        <location filename="../downloads_view.py" line="944"/>
         <source>Cancel library download</source>
         <translation>Cancelar descarga de la biblioteca</translation>
     </message>
     <message>
-        <location filename="../downloads_view.py" line="629"/>
-        <location filename="../downloads_view.py" line="1107"/>
-        <location filename="../downloads_view.py" line="1124"/>
-        <location filename="../downloads_view.py" line="1130"/>
+        <location filename="../downloads_view.py" line="631"/>
+        <location filename="../downloads_view.py" line="1109"/>
+        <location filename="../downloads_view.py" line="1126"/>
+        <location filename="../downloads_view.py" line="1132"/>
         <source>Clear all downloads</source>
         <translation>Borrar todas las descargas</translation>
     </message>
     <message>
-        <location filename="../downloads_view.py" line="642"/>
+        <location filename="../downloads_view.py" line="644"/>
         <source>Offline mode</source>
         <translation>Modo sin conexión</translation>
     </message>
     <message>
-        <location filename="../downloads_view.py" line="658"/>
+        <location filename="../downloads_view.py" line="660"/>
         <source>Always stream from server</source>
         <translation>Transmitir siempre desde el servidor</translation>
     </message>
     <message>
-        <location filename="../downloads_view.py" line="675"/>
+        <location filename="../downloads_view.py" line="677"/>
         <source>Only download on Wi-Fi</source>
         <translation>Descargar solo con Wi-Fi</translation>
     </message>
     <message>
-        <location filename="../downloads_view.py" line="681"/>
+        <location filename="../downloads_view.py" line="683"/>
         <source>Notify when downloads finish</source>
         <translation>Avisar cuando terminen las descargas</translation>
     </message>
     <message>
-        <location filename="../downloads_view.py" line="694"/>
+        <location filename="../downloads_view.py" line="696"/>
         <source>Keep library in sync</source>
         <translation>Mantener la biblioteca sincronizada</translation>
     </message>
     <message>
-        <location filename="../downloads_view.py" line="710"/>
+        <location filename="../downloads_view.py" line="712"/>
         <source>Download quality:</source>
         <translation>Calidad de descarga:</translation>
     </message>
     <message>
-        <location filename="../downloads_view.py" line="730"/>
+        <location filename="../downloads_view.py" line="732"/>
         <source>CACHE</source>
         <translation>CACHÉ</translation>
     </message>
     <message>
-        <location filename="../downloads_view.py" line="743"/>
+        <location filename="../downloads_view.py" line="745"/>
         <source>Album art: calculating…</source>
         <translation>Carátulas: calculando…</translation>
     </message>
     <message>
-        <location filename="../downloads_view.py" line="745"/>
+        <location filename="../downloads_view.py" line="747"/>
         <source>Refresh album art</source>
         <translation>Actualizar carátulas</translation>
     </message>
     <message>
-        <location filename="../downloads_view.py" line="815"/>
+        <location filename="../downloads_view.py" line="817"/>
         <source>Storage used: {0}</source>
         <translation>Almacenamiento usado: {0}</translation>
     </message>
     <message>
-        <location filename="../downloads_view.py" line="848"/>
+        <location filename="../downloads_view.py" line="850"/>
         <source>No effect while offline — the server isn&apos;t reachable to stream from.</source>
         <translation>Sin efecto estando sin conexión — el servidor no está accesible para transmitir.</translation>
     </message>
     <message>
-        <location filename="../downloads_view.py" line="853"/>
+        <location filename="../downloads_view.py" line="855"/>
         <source>No effect while casting — downloaded tracks are always served from disk via the cast proxy.</source>
         <translation>Sin efecto durante el envío — las pistas descargadas siempre se sirven desde disco a través del proxy de envío.</translation>
     </message>
     <message>
-        <location filename="../downloads_view.py" line="927"/>
+        <location filename="../downloads_view.py" line="929"/>
         <source>Download every album in your library to local storage?
 
 This walks your server and enqueues any albums that aren&apos;t already downloaded. You can pause or cancel at any time from this page.</source>
@@ -518,57 +518,57 @@ This walks your server and enqueues any albums that aren&apos;t already download
 Esto recorre tu servidor y pone en cola los álbumes que aún no estén descargados. Puedes pausar o cancelar en cualquier momento desde esta página.</translation>
     </message>
     <message>
-        <location filename="../downloads_view.py" line="932"/>
+        <location filename="../downloads_view.py" line="934"/>
         <source>Download</source>
         <translation>Descargar</translation>
     </message>
     <message>
-        <location filename="../downloads_view.py" line="938"/>
+        <location filename="../downloads_view.py" line="940"/>
         <source>Walking library…</source>
         <translation>Recorriendo la biblioteca…</translation>
     </message>
     <message>
-        <location filename="../downloads_view.py" line="973"/>
+        <location filename="../downloads_view.py" line="975"/>
         <source>Library walk complete</source>
         <translation>Recorrido de la biblioteca completado</translation>
     </message>
     <message>
-        <location filename="../downloads_view.py" line="975"/>
+        <location filename="../downloads_view.py" line="977"/>
         <source>All {0} albums in your library are already downloaded — nothing new to enqueue.</source>
         <translation>Los {0} álbumes de tu biblioteca ya están descargados — nada nuevo que poner en cola.</translation>
     </message>
     <message>
-        <location filename="../downloads_view.py" line="989"/>
+        <location filename="../downloads_view.py" line="991"/>
         <source>Library walk failed</source>
         <translation>Falló el recorrido de la biblioteca</translation>
     </message>
     <message>
-        <location filename="../downloads_view.py" line="991"/>
+        <location filename="../downloads_view.py" line="993"/>
         <source>Couldn&apos;t walk the library — the server may be unreachable. Check the connection and try again.</source>
         <translation>No se pudo recorrer la biblioteca — puede que el servidor no esté accesible. Comprueba la conexión e inténtalo de nuevo.</translation>
     </message>
     <message>
-        <location filename="../downloads_view.py" line="1042"/>
+        <location filename="../downloads_view.py" line="1044"/>
         <source>Resume library download</source>
         <translation>Reanudar descarga de la biblioteca</translation>
     </message>
     <message>
-        <location filename="../downloads_view.py" line="1044"/>
+        <location filename="../downloads_view.py" line="1046"/>
         <source>Pause library download</source>
         <translation>Pausar descarga de la biblioteca</translation>
     </message>
     <message>
-        <location filename="../downloads_view.py" line="1048"/>
+        <location filename="../downloads_view.py" line="1050"/>
         <source>Resume downloads</source>
         <translation>Reanudar descargas</translation>
     </message>
     <message>
-        <location filename="../downloads_view.py" line="1048"/>
+        <location filename="../downloads_view.py" line="1050"/>
         <source>Pause downloads</source>
         <translation>Pausar descargas</translation>
     </message>
     <message>
-        <location filename="../downloads_view.py" line="1109"/>
+        <location filename="../downloads_view.py" line="1111"/>
         <source>Remove every downloaded album, playlist, artist, and track from this device?
 
 This frees up the storage immediately. Your library on the server isn&apos;t affected — you can re-download anything later.</source>
@@ -577,22 +577,22 @@ This frees up the storage immediately. Your library on the server isn&apos;t aff
 Esto libera el almacenamiento de inmediato. Tu biblioteca en el servidor no se ve afectada — puedes volver a descargar lo que quieras más tarde.</translation>
     </message>
     <message>
-        <location filename="../downloads_view.py" line="1114"/>
+        <location filename="../downloads_view.py" line="1116"/>
         <source>Clear all</source>
         <translation>Borrar todo</translation>
     </message>
     <message>
-        <location filename="../downloads_view.py" line="1120"/>
+        <location filename="../downloads_view.py" line="1122"/>
         <source>Clearing…</source>
         <translation>Borrando…</translation>
     </message>
     <message>
-        <location filename="../downloads_view.py" line="1154"/>
+        <location filename="../downloads_view.py" line="1156"/>
         <source>Album art: {0} MB across {1} files</source>
         <translation>Carátulas: {0} MB en {1} archivos</translation>
     </message>
     <message>
-        <location filename="../downloads_view.py" line="1159"/>
+        <location filename="../downloads_view.py" line="1161"/>
         <source>Album art: unavailable</source>
         <translation>Carátulas: no disponible</translation>
     </message>
@@ -783,37 +783,37 @@ Esto libera el almacenamiento de inmediato. Tu biblioteca en el servidor no se v
 <context>
     <name>FloatingMiniPlayer</name>
     <message>
-        <location filename="../mini_player.py" line="761"/>
+        <location filename="../mini_player.py" line="769"/>
         <source>Toggle compact / expanded</source>
         <translation>Alternar compacto / expandido</translation>
     </message>
     <message>
-        <location filename="../mini_player.py" line="765"/>
+        <location filename="../mini_player.py" line="773"/>
         <source>Open main window</source>
         <translation>Abrir ventana principal</translation>
     </message>
     <message>
-        <location filename="../mini_player.py" line="1359"/>
+        <location filename="../mini_player.py" line="1367"/>
         <source>● LIVE · {0}</source>
         <translation>● EN VIVO · {0}</translation>
     </message>
     <message>
-        <location filename="../mini_player.py" line="1361"/>
+        <location filename="../mini_player.py" line="1369"/>
         <source>● LIVE</source>
         <translation>● EN VIVO</translation>
     </message>
     <message>
-        <location filename="../mini_player.py" line="1366"/>
+        <location filename="../mini_player.py" line="1374"/>
         <source>PAUSED · {0}</source>
         <translation>EN PAUSA · {0}</translation>
     </message>
     <message>
-        <location filename="../mini_player.py" line="1368"/>
+        <location filename="../mini_player.py" line="1376"/>
         <source>PAUSED</source>
         <translation>EN PAUSA</translation>
     </message>
     <message>
-        <location filename="../mini_player.py" line="1592"/>
+        <location filename="../mini_player.py" line="1600"/>
         <source>Nothing Playing</source>
         <translation>Nada en reproducción</translation>
     </message>
@@ -867,17 +867,17 @@ Esto libera el almacenamiento de inmediato. Tu biblioteca en el servidor no se v
 <context>
     <name>JellytoastWindow</name>
     <message>
-        <location filename="../app.py" line="1121"/>
+        <location filename="../app.py" line="1137"/>
         <source>Other audio is playing — output is shared, not bit-perfect, until other playback stops.</source>
         <translation>Hay otro audio sonando — la salida es compartida, no bit-perfect, hasta que la otra reproducción pare.</translation>
     </message>
     <message>
-        <location filename="../app.py" line="2333"/>
+        <location filename="../app.py" line="2361"/>
         <source>Missing dependency</source>
         <translation>Falta una dependencia</translation>
     </message>
     <message>
-        <location filename="../app.py" line="2334"/>
+        <location filename="../app.py" line="2362"/>
         <source>jellytoast requires libmpv.
 
 Install mpv from your system package manager, or download it from https://mpv.io.</source>
@@ -886,12 +886,12 @@ Install mpv from your system package manager, or download it from https://mpv.io
 Instala mpv desde el gestor de paquetes de tu sistema, o descárgalo de https://mpv.io.</translation>
     </message>
     <message>
-        <location filename="../app.py" line="2356"/>
+        <location filename="../app.py" line="2384"/>
         <source>No system tray</source>
         <translation>Sin bandeja del sistema</translation>
     </message>
     <message>
-        <location filename="../app.py" line="2357"/>
+        <location filename="../app.py" line="2385"/>
         <source>Your desktop doesn&apos;t appear to have a system tray.
 jellytoast will run, but tray features will be unavailable.</source>
         <translation>Tu escritorio no parece tener bandeja del sistema.
@@ -984,62 +984,62 @@ jellytoast funcionará, pero las funciones de bandeja no estarán disponibles.</
 <context>
     <name>LibraryGrid</name>
     <message>
-        <location filename="../library_grid.py" line="1187"/>
+        <location filename="../library_grid.py" line="1211"/>
         <source>{0} tracks</source>
         <translation>{0} pistas</translation>
     </message>
     <message>
-        <location filename="../library_grid.py" line="1189"/>
+        <location filename="../library_grid.py" line="1213"/>
         <source>1 track</source>
         <translation>1 pista</translation>
     </message>
     <message>
-        <location filename="../library_grid.py" line="2078"/>
+        <location filename="../library_grid.py" line="2112"/>
         <source>Refresh</source>
         <translation>Actualizar</translation>
     </message>
     <message>
-        <location filename="../library_grid.py" line="2099"/>
+        <location filename="../library_grid.py" line="2133"/>
         <source>Loading more…</source>
         <translation>Cargando más…</translation>
     </message>
     <message>
-        <location filename="../library_grid.py" line="2289"/>
+        <location filename="../library_grid.py" line="2336"/>
         <source>No playlists yet</source>
         <translation>Aún no hay listas de reproducción</translation>
     </message>
     <message>
-        <location filename="../library_grid.py" line="2291"/>
+        <location filename="../library_grid.py" line="2338"/>
         <source>No artists yet</source>
         <translation>Aún no hay artistas</translation>
     </message>
     <message>
-        <location filename="../library_grid.py" line="2292"/>
+        <location filename="../library_grid.py" line="2339"/>
         <source>No albums yet</source>
         <translation>Aún no hay álbumes</translation>
     </message>
     <message>
-        <location filename="../library_grid.py" line="2302"/>
+        <location filename="../library_grid.py" line="2349"/>
         <source>No {0}s in this genre</source>
         <translation>No hay {0}s en este género</translation>
     </message>
     <message>
-        <location filename="../library_grid.py" line="2303"/>
+        <location filename="../library_grid.py" line="2350"/>
         <source>Try a different genre or refresh the library.</source>
         <translation>Prueba otro género o actualiza la biblioteca.</translation>
     </message>
     <message>
-        <location filename="../library_grid.py" line="2307"/>
+        <location filename="../library_grid.py" line="2354"/>
         <source>No {0}s from {1}</source>
         <translation>No hay {0}s de {1}</translation>
     </message>
     <message>
-        <location filename="../library_grid.py" line="2308"/>
+        <location filename="../library_grid.py" line="2355"/>
         <source>Try a different year or refresh the library.</source>
         <translation>Prueba otro año o actualiza la biblioteca.</translation>
     </message>
     <message>
-        <location filename="../library_grid.py" line="2313"/>
+        <location filename="../library_grid.py" line="2360"/>
         <source>Your library may still be loading, or it&apos;s empty. Refresh to retry.</source>
         <translation>Puede que tu biblioteca aún esté cargando, o que esté vacía. Actualiza para reintentar.</translation>
     </message>
@@ -1299,7 +1299,7 @@ jellytoast funcionará, pero las funciones de bandeja no estarán disponibles.</
     </message>
     <message>
         <location filename="../now_playing_bar.py" line="228"/>
-        <location filename="../now_playing_bar.py" line="1451"/>
+        <location filename="../now_playing_bar.py" line="1454"/>
         <source>Nothing Playing</source>
         <translation>Nada en reproducción</translation>
     </message>
@@ -1462,199 +1462,199 @@ jellytoast funcionará, pero las funciones de bandeja no estarán disponibles.</
 <context>
     <name>NowPlayingPage</name>
     <message>
-        <location filename="../now_playing_page.py" line="383"/>
+        <location filename="../now_playing_page.py" line="385"/>
         <source>Favorite</source>
         <translation>Favorito</translation>
     </message>
     <message>
-        <location filename="../now_playing_page.py" line="400"/>
-        <location filename="../now_playing_page.py" line="873"/>
+        <location filename="../now_playing_page.py" line="402"/>
+        <location filename="../now_playing_page.py" line="876"/>
         <source>Nothing Playing</source>
         <translation>Nada en reproducción</translation>
     </message>
     <message>
-        <location filename="../now_playing_page.py" line="452"/>
+        <location filename="../now_playing_page.py" line="454"/>
         <source> Play</source>
         <translation> Reproducir</translation>
     </message>
     <message>
-        <location filename="../now_playing_page.py" line="508"/>
+        <location filename="../now_playing_page.py" line="510"/>
         <source>Hide lyrics</source>
         <translation>Ocultar letra</translation>
     </message>
     <message>
-        <location filename="../now_playing_page.py" line="535"/>
+        <location filename="../now_playing_page.py" line="537"/>
         <source>● Live</source>
         <translation>● En vivo</translation>
     </message>
     <message>
-        <location filename="../now_playing_page.py" line="617"/>
+        <location filename="../now_playing_page.py" line="619"/>
         <source>UP NEXT</source>
         <translation>A CONTINUACIÓN</translation>
     </message>
     <message>
-        <location filename="../now_playing_page.py" line="671"/>
-        <location filename="../now_playing_page.py" line="1295"/>
+        <location filename="../now_playing_page.py" line="673"/>
+        <location filename="../now_playing_page.py" line="1298"/>
         <source>Nothing queued</source>
         <translation>Cola vacía</translation>
     </message>
     <message>
-        <location filename="../now_playing_page.py" line="672"/>
-        <location filename="../now_playing_page.py" line="1296"/>
+        <location filename="../now_playing_page.py" line="674"/>
+        <location filename="../now_playing_page.py" line="1299"/>
         <source>Pick an album, playlist, or song to start the queue.</source>
         <translation>Elige un álbum, lista o canción para empezar la cola.</translation>
     </message>
     <message>
-        <location filename="../now_playing_page.py" line="891"/>
-        <location filename="../now_playing_page.py" line="1161"/>
-        <location filename="../now_playing_page.py" line="1169"/>
-        <location filename="../now_playing_page.py" line="1171"/>
+        <location filename="../now_playing_page.py" line="894"/>
+        <location filename="../now_playing_page.py" line="1164"/>
+        <location filename="../now_playing_page.py" line="1172"/>
+        <location filename="../now_playing_page.py" line="1174"/>
         <source>QUEUE</source>
         <translation>COLA</translation>
     </message>
     <message>
-        <location filename="../now_playing_page.py" line="997"/>
-        <location filename="../now_playing_page.py" line="1060"/>
-        <location filename="../now_playing_page.py" line="1745"/>
+        <location filename="../now_playing_page.py" line="1000"/>
+        <location filename="../now_playing_page.py" line="1063"/>
+        <location filename="../now_playing_page.py" line="1760"/>
         <source>Unknown</source>
         <translation>Desconocido</translation>
     </message>
     <message>
-        <location filename="../now_playing_page.py" line="1124"/>
-        <location filename="../now_playing_page.py" line="1671"/>
+        <location filename="../now_playing_page.py" line="1127"/>
+        <location filename="../now_playing_page.py" line="1686"/>
         <source>Loading…</source>
         <translation>Cargando…</translation>
     </message>
     <message>
-        <location filename="../now_playing_page.py" line="1130"/>
-        <location filename="../now_playing_page.py" line="1164"/>
+        <location filename="../now_playing_page.py" line="1133"/>
+        <location filename="../now_playing_page.py" line="1167"/>
         <source>ALBUM</source>
         <translation>ÁLBUM</translation>
     </message>
     <message>
-        <location filename="../now_playing_page.py" line="1131"/>
-        <location filename="../now_playing_page.py" line="1165"/>
+        <location filename="../now_playing_page.py" line="1134"/>
+        <location filename="../now_playing_page.py" line="1168"/>
         <source>PLAYLIST</source>
         <translation>LISTA</translation>
     </message>
     <message>
-        <location filename="../now_playing_page.py" line="1132"/>
-        <location filename="../now_playing_page.py" line="1166"/>
+        <location filename="../now_playing_page.py" line="1135"/>
+        <location filename="../now_playing_page.py" line="1169"/>
         <source>ARTIST</source>
         <translation>ARTISTA</translation>
     </message>
     <message>
-        <location filename="../now_playing_page.py" line="1133"/>
+        <location filename="../now_playing_page.py" line="1136"/>
         <source>BROWSING</source>
         <translation>EXPLORANDO</translation>
     </message>
     <message>
-        <location filename="../now_playing_page.py" line="1167"/>
+        <location filename="../now_playing_page.py" line="1170"/>
         <source>LIBRARY SHUFFLE</source>
         <translation>BIBLIOTECA ALEATORIA</translation>
     </message>
     <message>
-        <location filename="../now_playing_page.py" line="1168"/>
+        <location filename="../now_playing_page.py" line="1171"/>
         <source>SEARCH RESULTS</source>
         <translation>RESULTADOS DE BÚSQUEDA</translation>
     </message>
     <message>
-        <location filename="../now_playing_page.py" line="1170"/>
+        <location filename="../now_playing_page.py" line="1173"/>
         <source>INSTANT MIX</source>
         <translation>MEZCLA INSTANTÁNEA</translation>
     </message>
     <message>
-        <location filename="../now_playing_page.py" line="1380"/>
+        <location filename="../now_playing_page.py" line="1383"/>
         <source>Play next</source>
         <translation>Reproducir a continuación</translation>
     </message>
     <message>
-        <location filename="../now_playing_page.py" line="1381"/>
+        <location filename="../now_playing_page.py" line="1384"/>
         <source>Add to queue</source>
         <translation>Añadir a la cola</translation>
     </message>
     <message>
-        <location filename="../now_playing_page.py" line="1385"/>
+        <location filename="../now_playing_page.py" line="1388"/>
         <source>Remove from queue</source>
         <translation>Quitar de la cola</translation>
     </message>
     <message>
-        <location filename="../now_playing_page.py" line="1509"/>
+        <location filename="../now_playing_page.py" line="1512"/>
         <source>this album</source>
         <translation>este álbum</translation>
     </message>
     <message>
-        <location filename="../now_playing_page.py" line="1512"/>
+        <location filename="../now_playing_page.py" line="1515"/>
         <source>Remove download</source>
         <translation>Eliminar descarga</translation>
     </message>
     <message>
-        <location filename="../now_playing_page.py" line="1513"/>
+        <location filename="../now_playing_page.py" line="1516"/>
         <source>Remove the downloaded copy of “{0}”?</source>
         <translation>¿Eliminar la copia descargada de «{0}»?</translation>
     </message>
     <message>
-        <location filename="../now_playing_page.py" line="1514"/>
+        <location filename="../now_playing_page.py" line="1517"/>
         <source>Remove</source>
         <translation>Eliminar</translation>
     </message>
     <message>
-        <location filename="../now_playing_page.py" line="1740"/>
+        <location filename="../now_playing_page.py" line="1755"/>
         <source>Couldn&apos;t load</source>
         <translation>No se pudo cargar</translation>
     </message>
     <message>
-        <location filename="../now_playing_page.py" line="1807"/>
+        <location filename="../now_playing_page.py" line="1823"/>
         <source>●  LIVE  ·  {0}</source>
         <translation>●  EN VIVO  ·  {0}</translation>
     </message>
     <message>
-        <location filename="../now_playing_page.py" line="1809"/>
+        <location filename="../now_playing_page.py" line="1825"/>
         <source>●  LIVE</source>
         <translation>●  EN VIVO</translation>
     </message>
     <message>
-        <location filename="../now_playing_page.py" line="1814"/>
+        <location filename="../now_playing_page.py" line="1830"/>
         <source>PAUSED  ·  {0}</source>
         <translation>EN PAUSA  ·  {0}</translation>
     </message>
     <message>
-        <location filename="../now_playing_page.py" line="1816"/>
+        <location filename="../now_playing_page.py" line="1832"/>
         <source>PAUSED</source>
         <translation>EN PAUSA</translation>
     </message>
     <message>
-        <location filename="../now_playing_page.py" line="1841"/>
+        <location filename="../now_playing_page.py" line="1857"/>
         <source>song</source>
         <translation>canción</translation>
     </message>
     <message>
-        <location filename="../now_playing_page.py" line="1841"/>
+        <location filename="../now_playing_page.py" line="1857"/>
         <source>songs</source>
         <translation>canciones</translation>
     </message>
     <message>
-        <location filename="../now_playing_page.py" line="1843"/>
+        <location filename="../now_playing_page.py" line="1859"/>
         <source>track</source>
         <translation>pista</translation>
     </message>
     <message>
-        <location filename="../now_playing_page.py" line="1843"/>
+        <location filename="../now_playing_page.py" line="1859"/>
         <source>tracks</source>
         <translation>pistas</translation>
     </message>
     <message>
-        <location filename="../now_playing_page.py" line="1863"/>
+        <location filename="../now_playing_page.py" line="1879"/>
         <source>{0} min</source>
         <translation>{0} min</translation>
     </message>
     <message>
-        <location filename="../now_playing_page.py" line="1867"/>
+        <location filename="../now_playing_page.py" line="1883"/>
         <source>{0} hr</source>
         <translation>{0} h</translation>
     </message>
     <message>
-        <location filename="../now_playing_page.py" line="1868"/>
+        <location filename="../now_playing_page.py" line="1884"/>
         <source>{0} hr {1} min</source>
         <translation>{0} h {1} min</translation>
     </message>
@@ -1793,7 +1793,7 @@ Revisa el PIN — la causa más común es una errata o un código caducado (el r
 <context>
     <name>QueueManager</name>
     <message>
-        <location filename="../queue_manager.py" line="672"/>
+        <location filename="../queue_manager.py" line="686"/>
         <source>Unknown</source>
         <translation>Desconocido</translation>
     </message>
@@ -2021,13 +2021,13 @@ Subsonic requiere permiso de administrador para crear / editar / eliminar.</tran
     </message>
     <message>
         <location filename="../settings_dialog.py" line="1211"/>
-        <location filename="../settings_dialog.py" line="1550"/>
+        <location filename="../settings_dialog.py" line="1606"/>
         <source>Not configured</source>
         <translation>Sin configurar</translation>
     </message>
     <message>
         <location filename="../settings_dialog.py" line="1307"/>
-        <location filename="../settings_dialog.py" line="1553"/>
+        <location filename="../settings_dialog.py" line="1609"/>
         <source>Change server URL…</source>
         <translation>Cambiar URL del servidor…</translation>
     </message>
@@ -2042,151 +2042,177 @@ Subsonic requiere permiso de administrador para crear / editar / eliminar.</tran
         <translation>INICIO</translation>
     </message>
     <message>
-        <location filename="../settings_dialog.py" line="1339"/>
+        <location filename="../settings_dialog.py" line="1340"/>
         <source>Launch jellytoast at login</source>
         <translation>Abrir jellytoast al iniciar sesión</translation>
     </message>
     <message>
-        <location filename="../settings_dialog.py" line="1344"/>
+        <location filename="../settings_dialog.py" line="1345"/>
         <source>Show mini player on startup</source>
         <translation>Mostrar el mini reproductor al arrancar</translation>
     </message>
     <message>
-        <location filename="../settings_dialog.py" line="1355"/>
+        <location filename="../settings_dialog.py" line="1356"/>
         <source>WINDOW</source>
         <translation>VENTANA</translation>
     </message>
     <message>
-        <location filename="../settings_dialog.py" line="1365"/>
+        <location filename="../settings_dialog.py" line="1366"/>
         <source>Keep mini player on top</source>
         <translation>Mantener el mini reproductor encima</translation>
     </message>
     <message>
-        <location filename="../settings_dialog.py" line="1375"/>
+        <location filename="../settings_dialog.py" line="1376"/>
         <source>Hide to system tray when window is closed</source>
         <translation>Ocultar a la bandeja del sistema al cerrar la ventana</translation>
     </message>
     <message>
-        <location filename="../settings_dialog.py" line="1390"/>
+        <location filename="../settings_dialog.py" line="1391"/>
         <source>NOTIFICATIONS</source>
         <translation>NOTIFICACIONES</translation>
     </message>
     <message>
-        <location filename="../settings_dialog.py" line="1392"/>
+        <location filename="../settings_dialog.py" line="1393"/>
         <source>Show a notification when the track changes</source>
         <translation>Mostrar una notificación al cambiar de pista</translation>
     </message>
     <message>
-        <location filename="../settings_dialog.py" line="1405"/>
+        <location filename="../settings_dialog.py" line="1406"/>
         <source>HOME PAGE</source>
         <translation>PÁGINA DE INICIO</translation>
     </message>
     <message>
-        <location filename="../settings_dialog.py" line="1442"/>
+        <location filename="../settings_dialog.py" line="1443"/>
         <source>UPDATES</source>
         <translation>ACTUALIZACIONES</translation>
     </message>
     <message>
-        <location filename="../settings_dialog.py" line="1447"/>
-        <location filename="../settings_dialog.py" line="1455"/>
+        <location filename="../settings_dialog.py" line="1448"/>
+        <location filename="../settings_dialog.py" line="1456"/>
         <source>Check for updates</source>
         <translation>Buscar actualizaciones</translation>
     </message>
     <message>
-        <location filename="../settings_dialog.py" line="1457"/>
+        <location filename="../settings_dialog.py" line="1458"/>
         <source>Once a day, jellytoast quietly checks GitHub for a newer release and shows a small chip in the top bar if one&apos;s out. Manual installs only — the Microsoft Store / Mac App Store builds update themselves. Uses GitHub&apos;s public API; no account or personal data.</source>
         <translation>Una vez al día, jellytoast consulta discretamente GitHub por si hay una versión más nueva y muestra un pequeño aviso en la barra superior si la hay. Solo para instalaciones manuales — las versiones de Microsoft Store / Mac App Store se actualizan solas. Usa la API pública de GitHub; sin cuenta ni datos personales.</translation>
     </message>
     <message>
-        <location filename="../settings_dialog.py" line="1466"/>
+        <location filename="../settings_dialog.py" line="1467"/>
         <source>Check now</source>
         <translation>Buscar ahora</translation>
     </message>
     <message>
-        <location filename="../settings_dialog.py" line="1530"/>
+        <location filename="../settings_dialog.py" line="1478"/>
+        <source>DIAGNOSTICS</source>
+        <translation>DIAGNÓSTICO</translation>
+    </message>
+    <message>
+        <location filename="../settings_dialog.py" line="1483"/>
+        <location filename="../settings_dialog.py" line="1488"/>
+        <source>Copy diagnostics</source>
+        <translation>Copiar diagnóstico</translation>
+    </message>
+    <message>
+        <location filename="../settings_dialog.py" line="1490"/>
+        <source>Copies a support report to your clipboard — app version, system and desktop, audio and theme details, plus the tail of the log — so you can paste it into a bug report. Your password, access token and scrobbling keys are never included, and the server address is trimmed to its host.</source>
+        <translation>Copia un informe de soporte a tu portapapeles — versión de la app, sistema y escritorio, detalles de audio y tema, más el final del registro — para que puedas pegarlo en un informe de error. Tu contraseña, tu token de acceso y las claves de scrobbling nunca se incluyen, y la dirección del servidor se recorta a su host.</translation>
+    </message>
+    <message>
+        <location filename="../settings_dialog.py" line="1525"/>
+        <source>Diagnostics copied to clipboard.</source>
+        <translation>Diagnóstico copiado al portapapeles.</translation>
+    </message>
+    <message>
+        <location filename="../settings_dialog.py" line="1527"/>
+        <source>Couldn&apos;t copy diagnostics.</source>
+        <translation>No se pudo copiar el diagnóstico.</translation>
+    </message>
+    <message>
+        <location filename="../settings_dialog.py" line="1586"/>
         <source>Save URL</source>
         <translation>Guardar URL</translation>
     </message>
     <message>
-        <location filename="../settings_dialog.py" line="1661"/>
+        <location filename="../settings_dialog.py" line="1718"/>
         <source>AUDIO OUTPUT</source>
         <translation>SALIDA DE AUDIO</translation>
     </message>
     <message>
-        <location filename="../settings_dialog.py" line="1666"/>
+        <location filename="../settings_dialog.py" line="1723"/>
         <source>Auto (recommended)</source>
         <translation>Auto (recomendado)</translation>
     </message>
     <message>
-        <location filename="../settings_dialog.py" line="1681"/>
+        <location filename="../settings_dialog.py" line="1738"/>
         <source>{0} (not connected)</source>
         <translation>{0} (no conectado)</translation>
     </message>
     <message>
-        <location filename="../settings_dialog.py" line="1690"/>
+        <location filename="../settings_dialog.py" line="1747"/>
         <source>Audio output</source>
         <translation>Salida de audio</translation>
     </message>
     <message>
-        <location filename="../settings_dialog.py" line="1692"/>
+        <location filename="../settings_dialog.py" line="1749"/>
         <source>Where audio goes. Auto follows the system default. Direct ALSA devices bypass the PipeWire mixer — the bit-perfect path — but hold the device exclusively. Applies on the next track; falls back to Auto if the device won&apos;t open.</source>
         <translation>A dónde va el audio. Auto sigue el valor por defecto del sistema. Los dispositivos ALSA directos evitan el mezclador de PipeWire — la ruta bit-perfect — pero retienen el dispositivo en exclusiva. Se aplica en la siguiente pista; vuelve a Auto si el dispositivo no se abre.</translation>
     </message>
     <message>
-        <location filename="../settings_dialog.py" line="1714"/>
+        <location filename="../settings_dialog.py" line="1771"/>
         <source>BIT-PERFECT</source>
         <translation>BIT-PERFECT</translation>
     </message>
     <message>
-        <location filename="../settings_dialog.py" line="1718"/>
-        <location filename="../settings_dialog.py" line="1724"/>
+        <location filename="../settings_dialog.py" line="1775"/>
+        <location filename="../settings_dialog.py" line="1781"/>
         <source>Bit-perfect mode</source>
         <translation>Modo bit-perfect</translation>
     </message>
     <message>
-        <location filename="../settings_dialog.py" line="1726"/>
+        <location filename="../settings_dialog.py" line="1783"/>
         <source>Plays the file&apos;s exact bits: locks volume at 100% and turns off Normalization, Equalizer, and Crossfade. The hint below covers the OS side of the path.</source>
         <translation>Reproduce los bits exactos del archivo: fija el volumen al 100 % y desactiva Normalización, Ecualizador y Fundido cruzado. La nota de abajo cubre la parte del sistema operativo.</translation>
     </message>
     <message>
-        <location filename="../settings_dialog.py" line="1757"/>
-        <location filename="../settings_dialog.py" line="1765"/>
+        <location filename="../settings_dialog.py" line="1814"/>
+        <location filename="../settings_dialog.py" line="1822"/>
         <source>Exclusive output</source>
         <translation>Salida exclusiva</translation>
     </message>
     <message>
-        <location filename="../settings_dialog.py" line="1767"/>
+        <location filename="../settings_dialog.py" line="1824"/>
         <source>Hands jellytoast the device (WASAPI Exclusive · CoreAudio HogMode) — other apps go silent. Applies on the next track; falls back to shared if the device refuses.</source>
         <translation>Entrega el dispositivo a jellytoast (WASAPI Exclusive · HogMode de CoreAudio) — las demás aplicaciones enmudecen. Se aplica en la siguiente pista; vuelve a compartido si el dispositivo lo rechaza.</translation>
     </message>
     <message>
-        <location filename="../settings_dialog.py" line="1811"/>
+        <location filename="../settings_dialog.py" line="1868"/>
         <source>PipeWire sample-rate config</source>
         <translation>Configuración de frecuencia de PipeWire</translation>
     </message>
     <message>
-        <location filename="../settings_dialog.py" line="1813"/>
+        <location filename="../settings_dialog.py" line="1870"/>
         <source>Lets PipeWire follow the source sample rate so 44.1 kHz files stop resampling to 48 kHz. Takes effect after PipeWire restarts (or next login). Not needed on a direct ALSA output.</source>
         <translation>Permite que PipeWire siga la frecuencia de muestreo de la fuente, de modo que los archivos de 44,1 kHz dejen de remuestrearse a 48 kHz. Surte efecto al reiniciar PipeWire (o en el próximo inicio de sesión). No hace falta con una salida ALSA directa.</translation>
     </message>
     <message>
-        <location filename="../settings_dialog.py" line="1839"/>
+        <location filename="../settings_dialog.py" line="1896"/>
         <source>AUDIO</source>
         <translation>AUDIO</translation>
     </message>
     <message>
-        <location filename="../settings_dialog.py" line="1873"/>
+        <location filename="../settings_dialog.py" line="1930"/>
         <source>Quality:</source>
         <translation>Calidad:</translation>
     </message>
     <message>
-        <location filename="../settings_dialog.py" line="1893"/>
+        <location filename="../settings_dialog.py" line="1950"/>
         <source>Normalization:</source>
         <translation>Normalización:</translation>
     </message>
     <message>
-        <location filename="../settings_dialog.py" line="1905"/>
-        <location filename="../settings_dialog.py" line="2668"/>
+        <location filename="../settings_dialog.py" line="1962"/>
+        <location filename="../settings_dialog.py" line="2725"/>
         <source>Normalization mode:
   Off — play untouched.
   Track — match each song to a common loudness target.
@@ -2197,638 +2223,638 @@ Subsonic requiere permiso de administrador para crear / editar / eliminar.</tran
   Álbum — conservar el volumen relativo dentro de un álbum.</translation>
     </message>
     <message>
-        <location filename="../settings_dialog.py" line="1923"/>
+        <location filename="../settings_dialog.py" line="1980"/>
         <source>SHUFFLE</source>
         <translation>ALEATORIO</translation>
     </message>
     <message>
-        <location filename="../settings_dialog.py" line="1934"/>
+        <location filename="../settings_dialog.py" line="1991"/>
         <source>Queue size:</source>
         <translation>Tamaño de la cola:</translation>
     </message>
     <message>
-        <location filename="../settings_dialog.py" line="1938"/>
+        <location filename="../settings_dialog.py" line="1995"/>
         <source>50 tracks</source>
         <translation>50 pistas</translation>
     </message>
     <message>
-        <location filename="../settings_dialog.py" line="1939"/>
+        <location filename="../settings_dialog.py" line="1996"/>
         <source>100 tracks</source>
         <translation>100 pistas</translation>
     </message>
     <message>
-        <location filename="../settings_dialog.py" line="1940"/>
+        <location filename="../settings_dialog.py" line="1997"/>
         <source>250 tracks</source>
         <translation>250 pistas</translation>
     </message>
     <message>
-        <location filename="../settings_dialog.py" line="1941"/>
+        <location filename="../settings_dialog.py" line="1998"/>
         <source>500 tracks</source>
         <translation>500 pistas</translation>
     </message>
     <message>
-        <location filename="../settings_dialog.py" line="1942"/>
+        <location filename="../settings_dialog.py" line="1999"/>
         <source>1000 tracks</source>
         <translation>1000 pistas</translation>
     </message>
     <message>
-        <location filename="../settings_dialog.py" line="1975"/>
+        <location filename="../settings_dialog.py" line="2032"/>
         <source>MEDIA KEYS</source>
         <translation>TECLAS MULTIMEDIA</translation>
     </message>
     <message>
-        <location filename="../settings_dialog.py" line="1980"/>
-        <location filename="../settings_dialog.py" line="1988"/>
+        <location filename="../settings_dialog.py" line="2037"/>
+        <location filename="../settings_dialog.py" line="2045"/>
         <source>OS media integration</source>
         <translation>Integración multimedia del sistema</translation>
     </message>
     <message>
-        <location filename="../settings_dialog.py" line="1990"/>
+        <location filename="../settings_dialog.py" line="2047"/>
         <source>Exposes jellytoast to your desktop&apos;s media controls — the MPRIS widget and media keys on Linux, the SMTC volume-flyout and hardware media keys on Windows. Turn off to keep jellytoast out of the OS media UI. Takes effect on restart.</source>
         <translation>Expone jellytoast a los controles multimedia de tu escritorio — el widget MPRIS y las teclas multimedia en Linux, el control de volumen SMTC y las teclas físicas en Windows. Desactívalo para mantener jellytoast fuera de la interfaz multimedia del sistema. Surte efecto al reiniciar.</translation>
     </message>
     <message>
-        <location filename="../settings_dialog.py" line="2022"/>
+        <location filename="../settings_dialog.py" line="2079"/>
         <source>CROSSFADE</source>
         <translation>FUNDIDO CRUZADO</translation>
     </message>
     <message>
-        <location filename="../settings_dialog.py" line="2038"/>
+        <location filename="../settings_dialog.py" line="2095"/>
         <source>Crossfade between tracks</source>
         <translation>Fundido cruzado entre pistas</translation>
     </message>
     <message>
-        <location filename="../settings_dialog.py" line="2043"/>
+        <location filename="../settings_dialog.py" line="2100"/>
         <source>Skip on albums</source>
         <translation>Omitir en álbumes</translation>
     </message>
     <message>
-        <location filename="../settings_dialog.py" line="2046"/>
+        <location filename="../settings_dialog.py" line="2103"/>
         <source>Skip the crossfade between tracks on the same album so albums that flow as one piece (live sets, concept records) stay seamless.</source>
         <translation>Omite el fundido entre pistas del mismo álbum para que los álbumes que fluyen como una sola pieza (directos, discos conceptuales) sigan siendo continuos.</translation>
     </message>
     <message>
-        <location filename="../settings_dialog.py" line="2079"/>
+        <location filename="../settings_dialog.py" line="2136"/>
         <source>Duration:</source>
         <translation>Duración:</translation>
     </message>
     <message>
-        <location filename="../settings_dialog.py" line="2136"/>
+        <location filename="../settings_dialog.py" line="2193"/>
         <source>{0:.1f} s</source>
         <translation>{0:.1f} s</translation>
     </message>
     <message>
-        <location filename="../settings_dialog.py" line="2162"/>
+        <location filename="../settings_dialog.py" line="2219"/>
         <source>Casting — crossfade applies to local playback only and is inactive now.</source>
         <translation>Enviando — el fundido cruzado solo se aplica a la reproducción local y ahora está inactivo.</translation>
     </message>
     <message>
-        <location filename="../settings_dialog.py" line="2268"/>
+        <location filename="../settings_dialog.py" line="2325"/>
         <source>Device types</source>
         <translation>Tipos de dispositivo</translation>
     </message>
     <message>
-        <location filename="../settings_dialog.py" line="2271"/>
+        <location filename="../settings_dialog.py" line="2328"/>
         <source>Cast devices not showing?</source>
         <translation>¿No aparecen los dispositivos de envío?</translation>
     </message>
     <message>
-        <location filename="../settings_dialog.py" line="2274"/>
+        <location filename="../settings_dialog.py" line="2331"/>
         <source>Firewall help — why AirPlay/DLNA might not appear</source>
         <translation>Ayuda con el cortafuegos — por qué AirPlay/DLNA pueden no aparecer</translation>
     </message>
     <message>
-        <location filename="../settings_dialog.py" line="2283"/>
+        <location filename="../settings_dialog.py" line="2340"/>
         <source>Casting is off until you turn it on — nothing scans your network until you enable a protocol below.</source>
         <translation>El envío está desactivado hasta que lo actives — nada escanea tu red hasta que habilites un protocolo abajo.</translation>
     </message>
     <message>
-        <location filename="../settings_dialog.py" line="2324"/>
+        <location filename="../settings_dialog.py" line="2381"/>
         <source>Sonos transport</source>
         <translation>Transporte Sonos</translation>
     </message>
     <message>
-        <location filename="../settings_dialog.py" line="2326"/>
+        <location filename="../settings_dialog.py" line="2383"/>
         <source>Mid-cast play/pause, volume, and seek (including the skip ± buttons, both directions) are implemented for Sonos — but Sonos transport hasn&apos;t been tested against real hardware yet.</source>
         <translation>Play/pausa, volumen y salto durante el envío (incluidos los botones de salto ±, en ambos sentidos) están implementados para Sonos — pero el transporte Sonos aún no se ha probado con hardware real.</translation>
     </message>
     <message>
-        <location filename="../settings_dialog.py" line="2332"/>
+        <location filename="../settings_dialog.py" line="2389"/>
         <source>Sonos transport: implemented, not yet hardware-tested</source>
         <translation>Transporte Sonos: implementado, aún sin probar en hardware</translation>
     </message>
     <message>
-        <location filename="../settings_dialog.py" line="2351"/>
+        <location filename="../settings_dialog.py" line="2408"/>
         <source>Discovery timing</source>
         <translation>Tiempos de búsqueda</translation>
     </message>
     <message>
-        <location filename="../settings_dialog.py" line="2353"/>
+        <location filename="../settings_dialog.py" line="2410"/>
         <source>Discover at startup</source>
         <translation>Buscar al arrancar</translation>
     </message>
     <message>
-        <location filename="../settings_dialog.py" line="2354"/>
+        <location filename="../settings_dialog.py" line="2411"/>
         <source>Discover on cast</source>
         <translation>Buscar al enviar</translation>
     </message>
     <message>
-        <location filename="../settings_dialog.py" line="2394"/>
+        <location filename="../settings_dialog.py" line="2451"/>
         <source>Stream routing</source>
         <translation>Enrutado del stream</translation>
     </message>
     <message>
-        <location filename="../settings_dialog.py" line="2640"/>
+        <location filename="../settings_dialog.py" line="2697"/>
         <source>Disabled while Bit-perfect mode is on.</source>
         <translation>Desactivado mientras el modo bit-perfect está activo.</translation>
     </message>
     <message>
-        <location filename="../settings_dialog.py" line="2650"/>
+        <location filename="../settings_dialog.py" line="2707"/>
         <source>Enable Bit-perfect mode to use exclusive output.</source>
         <translation>Activa el modo bit-perfect para usar la salida exclusiva.</translation>
     </message>
     <message>
-        <location filename="../settings_dialog.py" line="2655"/>
+        <location filename="../settings_dialog.py" line="2712"/>
         <source>Exclusive output requires audio quality &apos;Original&apos; — the server can&apos;t transcode and still ship bit-identical bits.</source>
         <translation>La salida exclusiva requiere calidad de audio «Original» — el servidor no puede transcodificar y aun así entregar bits idénticos.</translation>
     </message>
     <message>
-        <location filename="../settings_dialog.py" line="2741"/>
+        <location filename="../settings_dialog.py" line="2798"/>
         <source>Remove PipeWire bit-perfect config</source>
         <translation>Quitar configuración bit-perfect de PipeWire</translation>
     </message>
     <message>
-        <location filename="../settings_dialog.py" line="2743"/>
+        <location filename="../settings_dialog.py" line="2800"/>
         <source>Removes {0}. Restart pipewire to revert.</source>
         <translation>Elimina {0}. Reinicia pipewire para revertir.</translation>
     </message>
     <message>
-        <location filename="../settings_dialog.py" line="2748"/>
+        <location filename="../settings_dialog.py" line="2805"/>
         <source>Install PipeWire bit-perfect config</source>
         <translation>Instalar configuración bit-perfect de PipeWire</translation>
     </message>
     <message>
-        <location filename="../settings_dialog.py" line="2750"/>
+        <location filename="../settings_dialog.py" line="2807"/>
         <source>Writes {0} with rate-matching properties.</source>
         <translation>Escribe {0} con propiedades de ajuste de frecuencia.</translation>
     </message>
     <message>
-        <location filename="../settings_dialog.py" line="2766"/>
+        <location filename="../settings_dialog.py" line="2823"/>
         <source>Removed. Restart pipewire to revert the rate-matching properties.</source>
         <translation>Eliminada. Reinicia pipewire para revertir las propiedades de ajuste de frecuencia.</translation>
     </message>
     <message>
-        <location filename="../settings_dialog.py" line="2774"/>
+        <location filename="../settings_dialog.py" line="2831"/>
         <source>Did not remove — the file at that path wasn&apos;t installed by jellytoast. Edit it by hand if you want to revert.</source>
         <translation>No se eliminó — el archivo en esa ruta no lo instaló jellytoast. Edítalo a mano si quieres revertirlo.</translation>
     </message>
     <message>
-        <location filename="../settings_dialog.py" line="2782"/>
+        <location filename="../settings_dialog.py" line="2839"/>
         <source>Installed. Restart pipewire (or log out / in) for the rate-matching properties to take effect.</source>
         <translation>Instalada. Reinicia pipewire (o cierra y abre sesión) para que las propiedades de ajuste de frecuencia surtan efecto.</translation>
     </message>
     <message>
-        <location filename="../settings_dialog.py" line="2786"/>
+        <location filename="../settings_dialog.py" line="2843"/>
         <source>Install failed: {0}</source>
         <translation>Falló la instalación: {0}</translation>
     </message>
     <message>
-        <location filename="../settings_dialog.py" line="2810"/>
+        <location filename="../settings_dialog.py" line="2867"/>
         <source>Restart jellytoast to apply your display changes.</source>
         <translation>Reinicia jellytoast para aplicar los cambios de pantalla.</translation>
     </message>
     <message>
-        <location filename="../settings_dialog.py" line="2832"/>
+        <location filename="../settings_dialog.py" line="2889"/>
         <source>Theme</source>
         <translation>Tema</translation>
     </message>
     <message>
-        <location filename="../settings_dialog.py" line="2862"/>
+        <location filename="../settings_dialog.py" line="2919"/>
         <source>Scaling</source>
         <translation>Escala</translation>
     </message>
     <message>
-        <location filename="../settings_dialog.py" line="2904"/>
+        <location filename="../settings_dialog.py" line="2961"/>
         <source>Font size:</source>
         <translation>Tamaño de letra:</translation>
     </message>
     <message>
-        <location filename="../settings_dialog.py" line="2916"/>
-        <location filename="../settings_dialog.py" line="3023"/>
+        <location filename="../settings_dialog.py" line="2973"/>
+        <location filename="../settings_dialog.py" line="3080"/>
         <source>System default</source>
         <translation>Predeterminado del sistema</translation>
     </message>
     <message>
-        <location filename="../settings_dialog.py" line="2933"/>
+        <location filename="../settings_dialog.py" line="2990"/>
         <source>Font:</source>
         <translation>Fuente:</translation>
     </message>
     <message>
-        <location filename="../settings_dialog.py" line="2944"/>
+        <location filename="../settings_dialog.py" line="3001"/>
         <source>Lyrics font size:</source>
         <translation>Tamaño de letra de las letras:</translation>
     </message>
     <message>
-        <location filename="../settings_dialog.py" line="2959"/>
+        <location filename="../settings_dialog.py" line="3016"/>
         <source>Now-playing info</source>
         <translation>Información de reproducción</translation>
     </message>
     <message>
-        <location filename="../settings_dialog.py" line="2973"/>
+        <location filename="../settings_dialog.py" line="3030"/>
         <source>Bit Perfect</source>
         <translation>Bit Perfect</translation>
     </message>
     <message>
-        <location filename="../settings_dialog.py" line="2977"/>
+        <location filename="../settings_dialog.py" line="3034"/>
         <source>Normalized</source>
         <translation>Normalizado</translation>
     </message>
     <message>
-        <location filename="../settings_dialog.py" line="2980"/>
+        <location filename="../settings_dialog.py" line="3037"/>
         <source>Crossfade</source>
         <translation>Fundido cruzado</translation>
     </message>
     <message>
-        <location filename="../settings_dialog.py" line="2983"/>
+        <location filename="../settings_dialog.py" line="3040"/>
         <source>Codec (FLAC, MP3, …)</source>
         <translation>Códec (FLAC, MP3, …)</translation>
     </message>
     <message>
-        <location filename="../settings_dialog.py" line="2986"/>
+        <location filename="../settings_dialog.py" line="3043"/>
         <source>Bitrate (kbps)</source>
         <translation>Tasa de bits (kbps)</translation>
     </message>
     <message>
-        <location filename="../settings_dialog.py" line="3010"/>
+        <location filename="../settings_dialog.py" line="3067"/>
         <source>Interface</source>
         <translation>Interfaz</translation>
     </message>
     <message>
-        <location filename="../settings_dialog.py" line="3031"/>
+        <location filename="../settings_dialog.py" line="3088"/>
         <source>Language:</source>
         <translation>Idioma:</translation>
     </message>
     <message>
-        <location filename="../settings_dialog.py" line="3033"/>
-        <location filename="../settings_dialog.py" line="3071"/>
         <location filename="../settings_dialog.py" line="3090"/>
+        <location filename="../settings_dialog.py" line="3128"/>
+        <location filename="../settings_dialog.py" line="3147"/>
         <source>(needs restart)</source>
         <translation>(requiere reinicio)</translation>
     </message>
     <message>
-        <location filename="../settings_dialog.py" line="3039"/>
+        <location filename="../settings_dialog.py" line="3096"/>
         <source>Show hover tooltips</source>
         <translation>Mostrar descripciones al pasar el cursor</translation>
     </message>
     <message>
-        <location filename="../settings_dialog.py" line="3065"/>
+        <location filename="../settings_dialog.py" line="3122"/>
         <source>Use native window border</source>
         <translation>Usar el borde de ventana nativo</translation>
     </message>
     <message>
-        <location filename="../settings_dialog.py" line="3085"/>
+        <location filename="../settings_dialog.py" line="3142"/>
         <source>Square corners</source>
         <translation>Esquinas rectas</translation>
     </message>
     <message>
-        <location filename="../settings_dialog.py" line="3233"/>
+        <location filename="../settings_dialog.py" line="3290"/>
         <source>Frosted glass needs compositor blur — {0}.</source>
         <translation>El cristal esmerilado necesita desenfoque del compositor — {0}.</translation>
     </message>
     <message>
-        <location filename="../settings_dialog.py" line="3295"/>
-        <location filename="../settings_dialog.py" line="3418"/>
+        <location filename="../settings_dialog.py" line="3352"/>
+        <location filename="../settings_dialog.py" line="3475"/>
         <source>Import…</source>
         <translation>Importar…</translation>
     </message>
     <message>
-        <location filename="../settings_dialog.py" line="3299"/>
+        <location filename="../settings_dialog.py" line="3356"/>
         <source>Import a base16 .yaml colour scheme (≈250 community themes)</source>
         <translation>Importa un esquema de color base16 .yaml (≈250 temas de la comunidad)</translation>
     </message>
     <message>
-        <location filename="../settings_dialog.py" line="3320"/>
+        <location filename="../settings_dialog.py" line="3377"/>
         <source>Mode:</source>
         <translation>Modo:</translation>
     </message>
     <message>
-        <location filename="../settings_dialog.py" line="3332"/>
+        <location filename="../settings_dialog.py" line="3389"/>
         <source>Frosted glass</source>
         <translation>Cristal esmerilado</translation>
     </message>
     <message>
-        <location filename="../settings_dialog.py" line="3335"/>
+        <location filename="../settings_dialog.py" line="3392"/>
         <source>Translucent, blurred body (Frosted) vs a solid opaque body.</source>
         <translation>Cuerpo translúcido y desenfocado (esmerilado) frente a un cuerpo sólido opaco.</translation>
     </message>
     <message>
-        <location filename="../settings_dialog.py" line="3349"/>
+        <location filename="../settings_dialog.py" line="3406"/>
         <source>Accent color</source>
         <translation>Color de acento</translation>
     </message>
     <message>
-        <location filename="../settings_dialog.py" line="3351"/>
+        <location filename="../settings_dialog.py" line="3408"/>
         <source>Follow system accent</source>
         <translation>Seguir el acento del sistema</translation>
     </message>
     <message>
-        <location filename="../settings_dialog.py" line="3355"/>
+        <location filename="../settings_dialog.py" line="3412"/>
         <source>Adopt your desktop&apos;s accent colour (KDE Plasma / GNOME 47+ / Windows / macOS).</source>
         <translation>Adopta el color de acento de tu escritorio (KDE Plasma / GNOME 47+ / Windows / macOS).</translation>
     </message>
     <message>
-        <location filename="../settings_dialog.py" line="3370"/>
+        <location filename="../settings_dialog.py" line="3427"/>
         <source>Palette</source>
         <translation>Paleta</translation>
     </message>
     <message>
-        <location filename="../settings_dialog.py" line="3377"/>
-        <location filename="../settings_dialog.py" line="3386"/>
+        <location filename="../settings_dialog.py" line="3434"/>
+        <location filename="../settings_dialog.py" line="3443"/>
         <source>Follow pywal / wallust</source>
         <translation>Seguir pywal / wallust</translation>
     </message>
     <message>
-        <location filename="../settings_dialog.py" line="3388"/>
+        <location filename="../settings_dialog.py" line="3445"/>
         <source>pywal / wallust are tools that build themes from your wallpaper.</source>
         <translation>pywal / wallust son herramientas que crean temas a partir de tu fondo de pantalla.</translation>
     </message>
     <message>
-        <location filename="../settings_dialog.py" line="3419"/>
-        <location filename="../settings_dialog.py" line="3473"/>
+        <location filename="../settings_dialog.py" line="3476"/>
+        <location filename="../settings_dialog.py" line="3530"/>
         <source>Default</source>
         <translation>Predeterminado</translation>
     </message>
     <message>
-        <location filename="../settings_dialog.py" line="3447"/>
+        <location filename="../settings_dialog.py" line="3504"/>
         <source>Glass opacity</source>
         <translation>Opacidad del cristal</translation>
     </message>
     <message>
-        <location filename="../settings_dialog.py" line="3476"/>
+        <location filename="../settings_dialog.py" line="3533"/>
         <source>Reset glass opacity to this theme&apos;s default</source>
         <translation>Restablecer la opacidad del cristal al valor por defecto del tema</translation>
     </message>
     <message>
-        <location filename="../settings_dialog.py" line="3575"/>
+        <location filename="../settings_dialog.py" line="3632"/>
         <source>Imported scheme</source>
         <translation>Esquema importado</translation>
     </message>
     <message>
-        <location filename="../settings_dialog.py" line="3800"/>
+        <location filename="../settings_dialog.py" line="3857"/>
         <source>In-app shortcuts</source>
         <translation>Atajos de la aplicación</translation>
     </message>
     <message>
-        <location filename="../settings_dialog.py" line="3804"/>
+        <location filename="../settings_dialog.py" line="3861"/>
         <source>Reset all to defaults</source>
         <translation>Restablecer todos a los valores por defecto</translation>
     </message>
     <message>
-        <location filename="../settings_dialog.py" line="3810"/>
+        <location filename="../settings_dialog.py" line="3867"/>
         <source>Media keys</source>
         <translation>Teclas multimedia</translation>
     </message>
     <message>
-        <location filename="../settings_dialog.py" line="3811"/>
+        <location filename="../settings_dialog.py" line="3868"/>
         <source>Play / Pause</source>
         <translation>Reproducir / Pausar</translation>
     </message>
     <message>
-        <location filename="../settings_dialog.py" line="3811"/>
+        <location filename="../settings_dialog.py" line="3868"/>
         <source>Media Play</source>
         <translation>Tecla Reproducir</translation>
     </message>
     <message>
-        <location filename="../settings_dialog.py" line="3812"/>
+        <location filename="../settings_dialog.py" line="3869"/>
         <source>Next track</source>
         <translation>Pista siguiente</translation>
     </message>
     <message>
-        <location filename="../settings_dialog.py" line="3812"/>
+        <location filename="../settings_dialog.py" line="3869"/>
         <source>Media Next</source>
         <translation>Tecla Siguiente</translation>
     </message>
     <message>
-        <location filename="../settings_dialog.py" line="3814"/>
+        <location filename="../settings_dialog.py" line="3871"/>
         <source>Previous track</source>
         <translation>Pista anterior</translation>
     </message>
     <message>
-        <location filename="../settings_dialog.py" line="3814"/>
+        <location filename="../settings_dialog.py" line="3871"/>
         <source>Media Previous</source>
         <translation>Tecla Anterior</translation>
     </message>
     <message>
-        <location filename="../settings_dialog.py" line="3818"/>
+        <location filename="../settings_dialog.py" line="3875"/>
         <source>Media keys route through MPRIS and your desktop&apos;s own shortcut settings — they can&apos;t be rebound here.</source>
         <translation>Las teclas multimedia pasan por MPRIS y por los ajustes de atajos de tu escritorio — aquí no se pueden reasignar.</translation>
     </message>
     <message>
-        <location filename="../settings_dialog.py" line="3870"/>
+        <location filename="../settings_dialog.py" line="3927"/>
         <source>Reset</source>
         <translation>Restablecer</translation>
     </message>
     <message>
-        <location filename="../settings_dialog.py" line="3914"/>
+        <location filename="../settings_dialog.py" line="3971"/>
         <source>Already used by “{0}” — pick another.</source>
         <translation>Ya lo usa «{0}» — elige otro.</translation>
     </message>
     <message>
-        <location filename="../settings_dialog.py" line="4028"/>
+        <location filename="../settings_dialog.py" line="4085"/>
         <source> and </source>
         <translation> y </translation>
     </message>
     <message>
-        <location filename="../settings_dialog.py" line="4030"/>
+        <location filename="../settings_dialog.py" line="4087"/>
         <source>Your server is scrobbling {0} for you — the in-app option for that service is turned off so tracks aren&apos;t counted twice.</source>
         <translation>Tu servidor ya está haciendo scrobbling en {0} por ti — la opción en la aplicación para ese servicio está desactivada para no contar cada pista dos veces.</translation>
     </message>
     <message>
-        <location filename="../settings_dialog.py" line="4041"/>
+        <location filename="../settings_dialog.py" line="4098"/>
         <source>This is a Navidrome server. If you&apos;ve already enabled Last.fm or ListenBrainz scrobbling there, leave these off — otherwise every track is counted twice.</source>
         <translation>Este es un servidor Navidrome. Si ya activaste allí el scrobbling de Last.fm o ListenBrainz, deja esto desactivado — de lo contrario cada pista se cuenta dos veces.</translation>
     </message>
     <message>
-        <location filename="../settings_dialog.py" line="4048"/>
+        <location filename="../settings_dialog.py" line="4105"/>
         <source>If your music server already scrobbles (e.g. Navidrome&apos;s built-in Last.fm / ListenBrainz integration), leave these off — otherwise every track is counted twice.</source>
         <translation>Si tu servidor de música ya hace scrobbling (p. ej. la integración Last.fm / ListenBrainz de Navidrome), deja esto desactivado — de lo contrario cada pista se cuenta dos veces.</translation>
     </message>
     <message>
-        <location filename="../settings_dialog.py" line="4069"/>
+        <location filename="../settings_dialog.py" line="4126"/>
         <source>Re-check server scrobbling</source>
         <translation>Volver a comprobar el scrobbling del servidor</translation>
     </message>
     <message>
-        <location filename="../settings_dialog.py" line="4082"/>
+        <location filename="../settings_dialog.py" line="4139"/>
         <source>Checking your recent ListenBrainz listens…</source>
         <translation>Comprobando tus escuchas recientes de ListenBrainz…</translation>
     </message>
     <message>
-        <location filename="../settings_dialog.py" line="4091"/>
+        <location filename="../settings_dialog.py" line="4148"/>
         <source>Couldn&apos;t check — ListenBrainz isn&apos;t configured, or the server was unreachable.</source>
         <translation>No se pudo comprobar — ListenBrainz no está configurado, o el servidor no estaba accesible.</translation>
     </message>
     <message>
-        <location filename="../settings_dialog.py" line="4097"/>
+        <location filename="../settings_dialog.py" line="4154"/>
         <source>another client</source>
         <translation>otro cliente</translation>
     </message>
     <message>
-        <location filename="../settings_dialog.py" line="4101"/>
+        <location filename="../settings_dialog.py" line="4158"/>
         <source>Detected another scrobbler ({0}) on your account — in-app ListenBrainz paused to avoid duplicates. Reopen this page to refresh the controls.</source>
         <translation>Se detectó otro scrobbler ({0}) en tu cuenta — el ListenBrainz de la aplicación se pausó para evitar duplicados. Vuelve a abrir esta página para refrescar los controles.</translation>
     </message>
     <message>
-        <location filename="../settings_dialog.py" line="4109"/>
+        <location filename="../settings_dialog.py" line="4166"/>
         <source>No second scrobbler found in your recent listens.</source>
         <translation>No se encontró un segundo scrobbler en tus escuchas recientes.</translation>
     </message>
     <message>
-        <location filename="../settings_dialog.py" line="4125"/>
+        <location filename="../settings_dialog.py" line="4182"/>
         <source>Enable ListenBrainz scrobbling</source>
         <translation>Activar scrobbling de ListenBrainz</translation>
     </message>
     <message>
-        <location filename="../settings_dialog.py" line="4135"/>
+        <location filename="../settings_dialog.py" line="4192"/>
         <source>A second scrobbler (your server) is already submitting these listens to ListenBrainz. In-app scrobbling is paused to avoid duplicates.</source>
         <translation>Un segundo scrobbler (tu servidor) ya está enviando estas escuchas a ListenBrainz. El scrobbling de la aplicación está pausado para evitar duplicados.</translation>
     </message>
     <message>
-        <location filename="../settings_dialog.py" line="4143"/>
+        <location filename="../settings_dialog.py" line="4200"/>
         <source>Scrobble from jellytoast anyway</source>
         <translation>Hacer scrobbling desde jellytoast igualmente</translation>
     </message>
     <message>
-        <location filename="../settings_dialog.py" line="4147"/>
+        <location filename="../settings_dialog.py" line="4204"/>
         <source>Submit listens from jellytoast even though another scrobbler was detected on your ListenBrainz account. Only use this if that other scrobbler isn&apos;t your music server — otherwise every track is counted twice.</source>
         <translation>Envía escuchas desde jellytoast aunque se haya detectado otro scrobbler en tu cuenta de ListenBrainz. Úsalo solo si ese otro scrobbler no es tu servidor de música — de lo contrario cada pista se cuenta dos veces.</translation>
     </message>
     <message>
-        <location filename="../settings_dialog.py" line="4160"/>
+        <location filename="../settings_dialog.py" line="4217"/>
         <source>User token</source>
         <translation>Token de usuario</translation>
     </message>
     <message>
-        <location filename="../settings_dialog.py" line="4165"/>
+        <location filename="../settings_dialog.py" line="4222"/>
         <source>Paste from listenbrainz.org/profile/</source>
         <translation>Pégalo desde listenbrainz.org/profile/</translation>
     </message>
     <message>
-        <location filename="../settings_dialog.py" line="4175"/>
+        <location filename="../settings_dialog.py" line="4232"/>
         <source>Validate</source>
         <translation>Validar</translation>
     </message>
     <message>
-        <location filename="../settings_dialog.py" line="4189"/>
+        <location filename="../settings_dialog.py" line="4246"/>
         <source>Server URL</source>
         <translation>URL del servidor</translation>
     </message>
     <message>
-        <location filename="../settings_dialog.py" line="4214"/>
+        <location filename="../settings_dialog.py" line="4271"/>
         <source>Enable Last.fm scrobbling</source>
         <translation>Activar scrobbling de Last.fm</translation>
     </message>
     <message>
-        <location filename="../settings_dialog.py" line="4222"/>
+        <location filename="../settings_dialog.py" line="4279"/>
         <source>Your Navidrome server is already scrobbling to Last.fm. Disable it there to use jellytoast&apos;s Last.fm client instead.</source>
         <translation>Tu servidor Navidrome ya hace scrobbling a Last.fm. Desactívalo allí para usar el cliente Last.fm de jellytoast.</translation>
     </message>
     <message>
-        <location filename="../settings_dialog.py" line="4234"/>
-        <location filename="../settings_dialog.py" line="4386"/>
+        <location filename="../settings_dialog.py" line="4291"/>
+        <location filename="../settings_dialog.py" line="4443"/>
         <source>Disconnect</source>
         <translation>Desconectar</translation>
     </message>
     <message>
-        <location filename="../settings_dialog.py" line="4238"/>
-        <location filename="../settings_dialog.py" line="4416"/>
+        <location filename="../settings_dialog.py" line="4295"/>
+        <location filename="../settings_dialog.py" line="4473"/>
         <source>Connect to Last.fm…</source>
         <translation>Conectar con Last.fm…</translation>
     </message>
     <message>
-        <location filename="../settings_dialog.py" line="4252"/>
-        <location filename="../settings_dialog.py" line="4260"/>
-        <location filename="../settings_dialog.py" line="4300"/>
+        <location filename="../settings_dialog.py" line="4309"/>
+        <location filename="../settings_dialog.py" line="4317"/>
+        <location filename="../settings_dialog.py" line="4357"/>
         <source>Connected as {0}.</source>
         <translation>Conectado como {0}.</translation>
     </message>
     <message>
-        <location filename="../settings_dialog.py" line="4254"/>
+        <location filename="../settings_dialog.py" line="4311"/>
         <source>Token saved — click Validate to confirm.</source>
         <translation>Token guardado — pulsa Validar para confirmar.</translation>
     </message>
     <message>
-        <location filename="../settings_dialog.py" line="4255"/>
+        <location filename="../settings_dialog.py" line="4312"/>
         <source>Not validated yet.</source>
         <translation>Aún sin validar.</translation>
     </message>
     <message>
-        <location filename="../settings_dialog.py" line="4261"/>
+        <location filename="../settings_dialog.py" line="4318"/>
         <source>Not connected.</source>
         <translation>Sin conexión.</translation>
     </message>
     <message>
-        <location filename="../settings_dialog.py" line="4280"/>
+        <location filename="../settings_dialog.py" line="4337"/>
         <source>Enter a token, then click Validate.</source>
         <translation>Introduce un token y pulsa Validar.</translation>
     </message>
     <message>
-        <location filename="../settings_dialog.py" line="4286"/>
+        <location filename="../settings_dialog.py" line="4343"/>
         <source>Validating…</source>
         <translation>Validando…</translation>
     </message>
     <message>
-        <location filename="../settings_dialog.py" line="4304"/>
+        <location filename="../settings_dialog.py" line="4361"/>
         <source>Couldn&apos;t validate — check the token and try again.</source>
         <translation>No se pudo validar — revisa el token e inténtalo de nuevo.</translation>
     </message>
     <message>
-        <location filename="../settings_dialog.py" line="4318"/>
+        <location filename="../settings_dialog.py" line="4375"/>
         <source>Requesting token…</source>
         <translation>Solicitando token…</translation>
     </message>
     <message>
-        <location filename="../settings_dialog.py" line="4323"/>
+        <location filename="../settings_dialog.py" line="4380"/>
         <source>Couldn&apos;t reach Last.fm — try again later.</source>
         <translation>No se pudo contactar con Last.fm — inténtalo más tarde.</translation>
     </message>
     <message>
-        <location filename="../settings_dialog.py" line="4341"/>
+        <location filename="../settings_dialog.py" line="4398"/>
         <source>Connect to Last.fm</source>
         <translation>Conectar con Last.fm</translation>
     </message>
     <message>
-        <location filename="../settings_dialog.py" line="4349"/>
+        <location filename="../settings_dialog.py" line="4406"/>
         <source>We&apos;ve opened Last.fm in your browser. Click &quot;Allow&quot; there, then come back — jellytoast will detect the approval automatically.</source>
         <translation>Hemos abierto Last.fm en tu navegador. Pulsa «Allow» allí y vuelve — jellytoast detectará la aprobación automáticamente.</translation>
     </message>
     <message>
-        <location filename="../settings_dialog.py" line="4357"/>
+        <location filename="../settings_dialog.py" line="4414"/>
         <source>Waiting for authorization…</source>
         <translation>Esperando la autorización…</translation>
     </message>
     <message>
-        <location filename="../settings_dialog.py" line="4362"/>
+        <location filename="../settings_dialog.py" line="4419"/>
         <source>Cancel</source>
         <translation>Cancelar</translation>
     </message>
     <message>
-        <location filename="../settings_dialog.py" line="4409"/>
+        <location filename="../settings_dialog.py" line="4466"/>
         <source>Connection cancelled.</source>
         <translation>Conexión cancelada.</translation>
     </message>
     <message>
-        <location filename="../settings_dialog.py" line="4474"/>
+        <location filename="../settings_dialog.py" line="4531"/>
         <source>About {0}</source>
         <translation>Acerca de {0}</translation>
     </message>
     <message>
-        <location filename="../settings_dialog.py" line="4507"/>
+        <location filename="../settings_dialog.py" line="4564"/>
         <source>your local subnet</source>
         <translation>tu subred local</translation>
     </message>
     <message>
-        <location filename="../settings_dialog.py" line="4511"/>
+        <location filename="../settings_dialog.py" line="4568"/>
         <source>AirPlay and DLNA devices are found by sending discovery requests on your local network. A firewall can allow the request out but block the reply, so those devices never appear. If Chromecast works but AirPlay/DLNA don&apos;t, a firewall is the likely cause.
 
 </source>
@@ -2837,21 +2863,21 @@ Subsonic requiere permiso de administrador para crear / editar / eliminar.</tran
 </translation>
     </message>
     <message>
-        <location filename="../settings_dialog.py" line="4520"/>
+        <location filename="../settings_dialog.py" line="4577"/>
         <source>Windows
 When Windows asks on first launch, click “Allow access” for private networks. To change it later: Windows Security → Firewall &amp; network protection → Allow an app through firewall → enable jellytoast on Private networks.</source>
         <translation>Windows
 Cuando Windows pregunte en el primer arranque, pulsa «Permitir acceso» para redes privadas. Para cambiarlo después: Seguridad de Windows → Firewall y protección de red → Permitir una aplicación a través del firewall → habilita jellytoast en redes privadas.</translation>
     </message>
     <message>
-        <location filename="../settings_dialog.py" line="4530"/>
+        <location filename="../settings_dialog.py" line="4587"/>
         <source>macOS
 System Settings → Network → Firewall → Options → allow incoming connections for jellytoast (or click “Allow” if prompted on launch).</source>
         <translation>macOS
 Ajustes del Sistema → Red → Firewall → Opciones → permite conexiones entrantes para jellytoast (o pulsa «Permitir» si aparece al arrancar).</translation>
     </message>
     <message>
-        <location filename="../settings_dialog.py" line="4539"/>
+        <location filename="../settings_dialog.py" line="4596"/>
         <source>Linux — ufw
     sudo ufw allow from {0}
 
@@ -2866,7 +2892,7 @@ Linux — firewalld
     sudo firewall-cmd --reload</translation>
     </message>
     <message>
-        <location filename="../settings_dialog.py" line="4548"/>
+        <location filename="../settings_dialog.py" line="4605"/>
         <source>
 
 Ports used: UDP 5353 (mDNS / AirPlay), UDP 1900 (SSDP / DLNA), TCP {0} (cast proxy).</source>
@@ -2875,22 +2901,22 @@ Ports used: UDP 5353 (mDNS / AirPlay), UDP 1900 (SSDP / DLNA), TCP {0} (cast pro
 Puertos usados: UDP 5353 (mDNS / AirPlay), UDP 1900 (SSDP / DLNA), TCP {0} (proxy de envío).</translation>
     </message>
     <message>
-        <location filename="../settings_dialog.py" line="4610"/>
+        <location filename="../settings_dialog.py" line="4667"/>
         <source>Import a base16 theme</source>
         <translation>Importar un tema base16</translation>
     </message>
     <message>
-        <location filename="../settings_dialog.py" line="4612"/>
+        <location filename="../settings_dialog.py" line="4669"/>
         <source>base16 schemes (*.yaml *.yml);;All files (*)</source>
         <translation>Esquemas base16 (*.yaml *.yml);;Todos los archivos (*)</translation>
     </message>
     <message>
-        <location filename="../settings_dialog.py" line="4622"/>
+        <location filename="../settings_dialog.py" line="4679"/>
         <source>Import failed</source>
         <translation>Fallo al importar</translation>
     </message>
     <message>
-        <location filename="../settings_dialog.py" line="4623"/>
+        <location filename="../settings_dialog.py" line="4680"/>
         <source>Couldn&apos;t read that as a base16 colour scheme:
 
 {0}</source>
@@ -2899,12 +2925,12 @@ Puertos usados: UDP 5353 (mDNS / AirPlay), UDP 1900 (SSDP / DLNA), TCP {0} (prox
 {0}</translation>
     </message>
     <message>
-        <location filename="../settings_dialog.py" line="4670"/>
+        <location filename="../settings_dialog.py" line="4727"/>
         <source>Couldn&apos;t apply that theme</source>
         <translation>No se pudo aplicar ese tema</translation>
     </message>
     <message>
-        <location filename="../settings_dialog.py" line="4671"/>
+        <location filename="../settings_dialog.py" line="4728"/>
         <source>Couldn&apos;t read {0} as a base16 colour scheme:
 
 {1}</source>
@@ -2913,12 +2939,12 @@ Puertos usados: UDP 5353 (mDNS / AirPlay), UDP 1900 (SSDP / DLNA), TCP {0} (prox
 {1}</translation>
     </message>
     <message>
-        <location filename="../settings_dialog.py" line="4721"/>
+        <location filename="../settings_dialog.py" line="4778"/>
         <source>pywal palette not found</source>
         <translation>No se encontró la paleta de pywal</translation>
     </message>
     <message>
-        <location filename="../settings_dialog.py" line="4723"/>
+        <location filename="../settings_dialog.py" line="4780"/>
         <source>{0}
 
 Run pywal (or wallust) once so it generates a palette, then turn this back on.</source>
@@ -2927,12 +2953,12 @@ Run pywal (or wallust) once so it generates a palette, then turn this back on.</
 Ejecuta pywal (o wallust) una vez para que genere una paleta, y vuelve a activar esto.</translation>
     </message>
     <message>
-        <location filename="../settings_dialog.py" line="4748"/>
+        <location filename="../settings_dialog.py" line="4805"/>
         <source>No system accent</source>
         <translation>Sin acento del sistema</translation>
     </message>
     <message>
-        <location filename="../settings_dialog.py" line="4750"/>
+        <location filename="../settings_dialog.py" line="4807"/>
         <source>Your desktop didn&apos;t report an accent colour — this works on KDE Plasma and GNOME 47+.</source>
         <translation>Tu escritorio no informó de un color de acento — esto funciona en KDE Plasma y GNOME 47+.</translation>
     </message>
@@ -3515,24 +3541,29 @@ La carátula por pista no se modifica con esta escritura masiva.</translation>
 <context>
     <name>UiHelpers</name>
     <message>
-        <location filename="../ui_helpers.py" line="2642"/>
+        <location filename="../ui_helpers.py" line="1462"/>
+        <source>Couldn&apos;t update favorite — check your connection.</source>
+        <translation>No se pudo actualizar el favorito — comprueba tu conexión.</translation>
+    </message>
+    <message>
+        <location filename="../ui_helpers.py" line="2954"/>
         <source>Deep Cuts: {0}</source>
         <translation>Rarezas: {0}</translation>
     </message>
     <message>
-        <location filename="../ui_helpers.py" line="2645"/>
-        <location filename="../ui_helpers.py" line="2659"/>
+        <location filename="../ui_helpers.py" line="2957"/>
+        <location filename="../ui_helpers.py" line="2971"/>
         <source>More like {0}</source>
         <translation>Más como {0}</translation>
     </message>
     <message>
-        <location filename="../ui_helpers.py" line="2651"/>
-        <location filename="../ui_helpers.py" line="2661"/>
+        <location filename="../ui_helpers.py" line="2963"/>
+        <location filename="../ui_helpers.py" line="2973"/>
         <source>{0} has no genre tags, add some to help suggestions.</source>
         <translation>{0} no tiene etiquetas de género; añade algunas para mejorar las sugerencias.</translation>
     </message>
     <message>
-        <location filename="../ui_helpers.py" line="2656"/>
+        <location filename="../ui_helpers.py" line="2968"/>
         <source>{0} Discoveries</source>
         <translation>Descubrimientos de {0}</translation>
     </message>
@@ -3693,42 +3724,42 @@ La carátula por pista no se modifica con esta escritura masiva.</translation>
 <context>
     <name>_DownloadRow</name>
     <message>
-        <location filename="../downloads_view.py" line="183"/>
+        <location filename="../downloads_view.py" line="184"/>
         <source>Re-sync</source>
         <translation>Resincronizar</translation>
     </message>
     <message>
-        <location filename="../downloads_view.py" line="189"/>
+        <location filename="../downloads_view.py" line="190"/>
         <source>Remove</source>
         <translation>Eliminar</translation>
     </message>
     <message>
-        <location filename="../downloads_view.py" line="213"/>
+        <location filename="../downloads_view.py" line="214"/>
         <source>{0} · Re-syncing…</source>
         <translation>{0} · Resincronizando…</translation>
     </message>
     <message>
-        <location filename="../downloads_view.py" line="224"/>
+        <location filename="../downloads_view.py" line="225"/>
         <source>{0} · Re-sync failed</source>
         <translation>{0} · Falló la resincronización</translation>
     </message>
     <message>
-        <location filename="../downloads_view.py" line="292"/>
+        <location filename="../downloads_view.py" line="294"/>
         <source>{0} · Downloading… {1}%</source>
         <translation>{0} · Descargando… {1}%</translation>
     </message>
     <message>
-        <location filename="../downloads_view.py" line="296"/>
+        <location filename="../downloads_view.py" line="298"/>
         <source>{0} · Queued…</source>
         <translation>{0} · En cola…</translation>
     </message>
     <message>
-        <location filename="../downloads_view.py" line="299"/>
+        <location filename="../downloads_view.py" line="301"/>
         <source>{0} · Download failed</source>
         <translation>{0} · Falló la descarga</translation>
     </message>
     <message>
-        <location filename="../downloads_view.py" line="303"/>
+        <location filename="../downloads_view.py" line="305"/>
         <source>{0} · Stale</source>
         <translation>{0} · Obsoleto</translation>
     </message>
@@ -3736,12 +3767,12 @@ La carátula por pista no se modifica con esta escritura masiva.</translation>
 <context>
     <name>_ExpandedPanel</name>
     <message>
-        <location filename="../mini_player.py" line="470"/>
+        <location filename="../mini_player.py" line="474"/>
         <source>Favorite</source>
         <translation>Favorito</translation>
     </message>
     <message>
-        <location filename="../mini_player.py" line="484"/>
+        <location filename="../mini_player.py" line="488"/>
         <source>Nothing Playing</source>
         <translation>Nada en reproducción</translation>
     </message>
@@ -3783,52 +3814,52 @@ La carátula por pista no se modifica con esta escritura masiva.</translation>
 <context>
     <name>_LibraryListView</name>
     <message>
-        <location filename="../library_grid.py" line="1615"/>
-        <location filename="../library_grid.py" line="1701"/>
+        <location filename="../library_grid.py" line="1642"/>
+        <location filename="../library_grid.py" line="1728"/>
         <source>this {0}</source>
         <translation>este {0}</translation>
     </message>
     <message>
-        <location filename="../library_grid.py" line="1618"/>
-        <location filename="../library_grid.py" line="1678"/>
-        <location filename="../library_grid.py" line="1704"/>
+        <location filename="../library_grid.py" line="1645"/>
+        <location filename="../library_grid.py" line="1705"/>
+        <location filename="../library_grid.py" line="1731"/>
         <source>Remove download</source>
         <translation>Eliminar descarga</translation>
     </message>
     <message>
-        <location filename="../library_grid.py" line="1619"/>
-        <location filename="../library_grid.py" line="1705"/>
+        <location filename="../library_grid.py" line="1646"/>
+        <location filename="../library_grid.py" line="1732"/>
         <source>Remove the downloaded files for “{0}”?</source>
         <translation>¿Eliminar los archivos descargados de «{0}»?</translation>
     </message>
     <message>
-        <location filename="../library_grid.py" line="1620"/>
-        <location filename="../library_grid.py" line="1706"/>
+        <location filename="../library_grid.py" line="1647"/>
+        <location filename="../library_grid.py" line="1733"/>
         <source>Remove</source>
         <translation>Eliminar</translation>
     </message>
     <message>
-        <location filename="../library_grid.py" line="1660"/>
+        <location filename="../library_grid.py" line="1687"/>
         <source>Start album radio</source>
         <translation>Iniciar radio del álbum</translation>
     </message>
     <message>
-        <location filename="../library_grid.py" line="1662"/>
+        <location filename="../library_grid.py" line="1689"/>
         <source>Start artist radio</source>
         <translation>Iniciar radio del artista</translation>
     </message>
     <message>
-        <location filename="../library_grid.py" line="1669"/>
+        <location filename="../library_grid.py" line="1696"/>
         <source>Create smart playlist: More like {0}</source>
         <translation>Crear lista inteligente: Más como {0}</translation>
     </message>
     <message>
-        <location filename="../library_grid.py" line="1671"/>
+        <location filename="../library_grid.py" line="1698"/>
         <source>Create smart playlist: Deep Cuts: {0}</source>
         <translation>Crear lista inteligente: Rarezas: {0}</translation>
     </message>
     <message>
-        <location filename="../library_grid.py" line="1678"/>
+        <location filename="../library_grid.py" line="1705"/>
         <source>Download</source>
         <translation>Descargar</translation>
     </message>
@@ -3858,17 +3889,17 @@ La carátula por pista no se modifica con esta escritura masiva.</translation>
 <context>
     <name>_QueueAggregateBlock</name>
     <message>
-        <location filename="../downloads_view.py" line="445"/>
+        <location filename="../downloads_view.py" line="447"/>
         <source>calculating…</source>
         <translation>calculando…</translation>
     </message>
     <message>
-        <location filename="../downloads_view.py" line="449"/>
+        <location filename="../downloads_view.py" line="451"/>
         <source>Paused · {0} of {1} waiting · {2}</source>
         <translation>En pausa · {0} de {1} en espera · {2}</translation>
     </message>
     <message>
-        <location filename="../downloads_view.py" line="462"/>
+        <location filename="../downloads_view.py" line="464"/>
         <source>Downloading {0} of {1} · {2}</source>
         <translation>Descargando {0} de {1} · {2}</translation>
     </message>
@@ -3876,7 +3907,7 @@ La carátula por pista no se modifica con esta escritura masiva.</translation>
 <context>
     <name>_RowDelegate</name>
     <message>
-        <location filename="../library_grid.py" line="1115"/>
+        <location filename="../library_grid.py" line="1139"/>
         <source>Unknown</source>
         <translation>Desconocido</translation>
     </message>
@@ -4023,7 +4054,7 @@ La carátula por pista no se modifica con esta escritura masiva.</translation>
 <context>
     <name>_TileDelegate</name>
     <message>
-        <location filename="../library_grid.py" line="816"/>
+        <location filename="../library_grid.py" line="840"/>
         <source>Unknown</source>
         <translation>Desconocido</translation>
     </message>

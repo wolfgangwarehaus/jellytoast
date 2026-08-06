@@ -12,6 +12,13 @@ developer-facing history lives in [`docs/CHANGELOG.md`](docs/CHANGELOG.md).
      should stand alone: the Store "What's new" shows just the title (+ first
      sentence in --detail mode). -->
 
+- **A "Copy diagnostics" button, for when you need to report something.**
+  Settings → General now has a button that copies a short report — version,
+  your OS and desktop, audio and theme details, recent log lines — straight to
+  the clipboard, ready to paste into a bug report. Your password, access token
+  and scrobbling keys are never in it, and the server address is trimmed to
+  just the host. jellytoast also keeps a small rolling log file now (a few MB
+  at most), so something that went wrong yesterday still leaves a trace today.
 - **No stray keyboard highlight after clicking Home.** Coming back to the
   albums grid from the now-playing page with a mouse click left a keyboard
   focus ring sitting on the first album. The ring is a keyboard affordance, so

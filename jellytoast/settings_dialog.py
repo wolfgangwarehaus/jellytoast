@@ -1469,8 +1469,63 @@ class SettingsDialog(QDialog):
             up_row.addWidget(self._update_check_now)
             v.addLayout(up_row)
 
+        # ── Diagnostics ───────────────────────────────────────────────
+        # One-click support report (diagnostics.collect_report): versions,
+        # session type, blur status, provider + offline state, cover-pipeline
+        # counters, a secrets-excluded settings dump and the log tail. Lands on
+        # the clipboard, ready to paste into an issue.
+        v.addSpacing(16)
+        v.addWidget(self._section_header(self.tr("DIAGNOSTICS")))
+        v.addSpacing(4)
+        diag_row = QHBoxLayout()
+        diag_row.setContentsMargins(0, 0, 0, 0)
+        diag_row.setSpacing(10)
+        self._diagnostics_btn = QPushButton(self.tr("Copy diagnostics"))
+        self._diagnostics_btn.clicked.connect(self._on_copy_diagnostics)
+        diag_row.addWidget(self._diagnostics_btn)
+        diag_row.addWidget(
+            self._info_button(
+                self.tr("Copy diagnostics"),
+                self.tr(
+                    "Copies a support report to your clipboard — app version, "
+                    "system and desktop, audio and theme details, plus the tail "
+                    "of the log — so you can paste it into a bug report. Your "
+                    "password, access token and scrobbling keys are never "
+                    "included, and the server address is trimmed to its host."
+                ),
+            )
+        )
+        diag_row.addStretch(1)
+        v.addLayout(diag_row)
+
+        # Acknowledgement line for the button above — same faint caption idiom
+        # the "(needs restart)" hints use. Empty (but laid out) until clicked,
+        # so the section doesn't reflow when the text appears.
+        self._diagnostics_note = QLabel("")
+        self._diagnostics_note.setWordWrap(True)
+        self._diagnostics_note.setStyleSheet(
+            f"color: {TEXT_FAINT}; {type_qss(TYPE_CAPTION)}"
+        )
+        v.addWidget(self._diagnostics_note)
+
         v.addStretch(1)
         return page
+
+    def _on_copy_diagnostics(self):
+        """Put the support report on the clipboard and say so in the note line
+        below the button — no extra dialog to dismiss. Never raises: the whole
+        point of this button is the paths where something is already wrong."""
+        from jellytoast import diagnostics
+
+        try:
+            ok = diagnostics.copy_to_clipboard()
+        except Exception:
+            ok = False
+        self._diagnostics_note.setText(
+            self.tr("Diagnostics copied to clipboard.")
+            if ok
+            else self.tr("Couldn't copy diagnostics.")
+        )
 
     # Status-dot palette — kept here so a future probe enrichment
     # (orange for partial connectivity, slow response, auth-degraded)
@@ -5161,6 +5216,12 @@ class SettingsDialog(QDialog):
                 f"border-radius: {rad(6)}px; "
                 f"padding: 10px 14px; "
                 f"{type_qss(TYPE_CAPTION)}"
+            )
+        # Same for the General page's diagnostics acknowledgement — it bakes
+        # TEXT_FAINT, which the refresh above just re-stamped.
+        if hasattr(self, "_diagnostics_note"):
+            self._diagnostics_note.setStyleSheet(
+                f"color: {TEXT_FAINT}; {type_qss(TYPE_CAPTION)}"
             )
         # Scrobbling page's "your server is scrobbling for you" banner is
         # accent-tinted in its confirmatory state — re-stamp so it follows
