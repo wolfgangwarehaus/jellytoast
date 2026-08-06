@@ -425,6 +425,171 @@ class TestBlurDelivery:
         assert "near-opaque" in msg
 
 
+# ── KWindowSystem's platform plugin: the venv-PySide6 shim ────────────
+
+
+class TestPlatformPluginShim:
+    """A pip/pipx-installed PySide6 bundles its own Qt, whose library paths
+    don't include the distro's /usr/lib/qt6/plugins — so KWindowSystem's
+    platform-integration plugin (the piece that actually speaks the Wayland
+    blur protocols) is invisible, isEffectAvailable() reads False on a
+    blur-capable KWin, and the app paints grainy faux frost. The shim exposes
+    ONLY the kwindowsystem plugin family, never the whole system plugin tree
+    (which would let a second Qt build's platform/image plugins shadow
+    PySide6's own). Fix ported from the dough app base (dough d20562c).
+
+    Everything here fakes the filesystem + library paths — nothing depends on
+    the host actually having KF6 installed."""
+
+    @staticmethod
+    def _hide_real_plugin_paths():
+        """Drop any library path where the plugin is ALREADY discoverable —
+        the host may have KF6 installed, and an earlier test in this session
+        may have installed the real shim. Returns them for restoration."""
+        from pathlib import Path
+
+        from PySide6.QtCore import QCoreApplication
+
+        hidden = [
+            p
+            for p in QCoreApplication.libraryPaths()
+            if (Path(p) / _kwin._KF_PLUGIN_SUBDIR).is_dir()
+        ]
+        for p in hidden:
+            QCoreApplication.removeLibraryPath(p)
+        return hidden
+
+    def test_noop_when_already_discoverable(self, qapp, tmp_path, monkeypatch):
+        """Distro PySide6 (shared Qt prefix) — and the flatpak, whose KF6
+        plugin rides the runtime's Qt plugin path — already see the plugin,
+        so no shim is added."""
+        from PySide6.QtCore import QCoreApplication
+
+        monkeypatch.setattr(_kwin, "_plugin_path_ensured", False)
+        visible = tmp_path / "visible"
+        (visible / _kwin._KF_PLUGIN_SUBDIR).mkdir(parents=True)
+        QCoreApplication.addLibraryPath(str(visible))
+        try:
+            before = list(QCoreApplication.libraryPaths())
+            _kwin._ensure_platform_plugin()
+            assert list(QCoreApplication.libraryPaths()) == before
+        finally:
+            QCoreApplication.removeLibraryPath(str(visible))
+
+    def test_exposes_only_the_kwindowsystem_plugins(self, qapp, tmp_path, monkeypatch):
+        """A system plugin dir that Qt can't see earns a shim library path
+        whose tree holds JUST the kf6 kwindowsystem symlink."""
+        from pathlib import Path
+
+        from PySide6.QtCore import QCoreApplication
+
+        monkeypatch.setattr(_kwin, "_plugin_path_ensured", False)
+        fake_root = tmp_path / "plugins"
+        src = fake_root / _kwin._KF_PLUGIN_SUBDIR
+        src.mkdir(parents=True)
+        (src / "KF6WindowSystemKWaylandPlugin.so").write_bytes(b"")
+        # Also plant a platform plugin dir the shim must NOT expose — the
+        # whole-tree mistake would let it shadow PySide6's own Qt plugins.
+        (fake_root / "platforms").mkdir()
+        monkeypatch.setattr(_kwin, "_SYSTEM_PLUGIN_ROOTS", (str(fake_root),))
+
+        hidden = self._hide_real_plugin_paths()
+        before = list(QCoreApplication.libraryPaths())
+        _kwin._ensure_platform_plugin()
+        added = [p for p in QCoreApplication.libraryPaths() if p not in before]
+        try:
+            assert len(added) == 1
+            shim = Path(added[0])
+            link = shim / _kwin._KF_PLUGIN_SUBDIR
+            assert link.is_symlink() and link.resolve() == src.resolve()
+            # nothing else rides along — no platforms/, no imageformats/
+            assert [p.name for p in shim.iterdir()] == ["kf6"]
+        finally:
+            for p in added:
+                QCoreApplication.removeLibraryPath(p)
+            for p in hidden:
+                QCoreApplication.addLibraryPath(p)
+
+    def test_noop_when_no_system_plugin_anywhere(self, qapp, monkeypatch):
+        """No distro plugin on the box (CI, or a non-KDE Linux) → silent
+        no-op; blur just stays a no-op too."""
+        from PySide6.QtCore import QCoreApplication
+
+        monkeypatch.setattr(_kwin, "_plugin_path_ensured", False)
+        monkeypatch.setattr(_kwin, "_SYSTEM_PLUGIN_ROOTS", ())
+        hidden = self._hide_real_plugin_paths()
+        before = list(QCoreApplication.libraryPaths())
+        try:
+            _kwin._ensure_platform_plugin()
+            assert list(QCoreApplication.libraryPaths()) == before
+        finally:
+            for p in hidden:
+                QCoreApplication.addLibraryPath(p)
+
+    def test_is_cached_after_the_first_call(self, qapp, tmp_path, monkeypatch):
+        """One shim per process — probe() and every apply() call it."""
+        from PySide6.QtCore import QCoreApplication
+
+        monkeypatch.setattr(_kwin, "_plugin_path_ensured", False)
+        fake_root = tmp_path / "plugins"
+        (fake_root / _kwin._KF_PLUGIN_SUBDIR).mkdir(parents=True)
+        monkeypatch.setattr(_kwin, "_SYSTEM_PLUGIN_ROOTS", (str(fake_root),))
+        hidden = self._hide_real_plugin_paths()
+        before = list(QCoreApplication.libraryPaths())
+        try:
+            _kwin._ensure_platform_plugin()
+            after_first = list(QCoreApplication.libraryPaths())
+            assert len(after_first) == len(before) + 1
+            _kwin._ensure_platform_plugin()
+            _kwin._ensure_platform_plugin()
+            assert list(QCoreApplication.libraryPaths()) == after_first
+        finally:
+            for p in list(QCoreApplication.libraryPaths()):
+                if p not in before:
+                    QCoreApplication.removeLibraryPath(p)
+            for p in hidden:
+                QCoreApplication.addLibraryPath(p)
+
+    def test_never_raises_when_the_shim_cannot_be_built(self, qapp, monkeypatch):
+        """Read-only /tmp, a symlink refusal, a Qt that won't answer — all
+        must resolve to a silent no-op. Blur is progressive enhancement."""
+        import tempfile
+
+        monkeypatch.setattr(_kwin, "_plugin_path_ensured", False)
+        monkeypatch.setattr(_kwin, "_SYSTEM_PLUGIN_ROOTS", ("/",))  # "/kf6/…" absent
+        monkeypatch.setattr(
+            tempfile, "mkdtemp", lambda *a, **k: (_ for _ in ()).throw(OSError("nope"))
+        )
+        _kwin._ensure_platform_plugin()  # must not raise
+
+        monkeypatch.setattr(_kwin, "_plugin_path_ensured", False)
+
+        def _boom():
+            raise RuntimeError("no Qt here")
+
+        from PySide6.QtCore import QCoreApplication
+
+        monkeypatch.setattr(QCoreApplication, "libraryPaths", staticmethod(_boom))
+        _kwin._ensure_platform_plugin()  # must not raise
+
+    def test_probe_ensures_the_plugin_before_the_capability_gate(self, monkeypatch):
+        """Ordering is the whole point: isEffectAvailable() answers False on a
+        blur-capable KWin while the plugin is still invisible."""
+        order = []
+        monkeypatch.setattr(_kwin, "_resolve", lambda: object())
+        monkeypatch.setattr(
+            _kwin, "_ensure_platform_plugin", lambda: order.append("shim")
+        )
+
+        def _avail():
+            order.append("avail")
+            return lambda effect: False
+
+        monkeypatch.setattr(_kwin, "_resolve_avail", _avail)
+        _kwin.probe()
+        assert order == ["shim", "avail"]
+
+
 # ── Windows Mica backend (_dwm) ───────────────────────────────────────
 
 
