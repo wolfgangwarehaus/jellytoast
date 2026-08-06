@@ -14,7 +14,15 @@
 
 app-id: io.github.wolfgangwarehaus.jellytoast
 runtime: org.kde.Platform
-runtime-version: '6.10'
+# COUPLED TRIPLE — runtime-version, base-version and the KF6 module tags
+# below move TOGETHER or the sandbox ends up with two Qt builds and blur
+# silently falls back to faux frost. Bumping (2026-08, issue #237, flagged
+# by deps-watch): 6.10 -> 6.11 once BOTH org.kde.Platform 6.11 AND
+# io.qt.PySide.BaseApp 6.11 existed on flathub for x86_64 *and* aarch64
+# (the Deck), plus KF6 6.27 -> 6.28. This also lines the bundle up with
+# pyproject's `PySide6>=6.11` floor — BaseApp 6.10 ships PySide 6.10, and
+# the `--no-deps` install meant pip never noticed the mismatch.
+runtime-version: '6.11'
 sdk: org.kde.Sdk
 # PySide6 prebuilt against the runtime's Qt — ONE Qt in the process, so
 # KF6 WindowSystem (built below) binds the same Qt and the ctypes blur
@@ -22,7 +30,7 @@ sdk: org.kde.Sdk
 # old freedesktop+pip-wheel layout shipped PySide6's own Qt, which made
 # KF6 unbuildable-against and left the app on faux frost.
 base: io.qt.PySide.BaseApp
-base-version: '6.10'
+base-version: '6.11'
 command: jellytoast
 
 finish-args:
@@ -127,7 +135,7 @@ modules:
     sources:
       - type: git
         url: https://invent.kde.org/frameworks/extra-cmake-modules.git
-        tag: v6.27.0
+        tag: v6.28.0
 
   - name: kwindowsystem
     # Supplies libKF6WindowSystem.so.6 for the ctypes blur backend —
@@ -137,7 +145,7 @@ modules:
     sources:
       - type: git
         url: https://invent.kde.org/frameworks/kwindowsystem.git
-        tag: v6.27.0
+        tag: v6.28.0
 
   - name: jellytoast
     buildsystem: simple

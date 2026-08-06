@@ -205,3 +205,15 @@ Then splice `/tmp/python-deps.json` back into the manifest's
 Runtime bumps (e.g. 6.10 → 6.11): check the BaseApp branch exists for
 the new version, re-check the runtime's Python minor (re-pin with the
 new `-t` tags if it moved past 3.13), rebuild, retest blur + https.
+
+**Why this manifest is still on 6.10 (2026-08, issue #237).** Platform
+*and* BaseApp 6.11 now exist for both arches, and the SELF-DISTRIBUTED
+manifest (`packaging/flatpak/`) has moved to it. This one deliberately
+has not: 22 of its pinned wheels carry `cp313` tags resolved against the
+6.10 runtime's Python, so the bump is not a two-line edit — every pin has
+to be re-resolved, and the Python minor in 6.11 can't be confirmed
+without pulling the ~1.5 GB SDK. Submitting on the runtime we actually
+built, linted and hash-verified is the lower-risk path (Flathub routinely
+accepts current-1 runtimes). Do the bump AFTER acceptance, as a PR to the
+per-app repo, where the buildbot builds both arches for you and a
+mis-resolved pin fails visibly instead of silently shipping.
