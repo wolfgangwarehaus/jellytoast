@@ -12,6 +12,8 @@ developer-facing history lives in [`docs/CHANGELOG.md`](docs/CHANGELOG.md).
      should stand alone: the Store "What's new" shows just the title (+ first
      sentence in --detail mode). -->
 
+## [0.2.2] — 2026-08-06
+
 - **A "Copy diagnostics" button, for when you need to report something.**
   Settings → General now has a button that copies a short report — version,
   your OS and desktop, audio and theme details, recent log lines — straight to

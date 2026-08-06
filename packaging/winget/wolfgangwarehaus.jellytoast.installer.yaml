@@ -1,6 +1,6 @@
 # yaml-language-server: $schema=https://aka.ms/winget-manifest.installer.1.6.0.schema.json
 PackageIdentifier: wolfgangwarehaus.jellytoast
-PackageVersion: 0.2.1
+PackageVersion: 0.2.2
 InstallerLocale: en-US
 InstallerType: inno
 Scope: user
@@ -13,13 +13,13 @@ UpgradeBehavior: install
 # eyeball is already on the release checklist).
 Installers:
   - Architecture: x64
-    InstallerUrl: https://github.com/wolfgangwarehaus/jellytoast/releases/download/v0.2.1/jellytoast-0.2.1-windows-setup.exe
+    InstallerUrl: https://github.com/wolfgangwarehaus/jellytoast/releases/download/v0.2.2/jellytoast-0.2.2-windows-setup.exe
     # NOTE: winget-releaser recomputes this at publish — the winget repo, not
     # this file, is authoritative. Backfilled from the release's SHA256SUMS so
     # a direct `winget install --manifest` of this checkout works.
     InstallerSha256: 15445DB87355CE807C222709AADB2B8D478EDAE972575BACFFE9CA3885B23918
   - Architecture: arm64
-    InstallerUrl: https://github.com/wolfgangwarehaus/jellytoast/releases/download/v0.2.1/jellytoast-0.2.1-windows-setup.exe
+    InstallerUrl: https://github.com/wolfgangwarehaus/jellytoast/releases/download/v0.2.2/jellytoast-0.2.2-windows-setup.exe
     InstallerSha256: 15445DB87355CE807C222709AADB2B8D478EDAE972575BACFFE9CA3885B23918
 ManifestType: installer
 ManifestVersion: 1.6.0
