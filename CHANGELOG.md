@@ -12,6 +12,10 @@ developer-facing history lives in [`docs/CHANGELOG.md`](docs/CHANGELOG.md).
      should stand alone: the Store "What's new" shows just the title (+ first
      sentence in --detail mode). -->
 
+- **No stray keyboard highlight after clicking Home.** Coming back to the
+  albums grid from the now-playing page with a mouse click left a keyboard
+  focus ring sitting on the first album. The ring is a keyboard affordance, so
+  it now only appears when you actually navigated by keyboard.
 - **Album art keeps loading as you scroll.** The big one: past a certain point
   down a library, art simply stopped — always at the same album — and only a
   window resize brought it back. The app had lost track of which tiles were on

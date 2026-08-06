@@ -350,15 +350,31 @@ class _MouseClearFocusFilter(QObject):
     flag on every view that tracks one. That clears the accent
     focus rings on grid/rail tiles — keyboard nav is the only way
     the rings should appear, so a click (even on a chrome button
-    like Back or Home) is the signal to put them away."""
+    like Back or Home) is the signal to put them away.
+
+    Also records which INPUT the user last used. Qt reassigns focus with
+    OtherFocusReason when a stacked page hides — indistinguishable from a
+    deliberate programmatic focus — so views consult this to decide
+    whether that reassignment deserves a focus ring (clicking Home out of
+    the now-playing page: no; tabbing to Home and pressing Enter: yes).
+    """
 
     def eventFilter(self, obj, event):
-        if event.type() == QEvent.Type.MouseButtonPress:
+        etype = event.type()
+        if etype == QEvent.Type.MouseButtonPress:
             # Iterate only the registered keyboard-mode views, not the whole
             # widget tree, on this click hot-path.
-            from jellytoast.keyboard_focus import clear_all_keyboard_mode
+            from jellytoast.keyboard_focus import (
+                clear_all_keyboard_mode,
+                note_pointer_input,
+            )
 
+            note_pointer_input()
             clear_all_keyboard_mode()
+        elif etype == QEvent.Type.KeyPress:
+            from jellytoast.keyboard_focus import note_keyboard_input
+
+            note_keyboard_input()
         return False
 
 

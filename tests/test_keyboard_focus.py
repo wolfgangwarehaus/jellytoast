@@ -284,3 +284,133 @@ def test_keyboard_cursor_active(qapp):
     assert kf.keyboard_cursor_active(v, idx0) is False
     # None view is safe
     assert kf.keyboard_cursor_active(None, idx1) is False
+
+
+# ── Input modality: the focus ring is a KEYBOARD affordance ─────────────────
+#
+# Qt reassigns focus with OtherFocusReason when a stacked page hides, which
+# is the same reason a deliberate setFocus() carries. Treating that as
+# keyboard-driven lit the first album's ring every time the user clicked Home
+# out of the now-playing page (field report 2026-08-06).
+
+
+class _FocusView(_FakeView):
+    """Adds the bits keyboard_focus_in touches beyond the flag."""
+
+    def __init__(self, rows=3):
+        super().__init__()
+        self._rows = rows
+        self.current = None
+
+    def currentIndex(self):
+        class _Idx:
+            def __init__(self, valid):
+                self._v = valid
+
+            def isValid(self):
+                return self._v
+
+        return _Idx(self.current is not None)
+
+    def model(self):
+        outer = self
+
+        class _M:
+            def rowCount(self):
+                return outer._rows
+
+            def index(self, r, c):
+                return ("idx", r, c)
+
+        return _M()
+
+    def indexAt(self, _pt):
+        class _Bad:
+            def isValid(self):
+                return False
+
+        return _Bad()
+
+    def setCurrentIndex(self, idx):
+        self.current = idx
+
+    def rect(self):
+        return self
+
+    def topLeft(self):
+        return (0, 0)
+
+
+class _Evt:
+    def __init__(self, reason):
+        self._r = reason
+
+    def reason(self):
+        return self._r
+
+
+def _viewport_rect_shim(view):
+    """keyboard_focus._seed_first_index calls view.viewport().rect().topLeft();
+    the fake's viewport only implements update(), so patch in the chain."""
+
+    class _VP:
+        def update(self):
+            view.vp_updates += 1
+
+        def rect(self):
+            return self
+
+        def topLeft(self):
+            return (0, 0)
+
+    view.viewport = lambda: _VP()
+
+
+class TestFocusModality:
+    def test_tab_focus_always_rings(self):
+        from PySide6.QtCore import Qt
+
+        v = _FocusView()
+        _viewport_rect_shim(v)
+        kf.note_pointer_input()  # even right after a click…
+        kf.keyboard_focus_in(v, _Evt(Qt.FocusReason.TabFocusReason))
+        assert v._keyboard_mode is True  # …Tab is keyboard by construction
+
+    def test_page_switch_after_a_click_does_not_ring(self):
+        """THE regression: click Home out of now-playing → the stack hands
+        the grid focus with OtherFocusReason → no ring."""
+        from PySide6.QtCore import Qt
+
+        v = _FocusView()
+        _viewport_rect_shim(v)
+        kf.note_pointer_input()
+        kf.keyboard_focus_in(v, _Evt(Qt.FocusReason.OtherFocusReason))
+        assert v._keyboard_mode is False
+        assert v.current is None  # and no cursor was seeded
+
+    def test_page_switch_after_a_keypress_still_rings(self):
+        """The other half: a keyboard user who tabs to Home and presses
+        Enter must keep a visible cursor."""
+        from PySide6.QtCore import Qt
+
+        v = _FocusView()
+        _viewport_rect_shim(v)
+        kf.note_keyboard_input()
+        kf.keyboard_focus_in(v, _Evt(Qt.FocusReason.OtherFocusReason))
+        assert v._keyboard_mode is True
+        assert v.current is not None  # cursor seeded for arrow keys
+
+    def test_mouse_focus_never_rings(self):
+        from PySide6.QtCore import Qt
+
+        v = _FocusView()
+        _viewport_rect_shim(v)
+        kf.note_keyboard_input()
+        kf.keyboard_focus_in(v, _Evt(Qt.FocusReason.MouseFocusReason))
+        assert v._keyboard_mode is False
+
+    def test_modality_flips_with_the_latest_input(self):
+        kf.note_keyboard_input()
+        assert kf.last_input_was_keyboard() is True
+        kf.note_pointer_input()
+        assert kf.last_input_was_keyboard() is False

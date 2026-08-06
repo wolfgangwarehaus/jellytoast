@@ -53,18 +53,52 @@ def clear_all_keyboard_mode() -> None:
 # package that recipe so each view delegates to them instead of
 # copy-pasting the logic — keeping every list surface consistent.
 
+# Reasons that are keyboard-driven by construction — always ring.
 _KEYBOARD_FOCUS_REASONS = (
     Qt.FocusReason.TabFocusReason,
     Qt.FocusReason.BacktabFocusReason,
     Qt.FocusReason.ShortcutFocusReason,
-    Qt.FocusReason.OtherFocusReason,
 )
+# Ambiguous: both a deliberate programmatic focus AND Qt's own focus
+# reassignment when a stacked page hides. Only rings when the user's last
+# input was a key — see the modality note below.
+_AMBIGUOUS_FOCUS_REASON = Qt.FocusReason.OtherFocusReason
 _ARROW_KEYS = (
     Qt.Key.Key_Down,
     Qt.Key.Key_Up,
     Qt.Key.Key_Left,
     Qt.Key.Key_Right,
 )
+
+# ── Input modality (the focus-visible rule) ──────────────────────────────
+#
+# Was the user's last interaction a key or a click? Qt can't tell us on its
+# own: when a stacked page hides, Qt hands focus to the incoming view with
+# OtherFocusReason — the SAME reason a deliberate programmatic focus uses.
+# Treating that as keyboard-driven lit the first album's ring every time the
+# user clicked Home out of the now-playing page.
+#
+# Dropping OtherFocusReason outright would fix the click but break the
+# keyboard: someone who tabs to Home and presses Enter gets the same
+# reassignment and *should* keep a visible cursor. So gate it on how the
+# navigation was actually driven — the same idea as CSS :focus-visible.
+_last_input_keyboard = False
+
+
+def note_keyboard_input() -> None:
+    """Record that the user just pressed a key (app-level filter)."""
+    global _last_input_keyboard
+    _last_input_keyboard = True
+
+
+def note_pointer_input() -> None:
+    """Record that the user just clicked / tapped (app-level filter)."""
+    global _last_input_keyboard
+    _last_input_keyboard = False
+
+
+def last_input_was_keyboard() -> bool:
+    return _last_input_keyboard
 
 
 def _seed_first_index(view) -> None:
@@ -84,10 +118,22 @@ def _seed_first_index(view) -> None:
 
 def keyboard_focus_in(view, event) -> None:
     """Call at the top of a list view's ``focusInEvent`` (before super()).
-    Engages keyboard mode + seeds the cursor when focus arrived via Tab /
-    Shortcut / programmatic setFocus — not a mouse click (the ring is a
-    keyboard affordance, not click feedback)."""
-    if event.reason() in _KEYBOARD_FOCUS_REASONS:
+    Engages keyboard mode + seeds the cursor when focus arrived by
+    keyboard — not a mouse click (the ring is a keyboard affordance, not
+    click feedback).
+
+    Tab / Backtab / Shortcut are keyboard by construction. OtherFocusReason
+    is ambiguous — it covers both a deliberate ``setFocus`` and Qt's
+    automatic reassignment when a stacked page is hidden — so it only rings
+    when the user's last input was actually a key. That is what keeps the
+    ring off the first album when you CLICK Home out of the now-playing
+    page, while still showing it for a keyboard user who tabs to Home and
+    presses Enter."""
+    reason = event.reason()
+    engaged = reason in _KEYBOARD_FOCUS_REASONS or (
+        reason == _AMBIGUOUS_FOCUS_REASON and last_input_was_keyboard()
+    )
+    if engaged:
         view._keyboard_mode = True
         _seed_first_index(view)
         view.viewport().update()
