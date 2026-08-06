@@ -53,10 +53,12 @@ finish-args:
   # cross-check works exactly as it does outside the sandbox and the app
   # demotes to the near-opaque frosted fallback.
   - --talk-name=org.kde.KWin
-  # Launch-at-login writes ~/.config/autostart directly (jellytoast/
-  # autostart/_linux.py) — narrow static grant instead of the Background
-  # portal for now; portal migration is tracked with the channel work.
-  - --filesystem=~/.config/autostart:create
+  # NOTE: no --filesystem=~/.config/autostart:create here any more.
+  # Launch-at-login now goes through the XDG Background portal
+  # (org.freedesktop.portal.Background, jellytoast/autostart/_portal.py),
+  # which writes the host-side autostart entry itself and therefore needs
+  # NO filesystem grant. Keeps this manifest in step with the Flathub one,
+  # whose linter hard-rejects that grant.
 
 build-options:
   build-args:

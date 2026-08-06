@@ -72,12 +72,13 @@ finish-args:
   # blur/_kwin.py's D-Bus cross-check works and the app demotes to the
   # near-opaque frosted fallback.
   - --talk-name=org.kde.KWin
-  # NOTE — deliberately absent vs the self-distributed manifest:
-  # --filesystem=~/.config/autostart:create. The Flathub linter rejects
-  # it (finish-args-autostart-filesystem-access); until the app migrates
-  # launch-at-login to the Background/Autostart portal, the toggle
-  # degrades gracefully (autostart/_linux.py enable() returns False on
-  # the denied write) — the feature is simply unavailable on Flathub.
+  # NOTE — no --filesystem=~/.config/autostart:create, and none needed.
+  # The Flathub linter rejects that grant
+  # (finish-args-autostart-filesystem-access), so launch-at-login now goes
+  # through the XDG Background portal (org.freedesktop.portal.Background,
+  # autostart/_portal.py): the portal writes the host-side autostart entry
+  # itself and requires NO filesystem permission. The .desktop writer
+  # remains only as the fallback for no-portal sessions outside a sandbox.
 
 modules:
   - name: libass

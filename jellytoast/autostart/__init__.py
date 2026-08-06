@@ -7,7 +7,10 @@ Public API:
     enable() -> bool         # turn on; True iff the change took effect
     disable() -> bool        # turn off; True iff a previous entry was removed
 
-Linux: writes/reads ~/.config/autostart/jellytoast.desktop (XDG).
+Linux: the XDG Background portal (RequestBackground with autostart=true —
+works inside a flatpak sandbox, needs no filesystem permission), falling
+back to writing/reading ~/.config/autostart/jellytoast.desktop when no
+portal is reachable (see jellytoast/autostart/_portal.py).
 Windows: a value under the per-user Run registry key — or, when running as
 a packaged MSIX app (Run keys are ignored there), the manifest startupTask
 (see jellytoast/autostart/_msix.py).

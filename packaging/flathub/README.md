@@ -78,13 +78,17 @@ Status of local validation (2026-07-20):
    in parallel with the submission PR — reviewers will see the linter
    error and the pending exception.
 
-3. Note what was deliberately **left out** vs our CI manifest:
-   `--filesystem=~/.config/autostart:create`. The linter hard-rejects it
-   (`finish-args-autostart-filesystem-access`); launch-at-login
-   degrades to a graceful no-op in the Flathub build
-   (`autostart/_linux.py` `enable()` returns False). The real fix is
-   migrating to the XDG Background/Autostart portal — do that upstream,
-   then nothing needs re-granting.
+3. `--filesystem=~/.config/autostart:create` is absent — and **no longer
+   needs to be**. The linter hard-rejects it
+   (`finish-args-autostart-filesystem-access`), which used to leave
+   launch-at-login a silent no-op in the Flathub build. Fixed upstream:
+   launch-at-login now goes through the XDG Background portal
+   (`org.freedesktop.portal.Background.RequestBackground` with
+   `autostart: true`, see `jellytoast/autostart/_portal.py`). The portal
+   writes the host-side autostart entry itself, so it needs no filesystem
+   permission and nothing has to be re-granted — the toggle works on
+   Flathub. The old `.desktop` writer stays only as the fallback for
+   no-portal sessions outside a sandbox.
 
 ## Submission steps
 

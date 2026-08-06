@@ -195,7 +195,7 @@ All under `jellytoast/jellytoast.conf` via `QSettings`.
 | `ui/mini_on_start` | Launch directly into mini player |
 | `ui/minimize_to_tray` | Close button minimizes instead of quitting (default on) |
 | `ui/show_tooltips` | Global hover-tooltip toggle (live-applied via QApplication event filter) |
-| `ui/autostart` | Mirror of XDG `~/.config/autostart/jellytoast.desktop` |
+| `ui/autostart` | User intent for launch-at-login (real state: the XDG Background portal grant, else `~/.config/autostart/jellytoast.desktop`) |
 | `ui/home_destination` | Top-bar Home destination |
 | `ui/mini_player_keep_above` | KWin-rule "always on top" for the mini player (Wayland-only, opt-in) |
 | `ui/theme_mode` | Theme — dark and light families both ship (`_LIGHT_TOKENS`). Theme mode, accent, and fonts all **live-apply** via `PlayerBus.theme_changed`; only `ui/square_corners` needs a restart |
@@ -232,7 +232,10 @@ Queue is persisted separately as `queue.json` (v2 schema with v1 legacy read).
 - Linux (CachyOS / KDE Plasma / Wayland is the primary dev target; X11 also supported).
 - MPRIS2 (`org.mpris.MediaPlayer2.jellytoast`) — picked up by KDE Plasma media widget, GNOME Shell, playerctl, waybar.
 - System tray (Now-playing label + play / prev / next / stop / show mini / open / quit).
-- XDG autostart `.desktop` entry.
+- Launch at login via the XDG **Background portal**
+  (`org.freedesktop.portal.Background`, works inside the flatpak sandbox with no
+  filesystem grant), falling back to an XDG autostart `.desktop` entry when no
+  portal is reachable (`autostart/_portal.py`, `autostart/_linux.py`).
 - KDE Wallet / GNOME Keyring / SecretService for credentials.
 - Wayland-specific keep-above for the mini player via a KWin window rule (`~/.config/kwinrulesrc`); KDE server-side decorations on the main window.
 

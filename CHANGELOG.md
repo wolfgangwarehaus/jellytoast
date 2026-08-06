@@ -49,6 +49,11 @@ developer-facing history lives in [`docs/CHANGELOG.md`](docs/CHANGELOG.md).
   double-audio echo during crossfades is gone; and desktop media controls
   (play/pause keys, the media widget) now recover on slow logins instead of
   staying dead for the session.
+- **"Launch jellytoast at login" works in the Flatpak build.** In a sandbox the
+  app couldn't write the file that starts it at login, so the toggle quietly
+  did nothing. It now asks your desktop for permission the proper way — you may
+  see a prompt the first time — and if you say no, the checkbox says no too.
+  Nothing changes on other Linux setups; the old method is still the fallback.
 - **jellytoast habla español.** The whole app is now translatable, with Spanish
   as the first language — sign-in, settings, the library, now playing, casting,
   downloads, the tray, all of it. There's a Language picker under Settings →

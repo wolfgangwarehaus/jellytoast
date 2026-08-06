@@ -1330,9 +1330,10 @@ class SettingsDialog(QDialog):
         # Boot-time behaviour — what happens when jellytoast launches.
         v.addWidget(self._section_header(self.tr("STARTUP")))
 
-        # Disk truth (whether the autostart .desktop file exists) wins
-        # over the persisted flag — they can drift if the user nukes
-        # the file from a file manager. Hidden where no backend can
+        # Real state (the portal grant on Linux, else whether the
+        # autostart .desktop file exists) wins over the persisted flag —
+        # they can drift if the user nukes the entry from a file manager
+        # or refuses the portal. Hidden where no backend can
         # fulfil the toggle (Windows/macOS) — a no-op checkbox reads
         # as a broken one.
         if _autostart.is_supported():
@@ -1587,14 +1588,15 @@ class SettingsDialog(QDialog):
             remove_mini_player_rule()
 
     def _on_autostart_toggled(self, on: bool):
-        # Persist user intent, then mutate the filesystem. If the
-        # filesystem op fails (e.g. read-only home), the QSettings flag
-        # still records what the user asked for so we can retry next
-        # time the dialog opens.
+        # Persist user intent, then ask the backend to make it so. If that
+        # fails (read-only home — or, on Linux, the desktop's Background
+        # portal denying the request), the QSettings flag still records
+        # what the user asked for so we can retry next time the dialog
+        # opens. The portal may prompt, so this call can take a moment.
         self.s.autostart = on
         ok = _autostart.enable() if on else _autostart.disable()
-        # If reality drifted (e.g. enable failed), reflect that in the
-        # checkbox without re-firing the toggled signal.
+        # If reality drifted (e.g. enable failed or was denied), reflect
+        # that in the checkbox without re-firing the toggled signal.
         if on and not ok and not _autostart.is_enabled():
             self._autostart_check.blockSignals(True)
             self._autostart_check.setChecked(False)

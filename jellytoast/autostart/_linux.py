@@ -1,8 +1,17 @@
-"""XDG autostart backend. Manages ~/.config/autostart/jellytoast.desktop —
-the standard cross-DE mechanism for "launch on login" on Linux. KDE,
-GNOME, XFCE, Cinnamon, MATE, and LXQt all read this directory.
+"""Linux launch-at-login. Two routes, portal first:
 
-Strategy:
+1. **XDG Background portal** (``org.freedesktop.portal.Background``) — the
+   sanctioned route, and the only one that works in a sandbox: it needs no
+   filesystem permission, so the Flathub build can honour the toggle at all
+   (Flathub's linter hard-rejects ``--filesystem=~/.config/autostart:create``,
+   which used to leave launch-at-login a silent no-op there). See
+   ``_portal.py``. The user can DENY it — we report that honestly instead of
+   sneaking a .desktop file in behind their back.
+2. **~/.config/autostart/jellytoast.desktop** — the classic cross-DE
+   mechanism (KDE, GNOME, XFCE, Cinnamon, MATE, LXQt all read this dir),
+   used when no portal is reachable, or when the portal call errors out.
+
+Desktop-file strategy:
 - Enable: copy ~/.local/share/applications/jellytoast.desktop into the
   autostart dir if it exists; otherwise synthesize a minimal entry
   pointing at the current interpreter and script path.
@@ -18,6 +27,8 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
+from jellytoast.autostart import _portal
+
 _AUTOSTART_DIR = Path.home() / ".config" / "autostart"
 _AUTOSTART_FILE = _AUTOSTART_DIR / "jellytoast.desktop"
 _SOURCE_DESKTOP = Path.home() / ".local" / "share" / "applications" / "jellytoast.desktop"
@@ -28,6 +39,15 @@ def is_supported() -> bool:
 
 
 def is_enabled() -> bool:
+    """Portal-granted state wins when the portal path was the one used
+    (there's no autostart entry on our side of the sandbox to look at);
+    otherwise the desktop-file check, exactly as before."""
+    if _portal.autostart_granted():
+        return True
+    return _desktop_file_enabled()
+
+
+def _desktop_file_enabled() -> bool:
     if not _AUTOSTART_FILE.exists():
         return False
     try:
@@ -45,8 +65,43 @@ def is_enabled() -> bool:
 
 
 def enable() -> bool:
+    """Turn login-launch on. Tries the Background portal first, falls back to
+    the .desktop file. Returns True iff launch-at-login is now on; never
+    raises (the settings checkbox depends on that contract)."""
+    if _portal.is_available():
+        granted = _portal.request_autostart(True)
+        if granted is True:
+            _portal.mark_granted()
+            return True
+        if granted is False:
+            # The user (or the portal) said no. Honour it — do NOT write a
+            # .desktop file behind their back.
+            _portal.clear_granted()
+            return False
+        # granted is None → portal unreachable/broken; fall through.
+    return _enable_desktop_file()
+
+
+def disable() -> bool:
+    """Turn login-launch off. Returns True if something was actually
+    removed, False if there was nothing to do (or removal failed)."""
+    removed = False
+    if _portal.autostart_granted():
+        result = _portal.request_autostart(False)
+        # None = the portal went away; the grant record is unverifiable, so
+        # drop it rather than pin the checkbox on forever.
+        if result is not False:
+            _portal.clear_granted()
+            removed = True
+    if _disable_desktop_file():
+        removed = True
+    return removed
+
+
+def _enable_desktop_file() -> bool:
     """Drop a .desktop entry into ~/.config/autostart. Returns True on
-    success, False on filesystem errors (e.g. read-only home)."""
+    success, False on filesystem errors (e.g. read-only home, or a sandbox
+    with no autostart-dir grant)."""
     import os
 
     try:
@@ -81,7 +136,7 @@ def enable() -> bool:
         return False
 
 
-def disable() -> bool:
+def _disable_desktop_file() -> bool:
     """Remove the autostart entry. Returns True if a file was removed,
     False if there was nothing to do (or removal failed)."""
     if not _AUTOSTART_FILE.exists():
