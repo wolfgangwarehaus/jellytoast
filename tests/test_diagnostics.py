@@ -37,8 +37,17 @@ class TestContents:
 
     def test_carries_the_jellytoast_specific_sections(self, qapp, isolated_settings):
         report = diagnostics.collect_report()
-        for marker in ("app:", "os:", "mpv:", "theme:", "blur:", "provider:",
-                       "server:", "offline mode:", "covers:"):
+        for marker in (
+            "app:",
+            "os:",
+            "mpv:",
+            "theme:",
+            "blur:",
+            "provider:",
+            "server:",
+            "offline mode:",
+            "covers:",
+        ):
             assert marker in report, marker
 
     def test_reflects_settings_values(self, qapp, isolated_settings):
@@ -155,9 +164,7 @@ class TestLogTail:
         from jellytoast import log as jlog
 
         logf = tmp_path / "jellytoast.log"
-        logf.write_text(
-            "\n".join(f"line {i}" for i in range(150)) + "\n", encoding="utf-8"
-        )
+        logf.write_text("\n".join(f"line {i}" for i in range(150)) + "\n", encoding="utf-8")
         monkeypatch.setattr(jlog, "_file_path", logf)
         report = diagnostics.collect_report()
         assert "  line 149\n" in report  # the newest line survives
@@ -190,3 +197,39 @@ class TestClipboard:
         finally:
             dlg.close()
             dlg.deleteLater()
+
+
+def test_secret_fragments_keep_hotkeys_but_drop_real_secrets():
+    """The redaction fragment list is the security boundary AND a
+    usability one. A bare "key" fragment dropped the entire hotkeys/
+    subtree — and "my media keys stopped working" is exactly the report
+    this dump exists to answer. Every secret jellytoast actually stores
+    still has to go."""
+    from jellytoast.diagnostics import _SECRET_FRAGMENTS
+
+    def dropped(key: str) -> bool:
+        return any(f in key.lower() for f in _SECRET_FRAGMENTS)
+
+    # Real secret-bearing settings keys in this app.
+    for key in (
+        "server/token",
+        "scrobble/listenbrainz_token",
+        "scrobble/lastfm_session_key",
+        "credentials/anything",
+        "airplay/pairing",
+        "some/api_key",
+        "some/apikey",
+        "x/password",
+        "x/client_secret",
+    ):
+        assert dropped(key), f"{key} must never reach the report"
+
+    # Non-secret settings a bug report genuinely needs.
+    for key in (
+        "hotkeys",
+        "hotkeys/play_pause",
+        "hotkeys/next_track",
+        "ui/square_corners",
+        "playback/crossfade_ms",
+    ):
+        assert not dropped(key), f"{key} should survive redaction"

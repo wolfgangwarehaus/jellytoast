@@ -42,7 +42,12 @@ _SECRET_FRAGMENTS = (
     "password",
     "secret",
     "auth",
-    "key",
+    # "_key" rather than a bare "key": every secret key jellytoast actually
+    # stores ends in one (scrobble/lastfm_session_key, api_key), while a bare
+    # "key" also swallowed the whole hotkeys/ subtree — and "the media keys
+    # don't work" is exactly the report this dump should be able to answer.
+    "_key",
+    "apikey",
     "api_key",
     "pairing",
 )
