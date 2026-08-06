@@ -81,9 +81,11 @@ from jellytoast.ui_helpers import (
     IDLE_TEXT,
     CoverOverlayButton,
     EmptyState,
+    art_stem,
     dpr_bucket,
     ink_alpha,
     load_image_async,
+    np_art_stem,
     scale_pixmap_for_dpr,
     screen_dpr,
 )
@@ -753,7 +755,8 @@ class NowPlayingPage(_LeftPaneMixin, _LyricsMixin, QWidget):
                 cover_url = self.api.get_image_url(self._preview_id, "Primary", server_px)
                 if cover_url:
                     load_image_async(
-                        f"{self._preview_id}|nppage",
+                        f"{art_stem(self._preview_id, (self._preview_meta.get('ImageTags') or {}).get('Primary', ''))}"
+                        f"|nppage",
                         cover_url,
                         target_phys,
                         target_phys,
@@ -837,7 +840,7 @@ class NowPlayingPage(_LeftPaneMixin, _LyricsMixin, QWidget):
         if not url:
             return
         load_image_async(
-            f"{image_id}|nppage",
+            f"{np_art_stem(np)}|nppage",
             url,
             target_phys,
             target_phys,
@@ -1091,7 +1094,7 @@ class NowPlayingPage(_LeftPaneMixin, _LyricsMixin, QWidget):
             server_px = max(512, target_phys)
             url = self.api.get_image_url(image_id, "Primary", server_px)
             load_image_async(
-                f"{image_id}|nppage",
+                f"{np_art_stem(np)}|nppage",
                 url,
                 target_phys,
                 target_phys,
@@ -1774,7 +1777,8 @@ class NowPlayingPage(_LeftPaneMixin, _LyricsMixin, QWidget):
         cover_url = self.api.get_image_url(item_id, "Primary", server_px)
         if cover_url:
             load_image_async(
-                f"{item_id}|nppage",
+                f"{art_stem(item_id, (meta.get('ImageTags') or {}).get('Primary', ''))}"
+                f"|nppage",
                 cover_url,
                 target_phys,
                 target_phys,

@@ -645,3 +645,106 @@ class TestRawCacheBudget:
         requests (mini player: 320 × 3 DPR = 960) — below it, that
         surface would miss this tier forever and refetch every time."""
         assert uih._RAW_MAX_DIM >= 960
+
+
+# ── 2026-08: stale art after the server's cover changes ─────────────────────
+
+
+class TestArtVersionKeying:
+    """Covers were cached by item id, which does NOT change when the
+    artwork behind it does — so re-tagging an album left the old cover on
+    screen forever. Both providers hand us a version token in
+    ImageTags.Primary (Jellyfin: a content hash; Navidrome: coverArt
+    `al-<id>_<hash>`), which is now folded into the cache stem."""
+
+    def test_stem_without_a_token_is_the_bare_id(self):
+        assert uih.art_stem("alb1", "") == "alb1"
+        assert uih.art_stem("alb1", "   ") == "alb1"
+
+    def test_stem_folds_in_the_token(self):
+        assert uih.art_stem("alb1", "tag9") == "alb1@tag9"
+
+    def test_new_art_produces_a_different_stem(self):
+        """The whole point: same album, new artwork → new cache identity."""
+        before = uih.art_stem("alb1", "al-alb1_6894c3ee")
+        after = uih.art_stem("alb1", "al-alb1_69ff0000")
+        assert before != after
+
+    def test_stale_pixmap_is_not_served_after_the_art_changes(self, qapp, monkeypatch):
+        """End-to-end at the cache layer: a cover cached under the OLD
+        token must not satisfy a request carrying the NEW one."""
+        from PySide6.QtGui import QPixmap
+
+        old_key = f"{uih.art_stem('alb1', 'tagOLD')}|albumtile|64x64|r=0"
+        stale = QPixmap(64, 64)
+        stale.fill()
+        uih._image_cache[old_key] = stale
+        served = []
+        # A request under the NEW token must miss the memory tier and go
+        # looking (disk/network), not hand back the stale pixmap.
+        monkeypatch.setattr(uih, "_after_disk_miss", lambda *a, **k: served.append("miss"))
+        import jellytoast.async_io as aio
+
+        monkeypatch.setattr(
+            aio,
+            "run_async",
+            lambda fn, *a, on_result=None, on_error=None, **k: (
+                on_result(fn()) if on_result else fn()
+            ),
+        )
+        monkeypatch.setattr(uih._disk_image_cache, "get_raw", lambda *a, **k: None)
+        monkeypatch.setattr(uih._disk_image_cache, "get_image", lambda *a, **k: None)
+
+        uih.load_image_async(
+            f"{uih.art_stem('alb1', 'tagNEW')}|albumtile",
+            "http://x/cover",
+            64,
+            64,
+            lambda p: served.append("pixmap"),
+        )
+        assert served == ["miss"]  # refetched, not served stale
+        uih._image_cache.clear()
+
+    def test_np_stem_uses_image_id_and_tag(self, qapp):
+        from jellytoast.player_state import NowPlaying
+
+        np = NowPlaying(item_id="track1", image_id="album1", art_tag="tagX")
+        assert uih.np_art_stem(np) == "album1@tagX"
+
+    def test_np_stem_falls_back_to_item_id(self, qapp):
+        from jellytoast.player_state import NowPlaying
+
+        np = NowPlaying(item_id="track1")
+        assert uih.np_art_stem(np) == "track1"
+
+    def test_queue_manager_populates_the_art_tag(self, qapp, monkeypatch):
+        """The player surfaces can only version their cache if the token
+        survives into NowPlaying."""
+        import jellytoast.providers as providers_mod
+        from jellytoast.queue_manager import QueueManager
+
+        class _P:
+            kind = "fake"
+
+            def get_audio_stream_url(self, i):
+                return f"stream://{i}"
+
+            def get_video_stream_url(self, i):
+                return f"stream://{i}"
+
+            def get_image_url(self, i, k="Primary", w=400):
+                return f"img://{i}"
+
+        monkeypatch.setattr(providers_mod, "_PROVIDER", _P())
+        qm = QueueManager()
+        np = qm._build_now_playing(
+            {
+                "Id": "trk1",
+                "Name": "T",
+                "Type": "Audio",
+                "AlbumId": "alb1",
+                "AlbumPrimaryImageTag": "al-alb1_deadbeef",
+            }
+        )
+        assert np.art_tag == "al-alb1_deadbeef"
+        assert uih.np_art_stem(np) == "alb1@al-alb1_deadbeef"

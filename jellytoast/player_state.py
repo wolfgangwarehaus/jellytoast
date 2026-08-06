@@ -192,6 +192,13 @@ class NowPlaying:
     # the now-playing surfaces), otherwise the item id itself. Empty
     # = consumers should fall back to item_id.
     image_id: str = ""
+    # The server's VERSION token for that artwork (Jellyfin's
+    # ImageTags.Primary content hash; Navidrome's coverArt id, whose
+    # `_<hash>` suffix moves when the art does). Empty when the server
+    # didn't give us one. Consumers fold it into the cover cache key via
+    # ``ui_helpers.art_stem`` so replacing an album's art invalidates the
+    # cached copy instead of showing the old one forever.
+    art_tag: str = ""
     title: str = ""
     subtitle: str = ""  # artist / series
     album: str = ""

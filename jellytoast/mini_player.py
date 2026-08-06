@@ -36,6 +36,7 @@ from jellytoast.ui_helpers import (
     ScrubbableSlider,
     ink_alpha,
     load_image_async,
+    np_art_stem,
     overlay_disc_colors,
     screen_dpr,
     skip_taskbar_x11,
@@ -1496,7 +1497,7 @@ class FloatingMiniPlayer(QWidget):
         if not url:
             return
         load_image_async(
-            f"{image_id}|mini",
+            f"{np_art_stem(np)}|mini",
             url,
             target_px,
             target_px,
@@ -1566,7 +1567,7 @@ class FloatingMiniPlayer(QWidget):
             target_px = max(800, int(round(320 * screen_dpr(self))))
             url = self.api.get_image_url(image_id, "Primary", _MINI_SOURCE_PX)
             load_image_async(
-                f"{image_id}|mini",
+                f"{np_art_stem(np)}|mini",
                 url,
                 target_px,
                 target_px,

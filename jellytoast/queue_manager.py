@@ -656,12 +656,20 @@ class QueueManager(QObject):
         if embedded_url:
             image_id = ""
             thumb_url = ""
+            art_tag = ""
         else:
             image_id = (
                 item.get("AlbumId") if item_type == "Audio" and item.get("AlbumId") else item_id
             )
             thumb_url = self.api.get_image_url(image_id, "Primary", 600)
             image_id = image_id or ""
+            # Art version token — prefer the ALBUM's tag when we're
+            # showing album art (it moves when the album cover changes);
+            # fall back to the track's own primary tag.
+            tags = item.get("ImageTags") or {}
+            art_tag = str(
+                item.get("AlbumPrimaryImageTag") or tags.get("Primary") or ""
+            )
 
         if item_type == "Audio":
             artists = item.get("Artists", [])
@@ -674,6 +682,7 @@ class QueueManager(QObject):
         return NowPlaying(
             item_id=item_id,
             image_id=image_id,
+            art_tag=art_tag,
             title=item.get("Name", self.tr("Unknown")),
             subtitle=subtitle,
             album=item.get("Album", ""),

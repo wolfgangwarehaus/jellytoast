@@ -22,6 +22,11 @@ developer-facing history lives in [`docs/CHANGELOG.md`](docs/CHANGELOG.md).
   that's loaded stays loaded. Scrolling is smoother too: covers are now
   decoded off the interface thread, and jellytoast holds far less memory when
   your server hands back full-size artwork.
+- **Change a cover on your server and jellytoast notices.** Replacing an
+  album's artwork used to leave the old cover showing indefinitely — the app
+  had cached it under the album's id, which doesn't change when the art does.
+  It now follows the version your server reports, so new art appears on its
+  own. (First launch after updating re-fetches covers once.)
 - **Stopping a cast can't freeze the app anymore.** Hitting Stop or Disconnect
   against a DLNA or Sonos speaker that had dropped off the network could hang
   the whole window for up to 10 seconds. The goodbye now happens in the

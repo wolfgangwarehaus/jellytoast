@@ -57,6 +57,7 @@ from jellytoast.ui_helpers import (
     TEXT_DIM,
     TEXT_FAINT,
     WARN_FG,
+    art_stem,
     ink_alpha,
     install_autofade_scrollbars,
     load_image_async,
@@ -261,7 +262,8 @@ class _DownloadRow(QFrame):
                 pass
 
         load_image_async(
-            f"{cover_id}|dlrow",
+            f"{art_stem(cover_id, (meta.get('ImageTags') or {}).get('Primary', ''))}"
+            f"|dlrow",
             url,
             target_phys,
             target_phys,

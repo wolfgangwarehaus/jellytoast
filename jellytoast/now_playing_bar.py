@@ -88,6 +88,7 @@ from jellytoast.ui_helpers import (
     fmt_time,
     ink_alpha,
     load_image_async,
+    np_art_stem,
     opaque_menu,
     screen_dpr,
 )
@@ -906,7 +907,7 @@ class NowPlayingBar(QWidget):
             target_px = max(256, int(round(108 * screen_dpr(self))))
             url = self.api.get_image_url(image_id, "Primary", _BAR_SOURCE_PX)
             load_image_async(
-                f"{image_id}|npbar",
+                f"{np_art_stem(np)}|npbar",
                 url,
                 target_px,
                 target_px,
@@ -934,7 +935,7 @@ class NowPlayingBar(QWidget):
         if not url:
             return
         load_image_async(
-            f"{image_id}|npbar",
+            f"{np_art_stem(np)}|npbar",
             url,
             target_px,
             target_px,

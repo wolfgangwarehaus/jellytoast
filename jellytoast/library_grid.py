@@ -90,6 +90,7 @@ from jellytoast.sort_utils import (
 from jellytoast.theme import ink_rgb
 from jellytoast.ui_helpers import (
     EmptyState,
+    art_stem,
     install_autofade_scrollbars,
     load_image_async,
     overlay_disc_qcolor,
@@ -2589,7 +2590,10 @@ class LibraryGrid(_PaginatorMixin, QWidget):
                 self._prefetch_timer.start()
 
         load_image_async(
-            f"{cover_id}|{self.kind}tile",
+            # Versioned stem: new art on the server lands on a fresh cache
+            # slot instead of showing the old cover forever.
+            f"{art_stem(cover_id, (item.get('ImageTags') or {}).get('Primary', ''))}"
+            f"|{self.kind}tile",
             cover_url,
             target,
             target,

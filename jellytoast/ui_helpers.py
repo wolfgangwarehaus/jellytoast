@@ -1071,6 +1071,38 @@ def _raw_covers_target(src_w: int, src_h: int, target_w: int, target_h: int) -> 
     return src_w >= target_w * _RAW_DERIVE_MIN_RATIO and src_h >= target_h * _RAW_DERIVE_MIN_RATIO
 
 
+def art_stem(item_id: str, tag: str = "") -> str:
+    """Cache-key stem for a cover: the id plus the server's art VERSION
+    token when we have one.
+
+    Covers are cached by item id, which never changes when the artwork
+    behind it does — so re-tagging an album (or fixing its cover in
+    Navidrome / Jellyfin) left the OLD art on screen indefinitely, with
+    no way back short of wiping the cache. Both providers hand us a
+    version token in the same place and we simply weren't using it:
+      * Jellyfin ``ImageTags.Primary`` is a content hash of the image;
+      * Navidrome/Subsonic ``coverArt`` is ``al-<albumId>_<hash>``, whose
+        suffix likewise changes with the art.
+    Both are adapted into ``ImageTags.Primary``, so folding that into the
+    stem makes new art land on a fresh cache slot automatically — no
+    revalidation request, no TTL, no manual refresh.
+
+    Keeps the id in front so entries stay identifiable in logs and two
+    items that happen to share identical artwork keep separate slots
+    (matching today's per-item behaviour). The URL is still built from
+    the item id — only cache IDENTITY carries the token."""
+    tag = (tag or "").strip()
+    return f"{item_id}@{tag}" if tag else item_id
+
+
+def np_art_stem(np) -> str:
+    """``art_stem`` for a NowPlaying — its cover identity (album art for
+    audio, else the item) plus the server's art version token. The
+    player surfaces all key their cover cache off this."""
+    image_id = getattr(np, "image_id", "") or getattr(np, "item_id", "")
+    return art_stem(image_id, getattr(np, "art_tag", ""))
+
+
 def _semantic_key(key: str) -> str:
     """Extract the shared identity portion of a load_image_async key —
     everything before the first `|` separator. Callers follow the

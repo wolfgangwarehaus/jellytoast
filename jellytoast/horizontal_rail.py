@@ -41,6 +41,7 @@ from jellytoast.library_grid import (
 )
 from jellytoast.providers import get_provider
 from jellytoast.ui_helpers import (
+    art_stem,
     install_autofade_scrollbars,
     load_image_async,
     screen_dpr,
@@ -324,7 +325,8 @@ class HorizontalRail(QWidget):
                 self._model.set_cover(r, pix)
 
             load_image_async(
-                f"{cover_id}|{self._cache_ns}",
+                f"{art_stem(cover_id, (item.get('ImageTags') or {}).get('Primary', ''))}"
+                f"|{self._cache_ns}",
                 cover_url,
                 target_phys,
                 target_phys,

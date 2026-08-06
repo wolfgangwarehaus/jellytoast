@@ -62,6 +62,7 @@ from jellytoast.library_grid import (
 from jellytoast.providers import get_provider
 from jellytoast.ui_helpers import (
     EmptyState,
+    art_stem,
     ink_alpha,
     install_autofade_scrollbars,
     load_image_async,
@@ -716,7 +717,8 @@ class ArtistPage(QWidget):
                 self._model.set_cover(r, pix)
 
             load_image_async(
-                f"{cover_id}|artistalbumtile",
+                f"{art_stem(cover_id, (album.get('ImageTags') or {}).get('Primary', ''))}"
+                f"|artistalbumtile",
                 cover_url,
                 target_phys,
                 target_phys,
