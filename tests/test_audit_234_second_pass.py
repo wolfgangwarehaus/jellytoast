@@ -93,6 +93,27 @@ class TestYearRulePagination:
 # ── Finding 7: start-failure fan-out + deferred drain ───────────────────────
 
 
+@pytest.fixture(autouse=True)
+def _clean_pipeline_globals():
+    """The cover pipeline keeps module-level state (gate counter, the two
+    deferred queues, the in-flight subscriber map). These tests drive it
+    directly, so they must START from a known-empty state — inheriting a
+    stray deferred entry from an earlier test made
+    test_promote_skips_a_bad_deferred_and_fires_the_next pop the wrong
+    entry and fail under random ordering."""
+    from jellytoast import ui_helpers as uh
+
+    def _reset():
+        uh._gated_in_flight = 0
+        uh._deferred_normal.clear()
+        uh._deferred_low.clear()
+        uh._inflight_subscribers.clear()
+
+    _reset()
+    yield
+    _reset()
+
+
 class TestImageStartFailure:
     def test_fail_inflight_fans_out_and_forgets(self, qapp):
         from jellytoast import ui_helpers as uh

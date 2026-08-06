@@ -54,6 +54,11 @@ developer-facing history lives in [`docs/CHANGELOG.md`](docs/CHANGELOG.md).
   did nothing. It now asks your desktop for permission the proper way — you may
   see a prompt the first time — and if you say no, the checkbox says no too.
   Nothing changes on other Linux setups; the old method is still the fallback.
+- **Real frosted blur when you install with pip or pipx on KDE.** Those installs
+  bring their own copy of Qt, which couldn't see KDE's blur plugin — so the app
+  quietly settled for the imitation frost even on a blur-capable desktop. It
+  finds the plugin now. (Distro packages, the Flatpak and the AppImage were
+  never affected.)
 - **jellytoast habla español.** The whole app is now translatable, with Spanish
   as the first language — sign-in, settings, the library, now playing, casting,
   downloads, the tray, all of it. There's a Language picker under Settings →
