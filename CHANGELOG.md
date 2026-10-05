@@ -12,6 +12,8 @@ developer-facing history lives in [`docs/CHANGELOG.md`](docs/CHANGELOG.md).
      should stand alone: the Store "What's new" shows just the title (+ first
      sentence in --detail mode). -->
 
+## [0.2.2] — 2026-10-05
+
 - **Works with Jellyfin 12.** Jellyfin 12 turned off the old sign-in method
   jellytoast was using, so signing in to a 12.x server just failed. jellytoast
   now uses the current method, which works on older servers too (10.8 and up).
@@ -31,9 +33,6 @@ developer-facing history lives in [`docs/CHANGELOG.md`](docs/CHANGELOG.md).
   Now Playing shows the work and movement under the artist (Navidrome 0.63+).
 - **Ready for future Jellyfin versions.** jellytoast now uses the API routes
   Jellyfin officially supports, ahead of the old ones being removed.
-
-## [0.2.2] — 2026-08-06
-
 - **A "Copy diagnostics" button, for when you need to report something.**
   Settings → General now has a button that copies a short report — version,
   your OS and desktop, audio and theme details, recent log lines — straight to
