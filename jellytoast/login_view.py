@@ -3,11 +3,16 @@
 A centered card with server URL / username / password fields and a
 Sign In button. On submit it calls the active provider's
 ``authenticate`` via ``run_async`` (the GUI thread can't block on a
-10s POST timeout) and emits ``signed_in`` on success. The host shows
+10s POST timeout) and emits ``signed_in`` on success. Jellyfin servers
+also offer Quick Connect: show a code, the user approves it from a
+device that's already signed in, no password typed here. The host shows
 this view in the content stack whenever the API isn't authenticated;
 on success the host swaps to the user's home destination."""
 
-from PySide6.QtCore import Qt, Signal, Slot
+import time
+
+import requests
+from PySide6.QtCore import Qt, QTimer, Signal, Slot
 from PySide6.QtGui import QKeyEvent, QPainter, QPainterPath
 from PySide6.QtWidgets import (
     QDialog,
@@ -49,6 +54,14 @@ from jellytoast.ui_helpers import (
 )
 
 CARD_WIDTH = 420
+
+
+class _QuickConnectOff(Exception):
+    """The server is Jellyfin but Quick Connect is disabled on it."""
+
+
+class _NotJellyfin(Exception):
+    """Nothing Jellyfin answered at the URL."""
 
 
 class _LoginCard(QFrame):
@@ -303,6 +316,16 @@ class LoginView(QWidget):
         # True while a "Try a demo" attempt is in flight, so the probe-failure
         # message can explain it's a public server we don't control.
         self._pending_demo = False
+        # Quick Connect: a generation counter fences off late replies from a
+        # cancelled / superseded attempt; the timer drives the approval poll.
+        self._qc_gen = 0
+        self._qc_server = ""
+        self._qc_secret = ""
+        self._qc_deadline = 0.0
+        self._qc_inflight = False
+        self._qc_timer = QTimer(self)
+        self._qc_timer.setInterval(self.QC_POLL_MS)
+        self._qc_timer.timeout.connect(self._qc_poll)
 
         self.setObjectName("loginView")
         self._refresh_loginview_qss()
@@ -391,7 +414,7 @@ class LoginView(QWidget):
             password=True,
         )
 
-        def _add_field(label: str, field: QWidget) -> None:
+        def _add_field(label: str, field: QWidget) -> QLabel:
             cap = QLabel(label.upper())
             cap.setStyleSheet(
                 f"color: {TEXT_FAINT}; {type_qss(TYPE_CAPTION)} letter-spacing: 0.6px;"
@@ -399,6 +422,7 @@ class LoginView(QWidget):
             card_layout.addWidget(cap)
             card_layout.addWidget(field)
             card_layout.addSpacing(SPACE_XS)
+            return cap
 
         _add_field(self.tr("Server URL"), self._server_field)
 
@@ -418,8 +442,13 @@ class LoginView(QWidget):
         card_layout.addWidget(self._alt_urls_btn, 0, Qt.AlignmentFlag.AlignLeft)
         card_layout.addSpacing(SPACE_XS)
 
-        _add_field(self.tr("Username"), self._username_field)
-        _add_field(self.tr("Password"), self._password_field)
+        # Kept so Quick Connect can hide the credential rows it doesn't use.
+        self._credential_rows = (
+            _add_field(self.tr("Username"), self._username_field),
+            self._username_field,
+            _add_field(self.tr("Password"), self._password_field),
+            self._password_field,
+        )
 
         # Error message — hidden until a sign-in attempt fails.
         self._error_label = QLabel("")
@@ -427,6 +456,39 @@ class LoginView(QWidget):
         self._error_label.setWordWrap(True)
         self._error_label.setVisible(False)
         card_layout.addWidget(self._error_label)
+
+        # Quick Connect code panel — shown while a request is pending.
+        self._qc_panel = QWidget()
+        qc_layout = QVBoxLayout(self._qc_panel)
+        qc_layout.setContentsMargins(0, SPACE_XS, 0, SPACE_XS)
+        qc_layout.setSpacing(SPACE_XS)
+        qc_cap = QLabel(self.tr("QUICK CONNECT CODE"))
+        qc_cap.setStyleSheet(
+            f"color: {TEXT_FAINT}; {type_qss(TYPE_CAPTION)} letter-spacing: 0.6px;"
+        )
+        qc_layout.addWidget(qc_cap)
+        self._qc_code = QLabel("")
+        self._qc_code.setStyleSheet(
+            f"color: {TEXT}; {type_qss(TYPE_DISPLAY)} font-weight: 600; letter-spacing: 6px;"
+        )
+        self._qc_code.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        qc_layout.addWidget(self._qc_code, 0, Qt.AlignmentFlag.AlignHCenter)
+        qc_hint = QLabel(
+            self.tr(
+                "On a device that's already signed in to this server, open "
+                "your profile → Quick Connect and enter this code. Waiting…"
+            )
+        )
+        qc_hint.setWordWrap(True)
+        qc_hint.setStyleSheet(f"color: {TEXT_DIM}; {type_qss(TYPE_CAPTION)}")
+        qc_layout.addWidget(qc_hint)
+        self._qc_cancel_btn = QPushButton(self.tr("Cancel"))
+        self._qc_cancel_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._qc_cancel_btn.setStyleSheet(self._link_qss())
+        self._qc_cancel_btn.clicked.connect(self._cancel_quick_connect)
+        qc_layout.addWidget(self._qc_cancel_btn, 0, Qt.AlignmentFlag.AlignHCenter)
+        self._qc_panel.setVisible(False)
+        card_layout.addWidget(self._qc_panel)
         card_layout.addSpacing(SPACE_SM)
 
         self._submit_btn = QPushButton(self.tr("Sign in"))
@@ -436,6 +498,14 @@ class LoginView(QWidget):
         self._submit_btn.clicked.connect(self._submit)
         card_layout.addWidget(self._submit_btn)
 
+        # Jellyfin only (the selected type's provider decides): sign in by
+        # approving a code elsewhere instead of typing the password here.
+        self._qc_btn = QPushButton(self.tr("Sign in with Quick Connect"))
+        self._qc_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._qc_btn.setStyleSheet(self._link_qss())
+        self._qc_btn.clicked.connect(self._start_quick_connect)
+        card_layout.addWidget(self._qc_btn, 0, Qt.AlignmentFlag.AlignHCenter)
+
         # "Try a demo" — no server of your own? Explore against a public,
         # read-only demo run by the Navidrome / Jellyfin projects. It fills the
         # form for the SELECTED server type (so the existing picker doubles as
@@ -443,11 +513,7 @@ class LoginView(QWidget):
         card_layout.addSpacing(SPACE_XS)
         self._demo_btn = QPushButton(self.tr("No server? Try a demo →"))
         self._demo_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self._demo_btn.setStyleSheet(
-            f"QPushButton {{ background: transparent; border: none; "
-            f"color: {TEXT_DIM}; {type_qss(TYPE_CAPTION)} }} "
-            f"QPushButton:hover, QPushButton:focus {{ color: {ACCENT}; }}"
-        )
+        self._demo_btn.setStyleSheet(self._link_qss())
         self._demo_btn.clicked.connect(self._try_demo)
         card_layout.addWidget(self._demo_btn, 0, Qt.AlignmentFlag.AlignHCenter)
 
@@ -474,8 +540,11 @@ class LoginView(QWidget):
         QWidget.setTabOrder(self._server_field, self._username_field)
         QWidget.setTabOrder(self._username_field, self._password_field)
         QWidget.setTabOrder(self._password_field, self._submit_btn)
-        QWidget.setTabOrder(self._submit_btn, self._demo_btn)
+        QWidget.setTabOrder(self._submit_btn, self._qc_btn)
+        QWidget.setTabOrder(self._qc_btn, self._demo_btn)
         QWidget.setTabOrder(self._demo_btn, self._alt_urls_btn)
+
+        self._refresh_qc_btn()
 
         # Initial focus: password if username is already filled in,
         # username if not, server URL if neither — first empty field.
@@ -485,6 +554,14 @@ class LoginView(QWidget):
             self._username_field.setFocus()
         else:
             self._password_field.setFocus()
+
+    @staticmethod
+    def _link_qss() -> str:
+        return (
+            f"QPushButton {{ background: transparent; border: none; "
+            f"color: {TEXT_DIM}; {type_qss(TYPE_CAPTION)} }} "
+            f"QPushButton:hover, QPushButton:focus {{ color: {ACCENT}; }}"
+        )
 
     def _submit_btn_qss(self) -> str:
         """QSS for the Sign in button, built from the CURRENT accent
@@ -619,28 +696,13 @@ class LoginView(QWidget):
         if self._submitting:
             return
         self._pending_demo = demo
-        server = self._server_field.text().strip()
+        server = self._normalized_server()
         username = self._username_field.text().strip()
         password = self._password_field.text()
         if not server or not username:
             self._show_error(self.tr("Please fill in the server URL and username."))
             return
-        # Server URL must include a scheme — both Jellyfin and
-        # Subsonic 404 on bare hosts.
-        if "://" not in server:
-            server = "http://" + server
-            self._server_field.setText(server)
-
-        # Make sure the active provider matches the dropdown
-        # selection. The user might have signed out as a Jellyfin user
-        # and is now signing in to Subsonic (or vice-versa); the
-        # provider singleton was built from the persisted
-        # provider_kind which is now stale.
-        chosen_kind = self._kind_combo.currentData() or "jellyfin"
-        if chosen_kind != self.provider.kind:
-            self._settings.provider_kind = chosen_kind
-            reset_provider()
-            self.provider = get_provider()
+        self._ensure_provider()
 
         self._set_submitting(True)
         self._error_label.setVisible(False)
@@ -662,6 +724,165 @@ class LoginView(QWidget):
             on_error=lambda e: self._on_probe_err(e),
         )
 
+    def _normalized_server(self) -> str:
+        """The URL field, with a scheme added — both Jellyfin and Subsonic
+        404 on bare hosts. Writes the fix back so the user sees it."""
+        server = self._server_field.text().strip()
+        if server and "://" not in server:
+            server = "http://" + server
+            self._server_field.setText(server)
+        return server
+
+    def _ensure_provider(self):
+        """Make sure the active provider matches the dropdown selection.
+        The user might have signed out as a Jellyfin user and is now
+        signing in to Subsonic (or vice-versa); the provider singleton was
+        built from the persisted provider_kind which is now stale."""
+        chosen_kind = self._kind_combo.currentData() or "jellyfin"
+        if chosen_kind != self.provider.kind:
+            self._settings.provider_kind = chosen_kind
+            reset_provider()
+            self.provider = get_provider()
+
+    def _refresh_qc_btn(self):
+        kind = self._kind_combo.currentData() or "jellyfin"
+        self._qc_btn.setVisible(kind == "jellyfin" and not self._qc_panel.isVisible())
+
+    # ── Quick Connect ──────────────────────────────────────────────────
+
+    QC_POLL_MS = 3000
+    # Jellyfin forgets an unapproved request after ~10 minutes; give up
+    # well before so a forgotten login card doesn't poll forever.
+    QC_TIMEOUT_S = 300
+
+    @Slot()
+    def _start_quick_connect(self):
+        if self._submitting:
+            return
+        server = self._normalized_server()
+        if not server:
+            self._show_error(self.tr("Please fill in the server URL."))
+            return
+        self._ensure_provider()
+        self._qc_gen += 1
+        gen = self._qc_gen
+        provider = self.provider
+        self._pending_demo = False
+        self._set_submitting(True)
+        self._error_label.setVisible(False)
+
+        def _start():
+            if provider.probe(server) is None:
+                raise _NotJellyfin()
+            if not provider.quick_connect_available(server):
+                raise _QuickConnectOff()
+            return provider.quick_connect_start(server)
+
+        run_async(
+            _start,
+            on_result=lambda res, g=gen: self._on_qc_started(g, server, res),
+            on_error=lambda e, g=gen: self._on_qc_failed(g, e),
+        )
+
+    def _on_qc_started(self, gen: int, server: str, result):
+        if gen != self._qc_gen:
+            return
+        secret, code = result
+        self._qc_server, self._qc_secret = server, secret
+        self._qc_code.setText(code)
+        self._show_qc_panel(True)
+        self._submit_btn.setText(self.tr("Waiting for approval…"))
+        self._qc_deadline = time.monotonic() + self.QC_TIMEOUT_S
+        self._qc_inflight = False
+        self._qc_timer.start()
+
+    @Slot()
+    def _qc_poll(self):
+        if self._qc_inflight:
+            return
+        gen = self._qc_gen
+        if time.monotonic() > self._qc_deadline:
+            self._on_qc_failed(gen, TimeoutError())
+            return
+        self._qc_inflight = True
+        run_async(
+            self.provider.quick_connect_approved,
+            self._qc_server,
+            self._qc_secret,
+            on_result=lambda ok, g=gen: self._on_qc_polled(g, ok),
+            on_error=lambda e, g=gen: self._on_qc_failed(g, e),
+        )
+
+    def _on_qc_polled(self, gen: int, approved: bool):
+        if gen != self._qc_gen:
+            return
+        self._qc_inflight = False
+        if not approved:
+            return
+        self._qc_timer.stop()
+        server = self._qc_server
+        run_async(
+            self.provider.quick_connect_finish,
+            server,
+            self._qc_secret,
+            on_result=lambda result, g=gen: self._on_qc_done(g, server, result),
+            on_error=lambda e, g=gen: self._on_qc_failed(g, e),
+        )
+
+    def _on_qc_done(self, gen: int, server: str, result):
+        if gen != self._qc_gen:
+            return
+        self._qc_stop()
+        if getattr(result, "username", ""):
+            self._username_field.setText(result.username)
+        self._on_auth_ok(server)
+
+    def _on_qc_failed(self, gen: int, err: Exception):
+        if gen != self._qc_gen:
+            return
+        self._qc_stop()
+        self._set_submitting(False)
+        status = getattr(getattr(err, "response", None), "status_code", None)
+        if isinstance(err, _QuickConnectOff):
+            msg = self.tr(
+                "Quick Connect is turned off on this server. An admin can turn "
+                "it on in Dashboard → General, or sign in with your password."
+            )
+        elif isinstance(err, _NotJellyfin):
+            msg = self.tr("Couldn't find a Jellyfin server at that URL.")
+        elif isinstance(err, TimeoutError) or status == 404:
+            msg = self.tr("That code expired. Start Quick Connect again to get a new one.")
+        elif status == 401:
+            msg = self.tr("The Quick Connect request wasn't approved.")
+        elif isinstance(err, requests.exceptions.ConnectionError):
+            msg = self.tr("Couldn't reach the server. Check the URL and your network.")
+        else:
+            msg = self.tr("Quick Connect didn't work: {0}").format(
+                str(err) or err.__class__.__name__
+            )
+        self._show_error(msg)
+
+    @Slot()
+    def _cancel_quick_connect(self):
+        self._qc_gen += 1  # late replies from this attempt are now stale
+        self._qc_stop()
+        self._set_submitting(False)
+
+    def _qc_stop(self):
+        self._qc_timer.stop()
+        self._qc_inflight = False
+        self._qc_secret = ""
+        self._show_qc_panel(False)
+
+    def _show_qc_panel(self, show: bool):
+        """Swap the credential rows for the code panel — Quick Connect
+        doesn't use them, and the card doesn't have room for both on a
+        short window."""
+        for w in self._credential_rows:
+            w.setVisible(not show)
+        self._qc_panel.setVisible(show)
+        self._refresh_qc_btn()
+
     def _on_kind_changed(self, _idx: int):
         kind = self._kind_combo.currentData() or "jellyfin"
         if kind == "subsonic":
@@ -670,6 +891,7 @@ class LoginView(QWidget):
         else:
             self._subtitle.setText(self.tr("Sign in to your Jellyfin server"))
             self._server_field.setPlaceholderText("http://your.server:8096")
+        self._refresh_qc_btn()
 
     def _on_probe_ok(self, server: str, username: str, password: str, info):
         if info is None:
@@ -793,6 +1015,7 @@ class LoginView(QWidget):
         )
         self._submit_btn.setEnabled(not submitting)
         self._demo_btn.setEnabled(not submitting)
+        self._qc_btn.setEnabled(not submitting)
         for f in (self._server_field, self._username_field, self._password_field):
             f.setEnabled(not submitting)
 

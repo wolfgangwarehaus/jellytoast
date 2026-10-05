@@ -496,6 +496,7 @@ class TestNowPlayingIdleInkRestamp:
         page._preview_id = ""
         page._title = QLabel()
         page._subtitle = QLabel()
+        page._work_line = QLabel()
         page._cover = QLabel()
         page._cover_orig = None
         # _on_playback_stopped also clears the lyrics pane; stub that out

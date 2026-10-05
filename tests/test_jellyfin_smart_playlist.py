@@ -72,7 +72,7 @@ class TestQueryFormation:
             }
         )
         path, params = provider.calls[0]
-        assert path == "/Users/u1/Items"
+        assert path == "/Items"
         assert params["Genres"] == "Electronic"
         assert params["IncludeItemTypes"] == "Audio"
         assert params["Recursive"] == "true"

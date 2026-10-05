@@ -37,6 +37,9 @@ class _FakeProvider:
         self.size_calls.append(int(size))
         return f"http://test/Items/{item_id}/Images/{name}?fillWidth={size}"
 
+    def get_artist_top_songs(self, artist_id, artist_name="", count=5):
+        return []
+
     # Some sites consult is_authenticated; keep it cheap and truthy.
     def is_authenticated(self) -> bool:
         return True

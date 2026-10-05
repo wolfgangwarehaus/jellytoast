@@ -269,6 +269,17 @@ class Settings:
         self._s.setValue("server/username", v)
 
     @property
+    def jellyfin_server_version(self) -> str:
+        """Last seen Jellyfin server version ("12.1.0"), from
+        /System/Info/Public. Persisted so an offline boot still picks the
+        right route family (see JellyfinAPI._route)."""
+        return self._s.value("server/jellyfin_version", "", type=str)
+
+    @jellyfin_server_version.setter
+    def jellyfin_server_version(self, v: str):
+        self._s.setValue("server/jellyfin_version", v)
+
+    @property
     def access_token(self) -> str:
         # Dual-store read: keyring (OS-managed) paired with an
         # AES-GCM-encrypted QSettings blob (resilience floor — keyring

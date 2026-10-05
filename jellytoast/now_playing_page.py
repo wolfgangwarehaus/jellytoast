@@ -82,6 +82,7 @@ from jellytoast.ui_helpers import (
     CoverOverlayButton,
     EmptyState,
     art_stem,
+    classical_work_line,
     dpr_bucket,
     ink_alpha,
     load_image_async,
@@ -233,6 +234,7 @@ class NowPlayingPage(_LeftPaneMixin, _LyricsMixin, QWidget):
         self._lyrics_starts_ms: List[int] = []
         self._lyrics_synced: bool = False
         self._active_line_idx: int = -1
+        self._reset_karaoke()
 
         self.setObjectName("npPage")
         # The host window paints its translucent body (with KWin blur
@@ -416,6 +418,16 @@ class NowPlayingPage(_LeftPaneMixin, _LyricsMixin, QWidget):
         self._subtitle.setAlignment(Qt.AlignmentFlag.AlignHCenter)
         self._subtitle.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
 
+        # Classical work / movement (OpenSubsonic works + movements) —
+        # live tracks only, hidden when the track carries none.
+        self._work_line = QLabel("")
+        self._work_line.setFont(font(TYPE_CAPTION))
+        self._work_line.setStyleSheet(f"color: {ink_alpha(0.50)};")
+        self._work_line.setWordWrap(True)
+        self._work_line.setAlignment(Qt.AlignmentFlag.AlignHCenter)
+        self._work_line.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
+        self._work_line.setVisible(False)
+
         # Tertiary line under the subtitle — track count + total
         # runtime, only shown in preview mode where the page
         # represents a whole album / playlist rather than a single
@@ -441,6 +453,7 @@ class NowPlayingPage(_LeftPaneMixin, _LyricsMixin, QWidget):
         info_col.addWidget(self._title)
         info_col.addSpacing(4)
         info_col.addWidget(self._subtitle)
+        info_col.addWidget(self._work_line)
         info_col.addWidget(self._meta_line)
         self._info_col = info_col
 
@@ -800,6 +813,7 @@ class NowPlayingPage(_LeftPaneMixin, _LyricsMixin, QWidget):
         # Metadata text — colour QSS is baked at construction, so a
         # theme switch with no track change otherwise leaves it stale.
         self._subtitle.setStyleSheet(f"color: {ink_alpha(0.62)};")
+        self._work_line.setStyleSheet(f"color: {ink_alpha(0.50)};")
         self._meta_line.setStyleSheet(
             f"color: {ink_alpha(0.42)}; letter-spacing: 0.6px;"
         )
@@ -879,6 +893,7 @@ class NowPlayingPage(_LeftPaneMixin, _LyricsMixin, QWidget):
         # ui_helpers token so a dark↔light flip while idle re-stamps it.
         self._title.setStyleSheet(f"color: {_u.IDLE_TEXT};")
         self._subtitle.setText("")
+        self._set_work_line("")
         self._cover.clear()
         self._cover_orig = None
         self._set_lyrics_text("")
@@ -1003,6 +1018,7 @@ class NowPlayingPage(_LeftPaneMixin, _LyricsMixin, QWidget):
             self._subtitle.setText(state.display_subtitle)
         else:
             self._subtitle.setText("")
+        self._set_work_line("")
 
         # Cover.
         cover_url = state.display_cover_url
@@ -1077,6 +1093,7 @@ class NowPlayingPage(_LeftPaneMixin, _LyricsMixin, QWidget):
             self._subtitle.setText(sep.join(bits))
         else:
             self._subtitle.setText("")
+        self._set_work_line(classical_work_line(np.raw or {}, np.title))
 
         image_id = np.image_id or np.item_id
         if image_id and not getattr(self, "_is_radio", False):
@@ -1104,6 +1121,10 @@ class NowPlayingPage(_LeftPaneMixin, _LyricsMixin, QWidget):
                 priority="high",
             )
         self._fetch_lyrics(np.item_id)
+
+    def _set_work_line(self, text: str):
+        self._work_line.setText(text)
+        self._work_line.setVisible(bool(text))
 
     def _on_cover_loaded(self, pix: QPixmap):
         self._cover_orig = pix
@@ -1685,6 +1706,7 @@ class NowPlayingPage(_LeftPaneMixin, _LyricsMixin, QWidget):
             # Cold path — placeholders while we wait on the network.
             self._title.setText(self.tr("Loading…"))
             self._subtitle.setText("")
+            self._set_work_line("")
             self._refresh_track_list()
             self._refresh_meta_line()
         # Async fetches dispatch back to the GUI thread via signals.
@@ -1766,6 +1788,7 @@ class NowPlayingPage(_LeftPaneMixin, _LyricsMixin, QWidget):
             if isinstance(a, dict) and a.get("Name")
         )
         self._subtitle.setText(artist)
+        self._set_work_line("")
         # Cover load via the standard image URL helper. Match the
         # live-mode load size + DPR-scaling so this preview shares the
         # cache slot the live now-playing flow would populate for the

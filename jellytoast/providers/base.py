@@ -25,7 +25,7 @@ Data shapes:
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 # ── Auth-tier normalized shapes ──────────────────────────────────────
 
@@ -156,6 +156,23 @@ class MediaProvider(ABC):
         / timeouts should return True (assume valid; let the next
         real call surface a 401 if there is one)."""
 
+    # Quick Connect: sign in by approving a short code from a device that's
+    # already signed in (Jellyfin). Providers without it keep these
+    # defaults — the login view only offers it when available() says so.
+
+    def quick_connect_available(self, server_url: str) -> bool:
+        return False
+
+    def quick_connect_start(self, server_url: str) -> Tuple[str, str]:
+        """Begin a request → ``(secret, code)``; show ``code`` to the user."""
+        raise NotImplementedError
+
+    def quick_connect_approved(self, server_url: str, secret: str) -> bool:
+        raise NotImplementedError
+
+    def quick_connect_finish(self, server_url: str, secret: str) -> AuthResult:
+        raise NotImplementedError
+
     @abstractmethod
     def server_logout(self) -> bool:
         """Tell the server to revoke this device's session. Best-
@@ -271,6 +288,17 @@ class MediaProvider(ABC):
         ``get_similar_songs``; the call site uses ``get_instant_mix``
         when it semantically wants a 'mix' rather than a 'bag of similar
         items', but on Subsonic the underlying API is the same."""
+        return []
+
+    def get_artist_top_songs(
+        self, artist_id: str, artist_name: str = "", count: int = 5
+    ) -> List[Dict[str, Any]]:
+        """An artist's top tracks, most popular first — the artist page's
+        "Top songs" list. Subsonic: ``getTopSongs`` (by id where the server
+        has OpenSubsonic ``topSongsByArtistId``, else by name — needs
+        ``artist_name``). Jellyfin has no popularity source, so it ranks
+        the user's own plays. Empty list on miss or any error (the section
+        hides)."""
         return []
 
     def get_genre_radio(

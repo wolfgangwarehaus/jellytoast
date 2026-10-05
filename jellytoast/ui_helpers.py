@@ -1071,6 +1071,48 @@ def _raw_covers_target(src_w: int, src_h: int, target_w: int, target_h: int) -> 
     return src_w >= target_w * _RAW_DERIVE_MIN_RATIO and src_h >= target_h * _RAW_DERIVE_MIN_RATIO
 
 
+def _roman(n: int) -> str:
+    out = ""
+    for value, numeral in (
+        (1000, "M"), (900, "CM"), (500, "D"), (400, "CD"), (100, "C"), (90, "XC"),
+        (50, "L"), (40, "XL"), (10, "X"), (9, "IX"), (5, "V"), (4, "IV"), (1, "I"),
+    ):
+        while n >= value:
+            out += numeral
+            n -= value
+    return out
+
+
+def classical_work_line(item: dict, title: str = "") -> str:
+    """"Symphony No. 5 in C minor, Op. 67 · II. Andante con moto" from the
+    ``Work`` / ``Movement`` keys the Subsonic adapter fills (OpenSubsonic,
+    Navidrome 0.63+). Drops whatever ``title`` already says — many taggers
+    put the whole thing in the title — and returns "" when nothing is left."""
+    from PySide6.QtCore import QCoreApplication
+
+    t = (title or "").casefold()
+    parts = []
+    work = (item.get("Work") or "").strip()
+    if work and work.casefold() not in t:
+        parts.append(work)
+    mv = item.get("Movement") or {}
+    name = (mv.get("Name") or "").strip()
+    try:
+        number, count = int(mv.get("Number") or 0), int(mv.get("Count") or 0)
+    except (TypeError, ValueError):
+        number = count = 0
+    if name and name.casefold() not in t:
+        parts.append(f"{_roman(number)}. {name}" if number > 0 else name)
+    elif name and number > 0 and count >= number:
+        # Title already names the movement — still say where it sits.
+        parts.append(
+            QCoreApplication.translate("ClassicalWork", "Movement {0} of {1}").format(
+                _roman(number), _roman(count)
+            )
+        )
+    return " · ".join(parts)
+
+
 def art_stem(item_id: str, tag: str = "") -> str:
     """Cache-key stem for a cover: the id plus the server's art VERSION
     token when we have one.

@@ -19,7 +19,7 @@ backends to a jellytoast-internal schema and retire the adapter.
 import hashlib
 import logging
 import secrets
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 from urllib.parse import urlencode
 
 import requests
@@ -102,6 +102,83 @@ def _build_query(params: dict) -> str:
     return urlencode(clean)
 
 
+def _pick_lyrics(structured: List[dict]) -> Optional[dict]:
+    """The structuredLyrics entry to show. Only ``main`` layers (``kind``
+    absent = main; translation / pronunciation arrive with enhanced=true).
+    Several mains are common — Navidrome 0.63+ returns a sidecar
+    (.lrc/.ttml/.elrc/…) alongside the embedded tag, often one synced and
+    one plain, in either order — so prefer a synced one with lines, then
+    one with word cues among those, else the first."""
+    mains = [
+        e for e in structured
+        if isinstance(e, dict) and (e.get("kind") or "main") == "main"
+    ]
+    if not mains:
+        return None
+    synced = [e for e in mains if e.get("synced") and e.get("line")]
+    if synced:
+        return next((e for e in synced if e.get("cueLine")), synced[0])
+    return mains[0]
+
+
+def _first_cue_line_per_index(cue_lines: List[dict]) -> Dict[int, dict]:
+    """index → cueLine. Several cueLines share an index when agents split a
+    line (lead + background vocals); the spec puts the ``main`` agent's
+    first, and that's the one we highlight."""
+    out: Dict[int, dict] = {}
+    for cl in cue_lines:
+        if not isinstance(cl, dict):
+            continue
+        try:
+            idx = int(cl.get("index"))
+        except (TypeError, ValueError):
+            continue
+        out.setdefault(idx, cl)
+    return out
+
+
+def _cues_for_line(raw_text: str, cue_line: Optional[dict], ticks) -> List[Dict[str, Any]]:
+    """OpenSubsonic cues (UTF-8 byte offsets into ``cueLine.value``,
+    inclusive end) → Jellyfin LyricLineCue shape (character Position /
+    exclusive EndPosition into the line's displayed — stripped — Text,
+    Start/End in ticks). The cueLine's text may be only part of the line
+    (one agent's layer); it's located inside the line, and a line it
+    can't be placed in gets no cues (line-level highlight still works)."""
+    if not cue_line or not cue_line.get("cue"):
+        return []
+    value = cue_line.get("value") or ""
+    at = raw_text.find(value) if value else -1
+    if at < 0:
+        return []
+    base = at - (len(raw_text) - len(raw_text.lstrip()))
+    text_len = len(raw_text.strip())
+    data = value.encode("utf-8")
+
+    def char_at(byte_off: int) -> int:
+        return len(data[: max(0, byte_off)].decode("utf-8", errors="ignore"))
+
+    out: List[Dict[str, Any]] = []
+    for c in cue_line["cue"]:
+        try:
+            pos = char_at(int(c["byteStart"])) + base
+            end = char_at(int(c["byteEnd"]) + 1) + base
+            start = ticks(int(c["start"]))
+        except (KeyError, TypeError, ValueError):
+            return []
+        pos, end = max(0, min(pos, text_len)), max(0, min(end, text_len))
+        if end <= pos:
+            continue
+        cue_end = c.get("end")
+        out.append({
+            "Position": pos,
+            "EndPosition": end,
+            "Start": start,
+            "End": ticks(int(cue_end)) if cue_end is not None else None,
+        })
+    out.sort(key=lambda c: c["Start"])
+    return out
+
+
 class SubsonicProvider(MediaProvider):
     """Subsonic / OpenSubsonic / Navidrome backend."""
 
@@ -150,6 +227,8 @@ class SubsonicProvider(MediaProvider):
         # Restore it here so a provider rebuilt on launch keeps using plain
         # auth instead of reverting to token auth and looping into logout.
         self._auth_mode_plain = self.settings.subsonic_auth_mode_plain
+        # (server_url, {extension name: versions}) — see _extensions().
+        self._ext_cache: Optional[Tuple[str, Dict[str, List[int]]]] = None
 
     # ── Identity ──────────────────────────────────────────────────────
 
@@ -312,6 +391,30 @@ class SubsonicProvider(MediaProvider):
         # session doesn't accumulate toward the threshold.
         _offline.note_auth_success()
         return resp
+
+    def _extensions(self) -> Dict[str, List[int]]:
+        """OpenSubsonic extensions the server advertises (name → versions),
+        cached per server URL so a ``with_url`` / re-login re-asks. A plain
+        Subsonic server errors the call — cached as "none"; a network error
+        isn't cached, so a later call retries."""
+        url = self._server_url
+        cache = self._ext_cache
+        if cache is not None and cache[0] == url:
+            return cache[1]
+        try:
+            resp = self._request("getOpenSubsonicExtensions")
+        except SubsonicError:
+            exts: Dict[str, List[int]] = {}
+        except Exception:
+            return {}
+        else:
+            exts = {
+                e["name"]: list(e.get("versions") or [])
+                for e in resp.get("openSubsonicExtensions") or []
+                if isinstance(e, dict) and e.get("name")
+            }
+        self._ext_cache = (url, exts)
+        return exts
 
     # ── Auth tier ─────────────────────────────────────────────────────
 
@@ -557,6 +660,21 @@ class SubsonicProvider(MediaProvider):
                 "IsFavorite": bool(s.get("starred")),
                 "PlayCount": s.get("playCount", 0),
             },
+            # OpenSubsonic classical metadata (Navidrome 0.63+): the work a
+            # track belongs to and its movement within it. Jellyfin has no
+            # equivalent, so the keys are simply absent there.
+            "Work": next(
+                (w.get("name") for w in s.get("works") or [] if isinstance(w, dict) and w.get("name")),
+                "",
+            ),
+            "Movement": next(
+                (
+                    {"Name": m.get("name"), "Number": m.get("number"), "Count": m.get("count")}
+                    for m in s.get("movements") or []
+                    if isinstance(m, dict) and m.get("name")
+                ),
+                {},
+            ),
             "_subsonic_raw": s,
         }
 
@@ -1005,6 +1123,28 @@ class SubsonicProvider(MediaProvider):
         branching on ``provider.kind``."""
         return self.get_similar_songs(item_id, count=count)
 
+    def get_artist_top_songs(
+        self, artist_id: str, artist_name: str = "", count: int = 5
+    ) -> List[Dict[str, Any]]:
+        """``getTopSongs`` — by artist id where the server has OpenSubsonic
+        ``topSongsByArtistId`` (Navidrome 0.64+), else by name, which can
+        mix up same-named artists. Navidrome ranks from its external agents
+        (Last.fm etc.); without one configured the list is empty and the
+        artist page hides the section."""
+        params: Dict[str, Any] = {"count": count}
+        if artist_id and "topSongsByArtistId" in self._extensions():
+            params["id"] = artist_id
+        elif artist_name:
+            params["artist"] = artist_name
+        else:
+            return []
+        try:
+            resp = self._request("getTopSongs", params)
+        except Exception:
+            return []
+        songs = (resp.get("topSongs") or {}).get("song") or []
+        return [self._adapt_song(s) for s in songs]
+
     def get_genre_radio(
         self, genre_name: str, count: int = 50, offset: int = 0
     ) -> List[Dict[str, Any]]:
@@ -1223,24 +1363,43 @@ class SubsonicProvider(MediaProvider):
         """
         if not item_id:
             return None
+        params: Dict[str, Any] = {"id": item_id}
+        # songLyrics v2 (Navidrome 0.63+): enhanced=true adds word-level
+        # cueLines — the karaoke highlight — plus translation /
+        # pronunciation entries, which _pick_lyrics filters back out.
+        if 2 in self._extensions().get("songLyrics", []):
+            params["enhanced"] = "true"
         try:
-            resp = self._request("getLyricsBySongId", {"id": item_id})
+            resp = self._request("getLyricsBySongId", params)
         except Exception:
             return None
         container = resp.get("lyricsList") or {}
-        structured = container.get("structuredLyrics") or []
-        if not structured:
-            return None
-        # Multiple language entries possible — take the first. If
-        # multilingual selection ever matters, expose a knob then.
-        raw_lines = structured[0].get("line") or []
+        chosen = _pick_lyrics(container.get("structuredLyrics") or [])
+        raw_lines = (chosen or {}).get("line") or []
         if not raw_lines:
             return None
+        # `offset` (ms): positive means lyrics appear sooner.
+        try:
+            offset = int(chosen.get("offset") or 0)
+        except (TypeError, ValueError):
+            offset = 0
+
+        def ticks(ms) -> int:
+            return max(0, int(ms) - offset) * 10_000
+
+        cue_lines = _first_cue_line_per_index(chosen.get("cueLine") or [])
         lines: List[Dict[str, Any]] = []
-        for ln in raw_lines:
-            text = (ln.get("value") or "").strip()
+        for i, ln in enumerate(raw_lines):
+            raw_text = ln.get("value") or ""
             start_ms = int(ln.get("start") or 0)
-            lines.append({"Text": text, "Start": start_ms * 10_000})
+            line: Dict[str, Any] = {
+                "Text": raw_text.strip(),
+                "Start": ticks(start_ms) if start_ms else 0,
+            }
+            cues = _cues_for_line(raw_text, cue_lines.get(i), ticks)
+            if cues:
+                line["Cues"] = cues
+            lines.append(line)
         return {"Lyrics": lines}
 
     # ── Internet radio ────────────────────────────────────────────────

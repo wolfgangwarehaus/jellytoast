@@ -39,6 +39,7 @@ def test_tab_chain_walks_fields_then_submit(qapp, isolated_settings):
         view._username_field,
         view._password_field,
         view._submit_btn,
+        view._qc_btn,
         view._demo_btn,
         view._alt_urls_btn,
     ]

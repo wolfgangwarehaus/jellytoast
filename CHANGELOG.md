@@ -12,6 +12,26 @@ developer-facing history lives in [`docs/CHANGELOG.md`](docs/CHANGELOG.md).
      should stand alone: the Store "What's new" shows just the title (+ first
      sentence in --detail mode). -->
 
+- **Works with Jellyfin 12.** Jellyfin 12 turned off the old sign-in method
+  jellytoast was using, so signing in to a 12.x server just failed. jellytoast
+  now uses the current method, which works on older servers too (10.8 and up).
+- **Synced lyrics win on Navidrome.** When a song has both plain lyrics and a
+  synced lyrics file, jellytoast now shows the synced ones, so they follow
+  along with the music instead of sitting still.
+- **Sign in with Quick Connect.** On Jellyfin, skip the password: jellytoast
+  shows a short code, you approve it from your phone or browser where you're
+  already signed in, and you're in.
+- **Word-by-word lyrics.** Lyrics with per-word timing now light up word by
+  word as they're sung (Navidrome 0.63+ sidecar files, and Jellyfin's own
+  word-timed lyrics).
+- **Top songs on artist pages.** Artist pages open with the artist's most
+  popular tracks — from Navidrome's charts, or your own most-played on
+  Jellyfin. Click one to play from there.
+- **Classical works and movements.** For classical tracks tagged with them,
+  Now Playing shows the work and movement under the artist (Navidrome 0.63+).
+- **Ready for future Jellyfin versions.** jellytoast now uses the API routes
+  Jellyfin officially supports, ahead of the old ones being removed.
+
 ## [0.2.2] — 2026-08-06
 
 - **A "Copy diagnostics" button, for when you need to report something.**

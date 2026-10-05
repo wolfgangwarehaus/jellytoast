@@ -258,6 +258,25 @@ class JellyfinProvider(MediaProvider):
             access_token=self.api.token,
         )
 
+    def quick_connect_available(self, server_url: str) -> bool:
+        return self.api.quick_connect_enabled(server_url)
+
+    def quick_connect_start(self, server_url: str) -> Tuple[str, str]:
+        data = self.api.quick_connect_initiate(server_url)
+        return data["Secret"], data["Code"]
+
+    def quick_connect_approved(self, server_url: str, secret: str) -> bool:
+        return self.api.quick_connect_approved(server_url, secret)
+
+    def quick_connect_finish(self, server_url: str, secret: str) -> AuthResult:
+        data = self.api.quick_connect_authenticate(server_url, secret)
+        return AuthResult(
+            server_url=self.api.server_url,
+            user_id=self.api.user_id,
+            username=(data.get("User") or {}).get("Name", ""),
+            access_token=self.api.token,
+        )
+
     def verify_session(self) -> bool:
         return self.api.verify_session()
 
@@ -385,7 +404,7 @@ class JellyfinProvider(MediaProvider):
                 if songs > 0 and len(out["Audio"]) < songs:
                     try:
                         tracks_resp = self.api._get(
-                            f"/Users/{self.api.user_id}/Items",
+                            "/Items",
                             {
                                 "ArtistIds": artist_id,
                                 "IncludeItemTypes": "Audio",
@@ -453,6 +472,31 @@ class JellyfinProvider(MediaProvider):
             return []
         return resp.get("Items", []) or []
 
+    def get_artist_top_songs(
+        self, artist_id: str, artist_name: str = "", count: int = 5
+    ) -> List[Dict[str, Any]]:
+        """Jellyfin has no global popularity data, so "top" is the user's
+        own most-played tracks credited to the artist (IsPlayed keeps
+        never-played tracks from padding the list in arbitrary order)."""
+        if not artist_id:
+            return []
+        params = {
+            "UserId": self.api.user_id,
+            "ArtistIds": artist_id,
+            "IncludeItemTypes": "Audio",
+            "Recursive": True,
+            "Filters": "IsPlayed",
+            "SortBy": "PlayCount,SortName",
+            "SortOrder": "Descending,Ascending",
+            "Limit": count,
+            "Fields": ("RunTimeTicks,Artists,AlbumArtist,AlbumId,IndexNumber,ParentIndexNumber"),
+        }
+        try:
+            resp = self.api._get("/Items", params)
+        except Exception:
+            return []
+        return resp.get("Items", []) or []
+
     def get_genre_radio(
         self, genre_name: str, count: int = 50, offset: int = 0
     ) -> List[Dict[str, Any]]:
@@ -476,7 +520,7 @@ class JellyfinProvider(MediaProvider):
             params["StartIndex"] = offset
         try:
             resp = self.api._get(
-                f"/Users/{self.api.user_id}/Items",
+                "/Items",
                 params,
             )
         except Exception:
@@ -501,7 +545,7 @@ class JellyfinProvider(MediaProvider):
         bitrate = max_bitrate_kbps * 1000
         return (
             f"{self.api.server_url}/Audio/{item_id}/stream.{codec}"
-            f"?api_key={self.api.token}"
+            f"?ApiKey={self.api.token}"
             f"&MaxStreamingBitrate={bitrate}&AudioCodec={codec}"
         )
 
@@ -830,7 +874,7 @@ class JellyfinProvider(MediaProvider):
                     if isinstance(limit, int) and limit > 0:
                         fparams["Limit"] = limit
                     resp = self.api._get(
-                        f"/Users/{self.api.user_id}/Items",
+                        "/Items",
                         fparams,
                     )
                     batches.append(resp.get("Items") or [])
@@ -876,7 +920,7 @@ class JellyfinProvider(MediaProvider):
             page_params["Limit"] = page
             page_params["StartIndex"] = start
             resp = self.api._get(
-                f"/Users/{self.api.user_id}/Items",
+                "/Items",
                 page_params,
             )
             batch = resp.get("Items") or []
@@ -907,7 +951,7 @@ class JellyfinProvider(MediaProvider):
         params["Limit"] = limit
         try:
             resp = self.api._get(
-                f"/Users/{self.api.user_id}/Items",
+                "/Items",
                 params,
             )
         except Exception:

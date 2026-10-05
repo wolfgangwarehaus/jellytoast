@@ -150,7 +150,7 @@ class TestGetGenreRadio:
 
         assert len(rec.calls) == 1
         path, params = rec.calls[0]
-        assert path == "/Users/user-abc/Items"
+        assert path == "/Items"
         assert params["Genres"] == "Jazz"
         assert params["IncludeItemTypes"] == "Audio"
         assert params["SortBy"] == "Random"

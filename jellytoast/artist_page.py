@@ -7,6 +7,8 @@ Replaces JF Web's artist detail rendering for the music library.
 Layout:
 - Header band: artist photo (left), name + genre + counts (right).
   (Back navigation is the top-bar back arrow — no in-page back button.)
+- "Top songs": the artist's most popular tracks (hidden when the provider
+  has none). Click a row → play the list from there.
 - Body: grid of the artist's albums sorted by release year ascending
   (oldest → newest, "chronological release order"). Reuses LibraryTile
   for the album cells so the visual reads identically to the main
@@ -60,6 +62,7 @@ from jellytoast.library_grid import (
     _year_int,
 )
 from jellytoast.providers import get_provider
+from jellytoast.search_view import _SongsSection
 from jellytoast.ui_helpers import (
     EmptyState,
     art_stem,
@@ -197,6 +200,9 @@ class ArtistPage(QWidget):
     # Async fetch results land on the GUI thread via these.
     _meta_loaded = Signal(str, object)  # (artist_id, meta or None)
     _albums_loaded = Signal(str, object)  # (artist_id, list)
+    _top_songs_loaded = Signal(str, object)  # (artist_id, list)
+
+    TOP_SONGS = 5
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -251,6 +257,19 @@ class ArtistPage(QWidget):
         header.addWidget(meta_widget, 1)
 
         outer.addLayout(header)
+
+        # "Top songs" — same rows as the Songs view / search results.
+        # Self-hides until a non-empty list lands, so artists the server
+        # has no ranking for (Navidrome without a Last.fm agent; Jellyfin
+        # tracks never played) show just the album grid as before.
+        self._top_songs = _SongsSection(
+            self, title=self.tr("Top songs"), cache_tag="artisttopsong"
+        )
+        self._top_songs._view.setViewportMargins(SPACE_XL, 0, SPACE_XL, 0)
+        self._top_songs.play_requested.connect(self._on_top_song_play)
+        self._top_songs.album_browse_requested.connect(self.album_browse_requested.emit)
+        self._top_songs_for = ""  # artist id the current list was fetched for
+        outer.addWidget(self._top_songs)
 
         # Album grid — model/view/delegate. show_subtitle=False because
         # every album on this page has the same artist (the page's
@@ -323,6 +342,7 @@ class ArtistPage(QWidget):
 
         self._meta_loaded.connect(self._on_meta_loaded)
         self._albums_loaded.connect(self._on_albums_loaded)
+        self._top_songs_loaded.connect(self._on_top_songs_loaded)
         # Cross-DPR cover refresh — re-fetch the artist header
         # photo + album thumbnails at the new physical target when
         # the user drags the window between scaled monitors. Same
@@ -452,6 +472,9 @@ class ArtistPage(QWidget):
         if items:
             self._model.clear_covers()
             self._on_albums_loaded(self._artist_id, items)
+        top = list(self._top_songs._model.items())
+        if top:
+            self._top_songs.set_items(top)
 
     # ── Click hit-test ────────────────────────────────────────────────
 
@@ -543,6 +566,8 @@ class ArtistPage(QWidget):
         self._initial_albums_load_complete = False
         self._name.setText(self.tr("Loading…"))
         self._info.setText("")
+        self._top_songs.set_items([])
+        self._top_songs_for = ""
         # Offline mode: resolve everything from the local snapshot graph
         # instead of hitting the provider. The provider would just time
         # out and the user would see "Couldn't load artist" even when
@@ -613,6 +638,7 @@ class ArtistPage(QWidget):
             return
         self._artist_meta = meta
         self._name.setText(meta.get("Name") or self.tr("Unknown"))
+        self._fetch_top_songs(artist_id, meta.get("Name") or "")
         # Rebuild from shared state so this handler doesn't clobber the
         # album count _on_albums_loaded may have already set. Both async
         # handlers call _rebuild_info(), so meta + albums can resolve in
@@ -643,6 +669,48 @@ class ArtistPage(QWidget):
                 lambda pix, a=aid: None if a != self._artist_id else self._on_cover_loaded(pix),
                 rounded_radius=radius_phys,
             )
+
+    def _fetch_top_songs(self, artist_id: str, name: str):
+        """Once per artist (the DPR path re-runs _on_meta_loaded). Skipped
+        offline: popularity is a server-side ranking, and the downloads
+        snapshot has nothing to rank by."""
+        if self._top_songs_for == artist_id:
+            return
+        self._top_songs_for = artist_id
+        try:
+            from jellytoast import offline as _offline
+
+            if _offline.is_offline_mode():
+                return
+        except Exception:
+            pass
+        run_async(
+            self.api.get_artist_top_songs,
+            artist_id,
+            name,
+            self.TOP_SONGS,
+            on_result=lambda songs, aid=artist_id: self._top_songs_loaded.emit(aid, songs),
+            on_error=lambda _e, aid=artist_id: self._top_songs_loaded.emit(aid, []),
+        )
+
+    @Slot(str, object)
+    def _on_top_songs_loaded(self, artist_id: str, songs: Optional[List[Dict]]):
+        if artist_id != self._artist_id:
+            return
+        self._top_songs.set_items(songs or [])
+
+    @Slot(int, list)
+    def _on_top_song_play(self, start_idx: int, items: list):
+        if not items or not (0 <= start_idx < len(items)):
+            return
+        from jellytoast.player_state import PlayerBus, QueueContext, QueueKind
+
+        ctx = QueueContext(
+            kind=QueueKind.ARTIST,
+            source_id=self._artist_id,
+            source_label=self._artist_meta.get("Name") or "",
+        )
+        PlayerBus.get().queue_play_now.emit(list(items), start_idx, ctx)
 
     @Slot(object)
     def _on_cover_loaded(self, pix: QPixmap):

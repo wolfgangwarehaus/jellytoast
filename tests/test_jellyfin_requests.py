@@ -35,6 +35,10 @@ def _api() -> JellyfinAPI:
     api.server_url = "http://jf.test"
     api.user_id = "u1"
     api.token = "tok"
+    # Unknown server version → modern routes; the persisted value would
+    # otherwise leak between tests (and runs) via the test QSettings.
+    api.settings.jellyfin_server_version = ""
+    api.server_version = None
     return api
 
 
@@ -60,11 +64,38 @@ class TestAuthHeader:
         api.token = ""
         assert "Token=" not in api.auth_header
 
-    def test_headers_sets_emby_auth_and_json_content_type(self):
+    def test_headers_sets_standard_auth_and_json_content_type(self):
         api = _api()
         headers = api._headers()
-        assert headers["X-Emby-Authorization"] == api.auth_header
+        assert headers["Authorization"] == api.auth_header
         assert headers["Content-Type"] == "application/json"
+        assert headers["Accept-Language"]
+
+    def test_no_legacy_auth_header(self):
+        # Jellyfin 12 ignores X-Emby-Authorization by default — sending it
+        # instead of Authorization means every request comes back 401.
+        assert not any(k.lower().startswith("x-emby") for k in _api()._headers())
+
+    def test_built_urls_use_apikey_not_legacy_api_key(self):
+        # Jellyfin 12 ignores the lowercase ``api_key`` query param by
+        # default; ``ApiKey`` is the supported spelling (10.8+).
+        api = _api()
+        api.settings = MagicMock()
+        api.settings.audio_quality = "original"
+        api.settings.device_id = "dev"
+        urls = [
+            api.get_audio_stream_url("i1"),
+            api.get_audio_stream_url("i1", quality="320"),
+            api.get_video_stream_url("i1"),
+            api.get_image_url("i1"),
+        ]
+        prov = JellyfinProvider.__new__(JellyfinProvider)
+        prov.api = api
+        urls.append(prov.get_audio_transcode_url("i1"))
+        for url in urls:
+            q = _query(url)
+            assert q.get("ApiKey") == "tok", url
+            assert "api_key" not in q, url
 
 
 # ── get_audio_stream_url ───────────────────────────────────────────
@@ -83,7 +114,7 @@ class TestAudioStreamUrl:
         q = _query(url)
         # Session-binding params so the server attributes the bytes to
         # the same session our /Sessions/Playing reports use.
-        assert q["api_key"] == "tok"
+        assert q["ApiKey"] == "tok"
         assert q["UserId"] == "u1"
         assert q["DeviceId"] == "dev-xyz"
         assert q["MediaSourceId"] == "item5"
@@ -210,7 +241,7 @@ class TestPlaybackReporting:
         api = _api()
         api._post = MagicMock()
         api.mark_played("it1")
-        assert api._post.call_args.args == ("/Users/u1/PlayedItems/it1",)
+        assert api._post.call_args.args == ("/UserPlayedItems/it1",)
 
 
 # ── Provider-level playback delegation ─────────────────────────────
@@ -264,7 +295,7 @@ class TestRequestBuilders:
         api = _api()
         api._get = MagicMock(return_value={"Items": [{"Id": "v"}]})
         out = api.get_libraries()
-        api._get.assert_called_once_with("/Users/u1/Views")
+        api._get.assert_called_once_with("/UserViews")
         assert out == [{"Id": "v"}]
 
     def test_get_items_path_and_core_params(self):
@@ -280,7 +311,7 @@ class TestRequestBuilders:
             recursive=True,
         )
         path, params = api._get.call_args.args[0], api._get.call_args.args[1]
-        assert path == "/Users/u1/Items"
+        assert path == "/Items"
         assert params["ParentId"] == "p1"
         assert params["IncludeItemTypes"] == "Audio"
         assert params["GenreIds"] == "g1"
@@ -314,7 +345,7 @@ class TestRequestBuilders:
         api._get = MagicMock(return_value={"Items": []})
         api.get_artist_albums("art1")
         path, params = api._get.call_args.args
-        assert path == "/Users/u1/Items"
+        assert path == "/Items"
         assert params["AlbumArtistIds"] == "art1"
         assert params["IncludeItemTypes"] == "MusicAlbum"
         assert params["Recursive"] is True
@@ -324,7 +355,7 @@ class TestRequestBuilders:
         api._get = MagicMock(return_value={"Items": []})
         api.get_album_tracks("alb1")
         path, params = api._get.call_args.args
-        assert path == "/Users/u1/Items"
+        assert path == "/Items"
         assert params["ParentId"] == "alb1"
         # Disc → track → name ordering keeps multi-disc albums in order.
         assert params["SortBy"] == "ParentIndexNumber,IndexNumber,SortName"
@@ -344,7 +375,7 @@ class TestRequestBuilders:
         api._get = MagicMock(return_value={"Items": []})
         api.get_random_audio_items("lib", limit=300)
         path, params = api._get.call_args.args
-        assert path == "/Users/u1/Items"
+        assert path == "/Items"
         assert params["ParentId"] == "lib"
         assert params["IncludeItemTypes"] == "Audio"
         assert params["SortBy"] == "Random"
@@ -375,7 +406,7 @@ class TestRequestBuilders:
         api._get = MagicMock(return_value={"Items": []})
         api.get_resume_items(media_type="Audio")
         path, params = api._get.call_args.args
-        assert path == "/Users/u1/Items/Resume"
+        assert path == "/UserItems/Resume"
         assert params["MediaTypes"] == "Audio"
 
     def test_get_latest_media_parent_id(self):
@@ -383,7 +414,7 @@ class TestRequestBuilders:
         api._get = MagicMock(return_value=[])
         api.get_latest_media("lib1", limit=8)
         path, params = api._get.call_args.args
-        assert path == "/Users/u1/Items/Latest"
+        assert path == "/Items/Latest"
         assert params["ParentId"] == "lib1"
         assert params["Limit"] == 8
 
@@ -391,7 +422,7 @@ class TestRequestBuilders:
         api = _api()
         api._get = MagicMock(return_value={"Id": "it1"})
         api.get_item("it1")
-        api._get.assert_called_once_with("/Users/u1/Items/it1")
+        api._get.assert_called_once_with("/Items/it1")
         # Second call is served from the meta cache, not the network.
         api.get_item("it1")
         assert api._get.call_count == 1
@@ -411,7 +442,7 @@ class TestMutations:
         api = _api()
         api._post = MagicMock()
         api.toggle_favorite("it1", True)
-        assert api._post.call_args.args[0] == "/Users/u1/FavoriteItems/it1"
+        assert api._post.call_args.args[0] == "/UserFavoriteItems/it1"
 
     def test_favorite_off_deletes(self):
         api = _api()
@@ -421,7 +452,7 @@ class TestMutations:
         api.session.delete = MagicMock(return_value=MagicMock(status_code=204))
         api.toggle_favorite("it1", False)
         url = api.session.delete.call_args.args[0]
-        assert url == "http://jf.test/Users/u1/FavoriteItems/it1"
+        assert url == "http://jf.test/UserFavoriteItems/it1"
 
     def test_favorite_toggle_invalidates_cache(self):
         api = _api()
@@ -450,7 +481,7 @@ class TestMutations:
         api.session.delete = MagicMock()
         api.mark_unplayed("it1")
         url = api.session.delete.call_args.args[0]
-        assert url == "http://jf.test/Users/u1/PlayedItems/it1"
+        assert url == "http://jf.test/UserPlayedItems/it1"
 
     def test_mark_unplayed_swallows_network_error(self):
         api = _api()
@@ -480,7 +511,7 @@ class TestGetPostReachability:
         kw = api.session.get.call_args
         assert kw.args[0] == "http://jf.test/Users/u1/Views"
         assert kw.kwargs["params"] == {"Limit": 5}
-        assert kw.kwargs["headers"]["X-Emby-Authorization"] == api.auth_header
+        assert kw.kwargs["headers"]["Authorization"] == api.auth_header
 
     def test_get_401_feeds_auth_failure(self, monkeypatch):
         import jellytoast.offline as _offline
@@ -518,3 +549,156 @@ class TestGetPostReachability:
         )
         # _post swallows network errors and returns None (no-throw contract).
         assert api._post("/x", {"a": 1}) is None
+
+
+# ── Route family (10.9+ user-implicit vs legacy /Users/{id}/…) ─────
+
+
+class TestRouteFamily:
+    @pytest.mark.parametrize("version", [None, (10, 9, 0), (10, 11, 6), (12, 1, 0)])
+    def test_modern_paths_pass_through(self, version):
+        api = _api()
+        api.server_version = version
+        for method, path in [
+            ("GET", "/UserViews"),
+            ("GET", "/Items"),
+            ("GET", "/Items/it1"),
+            ("POST", "/UserFavoriteItems/it1"),
+            ("DELETE", "/UserPlayedItems/it1"),
+        ]:
+            assert api._route(method, path) == path
+
+    @pytest.mark.parametrize(
+        "method,modern,legacy",
+        [
+            ("GET", "/UserViews", "/Users/u1/Views"),
+            ("GET", "/UserItems/Resume", "/Users/u1/Items/Resume"),
+            ("GET", "/Items/Latest", "/Users/u1/Items/Latest"),
+            ("GET", "/Items", "/Users/u1/Items"),
+            ("GET", "/Items/it1", "/Users/u1/Items/it1"),
+            ("POST", "/UserPlayedItems/it1", "/Users/u1/PlayedItems/it1"),
+            ("DELETE", "/UserPlayedItems/it1", "/Users/u1/PlayedItems/it1"),
+            ("POST", "/UserFavoriteItems/it1", "/Users/u1/FavoriteItems/it1"),
+            ("DELETE", "/UserFavoriteItems/it1", "/Users/u1/FavoriteItems/it1"),
+        ],
+    )
+    def test_pre_10_9_maps_back_to_legacy(self, method, modern, legacy):
+        api = _api()
+        api.server_version = (10, 8, 13)
+        assert api._route(method, modern) == legacy
+
+    def test_pre_10_9_leaves_non_user_routes_alone(self):
+        api = _api()
+        api.server_version = (10, 8, 13)
+        # POST /Items/{id} is the metadata update — exists on every version.
+        assert api._route("POST", "/Items/it1") == "/Items/it1"
+        assert api._route("GET", "/Items/it1/Similar") == "/Items/it1/Similar"
+        assert api._route("GET", "/Audio/it1/Lyrics") == "/Audio/it1/Lyrics"
+
+    def test_get_wrapper_applies_route(self):
+        api = _api()
+        api.server_version = (10, 8, 13)
+        resp = MagicMock(status_code=200, content=b"{}")
+        resp.json.return_value = {}
+        api.session.get = MagicMock(return_value=resp)
+        api._get("/UserViews")
+        assert api.session.get.call_args.args[0] == "http://jf.test/Users/u1/Views"
+
+    def test_server_info_sets_and_persists_version(self):
+        api = _api()
+        api._note_server_info({"Version": "10.8.13"})
+        assert api.server_version == (10, 8, 13)
+        assert api.settings.jellyfin_server_version == "10.8.13"
+        try:
+            api._note_server_info({})  # garbage keeps the known version
+            assert api.server_version == (10, 8, 13)
+        finally:
+            api.settings.jellyfin_server_version = ""
+
+    def test_logout_forgets_version(self):
+        api = _api()
+        api._note_server_info({"Version": "10.8.13"})
+        api.logout()
+        assert api.server_version is None
+        assert api.settings.jellyfin_server_version == ""
+
+
+class TestArtistsFallback:
+    def _http_error(self, status):
+        import requests
+
+        resp = MagicMock(status_code=status)
+        return requests.HTTPError(f"{status}", response=resp)
+
+    def test_uses_album_artists_route_while_it_exists(self):
+        api = _api()
+        api._get = MagicMock(return_value={"Items": [{"Id": "a1"}]})
+        assert api.get_artists(parent_id="lib") == [{"Id": "a1"}]
+        assert api._get.call_args.args[0] == "/Artists/AlbumArtists"
+
+    def test_falls_back_to_items_once_route_is_gone_and_latches(self):
+        api = _api()
+        calls = []
+
+        def fake_get(path, params=None, **_kw):
+            calls.append((path, dict(params or {})))
+            if path == "/Artists/AlbumArtists":
+                raise self._http_error(404)
+            return {"Items": [{"Id": "a1"}]}
+
+        api._get = fake_get
+        assert api.get_artists(parent_id="lib") == [{"Id": "a1"}]
+        path, params = calls[-1]
+        assert path == "/Items"
+        assert params["IncludeItemTypes"] == "MusicArtist"
+        assert params["Recursive"] is True
+        assert params["ParentId"] == "lib"
+        calls.clear()
+        api.get_artists()
+        assert [p for p, _ in calls] == ["/Items"]  # no second probe
+
+    def test_other_http_errors_propagate(self):
+        api = _api()
+        api._get = MagicMock(side_effect=self._http_error(500))
+        with pytest.raises(__import__("requests").HTTPError):
+            api.get_artists()
+        assert api._album_artists_gone is False
+
+
+class TestGenres:
+    def test_queries_genres_per_music_library_and_merges(self):
+        api = _api()
+        views = {"Items": [
+            {"Id": "m1", "CollectionType": "music"},
+            {"Id": "mv", "CollectionType": "movies"},
+            {"Id": "m2", "CollectionType": "music"},
+        ]}
+        per_lib = {
+            "m1": [{"Id": "g-rock", "Name": "Rock"}, {"Id": "g-jazz", "Name": "Jazz"}],
+            "m2": [{"Id": "g-rock", "Name": "Rock"}, {"Id": "g-amb", "Name": "Ambient"}],
+        }
+        seen = []
+
+        def fake_get(path, params=None, **_kw):
+            seen.append((path, (params or {}).get("ParentId")))
+            if path == "/UserViews":
+                return views
+            assert path == "/Genres"
+            return {"Items": per_lib[params["ParentId"]]}
+
+        api._get = fake_get
+        names = [g["Name"] for g in api.get_genres()]
+        assert names == ["Ambient", "Jazz", "Rock"]  # merged, deduped, sorted
+        assert ("/Genres", "mv") not in seen
+
+    def test_falls_back_to_music_genres_without_music_views(self):
+        api = _api()
+
+        def fake_get(path, params=None, **_kw):
+            if path == "/UserViews":
+                return {"Items": [{"Id": "x"}]}
+            assert path == "/MusicGenres"
+            return {"Items": [{"Id": "g1"}]}
+
+        api._get = fake_get
+        assert api.get_genres() == [{"Id": "g1"}]

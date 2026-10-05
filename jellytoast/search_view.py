@@ -96,13 +96,15 @@ class _SongsSection(QWidget):
     lands an empty list.
 
     Uses songs_view's _SongsListModel + _SongRowDelegate + _SongsListView
-    so the rendering matches the bulk songs view exactly."""
+    so the rendering matches the bulk songs view exactly. Also hosts the
+    artist page's "Top songs" list (``title`` / ``cache_tag``)."""
 
     play_requested = Signal(int, list)  # start_idx, items snapshot
     album_browse_requested = Signal(str)  # album_id
 
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, title: str = "", cache_tag: str = "searchsong"):
         super().__init__(parent)
+        self._cache_tag = cache_tag
         self.setStyleSheet("background: transparent;")
         self.setVisible(False)
 
@@ -110,7 +112,7 @@ class _SongsSection(QWidget):
         outer.setContentsMargins(0, 0, 0, SPACE_LG)
         outer.setSpacing(SPACE_SM)
 
-        self._header = QLabel(self.tr("Songs"))
+        self._header = QLabel(title or self.tr("Songs"))
         self._header.setStyleSheet(self._header_qss())
         apply_type(self._header, TYPE_MICRO)
         outer.addWidget(self._header)
@@ -196,7 +198,7 @@ class _SongsSection(QWidget):
                 self._model.set_cover(r, pix)
 
             load_image_async(
-                f"{cover_id}|searchsong",
+                f"{cover_id}|{self._cache_tag}",
                 cover_url,
                 target_phys,
                 target_phys,

@@ -288,7 +288,7 @@ class TestAutoAdvanceHandoff:
         """Jellyfin URLs are stable across calls — the handoff should
         still recognize the gapless transition because _prefetched_url
         equals np.stream_url AND item_id matches."""
-        url = "http://jf/Audio/B/stream?api_key=K&MediaSourceId=B"
+        url = "http://jf/Audio/B/stream?ApiKey=K&MediaSourceId=B"
         controller._mpv.path = url
         controller._mpv.idle_active = False
         controller._mpv.core_idle = False

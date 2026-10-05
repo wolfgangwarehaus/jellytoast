@@ -209,7 +209,7 @@ class TestJellyfinCoverUpload:
         # The image endpoint wants the picture's own mime type, never
         # the JSON Content-Type _headers() defaults to.
         assert headers["Content-Type"] == "image/jpeg"
-        assert "X-Emby-Authorization" in headers
+        assert headers["Authorization"] == api.auth_header
 
     def test_non_2xx_response_raises(self):
         import requests
@@ -284,7 +284,7 @@ class TestJellyfinHappyPath:
         result = api.update_item_metadata("abc123", {"Name": "New Name"})
 
         # The GET hit the per-user item endpoint.
-        api._get.assert_called_once_with("/Users/u1/Items/abc123")
+        api._get.assert_called_once_with("/Items/abc123")
 
         # The POST hit /Items/{id} (no /Users prefix — this is the
         # update endpoint, not the read endpoint).
@@ -533,6 +533,7 @@ class TestAccountPermissionGate:
             "User": {"Id": "u1", "Policy": {"IsAdministrator": True}},
         }
         api.session.post = MagicMock(return_value=fake_resp)
+        api.session.get = MagicMock(side_effect=OSError("no network in tests"))
         api.authenticate("http://example.test", "u", "p")
         assert api.is_admin is True
 

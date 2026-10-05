@@ -6,6 +6,7 @@ direct audio streams (bit-perfect), HLS video, lyrics, and playback reporting.
 
 import copy
 import logging
+import re
 from collections import OrderedDict
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -19,6 +20,56 @@ logger = logging.getLogger(__name__)
 CLIENT_NAME = "jellytoast"
 CLIENT_VERSION = "1.0.0"
 DEVICE_NAME = "jellytoast Desktop"
+
+_accept_language_cache: Optional[str] = None
+
+
+def _accept_language() -> str:
+    """Accept-Language for Jellyfin (honored from 12.0, ignored before), so
+    server-generated strings match the UI. Only a language we ship a catalog
+    for — otherwise the UI is English and so is the server. The language
+    switch is restart-applied, so resolve once."""
+    global _accept_language_cache
+    if _accept_language_cache is None:
+        lang = ""
+        try:
+            from jellytoast.i18n import SHIPPED_LANGUAGES, resolved_language
+
+            lang = resolved_language()
+            if lang not in {code for code, _, _ in SHIPPED_LANGUAGES}:
+                lang = ""
+        except Exception:
+            lang = ""
+        _accept_language_cache = f"{lang}, en;q=0.8" if lang else "en"
+    return _accept_language_cache
+
+
+def _parse_version(v: str) -> Optional[Tuple[int, ...]]:
+    """"10.11.6" → (10, 11, 6); None for an empty/unparseable string."""
+    try:
+        return tuple(int(p) for p in (v or "").split(".")[:3]) or None
+    except ValueError:
+        return None
+
+
+# Jellyfin 10.9 moved the per-user routes (/Users/{id}/Items, /Views,
+# /FavoriteItems, …) to user-implicit ones (/Items, /UserViews,
+# /UserFavoriteItems, …) and dropped the old forms from the OpenAPI spec.
+# Jellyfin 12's API policy says off-spec routes can disappear in any major
+# release without notice, so callers use the modern paths and only servers
+# older than 10.9 get them mapped back — (method or None for any, pattern,
+# legacy template with {uid} and the pattern's groups).
+_MODERN_TO_LEGACY = (
+    ("GET", re.compile(r"/UserViews"), "/Users/{uid}/Views"),
+    ("GET", re.compile(r"/UserItems/Resume"), "/Users/{uid}/Items/Resume"),
+    ("GET", re.compile(r"/Items/Latest"), "/Users/{uid}/Items/Latest"),
+    ("GET", re.compile(r"/Items"), "/Users/{uid}/Items"),
+    # GET only: POST /Items/{id} (metadata update) exists on every version.
+    ("GET", re.compile(r"/Items/([^/]+)"), "/Users/{uid}/Items/{0}"),
+    (None, re.compile(r"/UserPlayedItems/([^/]+)"), "/Users/{uid}/PlayedItems/{0}"),
+    (None, re.compile(r"/UserFavoriteItems/([^/]+)"), "/Users/{uid}/FavoriteItems/{0}"),
+)
+_MODERN_ROUTES_SINCE = (10, 9)
 
 
 class JellyfinAPI:
@@ -40,6 +91,13 @@ class JellyfinAPI:
         # Set from the Policy block in the authenticate / verify_session
         # responses; stays False until one of those lands.
         self.is_admin = False
+        # Server version, refreshed from /System/Info/Public at sign-in and
+        # session check; persisted so an offline boot still routes right.
+        self.server_version: Optional[Tuple[int, ...]] = _parse_version(
+            self.settings.jellyfin_server_version
+        )
+        # Latched when /Artists/AlbumArtists stops existing (see get_artists).
+        self._album_artists_gone = False
 
     @property
     def device_id(self) -> str:
@@ -71,16 +129,66 @@ class JellyfinAPI:
 
     @property
     def auth_header(self) -> str:
+        return self._auth_header(self.token)
+
+    def _auth_header(self, token: str) -> str:
         h = (
             f'MediaBrowser Client="{CLIENT_NAME}", Device="{DEVICE_NAME}", '
             f'DeviceId="{self.device_id}", Version="{CLIENT_VERSION}"'
         )
-        if self.token:
-            h += f', Token="{self.token}"'
+        if token:
+            h += f', Token="{token}"'
         return h
 
+    def _pre_auth_headers(self) -> Dict[str, str]:
+        """Client identity without any (possibly stale) token — for the
+        sign-in handshakes, which identify the device, not a session."""
+        return {**self._headers(), "Authorization": self._auth_header("")}
+
     def _headers(self) -> Dict[str, str]:
-        return {"X-Emby-Authorization": self.auth_header, "Content-Type": "application/json"}
+        # The standard Authorization header, not X-Emby-Authorization:
+        # Jellyfin 12 disables the legacy auth methods by default (the
+        # X-Emby-* headers and the lowercase ``api_key`` query param). The
+        # standard forms (this header, ``ApiKey=``) work back to 10.8.
+        return {
+            "Authorization": self.auth_header,
+            "Accept-Language": _accept_language(),
+            "Content-Type": "application/json",
+        }
+
+    # ── Routing ─────────────────────────────────────────────────────────────
+
+    def _route(self, method: str, path: str) -> str:
+        """Map a modern (10.9+) user-implicit path back to its
+        ``/Users/{id}/…`` form for a server known to predate 10.9. An
+        unknown version keeps the modern path — every supported-for-upgrade
+        server (10.10.7+) has it."""
+        if self.server_version is None or self.server_version >= _MODERN_ROUTES_SINCE:
+            return path
+        for verb, pattern, legacy in _MODERN_TO_LEGACY:
+            if verb not in (None, method):
+                continue
+            m = pattern.fullmatch(path)
+            if m:
+                return legacy.format(*m.groups(), uid=self.user_id)
+        return path
+
+    def _note_server_info(self, info: Dict) -> None:
+        version = (info or {}).get("Version") or ""
+        parsed = _parse_version(version)
+        if parsed is None:
+            return
+        self.server_version = parsed
+        if self.settings.jellyfin_server_version != version:
+            self.settings.jellyfin_server_version = version
+
+    def _refresh_server_version(self) -> None:
+        """Best-effort /System/Info/Public probe; a failure keeps whatever
+        version we already knew."""
+        try:
+            self._note_server_info(self.server_info())
+        except Exception as e:
+            logger.debug("server version probe failed: %s", e)
 
     # ── Auth ────────────────────────────────────────────────────────────────
 
@@ -91,7 +199,12 @@ class JellyfinAPI:
             url, json={"Username": username, "Pw": password}, headers=self._headers(), timeout=10
         )
         resp.raise_for_status()
-        data = resp.json()
+        return self._complete_auth(resp.json(), username)
+
+    def _complete_auth(self, data, username: str) -> Dict:
+        """Validate an AuthenticationResult (password or Quick Connect sign-in)
+        and commit it: in-memory state, persisted credentials, server version.
+        ``self.server_url`` must already point at the server that issued it."""
         # A captive portal / proxy / non-Jellyfin server can answer the
         # auth POST with HTTP 200 but a body that lacks these fields. Read
         # defensively and raise a clear auth error instead of a cryptic
@@ -120,6 +233,7 @@ class JellyfinAPI:
         self.settings.username = username
         self.settings.access_token = self.token
         self.settings.user_id = self.user_id
+        self._refresh_server_version()
         # Force-flush — tray Quit on KDE skips the QSettings destructor
         # path, so QSettings-only fields (username, user_id) can be lost
         # if we don't sync immediately. The token survives via keyring.
@@ -144,7 +258,7 @@ class JellyfinAPI:
             return False
         try:
             r = self.session.get(
-                f"{self.server_url}/Users/{self.user_id}",
+                f"{self.server_url}/Users/Me",
                 headers=self._headers(),
                 timeout=8,
             )
@@ -165,6 +279,8 @@ class JellyfinAPI:
                 self.is_admin = bool((user.get("Policy") or {}).get("IsAdministrator"))
             except Exception:
                 pass
+            # The server may have been upgraded since sign-in.
+            self._refresh_server_version()
         # Anything else (5xx, etc.) is a transient server condition —
         # keep creds.
         return True
@@ -182,6 +298,68 @@ class JellyfinAPI:
         r = self.session.get(f"{url}/System/Info/Public", timeout=5)
         r.raise_for_status()
         return r.json() if r.content else {}
+
+    # ── Quick Connect ───────────────────────────────────────────────────────
+    #
+    # Sign in without typing a password here: the app shows a short code,
+    # the user approves it from a device that's already signed in, and the
+    # server hands this device its own token. Every call takes the server
+    # URL explicitly — nothing on this singleton changes until the final
+    # quick_connect_authenticate succeeds.
+
+    def quick_connect_enabled(self, server_url: str) -> bool:
+        try:
+            r = self.session.get(
+                f"{server_url.rstrip('/')}/QuickConnect/Enabled",
+                headers=self._pre_auth_headers(),
+                timeout=5,
+            )
+            return r.ok and r.json() is True
+        except Exception:
+            return False
+
+    def quick_connect_initiate(self, server_url: str) -> Dict:
+        """Start a request → ``{"Secret", "Code", …}``. POST since 10.9; 12.0
+        removed the old GET, which 10.8 still needs — fall back on 404/405."""
+        url = f"{server_url.rstrip('/')}/QuickConnect/Initiate"
+        headers = self._pre_auth_headers()
+        r = self.session.post(url, headers=headers, timeout=10)
+        if r.status_code in (404, 405):
+            r = self.session.get(url, headers=headers, timeout=10)
+        r.raise_for_status()
+        data = r.json()
+        if not isinstance(data, dict) or not data.get("Secret") or not data.get("Code"):
+            raise ValueError("Quick Connect response missing Secret or Code")
+        return data
+
+    def quick_connect_approved(self, server_url: str, secret: str) -> bool:
+        """Poll: has the user approved the code yet? Raises on HTTP errors —
+        a 404 means the request expired (the server forgets it after a few
+        minutes)."""
+        r = self.session.get(
+            f"{server_url.rstrip('/')}/QuickConnect/Connect",
+            params={"secret": secret},
+            headers=self._pre_auth_headers(),
+            timeout=10,
+        )
+        r.raise_for_status()
+        return bool((r.json() or {}).get("Authenticated"))
+
+    def quick_connect_authenticate(self, server_url: str, secret: str) -> Dict:
+        """Trade an approved secret for a session — the same
+        AuthenticationResult a password sign-in returns."""
+        base = server_url.rstrip("/")
+        r = self.session.post(
+            f"{base}/Users/AuthenticateWithQuickConnect",
+            json={"Secret": secret},
+            headers=self._pre_auth_headers(),
+            timeout=10,
+        )
+        r.raise_for_status()
+        data = r.json()
+        username = ((data.get("User") or {}).get("Name") if isinstance(data, dict) else "") or ""
+        self.server_url = base
+        return self._complete_auth(data, username)
 
     def server_logout(self) -> bool:
         """POST /Sessions/Logout — server revokes this device's token
@@ -207,6 +385,9 @@ class JellyfinAPI:
         self.user_id = ""
         self.settings.access_token = ""
         self.settings.user_id = ""
+        self.settings.jellyfin_server_version = ""
+        self.server_version = None
+        self._album_artists_gone = False
         self._meta_cache.clear()
 
     def invalidate_meta_cache(self, item_id: str = ""):
@@ -274,7 +455,7 @@ class JellyfinAPI:
         connect-level ``RequestException`` (DNS fail, connection refused,
         connect timeout) signals the server itself is gone; a ReadTimeout
         is slow-but-alive and never feeds the offline counter."""
-        url = f"{self.server_url}{path}"
+        url = f"{self.server_url}{self._route('GET', path)}"
         import requests
 
         from jellytoast import offline as _offline
@@ -313,7 +494,7 @@ class JellyfinAPI:
         to know the write landed (favorite toggles roll the UI back on
         failure): network errors re-raise after feeding the tracker, and
         a non-2xx status raises RuntimeError."""
-        url = f"{self.server_url}{path}"
+        url = f"{self.server_url}{self._route('POST', path)}"
         import requests
 
         from jellytoast import offline as _offline
@@ -351,13 +532,13 @@ class JellyfinAPI:
     # ── Libraries ───────────────────────────────────────────────────────────
 
     def get_libraries(self) -> List[Dict]:
-        return self._get(f"/Users/{self.user_id}/Views").get("Items", [])
+        return self._get("/UserViews").get("Items", [])
 
     def get_resume_items(self, limit: int = 12, media_type: str = "") -> List[Dict]:
         params = {"Limit": limit, "Fields": "PrimaryImageAspectRatio,BasicSyncInfo"}
         if media_type:
             params["MediaTypes"] = media_type
-        return self._get(f"/Users/{self.user_id}/Items/Resume", params).get("Items", [])
+        return self._get("/UserItems/Resume", params).get("Items", [])
 
     def get_latest_media(self, library_id: str = "", limit: int = 16) -> List[Dict]:
         # DateCreated: the multi-library Latest-rail merge sorts the
@@ -373,7 +554,7 @@ class JellyfinAPI:
         # dict (and yields {} on an empty/204 body) — narrow to the list this
         # endpoint actually sends so the declared List[Dict] contract holds and
         # callers can do list ops without an `or []`.
-        data = self._get(f"/Users/{self.user_id}/Items/Latest", params)
+        data = self._get("/Items/Latest", params)
         return data if isinstance(data, list) else []
 
     def get_items(
@@ -424,7 +605,7 @@ class JellyfinAPI:
             # Comma-separated production years; tile-click year filter
             # passes a single year string ("2013").
             params["Years"] = years
-        return self._get(f"/Users/{self.user_id}/Items", params, timeout=timeout)
+        return self._get("/Items", params, timeout=timeout)
 
     def search(self, term: str, limit: int = 50, item_types: str = "") -> List[Dict]:
         # `item_types` is the comma-separated IncludeItemTypes; default
@@ -457,7 +638,22 @@ class JellyfinAPI:
             # Scope to one library — parity with the Subsonic provider's
             # musicFolderId handling in get_artists.
             params["ParentId"] = parent_id
-        return self._get("/Artists/AlbumArtists", params).get("Items", [])
+        # /Artists/AlbumArtists is obsolete as of 12.0 ("use GetPersons"), but
+        # /Persons doesn't return music artists yet (verified on 12.1: only
+        # Person-type credits, no MusicArtist ids). So keep the album-artist
+        # route while it exists and fall back to the spec-listed /Items
+        # MusicArtist query once a server drops it — broader (feature-only
+        # artists too), but the ids are the same MusicArtist ids.
+        if not self._album_artists_gone:
+            try:
+                return self._get("/Artists/AlbumArtists", params).get("Items", [])
+            except requests.HTTPError as e:
+                if e.response is None or e.response.status_code not in (404, 410):
+                    raise
+                logger.info("/Artists/AlbumArtists gone — using /Items MusicArtist")
+                self._album_artists_gone = True
+        params.update({"IncludeItemTypes": "MusicArtist", "Recursive": True})
+        return self._get("/Items", params).get("Items", [])
 
     def get_artist_albums(self, artist_id: str) -> List[Dict]:
         def _fetch():
@@ -470,7 +666,7 @@ class JellyfinAPI:
                 "SortOrder": "Descending",
                 "Fields": "PrimaryImageAspectRatio,ProductionYear,ChildCount",
             }
-            return self._get(f"/Users/{self.user_id}/Items", params).get("Items", [])
+            return self._get("/Items", params).get("Items", [])
 
         return self._cached("artist_albums", artist_id, _fetch)
 
@@ -482,7 +678,7 @@ class JellyfinAPI:
                 "SortBy": "ParentIndexNumber,IndexNumber,SortName",
                 "Fields": "RunTimeTicks,Artists,AlbumArtist,IndexNumber,ParentIndexNumber",
             }
-            return self._get(f"/Users/{self.user_id}/Items", params).get("Items", [])
+            return self._get("/Items", params).get("Items", [])
 
         return self._cached("album_tracks", album_id, _fetch)
 
@@ -509,11 +705,37 @@ class JellyfinAPI:
             "Limit": limit,
             "Fields": "RunTimeTicks,Artists,AlbumArtist,AlbumId,IndexNumber,ParentIndexNumber",
         }
-        return self._get(f"/Users/{self.user_id}/Items", params).get("Items", [])
+        return self._get("/Items", params).get("Items", [])
 
     def get_genres(self) -> List[Dict]:
-        params = {"UserId": self.user_id, "IncludeItemTypes": "Audio,MusicAlbum", "Recursive": True}
-        return self._get("/MusicGenres", params).get("Items", [])
+        """Music genres across every music library.
+
+        /MusicGenres is off the OpenAPI spec (obsolete, hidden) as of 12.0.
+        Its replacement /Genres only yields *music* genres — the same
+        MusicGenre ids the GenreIds filter needs — when ParentId is a music
+        library; with just IncludeItemTypes it returns plain Genre items with
+        different ids. So ask per music library and merge (MusicGenre ids
+        are global by name, so duplicates collapse). The old route stays as a
+        fallback for a server whose views carry no music CollectionType."""
+        music_libs = [
+            lib["Id"] for lib in self.get_libraries() if lib.get("CollectionType") == "music"
+        ]
+        if not music_libs:
+            params = {
+                "UserId": self.user_id,
+                "IncludeItemTypes": "Audio,MusicAlbum",
+                "Recursive": True,
+            }
+            return self._get("/MusicGenres", params).get("Items", [])
+        merged: "OrderedDict[str, Dict]" = OrderedDict()
+        for lib_id in music_libs:
+            params = {"UserId": self.user_id, "ParentId": lib_id, "SortBy": "SortName"}
+            for genre in self._get("/Genres", params).get("Items", []):
+                merged.setdefault(genre.get("Id"), genre)
+        genres = list(merged.values())
+        if len(music_libs) > 1:
+            genres.sort(key=lambda g: (g.get("SortName") or g.get("Name") or "").lower())
+        return genres
 
     def get_lyrics(self, item_id: str) -> Optional[Dict]:
         try:
@@ -527,7 +749,7 @@ class JellyfinAPI:
         return self._cached(
             "item",
             item_id,
-            lambda: self._get(f"/Users/{self.user_id}/Items/{item_id}"),
+            lambda: self._get(f"/Items/{item_id}"),
         )
 
     # ── Stream URLs ─────────────────────────────────────────────────────────
@@ -559,7 +781,7 @@ class JellyfinAPI:
         # audio file). Sending it explicitly is what the official
         # clients do and what /PlaybackInfo would echo back.
         common = (
-            f"api_key={self.token}"
+            f"ApiKey={self.token}"
             f"&UserId={self.user_id}"
             f"&DeviceId={self.device_id}"
             f"&MediaSourceId={item_id}"
@@ -577,7 +799,7 @@ class JellyfinAPI:
 
     def get_video_stream_url(self, item_id: str) -> str:
         """Direct video stream for original-format playback."""
-        return f"{self.server_url}/Videos/{item_id}/stream?static=true&api_key={self.token}"
+        return f"{self.server_url}/Videos/{item_id}/stream?static=true&ApiKey={self.token}"
 
     def get_image_url(
         self, item_id: str, image_type: str = "Primary", width: int = 400, fill: bool = False
@@ -587,7 +809,7 @@ class JellyfinAPI:
         path = "FillWidth" if fill else "width"
         return (
             f"{self.server_url}/Items/{item_id}/Images/{image_type}"
-            f"?{path}={width}&quality=90&api_key={self.token}"
+            f"?{path}={width}&quality=90&ApiKey={self.token}"
         )
 
     # ── Playback reporting ──────────────────────────────────────────────────
@@ -671,7 +893,7 @@ class JellyfinAPI:
         )
 
     def mark_played(self, item_id: str):
-        self._post(f"/Users/{self.user_id}/PlayedItems/{item_id}")
+        self._post(f"/UserPlayedItems/{item_id}")
         # Drop the cached get_item snapshot — its UserData.Played/PlayCount
         # is now stale (mirrors toggle_favorite's invalidation).
         self.invalidate_meta_cache(item_id)
@@ -690,7 +912,7 @@ class JellyfinAPI:
 
         try:
             r = self.session.delete(
-                f"{self.server_url}{path}",
+                f"{self.server_url}{self._route('DELETE', path)}",
                 headers=self._headers(),
                 timeout=self._split_timeout(5),
             )
@@ -710,7 +932,7 @@ class JellyfinAPI:
             raise RuntimeError(f"DELETE {path} -> HTTP {r.status_code}")
 
     def mark_unplayed(self, item_id: str):
-        self._delete(f"/Users/{self.user_id}/PlayedItems/{item_id}", "mark-unplayed")
+        self._delete(f"/UserPlayedItems/{item_id}", "mark-unplayed")
         # Invalidate unconditionally (like toggle_favorite's unfavorite
         # branch) so the local cache is dropped even if the best-effort
         # DELETE silently failed.
@@ -722,10 +944,10 @@ class JellyfinAPI:
         # default no-throw contract would leave the heart silently
         # diverged from the server.
         if favorite:
-            self._post(f"/Users/{self.user_id}/FavoriteItems/{item_id}", strict=True)
+            self._post(f"/UserFavoriteItems/{item_id}", strict=True)
         else:
             self._delete(
-                f"/Users/{self.user_id}/FavoriteItems/{item_id}",
+                f"/UserFavoriteItems/{item_id}",
                 "unfavorite",
                 strict=True,
             )
@@ -775,7 +997,7 @@ class JellyfinAPI:
                 f"v1 editable subset: {', '.join(sorted(self.EDITABLE_FIELDS))}."
             )
 
-        current = self._get(f"/Users/{self.user_id}/Items/{item_id}")
+        current = self._get(f"/Items/{item_id}")
         merged = copy.deepcopy(current) if current else {}
 
         # Apply edits.
@@ -842,11 +1064,8 @@ class JellyfinAPI:
 
         # _headers() forces Content-Type: application/json; the image
         # endpoint needs the picture's own mime type instead, and the
-        # X-Emby-Authorization header (not Content-Type) carries auth.
-        headers = {
-            "X-Emby-Authorization": self.auth_header,
-            "Content-Type": mime_type,
-        }
+        # Authorization header (not Content-Type) carries auth.
+        headers = {**self._headers(), "Content-Type": mime_type}
         body = base64.b64encode(image_bytes)
 
         try:

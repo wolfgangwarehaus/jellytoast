@@ -25,6 +25,8 @@ def _fresh_api():
 class _FakeResp:
     """A requests-like response whose body the test controls."""
 
+    content = b"{}"
+
     def __init__(self, body):
         self._body = body
 
@@ -44,6 +46,10 @@ class TestAuthenticateMalformedResponse:
     def _api_returning(self, monkeypatch, body):
         api = _fresh_api()
         monkeypatch.setattr(api.session, "post", lambda *a, **k: _FakeResp(body))
+        # The post-auth /System/Info/Public version probe.
+        monkeypatch.setattr(
+            api.session, "get", lambda *a, **k: _FakeResp({"Version": "12.1.0"})
+        )
         return api
 
     @pytest.mark.parametrize(
@@ -70,6 +76,7 @@ class TestAuthenticateMalformedResponse:
         api.authenticate("http://server", "user", "pw")
         assert api.token == "tok"
         assert api.user_id == "u123"
+        assert api.server_version == (12, 1, 0)
 
     def test_malformed_response_does_not_clobber_existing_creds(
         self, isolated_settings, monkeypatch

@@ -2,7 +2,8 @@
 
 The lyrics *content pipeline*, extracted from ``now_playing_page.py``:
 fetching (per-track, with a small LRU), rendering per-line widgets,
-synced-lyrics highlight + predictive auto-scroll, font-size restyling,
+synced-lyrics highlight + predictive auto-scroll, word-level ("karaoke")
+highlight when lines carry ``Cues``, font-size restyling,
 and the user-scroll / "Live" pill detection.
 
 ``_LyricsMixin`` is mixed into ``NowPlayingPage`` — it is *not* a
@@ -19,8 +20,9 @@ page — it spans the visualizer + cover too and is a separate concern.
 """
 
 import bisect
+import html
 from collections import OrderedDict
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 
 from PySide6.QtCore import (
     QCoreApplication,
@@ -42,6 +44,22 @@ from jellytoast.async_io import run_async
 from jellytoast.design_tokens import TYPE_BODY, type_qss
 from jellytoast.player_state import get_now_playing
 from jellytoast.ui_helpers import TEXT_DIM, TEXT_FAINT, ink_alpha
+
+
+def _line_cues(cues, lead: int, text_len: int) -> Tuple[List[int], List[int]]:
+    """A line's ``Cues`` → (start ms list, end-char list), sorted by start,
+    with positions shifted for the leading whitespace the display strips.
+    Malformed cues drop the whole line to line-level highlighting."""
+    pairs = []
+    for c in cues or []:
+        try:
+            start = int(c.get("Start") or 0) // 10_000
+            end = int(c["EndPosition"]) - lead
+        except (AttributeError, KeyError, TypeError, ValueError):
+            return [], []
+        pairs.append((start, max(0, min(end, text_len))))
+    pairs.sort()
+    return [p[0] for p in pairs], [p[1] for p in pairs]
 
 
 class _ScrollbarFader(QObject):
@@ -219,8 +237,16 @@ class _LyricsMixin:
         any_timed = any(int(ln.get("Start") or 0) > 0 for ln in lines)
         starts_ms: List[int] = []
         widgets: List[QLabel] = []
+        texts: List[str] = []
+        cue_starts: List[List[int]] = []
+        cue_ends: List[List[int]] = []
         for ln in lines:
-            text = (ln.get("Text") or "").strip()
+            raw = ln.get("Text") or ""
+            text = raw.strip()
+            starts, ends = _line_cues(ln.get("Cues"), len(raw) - len(raw.lstrip()), len(text))
+            texts.append(text)
+            cue_starts.append(starts)
+            cue_ends.append(ends)
             start_ticks = int(ln.get("Start") or 0)
             start_ms = start_ticks // 10_000
             # Parent at construction: a parentless QLabel that gets styled
@@ -228,6 +254,9 @@ class _LyricsMixin:
             # that flashes as a tiny "jellytoast" titlebar'd box on every track
             # change until insertWidget reparents it (see app.py boot note).
             label = QLabel(text or "♪", self._lyrics_container)  # blank → beat marker
+            # Plain text: AutoText would read a lyric containing "<…>" as
+            # HTML. The karaoke line switches to RichText (escaped) itself.
+            label.setTextFormat(Qt.TextFormat.PlainText)
             label.setWordWrap(True)
             # Left-align lyrics on a wide desktop pane — reads as verse
             # the way Apple Music macOS does. iOS centers; desktop is
@@ -240,6 +269,10 @@ class _LyricsMixin:
             widgets.append(label)
 
         self._install_lyrics_widgets(widgets, starts_ms, synced=any_timed)
+        if any_timed and any(cue_starts):
+            self._lyrics_texts = texts
+            self._lyrics_cue_starts = cue_starts
+            self._lyrics_cue_ends = cue_ends
         # If we're rendering mid-track (e.g. user opened the page after
         # playback already started), prime the highlight to the current
         # position straight away.
@@ -258,6 +291,7 @@ class _LyricsMixin:
         self._lyrics_starts_ms = starts_ms
         self._lyrics_synced = synced
         self._active_line_idx = -1
+        self._reset_karaoke()
         # Real per-line lyrics replace any status fallback label, so a
         # later theme re-stamp shouldn't try to recolor a stale label.
         self._status_label = None
@@ -278,6 +312,7 @@ class _LyricsMixin:
         self._lyrics_starts_ms = []
         self._lyrics_synced = False
         self._active_line_idx = -1
+        self._reset_karaoke()
         self._user_off_live = False
         self._status_label = None
         while self._lyrics_layout.count() > 1:
@@ -394,6 +429,9 @@ class _LyricsMixin:
                 # Re-color around the active line immediately rather than
                 # waiting for the next tick.
                 self._restyle_lyrics_around(self._active_line_idx)
+                # The karaoke line bakes its unsung-ink into the markup.
+                self._karaoke = None
+                self._update_karaoke(self._active_line_idx, get_now_playing().position)
             else:
                 # Unsynced lines render at a uniform faint falloff — re-apply
                 # that exact style so the flip is instant and stays uniform.
@@ -418,11 +456,59 @@ class _LyricsMixin:
         idx = bisect.bisect_right(self._lyrics_starts_ms, ms) - 1
         if idx < 0:
             idx = 0
-        if idx == self._active_line_idx:
+        if idx != self._active_line_idx:
+            self._clear_karaoke()
+            self._active_line_idx = idx
+            self._restyle_lyrics_around(idx)
+            self._scroll_to_active_lyric(idx)
+        self._update_karaoke(idx, ms)
+
+    # ── Word-level ("karaoke") highlight ──────────────────────────────
+    #
+    # Lines with ``Cues`` (Jellyfin LyricLineCue shape — both providers
+    # project into it) render the active line as two runs: the words sung
+    # so far at the active ink, the rest dimmed. Re-rendered only when a
+    # word boundary is crossed, not on every position tick.
+
+    _KARAOKE_UNSUNG_ALPHA = 0.45
+
+    def _reset_karaoke(self):
+        self._lyrics_texts: List[str] = []
+        self._lyrics_cue_starts: List[List[int]] = []
+        self._lyrics_cue_ends: List[List[int]] = []
+        self._karaoke: Optional[Tuple[int, int]] = None  # (line, split char)
+
+    def _clear_karaoke(self):
+        """Return the previous karaoke line to plain text."""
+        state = getattr(self, "_karaoke", None)
+        if state is None:
             return
-        self._active_line_idx = idx
-        self._restyle_lyrics_around(idx)
-        self._scroll_to_active_lyric(idx)
+        self._karaoke = None
+        idx = state[0]
+        if 0 <= idx < len(self._lyrics_widgets) and idx < len(self._lyrics_texts):
+            label = self._lyrics_widgets[idx]
+            label.setTextFormat(Qt.TextFormat.PlainText)
+            label.setText(self._lyrics_texts[idx] or "♪")
+
+    def _update_karaoke(self, idx: int, ms: int):
+        starts = getattr(self, "_lyrics_cue_starts", None) or []
+        if not (0 <= idx < len(starts)) or not starts[idx]:
+            return
+        if idx >= len(self._lyrics_widgets):
+            return
+        sung = bisect.bisect_right(starts[idx], ms)
+        split = max(self._lyrics_cue_ends[idx][:sung], default=0)
+        if self._karaoke == (idx, split):
+            return
+        self._karaoke = (idx, split)
+        text = self._lyrics_texts[idx]
+        label = self._lyrics_widgets[idx]
+        label.setTextFormat(Qt.TextFormat.RichText)
+        label.setText(
+            f"{html.escape(text[:split])}"
+            f'<span style="color: {ink_alpha(self._KARAOKE_UNSUNG_ALPHA)};">'
+            f"{html.escape(text[split:])}</span>"
+        )
 
     def _scroll_to_active_lyric(self, idx: int):
         """Anchor the active line at ~38% from the top of the lyrics
