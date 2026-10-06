@@ -43,7 +43,7 @@ jobs:
         with:
           # release event → the published tag; manual run → the tag input.
           ref: ${{ github.event.release.tag_name || inputs.tag }}
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
 
@@ -103,7 +103,7 @@ jobs:
       # --- OPTION A: auto-submit, only once the Company-account secrets exist ---
       - name: Configure Microsoft Store CLI
         if: env.HAVE_CREDS == 'true'
-        uses: microsoft/microsoft-store-apppublisher@b76227f539d68e6465f79bbbc82ed92f61081aa4 # v1.3
+        uses: microsoft/microsoft-store-apppublisher@cc9910a8d59f2eb55cbb83df0a3800cf3b5300e0 # v1.4
       # "What's new" text comes from the tag's CHANGELOG block (same voice,
       # curated to Windows-relevant bullets) — `msstore publish` alone carries
       # the PREVIOUS submission's notes forward forever (ops#3; 0.1.5 shipped
