@@ -150,6 +150,97 @@ if [ "${#EXTRA_DATA[@]}" -gt 0 ]; then
     printf '    %s\n' "${EXTRA_DATA[@]}" >&2
 fi
 
+# --- Dependency-version skew (soname pairs). Homebrew stopped building Intel
+# bottles in 2026, so the x86_64 leg is frozen on the last Intel bottle set
+# while arm64 keeps moving — e.g. arm64 ships libx265.217.dylib, x86_64
+# libx265.216.dylib. That is NOT a dropped slice: each arch's fused consumers
+# (libavcodec …) reference their OWN soname, so both THIN files ship side by
+# side and every slice still resolves. Accept exactly that shape — same
+# directory, same lib<name> stem, only the version differs, each file thin for
+# its own arch — and prove it below with otool. Any other one-sided Mach-O
+# still fails the merge.
+soname_stem() {
+    basename "$1" | sed -nE 's/^(lib[^.]+)\.[0-9][0-9.]*\.dylib$/\1/p'
+}
+declare -a SKEW_PAIRS=()   # "arm_rel|x86_rel"
+declare -a STILL_MISSING=()
+for m in "${MISSING[@]+"${MISSING[@]}"}"; do
+    stem="$(soname_stem "$m")"
+    match=""
+    if [ -n "$stem" ]; then
+        for e in "${EXTRA[@]+"${EXTRA[@]}"}"; do
+            if [ "$(dirname "$e")" = "$(dirname "$m")" ] && [ "$(soname_stem "$e")" = "$stem" ]; then
+                match="$e"
+                break
+            fi
+        done
+    fi
+    if [ -n "$match" ] \
+        && [ "$(lipo -archs "$OUT_APP/$m" 2>/dev/null)" = "arm64" ] \
+        && [ "$(lipo -archs "$X86_APP/$match" 2>/dev/null)" = "x86_64" ]; then
+        SKEW_PAIRS+=("$m|$match")
+    else
+        STILL_MISSING+=("$m")
+    fi
+done
+MISSING=("${STILL_MISSING[@]+"${STILL_MISSING[@]}"}")
+
+for pair in "${SKEW_PAIRS[@]+"${SKEW_PAIRS[@]}"}"; do
+    x86_rel="${pair#*|}"
+    x86_name="$(basename "$x86_rel")"
+    # Ship the x86_64 thin file, plus any symlink only the Intel leg has that
+    # points at it (PyInstaller 6 cross-links Resources/<lib> -> Frameworks).
+    cp -p "$X86_APP/$x86_rel" "$OUT_APP/$x86_rel"
+    declare -a kept_extra=()
+    for e in "${EXTRA[@]+"${EXTRA[@]}"}"; do
+        [ "$e" = "$x86_rel" ] || kept_extra+=("$e")
+    done
+    EXTRA=("${kept_extra[@]+"${kept_extra[@]}"}")
+    declare -a kept_data=()
+    for d in "${EXTRA_DATA[@]+"${EXTRA_DATA[@]}"}"; do
+        if [ -L "$X86_APP/$d" ] && [ "$(basename "$(readlink "$X86_APP/$d")")" = "$x86_name" ]; then
+            mkdir -p "$(dirname "$OUT_APP/$d")"
+            cp -P "$X86_APP/$d" "$OUT_APP/$d"
+        else
+            kept_data+=("$d")
+        fi
+    done
+    EXTRA_DATA=("${kept_data[@]+"${kept_data[@]}"}")
+    echo "note: soname skew accepted — shipping both thin copies: ${pair%%|*} (arm64) + $x86_rel (x86_64)"
+done
+
+# Prove the skew is coherent: in every Mach-O, each arch's references to a
+# skewed lib must name a file that exists in the bundle AND carries that arch.
+if [ "${#SKEW_PAIRS[@]}" -gt 0 ]; then
+    command -v otool >/dev/null 2>&1 || { echo "error: otool not found (need Xcode CLT)." >&2; rm -rf "$OUT_APP"; exit 1; }
+    skew_fail=0
+    while IFS= read -r -d '' f; do
+        is_macho "$f" || continue
+        for arch in $(lipo -archs "$f" 2>/dev/null); do
+            for pair in "${SKEW_PAIRS[@]}"; do
+                stem="$(soname_stem "${pair%%|*}")"
+                while IFS= read -r dep; do
+                    dep_name="$(basename "$dep")"
+                    [ "$(soname_stem "$dep_name")" = "$stem" ] || continue
+                    target="$(find "$OUT_APP" -type f -name "$dep_name" -print -quit)"
+                    if [ -z "$target" ]; then
+                        echo "error: ${f#"$OUT_APP"/} ($arch) needs $dep_name — not in the bundle" >&2
+                        skew_fail=1
+                    elif [[ " $(lipo -archs "$target" 2>/dev/null) " != *" $arch "* ]]; then
+                        echo "error: ${f#"$OUT_APP"/} ($arch) needs $dep_name, which has no $arch slice" >&2
+                        skew_fail=1
+                    fi
+                done < <(otool -arch "$arch" -L "$f" 2>/dev/null | tail -n +2 | awk '{print $1}')
+            done
+        done
+    done < <(find "$OUT_APP" -type f -print0)
+    if [ "$skew_fail" -ne 0 ]; then
+        echo "error: soname skew does not resolve for every slice — refusing to ship." >&2
+        rm -rf "$OUT_APP"
+        exit 1
+    fi
+fi
+
 fail=0
 if [ "${#MISSING[@]}" -gt 0 ]; then
     fail=1
