@@ -103,3 +103,32 @@ class TestCloseBehaviour:
         state["np"] = NP(item_id="t1", is_paused=False)
         assert fn(True) is False
 
+
+class TestIsDocked:
+    def _cfg(self, tmp_path, clean_env, text):
+        clean_env.setenv("XDG_CONFIG_HOME", str(tmp_path))
+        (tmp_path / "plasmamobilerc").write_text(text)
+
+    def test_docked(self, tmp_path, clean_env):
+        clean_env.setenv("PLASMA_PLATFORM", "phone:handset")
+        self._cfg(tmp_path, clean_env, "[General]\nconvergenceModeEnabled=true\n")
+        assert pc.is_docked()
+
+    def test_not_docked(self, tmp_path, clean_env):
+        clean_env.setenv("PLASMA_PLATFORM", "phone:handset")
+        self._cfg(tmp_path, clean_env, "[General]\nconvergenceModeEnabled=false\n")
+        assert not pc.is_docked()
+
+    def test_key_in_another_group_is_ignored(self, tmp_path, clean_env):
+        clean_env.setenv("PLASMA_PLATFORM", "phone:handset")
+        self._cfg(tmp_path, clean_env, "[Other]\nconvergenceModeEnabled=true\n")
+        assert not pc.is_docked()
+
+    def test_never_off_a_mobile_shell(self, tmp_path, clean_env):
+        self._cfg(tmp_path, clean_env, "[General]\nconvergenceModeEnabled=true\n")
+        assert not pc.is_docked()
+
+    def test_missing_file(self, tmp_path, clean_env):
+        clean_env.setenv("PLASMA_PLATFORM", "phone:handset")
+        clean_env.setenv("XDG_CONFIG_HOME", str(tmp_path))
+        assert not pc.is_docked()

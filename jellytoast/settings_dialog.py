@@ -18,6 +18,7 @@ import sys
 from PySide6.QtCore import QCoreApplication, QPointF, QSize, Qt, QTimer, Signal
 from PySide6.QtGui import QColor, QPainter, QPainterPath
 from PySide6.QtWidgets import (
+    QBoxLayout,
     QButtonGroup,
     QCheckBox,
     QComboBox,
@@ -707,7 +708,7 @@ class SettingsDialog(QDialog):
         # font scale or a wide/monospace family gets a proportionally bigger
         # dialog (and a small scale a smaller one) instead of clipping — the
         # pages scroll for any residual overflow. See _adaptive_dialog_size.
-        self.setFixedSize(*self._adaptive_dialog_size())
+        self._apply_dialog_size()
 
         # Independent top-level window (not ``Qt.Dialog``): KWin treats
         # ``Qt.Dialog`` as transient-for-parent, which pins it above
@@ -754,6 +755,7 @@ class SettingsDialog(QDialog):
         body = QWidget()
         body.setStyleSheet("background: transparent;")
         body_h = QHBoxLayout(body)
+        self._body_layout = body_h
         body_h.setContentsMargins(10, 0, 14, 14)
         # 2→12 gap between nav column and the page stack: gives the
         # right pane visible room rather than touching the sidebar's
@@ -827,6 +829,8 @@ class SettingsDialog(QDialog):
 
         self.nav.currentRowChanged.connect(self._on_nav_changed)
         self.nav.setCurrentRow(0)  # fires _on_nav_changed → builds page 0
+        if self._compact:
+            self._install_compact_nav()
         # Seed keyboard focus on the sidebar so the dialog opens ready for
         # Up/Down page-switching.
         self.nav.setFocus(Qt.FocusReason.OtherFocusReason)
@@ -855,6 +859,47 @@ class SettingsDialog(QDialog):
             PlayerBus.get().theme_changed.connect(self._on_external_theme_changed)
         except Exception:
             pass
+
+    @property
+    def _compact(self) -> bool:
+        """Phone width (the main window is compact — Plasma Mobile, or a
+        narrow desktop window): the sidebar becomes a section dropdown and
+        the dialog stops pinning a fixed desktop size."""
+        from jellytoast import responsive
+
+        return responsive.is_compact()
+
+    def _apply_dialog_size(self) -> None:
+        if not self._compact:
+            self.setFixedSize(*self._adaptive_dialog_size())
+            return
+        # Resizable, filling the screen; a mobile shell maximizes it anyway
+        # (it can't maximize a fixed-size window — it would sit 720 wide).
+        from PySide6.QtWidgets import QApplication
+
+        self.setMinimumSize(0, 0)
+        self.setMaximumSize(16777215, 16777215)
+        scr = self.screen() or QApplication.primaryScreen()
+        if scr is not None:
+            self.resize(scr.availableGeometry().size())
+
+    def _install_compact_nav(self) -> None:
+        """Swap the sidebar for a section dropdown above the page: at phone
+        width the 128 px column left the pages ~200 px."""
+        self.nav.setVisible(False)
+        picker = _Selector()
+        for i in range(self.nav.count()):
+            picker.addItem(self.nav.item(i).text(), i)
+        picker.setCurrentIndex(self.nav.currentRow())
+        picker.currentIndexChanged.connect(self.nav.setCurrentRow)
+        # show_page() / keyboard moves drive the nav — keep the picker in step.
+        self.nav.currentRowChanged.connect(
+            lambda row: picker.currentIndex() != row and picker.setCurrentIndex(row)
+        )
+        self._body_layout.setDirection(QBoxLayout.Direction.TopToBottom)
+        self._body_layout.insertWidget(0, picker)
+        self._body_layout.setContentsMargins(12, 0, 12, 12)
+        self._section_picker = picker
 
     def _adaptive_dialog_size(self) -> tuple[int, int]:
         """The dialog size for the active font. Keeps the tuned 720×620
@@ -3192,7 +3237,7 @@ class SettingsDialog(QDialog):
             self.s.font_scale = scale
             apply_font_settings_live()  # recomputes + propagates the size tokens
             self._active_font_scale = scale
-            self.setFixedSize(*self._adaptive_dialog_size())  # the dialog scales too
+            self._apply_dialog_size()  # the dialog scales too
             # Rebuild this dialog's pages so its OWN labels re-stamp at the new
             # size — they bake type_qss at construction and don't otherwise
             # re-run. Deferred: the combo that fired this lives on the page we

@@ -290,15 +290,30 @@ class NowPlayingPage(_LeftPaneMixin, _LyricsMixin, QWidget):
             QWidget#npPage QScrollBar:horizontal {{ height: 0; }}
         """)
 
-        outer = QHBoxLayout(self)
-        outer.setContentsMargins(20, 12, 20, 12)
+        root = QVBoxLayout(self)
+        root.setContentsMargins(20, 12, 20, 12)
+        root.setSpacing(SPACE_SM)
+        self._root_layout = root
+        # Phone width: one pane at a time behind a Playing | Tracks switch
+        # (hidden at regular width, where the panes sit side by side).
+        self._compact_tabs = self._build_compact_tabs()
+        root.addWidget(self._compact_tabs)
+
+        outer = QHBoxLayout()
+        outer.setContentsMargins(0, 0, 0, 0)
         outer.setSpacing(20)
+        root.addLayout(outer, 1)
 
         # Equal stretch factors give the panes a 50/50 split. The cover
         # column gets pushed left and the track listing gets meaningfully
         # more horizontal room, so longer track titles stop truncating.
-        outer.addWidget(self._build_left_pane(), 1)
-        outer.addWidget(self._build_right_pane(), 1)
+        self._left_pane = self._build_left_pane()
+        self._right_pane = self._build_right_pane()
+        outer.addWidget(self._left_pane, 1)
+        outer.addWidget(self._right_pane, 1)
+        from jellytoast import responsive
+
+        self._apply_width_class(responsive.current())
 
         self._connect_bus()
         # Render whatever's currently playing the first time the page
@@ -317,6 +332,67 @@ class NowPlayingPage(_LeftPaneMixin, _LyricsMixin, QWidget):
         # install_autofade_scrollbars helper from ui_helpers instead
         # — same fade behavior, applied at view-construction time.
         self._lyrics_fader = _ScrollbarFader(self._lyrics_scroll)
+
+    # ── Compact (phone-width) layout ────────────────────────────────────────
+
+    def _build_compact_tabs(self) -> QWidget:
+        bar = QWidget()
+        row = QHBoxLayout(bar)
+        row.setContentsMargins(0, 0, 0, 0)
+        row.setSpacing(SPACE_SM)
+        row.addStretch(1)
+        self._tab_playing = QPushButton(self.tr("Playing"))
+        self._tab_tracks = QPushButton(self.tr("Tracks"))
+        for i, btn in enumerate((self._tab_playing, self._tab_tracks)):
+            btn.setCheckable(True)
+            btn.setAutoExclusive(True)
+            btn.setCursor(Qt.CursorShape.PointingHandCursor)
+            btn.setMinimumHeight(36)  # a comfortable touch target
+            btn.toggled.connect(lambda on, idx=i: on and self._show_compact_pane(idx))
+            row.addWidget(btn)
+        row.addStretch(1)
+        self._tab_playing.setChecked(True)
+        self._restyle_compact_tabs()
+        bar.setVisible(False)
+        return bar
+
+    def _restyle_compact_tabs(self):
+        from jellytoast import ui_helpers as _u
+
+        qss = (
+            f"QPushButton {{ background: transparent; border: none; "
+            f"border-bottom: 2px solid transparent; color: {ink_alpha(0.55)}; "
+            f"{type_qss(TYPE_BODY)} font-weight: 600; padding: 4px 14px; }} "
+            f"QPushButton:checked {{ color: {ink_alpha(0.95)}; "
+            f"border-bottom-color: {_u.ACCENT}; }}"
+        )
+        for btn in (self._tab_playing, self._tab_tracks):
+            btn.setStyleSheet(qss)
+
+    def _show_compact_pane(self, idx: int):
+        # A flag, not _compact_tabs.isVisible(): the page is often hidden in
+        # the content stack when the width class flips, and isVisible() is
+        # False for every child of a hidden page.
+        if not getattr(self, "_is_compact", False):
+            return
+        self._left_pane.setVisible(idx == 0)
+        self._right_pane.setVisible(idx == 1)
+
+    def _apply_width_class(self, width_class: str):
+        """Side by side at regular width; one pane at a time (switchable)
+        at compact width — the 50/50 split crushed both on a phone."""
+        from jellytoast import responsive
+
+        compact = width_class == responsive.COMPACT
+        self._is_compact = compact
+        self._compact_tabs.setVisible(compact)
+        margin = 12 if compact else 20
+        self._root_layout.setContentsMargins(margin, 12, margin, 12)
+        if compact:
+            self._show_compact_pane(0 if self._tab_playing.isChecked() else 1)
+        else:
+            self._left_pane.setVisible(True)
+            self._right_pane.setVisible(True)
 
     # ── Left pane (cover + metadata + lyrics) ───────────────────────────────
 
@@ -698,6 +774,7 @@ class NowPlayingPage(_LeftPaneMixin, _LyricsMixin, QWidget):
     # ── Bus wiring ──────────────────────────────────────────────────────────
 
     def _connect_bus(self):
+        self.bus.width_class_changed.connect(self._apply_width_class)
         self.bus.playback_started.connect(self._on_playback_started)
         self.bus.playback_stopped.connect(self._on_playback_stopped)
         # Settings → "Refresh album art" — re-fetch the current track's
@@ -814,6 +891,7 @@ class NowPlayingPage(_LeftPaneMixin, _LyricsMixin, QWidget):
         # theme switch with no track change otherwise leaves it stale.
         self._subtitle.setStyleSheet(f"color: {ink_alpha(0.62)};")
         self._work_line.setStyleSheet(f"color: {ink_alpha(0.50)};")
+        self._restyle_compact_tabs()
         self._meta_line.setStyleSheet(
             f"color: {ink_alpha(0.42)}; letter-spacing: 0.6px;"
         )

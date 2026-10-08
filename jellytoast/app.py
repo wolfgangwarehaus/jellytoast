@@ -1232,7 +1232,10 @@ class JellytoastWindow(_NavMixin, _SessionMixin, _CastDispatcherMixin, _ShuffleP
         body, knocked back a pinch more transparent so the frosted surface
         reads as glass rather than a solid panel."""
         c = QColor(self._body_qcolor)
-        c.setAlpha(int(c.alpha() * 0.85))
+        from jellytoast.platform_compat import is_mobile_shell
+
+        if not is_mobile_shell():  # opaque on a phone shell — see theme.body_color
+            c.setAlpha(int(c.alpha() * 0.85))
         return c
 
     def _refresh_body_color(self):
@@ -1457,6 +1460,11 @@ class JellytoastWindow(_NavMixin, _SessionMixin, _CastDispatcherMixin, _ShuffleP
         # content should fill the screen) and restore it on exit.
         from jellytoast.platform_compat import IS_MACOS as _IS_MAC
 
+        if e.type() == _QEvent.Type.WindowStateChange and hasattr(self, "top_bar"):
+            # Mobile shell: no min/max/close while the shell holds the
+            # window maximized; docked mode un-maximizes → they return.
+            self.top_bar.update_window_controls()
+
         if (
             _IS_MAC
             and e.type() == _QEvent.Type.WindowStateChange
@@ -1518,24 +1526,35 @@ class JellytoastWindow(_NavMixin, _SessionMixin, _CastDispatcherMixin, _ShuffleP
         super().changeEvent(e)
 
     def _apply_adaptive_min_size(self):
-        """Window minimum size, scaled for the active font. The 720x560 floor is
-        tuned for the default font; a large / wide (monospace) user font makes
-        the top-bar controls wider, so at the floor width the sort / search /
-        window controls stack. Scale the minimum WIDTH up with the font-size
-        scale (+ a mono bump) — default font is unchanged (720). Height grows
-        gently too so the transport + a tall now-playing page still fit."""
+        """Window minimum size, scaled for the active font. The 360x420 floor
+        is phone-sized (was 720x560 before the compact layouts existed); a
+        large / wide (monospace) user font makes the top-bar controls wider,
+        so scale the minimum WIDTH up with the font-size scale (+ a mono
+        bump). Height grows gently too. Layout minimums still apply on top —
+        Qt won't shrink the window below what its widgets need."""
         from PySide6.QtGui import QFontInfo
         from PySide6.QtWidgets import QApplication
 
         from jellytoast.design_tokens import FONT_SCALE
 
         mono = 1.05 if QFontInfo(QApplication.font()).fixedPitch() else 1.0
-        min_w = round(720 * (1.0 + (FONT_SCALE - 1.0) * 0.25) * mono)
-        min_h = round(560 * (1.0 + (FONT_SCALE - 1.0) * 0.4))
+        # 360 x 420 base: phone portrait width (Plasma Mobile, a narrow
+        # desktop window) and phone landscape height. Views reflow below
+        # responsive.COMPACT_BELOW instead of the window refusing to shrink.
+        min_w = round(360 * (1.0 + (FONT_SCALE - 1.0) * 0.25) * mono)
+        min_h = round(420 * (1.0 + (FONT_SCALE - 1.0) * 0.4))
         self.setMinimumSize(min_w, min_h)
 
     def resizeEvent(self, e):
         super().resizeEvent(e)
+        from jellytoast import responsive
+
+        responsive.update(self.width())
+        if hasattr(self, "top_bar"):
+            # Also here, not only on WindowStateChange: a mobile shell can
+            # maximize the window before that handler is wired, leaving the
+            # min/max/close trio showing (seen live on Plasma Mobile).
+            self.top_bar.update_window_controls()
         # Borderless: the rounded blur region is sized to the window. Go
         # whole-window (square) NOW — an empty region auto-tracks the lagging
         # Wayland surface, so no transparent strip — and re-shape to rounded
@@ -2479,6 +2498,23 @@ def main():
     from jellytoast.platform_compat import is_mobile_shell
 
     win.tray = None if is_mobile_shell() else TrayController(app, mini, win)
+    if is_mobile_shell():
+        # Docked mode (Plasma Mobile quick setting) flips in plasmamobilerc;
+        # re-evaluate the window controls when it changes. KConfig saves by
+        # atomic rename, which drops the watch — re-add it every time.
+        from PySide6.QtCore import QFileSystemWatcher
+
+        from jellytoast.platform_compat import plasma_mobile_config_path
+
+        _cfg = plasma_mobile_config_path()
+        win._mobile_cfg_watcher = QFileSystemWatcher([_cfg], win)
+
+        def _on_mobile_cfg_changed(_path, _w=win._mobile_cfg_watcher):
+            if _cfg not in _w.files() and os.path.exists(_cfg):
+                _w.addPath(_cfg)
+            win.top_bar.update_window_controls()
+
+        win._mobile_cfg_watcher.fileChanged.connect(_on_mobile_cfg_changed)
     _boot_mark("mini player + tray constructed")
 
     # macOS: the global menu bar (App/File/Edit/View/Window/Help), the Dock

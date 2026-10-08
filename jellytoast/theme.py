@@ -832,6 +832,13 @@ def body_color_for(theme: "Theme", status, surface: str = "main") -> tuple:
     # transparent than the mini. Only push dialogs/popups the OTHER way —
     # near-opaque so the surface behind them doesn't bleed through. Mini +
     # Linux/Windows unchanged.
+    from jellytoast.platform_compat import is_mobile_shell
+
+    if is_mobile_shell():
+        # Phone shell (Plasma Mobile): every window is full-screen, so the
+        # only thing "behind" is another app, and the shell turns blur off.
+        # Even ~90% let a light window read straight through — go opaque.
+        return (base[0], base[1], base[2], 255)
     alpha = theme.fallback_body_alpha
     if IS_MACOS and surface == "dialog":
         alpha = min(255, alpha + 14)

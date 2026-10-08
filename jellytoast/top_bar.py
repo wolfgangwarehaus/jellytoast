@@ -5,7 +5,7 @@ PySide6 widgets sharing the host window's translucent body color so
 the header zone doesn't fight us on transparency.
 """
 
-from PySide6.QtCore import QPoint, QSize, Qt, Signal
+from PySide6.QtCore import QPoint, QSize, Qt, QTimer, Signal
 from PySide6.QtGui import QAction
 from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QMenu, QPushButton, QWidget
 
@@ -464,11 +464,46 @@ class JtTopBar(QWidget):
             x = max(left_edge, min(x, right_edge))
         else:  # no room — sit flush against the left cluster
             x = left_edge
+            # Only trust the overlap once both side columns have real geometry
+            # (during the first layout pass the right column still sits at x=0,
+            # which reads as a huge overflow and pins the bar compact).
+            laid_out = right.geometry().left() > left.geometry().right()
+            if not self._compact and laid_out:
+                # It would overlap the right cluster (sort / search): this bar
+                # needs more width than it has. Remember how much, and go
+                # compact — e.g. a 600 px phone with the multi-library picker.
+                self._compact_need = self.width() + (left_edge - right_edge)
+                QTimer.singleShot(0, self._apply_compact)
         y = (self.height() - ch) // 2
         cluster.setGeometry(x, y, cw, ch)
 
+    # Phone width: forward, home (the view dropdown beside it already
+    # switches sections), the decorative section title (+ its separator) and
+    # the grid/list toggle step out so back / settings, the view dropdown,
+    # shuffle, sort and search fit at 360 px. (The centre cluster
+    # floats outside the layout, so without this it slid over search.) Below
+    # _COMPACT_WIDTH always; above it whenever the full bar was measured not
+    # to fit (_compact_need, set by _position_center_cluster) — what fits
+    # depends on the library picker, the title and the font, not width alone.
+    _COMPACT_WIDTH = 520
+    _compact = False
+    _compact_need = 0
+    _multi_library = False
+
+    def _apply_compact(self):
+        compact = self.width() < max(self._COMPACT_WIDTH, self._compact_need)
+        if compact == self._compact:
+            return
+        self._compact = compact
+        self.fwd_btn.setVisible(not compact)
+        self.home_btn.setVisible(not compact)
+        self._separator.setVisible(not compact)
+        self.view_mode_btn.setVisible(not compact)
+        self.title_label.setVisible(not compact and not self._multi_library)
+
     def resizeEvent(self, event):
         super().resizeEvent(event)
+        self._apply_compact()
         # Re-fit the library title (the budget before the centred dropdown
         # shrinks with the window) — this also re-centres the cluster.
         self._fit_library_title()
@@ -517,6 +552,23 @@ class JtTopBar(QWidget):
         self.fwd_btn.setEnabled(enabled)
 
     # ── Titlebar mode (borderless window) ───────────────────────────
+
+    def update_window_controls(self):
+        """Hide min / max / close on a mobile shell while the window is
+        maximized: Plasma Mobile forces every window maximized (the task
+        switcher closes apps, nothing minimizes), so the trio is dead
+        weight on a 360-px bar. Docked mode returns them (the shell gives
+        windows decorations back there, still maximized)."""
+        if not hasattr(self, "close_btn"):
+            return
+        from jellytoast.platform_compat import is_docked, is_mobile_shell
+
+        # Docked mode keeps windows maximized but gives them decorations back;
+        # this bar IS our decoration, so the trio returns there.
+        show = not (is_mobile_shell() and self.window().isMaximized() and not is_docked())
+        for b in (self.min_btn, self.max_btn, self.close_btn):
+            b.setVisible(show)
+        self._position_center_cluster()
 
     def _toggle_max(self):
         w = self.window()
@@ -947,7 +999,11 @@ class JtTopBar(QWidget):
         multi = len(self._available_libraries) >= 2
         # Swap which title widget is visible; preserve the current text.
         current = self.title_label.text() or self.library_btn.text()
-        self.title_label.setVisible(not multi)
+        self._multi_library = multi
+        # What the full bar needs just changed — re-measure from scratch.
+        self._compact_need = 0
+        self._apply_compact()
+        self.title_label.setVisible(not multi and not self._compact)
         self.library_btn.setVisible(multi)
         if current:
             self.set_title(current)  # also re-centres

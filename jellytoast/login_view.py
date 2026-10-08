@@ -54,6 +54,7 @@ from jellytoast.ui_helpers import (
 )
 
 CARD_WIDTH = 420
+CARD_MIN_WIDTH = 280
 
 
 class _QuickConnectOff(Exception):
@@ -337,11 +338,18 @@ class LoginView(QWidget):
         # Center column: card flanked by horizontal stretches so it
         # stays centered regardless of window width.
         center_row = QHBoxLayout()
+        center_row.setContentsMargins(16, 0, 16, 0)  # gutter on a phone
         center_row.addStretch(1)
 
         self._card = _LoginCard()
         self._card.setObjectName("loginCard")
-        self._card.setFixedWidth(CARD_WIDTH)
+        # Fluid up to CARD_WIDTH: on a phone (360 px) a fixed 420 card ran
+        # off-screen — and, as a page in the main content stack, its minimum
+        # held the WHOLE window at 420 even while hidden. The heavy stretch
+        # factor below lets it claim width up to the cap before the centering
+        # stretches take the rest.
+        self._card.setMinimumWidth(CARD_MIN_WIDTH)
+        self._card.setMaximumWidth(CARD_WIDTH)
         # Background + corner radius now live on _LoginCard.paintEvent
         # so the card matches the settings dialog body byte-for-byte.
 
@@ -525,7 +533,7 @@ class LoginView(QWidget):
 
         PlayerBus.get().theme_changed.connect(self._reapply_accent)
 
-        center_row.addWidget(self._card)
+        center_row.addWidget(self._card, 1000)
         center_row.addStretch(1)
         outer.addLayout(center_row)
         outer.addStretch(1)

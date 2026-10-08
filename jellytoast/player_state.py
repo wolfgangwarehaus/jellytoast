@@ -402,6 +402,9 @@ class PlayerBus(QObject):
     # the cross-DPR request, then re-derive from the L2 raw cache (the
     # decoded source, which is DPR-agnostic).
     dpr_changed = Signal()
+    # Main-window width class flipped ("compact" / "regular") — see
+    # jellytoast.responsive. Phone-width layouts follow this live.
+    width_class_changed = Signal(str)
     # Hint to MpvController: the "next" track has changed. Carries either
     # a NowPlaying for the next item (so mpv can append it to its playlist
     # for gapless handoff) or None to signal "no next — drop any pending

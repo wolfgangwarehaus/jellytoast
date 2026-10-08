@@ -448,6 +448,7 @@ class NowPlayingBar(QWidget):
         center.addLayout(prog_row)
         center.addStretch(1)
         layout.addLayout(center, 1)
+        self._center_layout = center
 
         # ── Right cluster: utility icons (mini / cast / volume) ─────────────
         # Right-aligned inside a fixed-width slot that mirrors the
@@ -586,7 +587,7 @@ class NowPlayingBar(QWidget):
         # Streaming-info row is always-on now — kept visible from
         # construction so the codec/bitrate readout shows as soon as
         # MpvController stabilises. Cast handlers hide/restore it.
-        self.streaming_info.setVisible(True)
+        self.streaming_info.setVisible(not self._compact_mode)
         # Cross-DPR cover refresh — re-issue the cover load at the new
         # physical target when the user drags the window to a
         # different-scale monitor. `_on_started` is idempotent for the
@@ -1117,7 +1118,7 @@ class NowPlayingBar(QWidget):
         self.streaming_info.setText(
             self.tr("Casting to {0}").format(self._casting_device)
         )
-        self.streaming_info.setVisible(True)
+        self.streaming_info.setVisible(not self._compact_mode)
         self._position_streaming_info()
         # Reflect the active cast on the cast button itself (accent tint +
         # tooltip) so it reads as "on" like shuffle/repeat do — without this
@@ -1135,7 +1136,7 @@ class NowPlayingBar(QWidget):
         doesn't swallow the repaint."""
         self._casting = False
         self._casting_device = ""
-        self.streaming_info.setVisible(True)
+        self.streaming_info.setVisible(not self._compact_mode)
         self._on_streaming_info_updated(
             self._last_streaming_codec, self._last_streaming_kbps
         )
@@ -1399,22 +1400,81 @@ class NowPlayingBar(QWidget):
     _TEXT_SPLIT_WIDTH = 1080  # below this, switch from 2-row to 3-row text
     _TEXT_HIDE_WIDTH = 680  # below this, hide all text rows
 
+    # Phone widths. Compact: a shorter bar with a matching cover, and the
+    # sleep-timer / mini-player buttons step out. Narrow: shuffle / repeat
+    # step out too, leaving prev / play / next + cast / volume. (The
+    # compact Now Playing page is where the stepped-out controls land.)
+    _MINI_BTN_WIDTH = 660  # below: the 4-icon right cluster no longer fits
+    _COMPACT_WIDTH = 560
+    _NARROW_WIDTH = 430
+    _BAR_HEIGHT = 108
+    _COMPACT_BAR_HEIGHT = 76
+
+    _compact_mode = False
+
+    # What the narrowest (phone) layout needs: two compact clusters + prev /
+    # play / next and a short seek bar.
+    _MIN_WIDTH = 340
+
+    def minimumSizeHint(self):
+        """The PHONE floor, never the current breakpoint's. The layout's own
+        minimum is the sum of the clusters' fixed widths for the CURRENT
+        width, so reporting it let the window shrink only one breakpoint at a
+        time: a jump — rotation, a mobile shell maximizing onto a narrow
+        screen, docked→phone — asked for less than that and was refused.
+        resizeEvent re-flows to whatever width arrives, synchronously."""
+        from PySide6.QtCore import QSize
+
+        return QSize(self._MIN_WIDTH, super().minimumSizeHint().height())
+
+    def _apply_compact(self, bar_w: int):
+        compact = bar_w < self._COMPACT_WIDTH
+        self._compact_mode = compact
+        narrow = bar_w < self._NARROW_WIDTH
+        from jellytoast.platform_compat import is_mobile_shell
+
+        # The mini player is a floating desktop window — no place on a phone.
+        self.mini_btn.setVisible(bar_w >= self._MINI_BTN_WIDTH and not is_mobile_shell())
+        self.sleep_btn.setVisible(not compact)
+        # The "Streaming · MP3 · 262 kbps" overlay floats above the center
+        # column; on the short compact bar it lands on the transport row.
+        self.streaming_info.setVisible(not compact)
+        self.shuffle_btn.setVisible(not narrow)
+        self.repeat_btn.setVisible(not narrow)
+        height = self._COMPACT_BAR_HEIGHT if compact else self._BAR_HEIGHT
+        if self.height() != height:
+            self.setFixedHeight(height)
+            self.thumb.setFixedSize(height, height)
+            self.refresh_cover()
+
     def _apply_responsive_layout(self, bar_w: int):
         cluster_w, spacing, right_inset = 380, 16, 48
         for min_w, cw, sp, ri in self._BREAKPOINTS:
             if bar_w >= min_w:
                 cluster_w, spacing, right_inset = cw, sp, ri
                 break
+        if bar_w < self._COMPACT_WIDTH:
+            right_inset = 8
+        self._apply_compact(bar_w)
+        # Clamp so the two (equal, lockstep) clusters plus the center's real
+        # minimum never exceed the bar. A fixed cluster wider than that
+        # raised the bar's minimum ABOVE its own width, so the window grew
+        # to it and could never shrink back past that breakpoint — the
+        # 720→740 "won't go narrower" ratchet. The floor is what the
+        # clusters' contents need (cover; the visible right-side icons).
+        margins = self.layout().contentsMargins()
+        center_min = self._center_layout.minimumSize().width()
+        fit = (bar_w - center_min - 2 * spacing - margins.left() - margins.right()) // 2
+        right_layout = self.right_cluster.layout()
+        right_layout.setContentsMargins(0, 0, right_inset, 0)
+        floor = max(self.thumb.width(), right_layout.minimumSize().width())
+        cluster_w = max(floor, min(cluster_w, fit))
         if self.left_cluster.width() != cluster_w:
             self.left_cluster.setFixedWidth(cluster_w)
         if self.right_cluster.width() != cluster_w:
             self.right_cluster.setFixedWidth(cluster_w)
         if self.layout().spacing() != spacing:
             self.layout().setSpacing(spacing)
-        right_layout = self.right_cluster.layout()
-        cur_margins = right_layout.contentsMargins()
-        if cur_margins.right() != right_inset:
-            right_layout.setContentsMargins(0, 0, right_inset, 0)
         self._apply_text_layout(bar_w)
 
     def _apply_text_layout(self, bar_w: int, force: bool = False):

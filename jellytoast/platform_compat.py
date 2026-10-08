@@ -162,6 +162,33 @@ def is_mobile_shell() -> bool:
     return os.environ.get("QT_QUICK_CONTROLS_MOBILE", "").lower() in ("1", "true")
 
 
+def plasma_mobile_config_path() -> str:
+    return os.path.join(
+        os.environ.get("XDG_CONFIG_HOME") or os.path.expanduser("~/.config"), "plasmamobilerc"
+    )
+
+
+def is_docked() -> bool:
+    """Plasma Mobile's docked (convergence) mode — the quick setting that
+    gives windows their decorations back while leaving them maximized. Read
+    live from ``plasmamobilerc`` ``[General] convergenceModeEnabled``; False
+    off a mobile shell or when unreadable."""
+    if not is_mobile_shell():
+        return False
+    try:
+        group = ""
+        with open(plasma_mobile_config_path(), encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if line.startswith("[") and line.endswith("]"):
+                    group = line[1:-1]
+                elif group == "General" and line.startswith("convergenceModeEnabled="):
+                    return line.split("=", 1)[1].strip().lower() == "true"
+    except OSError:
+        pass
+    return False
+
+
 APP_ID = "io.github.wolfgangwarehaus.jellytoast"
 
 

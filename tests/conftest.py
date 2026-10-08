@@ -39,6 +39,12 @@ if _xdist_worker:
     os.environ["XDG_DATA_HOME"] = os.path.join(_worker_home, ".local", "share")
     os.environ["XDG_CACHE_HOME"] = os.path.join(_worker_home, ".cache")
 
+# Tests must not depend on the developer's session: run from a Plasma Mobile
+# login, these make platform_compat.is_mobile_shell() True for the whole
+# suite (opaque bodies, no tray, …). Tests that want a phone shell patch it.
+for _mobile_var in ("PLASMA_PLATFORM", "QT_QUICK_CONTROLS_MOBILE"):
+    os.environ.pop(_mobile_var, None)
+
 # Tests must never reach the OS secret store. The HOME/XDG split above does
 # not move it: on macOS `keyring` talks to the real login Keychain, so a
 # `pytest -n auto` run has every worker × every credentials read (which
