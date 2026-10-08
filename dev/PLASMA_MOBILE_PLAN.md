@@ -173,8 +173,10 @@ Gotchas, each cost time once:
   even as a hidden stack page).
 - [x] Settings at compact width: section dropdown instead of the sidebar;
   resizable (a mobile shell can maximize it).
-- [ ] Follow-up: the controls that step out of the compact bar (shuffle,
-  repeat, sleep timer) need a home on the compact Now Playing page.
+- [x] Follow-up: the controls that step out of the compact bar (shuffle,
+  repeat, sleep timer) now have a row on the compact Now Playing page. The
+  bar emits `stepped_out_changed`; the page mirrors exactly the hidden
+  ones and drives the bar's own buttons (`attach_transport_bar`).
 - [ ] Follow-up: verify on the real Plasma Mobile session (OSK, docked mode
   toggle, rotation) — so far verified headless at 360 / 601 / 1100.
 
@@ -195,8 +197,9 @@ All in `jellytoast/touch.py` (one QApplication event filter, installed in
 - [x] Hover-only affordances: tile corner buttons / play disc aren't hit-live
   or painted after touch input; the tile menu gained **Play** + **Favorite**
   (desktop right-click gets them too).
-- [ ] Rails / artist page have no tile context menu yet (long-press = tap
-  there; play via the album page). Add one if it's missed.
+- [x] Rails + artist page get the same tile menu as the grid. It's now
+  `library_grid.show_tile_context_menu` (with `toggle_tile_favorite`),
+  keeping the `_LibraryListView` translation context.
 - [ ] Real-hardware pass. Verified with QTest touch events (unit tests drive
   the real grid view) + a headless app run (drag scrolled 1389 px without
   opening anything; a tap opened the album). Caveat for next time: in the
@@ -206,13 +209,15 @@ All in `jellytoast/touch.py` (one QApplication event filter, installed in
 
 ## Phase 4 — polish
 
-- [ ] Hide the mini player on a mobile shell (its bar button is done; the
-  Settings mini-player options + tray menu entry remain). Window controls: done.
-- [ ] MPRIS `artUrl` → local cached `file://` (no credentials on the bus; works
-  offline on the lockscreen).
-- [ ] On-screen keyboard: don't auto-focus fields on mobile at launch; verify
-  the window/OSK interplay live.
-- [ ] Metainfo: `<supports><control>touch</control>` + display_length ≥ 360
+- [x] Hide the mini player on a mobile shell: bar button, `show_mini_player`
+  signal, show-on-start, and the Settings WINDOW rows (no tray on mobile, so no
+  tray entry to hide). Window controls: done.
+- [x] MPRIS `artUrl` → local cached `file://` (no credentials on the bus; works
+  offline on the lockscreen). 512px PNGs in `<cache>/mpris-art/`, newest 24
+  kept; verified live via `busctl` (`tests/test_mpris_art.py`).
+- [~] On-screen keyboard: no auto-focus on mobile at launch (done); the
+  window/OSK interplay still needs a live check on a touch device.
+- [ ] **On hold (August: not phone-friendly yet).** Metainfo: `<supports><control>touch</control>` + display_length ≥ 360
   once phases 2–3 land (currently *requires* ≥ 768 → mobile stores hide it).
 - [ ] Consider aligning the Wayland app_id with the reverse-DNS desktop id
   (`app.setDesktopFileName("jellytoast")` today; KDE matches via

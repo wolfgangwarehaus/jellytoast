@@ -556,12 +556,17 @@ class LoginView(QWidget):
 
         # Initial focus: password if username is already filled in,
         # username if not, server URL if neither — first empty field.
-        if not self._server_field.text():
-            self._server_field.setFocus()
-        elif not self._username_field.text():
-            self._username_field.setFocus()
-        else:
-            self._password_field.setFocus()
+        # Not on a phone shell: focusing a field there pops the on-screen
+        # keyboard over the form before the user has touched anything.
+        from jellytoast.platform_compat import is_mobile_shell
+
+        if not is_mobile_shell():
+            if not self._server_field.text():
+                self._server_field.setFocus()
+            elif not self._username_field.text():
+                self._username_field.setFocus()
+            else:
+                self._password_field.setFocus()
 
     @staticmethod
     def _link_qss() -> str:

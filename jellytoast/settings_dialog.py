@@ -1391,6 +1391,10 @@ class SettingsDialog(QDialog):
         self._mini_check.setChecked(self.s.show_mini_on_start)
         self._mini_check.toggled.connect(lambda val: setattr(self.s, "show_mini_on_start", val))
         v.addWidget(self._mini_check)
+        from jellytoast.platform_compat import is_mobile_shell
+
+        # No mini player on a phone shell (see app._show_mini).
+        self._mini_check.setVisible(not is_mobile_shell())
 
         v.addSpacing(12)
 
@@ -1398,7 +1402,8 @@ class SettingsDialog(QDialog):
         # Behaviour of the open windows themselves — stacking + close
         # semantics. Both toggles change WHERE jellytoast lives on the
         # desktop, not what it does at boot.
-        v.addWidget(self._section_header(self.tr("WINDOW")))
+        window_header = self._section_header(self.tr("WINDOW"))
+        v.addWidget(window_header)
 
         # Wayland-only: xdg-shell forbids apps from setting their own
         # stacking, so Qt.WindowStaysOnTopHint is a no-op there. We
@@ -1412,6 +1417,7 @@ class SettingsDialog(QDialog):
             self._keep_above_check.setChecked(self.s.mini_player_keep_above)
             self._keep_above_check.toggled.connect(self._on_keep_above_toggled)
             v.addWidget(self._keep_above_check)
+            self._keep_above_check.setVisible(not is_mobile_shell())
 
         # Tray-on-close lives last — it's the most behavior-changing
         # toggle of the group (kills the close-X exit semantics) so it
@@ -1425,9 +1431,9 @@ class SettingsDialog(QDialog):
         v.addWidget(self._tray_check)
         # A mobile shell shows no tray; close keeps playing in the background
         # on its own there (see app._close_hides_window), so the toggle is moot.
-        from jellytoast.platform_compat import is_mobile_shell
-
         self._tray_check.setVisible(not is_mobile_shell())
+        # Both WINDOW rows (mini on top, hide to tray) are desktop-only.
+        window_header.setVisible(not is_mobile_shell())
 
         v.addSpacing(12)
 

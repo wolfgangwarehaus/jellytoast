@@ -132,3 +132,41 @@ class TestIsDocked:
         clean_env.setenv("PLASMA_PLATFORM", "phone:handset")
         clean_env.setenv("XDG_CONFIG_HOME", str(tmp_path))
         assert not pc.is_docked()
+
+
+class TestSettingsOnAMobileShell:
+    """No mini player and no tray on a phone shell, so Settings doesn't
+    offer their toggles there (a toggle that does nothing reads as broken)."""
+
+    @pytest.mark.parametrize("mobile", [True, False])
+    def test_mini_player_and_tray_rows(self, qapp, isolated_settings, monkeypatch, mobile):
+        from jellytoast.settings_dialog import SettingsDialog
+
+        monkeypatch.setattr(pc, "is_mobile_shell", lambda: mobile)
+        dlg = SettingsDialog()
+        try:
+            assert dlg._mini_check.isHidden() is mobile
+            assert dlg._tray_check.isHidden() is mobile
+            if hasattr(dlg, "_keep_above_check"):
+                assert dlg._keep_above_check.isHidden() is mobile
+        finally:
+            dlg.deleteLater()
+
+
+@pytest.mark.parametrize("mobile", [True, False])
+def test_login_focuses_a_field_only_off_a_phone_shell(qapp, isolated_settings, monkeypatch, mobile):
+    """On a phone, focusing a field at launch pops the on-screen keyboard
+    over the form before the user has touched anything."""
+    from jellytoast.login_view import LoginView
+
+    monkeypatch.setattr(pc, "is_mobile_shell", lambda: mobile)
+    view = LoginView()
+    try:
+        view.show()
+        qapp.processEvents()
+        focused = any(
+            f.hasFocus() for f in (view._server_field, view._username_field, view._password_field)
+        )
+        assert focused is (not mobile)
+    finally:
+        view.deleteLater()

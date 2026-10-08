@@ -2493,7 +2493,19 @@ def main():
     # Without this the mini player keeps building stream + cover URLs
     # against the discarded singleton and silently 401s post-login.
     win.mini_player = mini
-    bus.show_mini_player.connect(lambda: (mini.show(), mini.raise_(), mini.activateWindow()))
+    from jellytoast.platform_compat import is_mobile_shell as _is_mobile_shell
+
+    def _show_mini():
+        # A floating, always-on-top mini window has no place on a phone shell
+        # (it would just be force-maximized over the main window). Every way
+        # in — bar button, tray, startup setting, shortcut — lands here.
+        if _is_mobile_shell():
+            return
+        mini.show()
+        mini.raise_()
+        mini.activateWindow()
+
+    bus.show_mini_player.connect(_show_mini)
     bus.hide_mini_player.connect(mini.hide)
     # Pin the tray controller to the window so its lifetime tracks
     # `win` rather than relying on Qt's implicit parent-of-`app`
@@ -2752,7 +2764,7 @@ def main():
     # first paint shows fully-populated content rather than the dark
     # → fade flicker the loading overlay used to mask.
 
-    if settings.show_mini_on_start:
+    if settings.show_mini_on_start and not _is_mobile_shell():
         mini.show()
 
     def _cleanup():

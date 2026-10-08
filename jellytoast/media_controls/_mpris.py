@@ -31,6 +31,42 @@ from dbus_next.constants import PropertyAccess, RequestNameReply
 from dbus_next.service import ServiceInterface, dbus_property, method, signal
 
 from jellytoast.player_state import NowPlaying, PlayerBus, get_now_playing
+
+# Lockscreen / media-widget cover: a local copy at this size.
+_ART_PX = 512
+_ART_KEEP = 24  # newest files kept in the MPRIS art folder
+
+
+def _art_dir():
+    from pathlib import Path
+
+    from PySide6.QtCore import QStandardPaths
+
+    base = QStandardPaths.writableLocation(QStandardPaths.StandardLocation.CacheLocation)
+    return Path(base) / "mpris-art" if base else None
+
+
+def _cached_art_path(np: NowPlaying):
+    """Where this track's local cover copy lives (it may not exist yet),
+    keyed by the same art identity the player surfaces use."""
+    import hashlib
+
+    from jellytoast.ui_helpers import np_art_stem
+
+    d = _art_dir()
+    stem = np_art_stem(np)
+    if d is None or not stem or stem.startswith("@"):
+        return None
+    return d / (hashlib.sha1(stem.encode("utf-8")).hexdigest() + ".png")
+
+
+def _prune_art_dir(d) -> None:
+    files = sorted(d.glob("*.png"), key=lambda f: f.stat().st_mtime, reverse=True)
+    for old in files[_ART_KEEP:]:
+        try:
+            old.unlink()
+        except OSError:
+            pass
 from jellytoast.settings import get_settings
 
 SERVICE_NAME = "org.mpris.MediaPlayer2.jellytoast"
@@ -265,7 +301,7 @@ class MprisPlayer(ServiceInterface):
         self._status = status
         self.emit_properties_changed({"PlaybackStatus": status})
 
-    def update_metadata(self, np: NowPlaying):
+    def update_metadata(self, np: NowPlaying, art_url: str = ""):
         # D-Bus object-path elements only accept [A-Za-z0-9_] — anything
         # else (the dash in user-added "local-XXXXXXXX" radio ids, for
         # one) makes dbus-next throw SignatureBodyMismatchError on every
@@ -285,8 +321,12 @@ class MprisPlayer(ServiceInterface):
             "xesam:artist": Variant("as", [np.subtitle] if np.subtitle else []),
             "xesam:albumArtist": Variant("as", [np.subtitle] if np.subtitle else []),
         }
-        if np.thumb_url:
-            md["mpris:artUrl"] = Variant("s", np.thumb_url)
+        # A LOCAL file:// copy only (see MprisController._publish_art): the
+        # server URL carries the API key / Subsonic token, which would sit on
+        # the session bus for any process to read, and the lockscreen would
+        # have to fetch it (no art offline).
+        if art_url:
+            md["mpris:artUrl"] = Variant("s", art_url)
         if np.year:
             md["xesam:contentCreated"] = Variant("s", f"{np.year}-01-01T00:00:00Z")
         self._metadata = md
@@ -347,6 +387,7 @@ class MprisService(QObject):
         # recomputes from the pair.
         self._queue_len = 0
         self._queue_index = -1
+        self._art_item = ""  # track whose cover is being prepared
         self._repeat_mode = "off"
 
     def start(self, window=None):
@@ -420,8 +461,51 @@ class MprisService(QObject):
     def _on_started(self, np: NowPlaying):
         if not self._player:
             return
-        self._schedule(lambda: self._player.update_metadata(np))
+        self._art_item = np.item_id
+        art = _cached_art_path(np)
+        art_url = art.as_uri() if art is not None and art.exists() else ""
+        self._schedule(lambda: self._player.update_metadata(np, art_url))
         self._schedule(lambda: self._player.update_status("Playing"))
+        if not art_url:
+            self._publish_art(np)
+
+    def _publish_art(self, np: NowPlaying) -> None:
+        """Load the track's cover through the app's image pipeline (memory /
+        disk caches first — usually no network), save a local copy, and
+        re-publish the metadata pointing at it."""
+        target = _cached_art_path(np)
+        image_id = getattr(np, "image_id", "") or np.item_id
+        if target is None or not image_id:
+            return
+        try:
+            from jellytoast.providers import get_provider
+            from jellytoast.ui_helpers import load_image_async, np_art_stem
+
+            url = get_provider().get_image_url(image_id, "Primary", _ART_PX)
+        except Exception as e:  # pragma: no cover — defensive
+            logger.debug("MPRIS art: no image url: %s", e)
+            return
+        if not url:
+            return
+
+        def _loaded(pix, item_id=np.item_id):
+            if pix is None or pix.isNull() or item_id != self._art_item:
+                return  # failed, or the track changed meanwhile
+            try:
+                target.parent.mkdir(parents=True, exist_ok=True)
+                if not pix.save(str(target), "PNG"):
+                    return
+                _prune_art_dir(target.parent)
+            except OSError as e:
+                logger.debug("MPRIS art: save failed: %s", e)
+                return
+            if self._player:
+                art_url = target.as_uri()
+                self._schedule(lambda: self._player.update_metadata(np, art_url))
+
+        load_image_async(
+            f"{np_art_stem(np)}|mpris", url, _ART_PX, _ART_PX, _loaded, on_error=lambda: None
+        )
 
     def _update_status(self, status: str):
         if self._player:
