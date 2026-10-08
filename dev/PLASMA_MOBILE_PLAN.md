@@ -6,19 +6,18 @@ scale 2). Tick boxes as work lands; keep findings here, not in memory.
 
 ## ▶ Start here (next session)
 
-State as of 2026-10-08: phases 1–3 are **committed** on `main`:
-`72b1452` (quick fixes), `ac82add` (phone-width layouts, including the
-real-device fixes), `db16714` (touch) and the docs/changelog commit after
-them. The real-device pass is mostly done (see step 1).
-(`packaging/pyinstaller/jellytoast.spec` is august's own unrelated edit;
-leave it out of commits.)
+State as of 2026-10-08: phases 1–4 are **committed and pushed** on `main`
+(phase 4: `e6b70aa` compact NP shuffle/repeat/sleep row, `1de9d3e` shared tile
+menu, `533c40f` mini player / MPRIS local art / no login autofocus). Still
+open: the touch + on-screen-keyboard check on real hardware, and the metainfo
+"phone-friendly" flag, which is **on hold** (august: the app needs more work
+before we advertise it). `packaging/pyinstaller/jellytoast.spec` is august's
+own unrelated edit; leave it out of commits.
 
-0. **First, finish the 0.2.2 release.** The `v0.2.2` tag is on `2706d5b`;
-   release run 37394602410 built everything but Apple refused to notarize
-   ("required agreement is missing or has expired"). august accepts the
-   updated Apple developer agreement, then runs `gh run rerun 37394602410
-   --failed`, then publish (see memory `release-status`). The mobile
-   commits are after `2706d5b`, so they're not in 0.2.2.
+0. **0.2.2 release:** every asset is rebuilt and Apple already approved 0.2.2
+   on the Mac App Store; august only has to publish the draft
+   (`gh release edit v0.2.2 --draft=false --latest`). The mobile work isn't in
+   0.2.2.
 1. **Real-device pass on august's Plasma Mobile session** (the one thing the
    headless runs can't cover): run from the checkout, then check — window fits
    601 px; compact bar; Now Playing Playing | Tracks switch; Settings dropdown;
