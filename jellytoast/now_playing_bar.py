@@ -268,7 +268,8 @@ class NowPlayingBar(QWidget):
         # the live countdown. Backed by PlayerBackend's session-scoped
         # timer via the sleep_timer_* bus signals.
         self.sleep_btn = _icon_btn("moon", self.tr("Sleep timer"))
-        self.sleep_btn.clicked.connect(self._open_sleep_menu)
+        # lambda: clicked(bool) would otherwise land in the anchor parameter.
+        self.sleep_btn.clicked.connect(lambda: self._open_sleep_menu())
         self._sleep_deadline: float | None = None
         self._sleep_total: int = 0
         self._sleep_tick = QTimer(self)
@@ -607,10 +608,20 @@ class NowPlayingBar(QWidget):
     # is handled separately because it's a mode, not a duration.
     _SLEEP_PRESETS = (15, 30, 45, 60, 90)
 
-    def _open_sleep_menu(self):
-        """Pop the sleep-timer duration menu under the moon button.
-        Built fresh each open so the active-timer state (the Cancel
-        row + its live countdown) is always current."""
+    def stepped_out(self) -> dict:
+        """Which secondary controls this bar has hidden at the current
+        width ({"shuffle", "repeat", "sleep"} → hidden)."""
+        return {
+            "shuffle": self.shuffle_btn.isHidden(),
+            "repeat": self.repeat_btn.isHidden(),
+            "sleep": self.sleep_btn.isHidden(),
+        }
+
+    def _open_sleep_menu(self, anchor=None):
+        """Pop the sleep-timer duration menu at the moon button — or at
+        ``anchor`` (the compact Now Playing page's copy, when the bar has
+        stepped its own out). Built fresh each open so the active-timer
+        state (the Cancel row + its live countdown) is always current."""
         menu = opaque_menu(self)
         active = self._sleep_deadline is not None
         # All presets use ``end_of_track`` — the timer counts down X
@@ -661,7 +672,10 @@ class NowPlayingBar(QWidget):
                 lambda: self.bus.sleep_timer_cancel_requested.emit()
             )
 
-        menu.exec(self.sleep_btn.mapToGlobal(QPoint(0, -menu.sizeHint().height())))
+        if anchor is None:  # the bar's own button: open upward, above the bar
+            menu.exec(self.sleep_btn.mapToGlobal(QPoint(0, -menu.sizeHint().height())))
+        else:
+            menu.exec(anchor.mapToGlobal(QPoint(0, anchor.height())))
 
     def _sleep_remaining(self) -> int:
         """Whole seconds left on the armed timer, or 0 if none."""
@@ -1411,6 +1425,9 @@ class NowPlayingBar(QWidget):
     _COMPACT_BAR_HEIGHT = 76
 
     _compact_mode = False
+    # Shuffle / repeat / sleep left (or rejoined) the bar — the compact Now
+    # Playing page mirrors exactly the ones this bar has hidden.
+    stepped_out_changed = Signal()
 
     # What the narrowest (phone) layout needs: two compact clusters + prev /
     # play / next and a short seek bar.
@@ -1435,12 +1452,15 @@ class NowPlayingBar(QWidget):
 
         # The mini player is a floating desktop window — no place on a phone.
         self.mini_btn.setVisible(bar_w >= self._MINI_BTN_WIDTH and not is_mobile_shell())
+        before = self.stepped_out()
         self.sleep_btn.setVisible(not compact)
         # The "Streaming · MP3 · 262 kbps" overlay floats above the center
         # column; on the short compact bar it lands on the transport row.
         self.streaming_info.setVisible(not compact)
         self.shuffle_btn.setVisible(not narrow)
         self.repeat_btn.setVisible(not narrow)
+        if self.stepped_out() != before:
+            self.stepped_out_changed.emit()
         height = self._COMPACT_BAR_HEIGHT if compact else self._BAR_HEIGHT
         if self.height() != height:
             self.setFixedHeight(height)

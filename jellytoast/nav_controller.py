@@ -195,6 +195,8 @@ class _NavMixin:
         # once it exists, so it stays in sync.
         if self.np_page is None:
             self.np_page = NowPlayingPage(self.queue_mgr, self)
+            # Phone width: the page carries the controls the bar steps out.
+            self.np_page.attach_transport_bar(self.np_bar)
             self.np_page.dismiss_requested.connect(self._dismiss_now_playing)
             # Bottom-bar left cluster (cover + title + artist + heart)
             # follows the page's preview state inversely: visible while

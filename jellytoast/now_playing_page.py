@@ -64,6 +64,7 @@ from jellytoast.design_tokens import (
     type_qss,
 )
 from jellytoast.download_button import _DownloadButton
+from jellytoast.icon_button import IconButton
 from jellytoast.icons import accent_icon, icon
 from jellytoast.np_left_pane import _LeftPaneMixin
 from jellytoast.np_lyrics import _LyricsCache, _LyricsMixin, _ScrollbarFader
@@ -378,6 +379,61 @@ class NowPlayingPage(_LeftPaneMixin, _LyricsMixin, QWidget):
         self._left_pane.setVisible(idx == 0)
         self._right_pane.setVisible(idx == 1)
 
+    def attach_transport_bar(self, bar) -> None:
+        """Mirror the transport bar's stepped-out controls (phone width).
+        Clicks drive the bar's own buttons — they own the shuffle / repeat
+        / sleep logic — and the icons follow the bus like the bar's do."""
+        self._transport_bar = bar
+        bar.stepped_out_changed.connect(self._sync_stepped_row)
+        self.bus.shuffle_changed.connect(lambda _on: self._refresh_stepped_icons())
+        self.bus.repeat_changed.connect(lambda _m: self._refresh_stepped_icons())
+        for sig in (
+            self.bus.sleep_timer_started,
+            self.bus.sleep_timer_cancelled,
+            self.bus.sleep_timer_fired,
+        ):
+            sig.connect(lambda *_a: self._refresh_stepped_icons())
+        self._sync_stepped_row()
+
+    def _on_stepped_clicked(self, key: str) -> None:
+        bar = self._transport_bar
+        if bar is None:
+            return
+        if key == "shuffle":
+            bar.shuffle_btn.click()
+        elif key == "repeat":
+            bar.repeat_btn.click()
+        else:
+            bar._open_sleep_menu(anchor=self._stepped_btns["sleep"])
+        self._refresh_stepped_icons()
+
+    def _refresh_stepped_icons(self) -> None:
+        bar = getattr(self, "_transport_bar", None)
+        if bar is None:
+            return
+        shuffle_on = bar.shuffle_btn.isChecked()
+        self._stepped_btns["shuffle"].setIcon(
+            accent_icon("shuffle") if shuffle_on else icon("shuffle")
+        )
+        mode = getattr(bar, "_repeat_state", "off")
+        self._stepped_btns["repeat"].setIcon(
+            icon("repeat")
+            if mode == "off"
+            else accent_icon("repeat_one" if mode == "one" else "repeat")
+        )
+        armed = getattr(bar, "_sleep_deadline", None) is not None
+        self._stepped_btns["sleep"].setIcon(accent_icon("moon") if armed else icon("moon"))
+
+    def _sync_stepped_row(self) -> None:
+        bar = getattr(self, "_transport_bar", None)
+        hidden = bar.stepped_out() if bar is not None else {}
+        show_row = getattr(self, "_is_compact", False) and any(hidden.values())
+        for key, btn in self._stepped_btns.items():
+            btn.setVisible(bool(hidden.get(key)))
+        self._stepped_row.setVisible(show_row)
+        if show_row:
+            self._refresh_stepped_icons()
+
     def _apply_width_class(self, width_class: str):
         """Side by side at regular width; one pane at a time (switchable)
         at compact width — the 50/50 split crushed both on a phone."""
@@ -385,6 +441,7 @@ class NowPlayingPage(_LeftPaneMixin, _LyricsMixin, QWidget):
 
         compact = width_class == responsive.COMPACT
         self._is_compact = compact
+        self._sync_stepped_row()
         self._compact_tabs.setVisible(compact)
         margin = 12 if compact else 20
         self._root_layout.setContentsMargins(margin, 12, margin, 12)
@@ -575,6 +632,35 @@ class NowPlayingPage(_LeftPaneMixin, _LyricsMixin, QWidget):
         info_row.addStretch(1)
         v.addLayout(info_row)
         v.addSpacing(SPACE_MD)
+
+        # Phone width: the transport bar steps shuffle / repeat / the sleep
+        # timer out (it has no room); this row carries whichever it hid.
+        # The buttons drive the bar's own (hidden) controls, so there is one
+        # source of truth — see attach_transport_bar.
+        self._stepped_row = QWidget()
+        stepped = QHBoxLayout(self._stepped_row)
+        stepped.setContentsMargins(0, 0, 0, 0)
+        stepped.setSpacing(SPACE_MD)
+        stepped.addStretch(1)
+        self._stepped_btns = {}
+        for key, glyph, tip in (
+            ("shuffle", "shuffle", self.tr("Shuffle")),
+            ("repeat", "repeat", self.tr("Repeat")),
+            ("sleep", "moon", self.tr("Sleep timer")),
+        ):
+            btn = IconButton()
+            btn.setIcon(icon(glyph))
+            btn.setIconSize(QSize(20, 20))
+            btn.setFixedSize(44, 44)  # comfortable touch target
+            btn.setToolTip(tip)
+            btn.setCursor(Qt.CursorShape.PointingHandCursor)
+            btn.clicked.connect(lambda _c=False, k=key: self._on_stepped_clicked(k))
+            stepped.addWidget(btn)
+            self._stepped_btns[key] = btn
+        stepped.addStretch(1)
+        self._stepped_row.setVisible(False)
+        self._transport_bar = None
+        v.addWidget(self._stepped_row)
 
         # Play CTA gets its own centered row below the info — only the
         # purple primary button lives here in preview mode, with no
@@ -892,6 +978,7 @@ class NowPlayingPage(_LeftPaneMixin, _LyricsMixin, QWidget):
         self._subtitle.setStyleSheet(f"color: {ink_alpha(0.62)};")
         self._work_line.setStyleSheet(f"color: {ink_alpha(0.50)};")
         self._restyle_compact_tabs()
+        self._refresh_stepped_icons()
         self._meta_line.setStyleSheet(
             f"color: {ink_alpha(0.42)}; letter-spacing: 0.6px;"
         )

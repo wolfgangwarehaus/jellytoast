@@ -277,3 +277,68 @@ class TestRealDeviceFindings:
         assert body_color_for(theme, BlurStatus.UNSUPPORTED)[3] == 255
         monkeypatch.setattr(pc, "is_mobile_shell", lambda: False)
         assert body_color_for(theme, BlurStatus.UNSUPPORTED)[3] == theme.fallback_body_alpha
+
+
+class TestSteppedOutControls:
+    """At phone width the transport bar hides shuffle / repeat / the sleep
+    timer; the compact Now Playing page carries exactly those, driving the
+    bar's own buttons (one source of truth)."""
+
+    @pytest.fixture
+    def pair(self, qapp, isolated_settings, monkeypatch):
+        from PySide6.QtWidgets import QWidget
+
+        from jellytoast import now_playing_bar as _npb
+        from jellytoast.now_playing_page import NowPlayingPage
+        from jellytoast.player_state import QueueContext
+
+        monkeypatch.setattr(_npb, "load_image_async", lambda *a, **k: None)
+        monkeypatch.setattr(pc, "is_mobile_shell", lambda: False)
+        host = QWidget()
+        host.resize(1400, 200)
+        bar = _npb.NowPlayingBar(host)
+        host.show()
+        qm = MagicMock()
+        qm.context = QueueContext()
+        qm.current_index = -1
+        qm.current_item = None
+        qm.original_items = []
+        qm.queue = []
+        page = NowPlayingPage(qm)
+        page.attach_transport_bar(bar)
+        page._apply_width_class(responsive.COMPACT)
+        yield bar, page
+        page.deleteLater()
+        host.deleteLater()
+
+    def test_row_carries_what_the_bar_hid(self, qapp, pair):
+        bar, page = pair
+        bar.resize(1000, 108)
+        _settle(qapp)
+        assert page._stepped_row.isHidden()  # bar has everything
+        bar.resize(500, 108)  # compact: sleep steps out
+        _settle(qapp)
+        assert not page._stepped_row.isHidden()
+        assert not page._stepped_btns["sleep"].isHidden()
+        assert page._stepped_btns["shuffle"].isHidden()
+        bar.resize(380, 108)  # narrow: shuffle + repeat too
+        _settle(qapp)
+        assert not page._stepped_btns["shuffle"].isHidden()
+        assert not page._stepped_btns["repeat"].isHidden()
+
+    def test_page_buttons_drive_the_bar(self, qapp, pair):
+        bar, page = pair
+        bar.resize(380, 108)
+        _settle(qapp)
+        assert not bar.shuffle_btn.isChecked()
+        page._stepped_btns["shuffle"].click()
+        assert bar.shuffle_btn.isChecked()
+        page._stepped_btns["repeat"].click()
+        assert bar._repeat_state == "all"
+
+    def test_hidden_at_regular_width(self, qapp, pair):
+        bar, page = pair
+        bar.resize(380, 108)
+        _settle(qapp)
+        page._apply_width_class(responsive.REGULAR)
+        assert page._stepped_row.isHidden()
