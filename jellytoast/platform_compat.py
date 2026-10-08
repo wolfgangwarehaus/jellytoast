@@ -147,3 +147,40 @@ def is_linux_wayland() -> bool:
     via the Qt FramelessWindowHint (CSD) — so the "native window border" opt-out
     is meaningful. X11 / macOS / Windows are handled by their own gates."""
     return IS_LINUX and will_be_wayland()
+
+
+def is_mobile_shell() -> bool:
+    """A phone shell (Plasma Mobile today). ``startplasmamobile`` exports
+    ``PLASMA_PLATFORM=phone:handset`` and ``QT_QUICK_CONTROLS_MOBILE=true``.
+    Gates *behaviour* (close-to-background, no tray, no mini player) — layout
+    follows window width instead, since docked mode can turn the forced-
+    maximize off mid-session."""
+    if not IS_LINUX:
+        return False
+    if os.environ.get("PLASMA_PLATFORM", "").startswith("phone"):
+        return True
+    return os.environ.get("QT_QUICK_CONTROLS_MOBILE", "").lower() in ("1", "true")
+
+
+APP_ID = "io.github.wolfgangwarehaus.jellytoast"
+
+
+def desktop_entry_id() -> str:
+    """The installed .desktop file's id (no suffix), for MPRIS
+    ``DesktopEntry`` — shells open the app with ``<id>.desktop``, and Plasma
+    shows that entry's icon. Every packaged channel installs the reverse-DNS
+    name; only ``dev/create_desktop_entry.sh`` installs ``jellytoast.desktop``.
+    Inside a flatpak the host's exports aren't visible, but ``FLATPAK_ID`` is
+    the id."""
+    flatpak_id = os.environ.get("FLATPAK_ID", "")
+    if flatpak_id:
+        return flatpak_id
+    data_dirs = [os.environ.get("XDG_DATA_HOME") or os.path.expanduser("~/.local/share")]
+    data_dirs += (os.environ.get("XDG_DATA_DIRS") or "/usr/local/share:/usr/share").split(":")
+    # XDG precedence: the first data dir holding either name wins, so a
+    # user-level dev entry beats a system / flatpak-exported one.
+    for d in data_dirs:
+        for name in (APP_ID, "jellytoast"):
+            if d and os.path.isfile(os.path.join(d, "applications", f"{name}.desktop")):
+                return name
+    return APP_ID

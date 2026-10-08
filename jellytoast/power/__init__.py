@@ -9,7 +9,7 @@ monitor to dim normally.
 Backend (selected once per process, mirroring ``jellytoast.autostart`` /
 ``jellytoast.notifications``):
 - Windows: ``SetThreadExecutionState(ES_CONTINUOUS | ES_SYSTEM_REQUIRED)``
-- Linux:   ``org.freedesktop.ScreenSaver`` Inhibit/UnInhibit (best-effort)
+- Linux:   ``org.freedesktop.PowerManagement.Inhibit``, else the portal suspend inhibit
 - other:   no-op
 """
 

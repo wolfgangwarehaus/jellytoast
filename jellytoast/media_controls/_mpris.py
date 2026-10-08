@@ -72,7 +72,12 @@ class MprisRoot(ServiceInterface):
 
     @dbus_property(access=PropertyAccess.READ)
     def DesktopEntry(self) -> "s":
-        return "jellytoast"
+        # Must name the INSTALLED .desktop: Plasma (Mobile's media widget
+        # included) opens/raises the app via "<DesktopEntry>.desktop" and
+        # takes the player icon from it.
+        from jellytoast.platform_compat import desktop_entry_id
+
+        return desktop_entry_id()
 
     @dbus_property(access=PropertyAccess.READ)
     def SupportedUriSchemes(self) -> "as":

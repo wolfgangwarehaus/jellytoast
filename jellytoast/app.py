@@ -217,6 +217,7 @@ from jellytoast.now_playing_page import NowPlayingPage
 from jellytoast.player_backend import MPV_AVAILABLE, MpvController
 from jellytoast.player_state import (
     PlayerBus,
+    get_now_playing,
 )
 from jellytoast.power import SleepInhibitor
 from jellytoast.providers import get_provider
@@ -1892,11 +1893,30 @@ class JellytoastWindow(_NavMixin, _SessionMixin, _CastDispatcherMixin, _ShuffleP
                     dlg.close()
                 except Exception:
                     pass
-        if getattr(self, "_quitting", False) or not get_settings().minimize_to_tray:
-            QApplication.instance().quit()
-        else:
+        if _close_hides_window(getattr(self, "_quitting", False)):
             self.hide()
             e.ignore()
+        else:
+            QApplication.instance().quit()
+
+
+def _close_hides_window(quitting: bool) -> bool:
+    """Whether closing the main window should hide it (app keeps running)
+    rather than quit.
+
+    Desktop: the "Hide to system tray" setting. A mobile shell draws no tray
+    icons, so a hidden window would be unreachable except by relaunching —
+    there, keep running only while music is actually playing (the shell's
+    media widget and the launcher both bring it back, and swiping the app
+    away shouldn't cut the song off); otherwise really quit."""
+    if quitting:
+        return False
+    from jellytoast.platform_compat import is_mobile_shell
+
+    if is_mobile_shell():
+        np = get_now_playing()
+        return bool(np.item_id) and not np.is_paused
+    return get_settings().minimize_to_tray
 
 
 def _send_startup_notification_remove(startup_id: str):
@@ -2454,7 +2474,11 @@ def main():
     # retention. Functionally equivalent (both pin past `app.exec()`),
     # but the named attribute reads as intentional rather than as a
     # dangling local.
-    win.tray = TrayController(app, mini, win)
+    # No tray on a mobile shell: Plasma Mobile registers a tray host but its
+    # status bar never draws tray items, so the icon would be invisible.
+    from jellytoast.platform_compat import is_mobile_shell
+
+    win.tray = None if is_mobile_shell() else TrayController(app, mini, win)
     _boot_mark("mini player + tray constructed")
 
     # macOS: the global menu bar (App/File/Edit/View/Window/Help), the Dock

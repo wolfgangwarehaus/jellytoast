@@ -1378,6 +1378,11 @@ class SettingsDialog(QDialog):
         self._tray_check.setChecked(self.s.minimize_to_tray)
         self._tray_check.toggled.connect(lambda val: setattr(self.s, "minimize_to_tray", val))
         v.addWidget(self._tray_check)
+        # A mobile shell shows no tray; close keeps playing in the background
+        # on its own there (see app._close_hides_window), so the toggle is moot.
+        from jellytoast.platform_compat import is_mobile_shell
+
+        self._tray_check.setVisible(not is_mobile_shell())
 
         v.addSpacing(12)
 

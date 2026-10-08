@@ -176,3 +176,105 @@ class TestUnsupportedBackend:
         assert _unsupported.is_supported() is False
         assert _unsupported.inhibit() is False
         _unsupported.release()  # must not raise
+
+
+class TestLinuxBackend:
+    """The Linux keep-awake must block SLEEP, not the screen: never
+    org.freedesktop.ScreenSaver (on KDE that keeps the display on and doesn't
+    stop suspend). PowerManagement.Inhibit first, the portal as fallback, and
+    release routed to whichever holds."""
+
+    @pytest.fixture
+    def linux(self, monkeypatch):
+        from jellytoast.power import _linux
+
+        calls = []
+        monkeypatch.setattr(_linux, "_hold", None)
+        monkeypatch.setattr(_linux, "_release_pm", lambda: calls.append("release_pm"))
+        monkeypatch.setattr(_linux, "_release_portal", lambda: calls.append("release_portal"))
+        return _linux, calls
+
+    def test_prefers_power_management(self, linux, monkeypatch):
+        _linux, calls = linux
+        monkeypatch.setattr(_linux, "_inhibit_pm", lambda: True)
+        monkeypatch.setattr(_linux, "_inhibit_portal", lambda: calls.append("portal") or True)
+        assert _linux.inhibit() is True
+        assert _linux._hold == "pm" and "portal" not in calls
+        _linux.release()
+        assert calls == ["release_pm"] and _linux._hold is None
+
+    def test_falls_back_to_portal(self, linux, monkeypatch):
+        _linux, calls = linux
+        monkeypatch.setattr(_linux, "_inhibit_pm", lambda: False)
+        monkeypatch.setattr(_linux, "_inhibit_portal", lambda: True)
+        assert _linux.inhibit() is True and _linux._hold == "portal"
+        _linux.release()
+        assert calls == ["release_portal"]
+
+    def test_nothing_available(self, linux, monkeypatch):
+        _linux, calls = linux
+        monkeypatch.setattr(_linux, "_inhibit_pm", lambda: False)
+        monkeypatch.setattr(_linux, "_inhibit_portal", lambda: False)
+        assert _linux.inhibit() is False
+        _linux.release()
+        assert calls == []
+
+    def test_a_raising_backend_falls_through(self, linux, monkeypatch):
+        _linux, _calls = linux
+
+        def boom():
+            raise RuntimeError("bus gone")
+
+        monkeypatch.setattr(_linux, "_inhibit_pm", boom)
+        monkeypatch.setattr(_linux, "_inhibit_portal", lambda: True)
+        assert _linux.inhibit() is True and _linux._hold == "portal"
+
+    def test_never_uses_the_screensaver_inhibit(self):
+        import inspect
+
+        from jellytoast.power import _linux
+
+        code = "\n".join(
+            line for line in inspect.getsource(_linux).splitlines()
+            if not line.lstrip().startswith("#")
+        )
+        body = code.split('"""', 2)[2]  # past the module docstring
+        assert "org.freedesktop.ScreenSaver" not in body
+
+    def test_portal_call_types_flags_as_uint32(self, monkeypatch):
+        import asyncio
+
+        import dbus_next.aio
+        from dbus_next import MessageType
+
+        from jellytoast.power import _linux
+
+        sent = []
+
+        class _Reply:
+            message_type = MessageType.METHOD_RETURN
+            body = ["/org/freedesktop/portal/desktop/request/1_1/t"]
+
+        class _Bus:
+            def __init__(self, **_kw):
+                pass
+
+            async def connect(self):
+                return self
+
+            async def call(self, msg):
+                sent.append(msg)
+                return _Reply()
+
+            def disconnect(self):
+                pass
+
+        monkeypatch.setattr(dbus_next.aio, "MessageBus", _Bus)
+        hold = _linux._PortalHold.__new__(_linux._PortalHold)
+        hold._bus, hold._handle = None, ""
+        assert asyncio.run(hold._inhibit()) is True
+        msg = sent[0]
+        assert (msg.member, msg.signature) == ("Inhibit", "sua{sv}")
+        assert msg.body[1] == _linux._PORTAL_SUSPEND == 4
+        asyncio.run(hold._close())
+        assert sent[1].member == "Close" and sent[1].path == hold._handle
