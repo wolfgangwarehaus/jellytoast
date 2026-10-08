@@ -61,6 +61,7 @@ from jellytoast.library_grid import (
     _LibraryItemsModel,
     _TileDelegate,
     _year_int,
+    show_tile_context_menu,
 )
 from jellytoast.providers import get_provider
 from jellytoast.search_view import _SongsSection
@@ -309,6 +310,9 @@ class ArtistPage(QWidget):
         install_autofade_scrollbars(self._view)
         # Click routing: overlay → play, anywhere else → browse.
         self._view.mousePressEvent = self._on_view_press
+        # Right-click / touch long-press → the library grid's tile menu.
+        self._view.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self._view.customContextMenuRequested.connect(self._on_view_context_menu)
         # Keyboard routing: Enter on the focused tile plays the album,
         # matching the play-overlay-click intent. focusInEvent seeds
         # currentIndex so the focus ring paints immediately on entry.
@@ -478,6 +482,19 @@ class ArtistPage(QWidget):
             self._top_songs.set_items(top)
 
     # ── Click hit-test ────────────────────────────────────────────────
+
+    def _on_view_context_menu(self, pos):
+        idx = self._view.indexAt(pos)
+        item = idx.data(_LibraryItemsModel.ItemRole) if idx.isValid() else None
+        if not item or not item.get("Id"):
+            return
+        show_tile_context_menu(
+            self._view,
+            item,
+            "album",
+            self._view.viewport().mapToGlobal(pos),
+            on_play=self.album_play_requested.emit,
+        )
 
     def _on_view_press(self, e):
         """Replace QListView.mousePressEvent so we can hit-test the

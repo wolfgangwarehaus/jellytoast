@@ -39,6 +39,7 @@ from jellytoast.library_grid import (
     _artist_id_for_album,
     _LibraryItemsModel,
     _TileDelegate,
+    show_tile_context_menu,
 )
 from jellytoast.providers import get_provider
 from jellytoast.ui_helpers import (
@@ -58,6 +59,22 @@ class _RailListView(QListView):
     play_clicked = Signal(str)  # item_id
     browse_clicked = Signal(str)  # item_id
     artist_browse_clicked = Signal(str)  # artist_id
+
+    def contextMenuEvent(self, e):
+        """Right-click / touch long-press → the same tile menu as the
+        library grid (rails had none, so a long-press on touch was a tap)."""
+        idx = self.indexAt(e.pos())
+        item = idx.data(_LibraryItemsModel.ItemRole) if idx.isValid() else None
+        if not item or not item.get("Id"):
+            super().contextMenuEvent(e)
+            return
+        show_tile_context_menu(
+            self,
+            item,
+            self._delegate._kind,
+            e.globalPos(),
+            on_play=self.play_clicked.emit if self._delegate._show_play_overlay else None,
+        )
 
     def __init__(self, delegate: _TileDelegate, parent=None):
         super().__init__(parent)

@@ -203,3 +203,49 @@ def test_song_menu_without_name_drops_smart_playlist(
         "Add to queue",
         "Start radio from this song",
     ]
+
+
+# ── Rails + artist page share the tile menu ─────────────────────────────
+
+
+def test_rail_tile_menu_matches_the_grid(qapp, captured_menu, _no_downloads, monkeypatch):
+    """Rails had no menu, so a touch long-press there was just a tap."""
+    from jellytoast.horizontal_rail import _RailListView
+    from jellytoast.library_grid import _LibraryItemsModel, _TileDelegate
+
+    model = _LibraryItemsModel()
+    model.set_items([{"Id": "x1", "Name": "Homogenic"}])
+    view = _RailListView(_TileDelegate("album"))
+    view.setModel(model)
+    monkeypatch.setattr(view, "indexAt", lambda _pos: model.index(0, 0))
+
+    view.contextMenuEvent(_ctx_event())
+
+    assert captured_menu["labels"] == [
+        "Play",
+        "Favorite",
+        "Start album radio",
+        "Create smart playlist: More like Homogenic",
+        "Download",
+    ]
+
+
+def test_artist_page_album_menu(qapp, captured_menu, _no_downloads, monkeypatch, isolated_settings):
+    from jellytoast.artist_page import ArtistPage
+
+    page = ArtistPage()
+    try:
+        page._model.set_items([{"Id": "al1", "Name": "Post"}])
+        monkeypatch.setattr(page._view, "indexAt", lambda _pos: page._model.index(0, 0))
+
+        page._on_view_context_menu(QPoint(5, 5))
+
+        assert captured_menu["labels"] == [
+            "Play",
+            "Favorite",
+            "Start album radio",
+            "Create smart playlist: More like Post",
+            "Download",
+        ]
+    finally:
+        page.deleteLater()

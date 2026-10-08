@@ -1619,24 +1619,7 @@ class _LibraryListView(QListView):
     # model directly.
 
     def _toggle_favorite(self, item: Dict, item_id: str) -> None:
-        from jellytoast.player_state import PlayerBus
-        from jellytoast.ui_helpers import toggle_favorite_async
-
-        ud = item.get("UserData")
-        if not isinstance(ud, dict):
-            ud = {}
-            item["UserData"] = ud
-        new_state = not bool(ud.get("IsFavorite", False))
-        ud["IsFavorite"] = new_state
-        # Central dispatch WITH rollback (#234 finding 8): on a failed
-        # server write the helper restores this item dict via the
-        # closure, re-broadcasts the old state, and toasts.
-        toggle_favorite_async(
-            item_id,
-            new_state,
-            on_rollback=lambda: ud.__setitem__("IsFavorite", not new_state),
-        )
-        PlayerBus.get().favorite_toggled.emit(item_id, new_state)
+        toggle_tile_favorite(item, item_id)
 
     def _toggle_download(self, item: Dict, item_id: str) -> None:
         """BL-corner click: download if idle, remove (with cascade
@@ -1667,103 +1650,20 @@ class _LibraryListView(QListView):
         offline.remove(item_id)
 
     def contextMenuEvent(self, e):
-        """Right-click (or long-press, on touch) a tile → play / favorite /
-        radio / smart playlist / download. Play + favorite repeat the
-        hover-revealed tile buttons, which a finger can't reach. This
-        is the only entry point for cascade downloads of albums /
-        playlists / artists; track rows get theirs from
-        ``SongsView._on_context_menu``. Removal of a parent is confirmed
-        first — it cascades (design doc §5.7)."""
+        """Right-click (or long-press, on touch) a tile → the shared tile
+        menu (see :func:`show_tile_context_menu`)."""
         idx = self.indexAt(e.pos())
-        if not idx.isValid():
+        item = idx.data(_LibraryItemsModel.ItemRole) if idx.isValid() else None
+        if not item or not item.get("Id"):
             super().contextMenuEvent(e)
             return
-        item = idx.data(_LibraryItemsModel.ItemRole) or {}
-        item_id = item.get("Id", "")
-        if not item_id:
-            super().contextMenuEvent(e)
-            return
-
-        from jellytoast import offline
-        from jellytoast.ui_helpers import (
-            opaque_menu,
-            open_create_smart_playlist,
-            start_seed_radio,
-        )
-
-        downloaded = offline.is_downloaded(item_id)
-        kind = self._tile_delegate._kind
-        item_name = item.get("Name") or ""
-
-        menu = opaque_menu(self)
-        play_act = None
-        if self._tile_delegate._show_play_overlay:
-            play_act = menu.addAction(self.tr("Play"))
-        fav_on = bool(idx.data(_LibraryItemsModel.IsFavoriteRole))
-        fav_act = menu.addAction(self.tr("Remove from favorites") if fav_on else self.tr("Favorite"))
-        menu.addSeparator()
-        # Album / artist tiles seed an INSTANT_MIX radio queue; the
-        # RadioFeeder auto-extends from the stamped seed_kind. Playlist
-        # tiles have no radio entry point (a playlist is already a
-        # curated set).
-        radio_act = None
-        if kind == "album":
-            radio_act = menu.addAction(self.tr("Start album radio"))
-        elif kind == "artist":
-            radio_act = menu.addAction(self.tr("Start artist radio"))
-        # Create smart playlist from this album / artist — pre-fills the
-        # editor with a from_album / from_artist recipe. Naming follows
-        # the short-suffix idiom: "More like X" / "Deep Cuts: X".
-        sp_act = None
-        if item_name and kind in ("album", "artist"):
-            sp_act = menu.addAction(
-                self.tr("Create smart playlist: More like {0}").format(item_name)
-                if kind == "album"
-                else self.tr("Create smart playlist: Deep Cuts: {0}").format(
-                    item_name
-                )
-            )
-        if radio_act is not None or sp_act is not None:
-            menu.addSeparator()
-        act = menu.addAction(
-            self.tr("Remove download") if downloaded else self.tr("Download")
-        )
-        chosen = menu.exec(e.globalPos())
-        if play_act is not None and chosen is play_act:
-            self.play_requested.emit(item_id)
-            return
-        if chosen is fav_act:
-            self._toggle_favorite(item, item_id)
-            return
-        if radio_act is not None and chosen is radio_act:
-            seed_kind = "album" if kind == "album" else "artist"
-            start_seed_radio(seed_kind, item_id, item_name)
-            return
-        if sp_act is not None and chosen is sp_act:
-            # Pass the full item dict so from_album can read Genres +
-            # ProductionYear for the era-vibe recipe. Falls back to
-            # name-only gracefully if metadata is missing.
-            open_create_smart_playlist(self, kind, item_name, item=item)
-            return
-        if chosen is not act:
-            return
-
-        if not downloaded:
-            offline.download(item)
-            return
-
-        # Removing a parent cascades to its tracks — confirm first.
-        from jellytoast.frosted_dialog import frosted_confirm
-
-        name = item.get("Name") or self.tr("this {0}").format(kind)
-        if frosted_confirm(
+        show_tile_context_menu(
             self,
-            self.tr("Remove download"),
-            self.tr("Remove the downloaded files for “{0}”?").format(name),
-            confirm_text=self.tr("Remove"),
-            destructive=True,
-        ):
-            offline.remove(item_id)
+            item,
+            self._tile_delegate._kind,
+            e.globalPos(),
+            on_play=self.play_requested.emit if self._tile_delegate._show_play_overlay else None,
+        )
 
     def first_visible_row(self) -> int:
         """Top-left row currently on screen, from cell math — the hook
@@ -2804,3 +2704,118 @@ class LibraryGrid(_PaginatorMixin, QWidget):
         letter = self._index_letter_for(item)
         if letter:
             self._alphabet.set_current_letter(letter)
+
+
+
+# ── Shared tile menu (grid, horizontal rails, artist page) ──────────────
+
+
+def toggle_tile_favorite(item: Dict, item_id: str) -> None:
+    """Optimistically flip a tile item's favorite and dispatch it. Central
+    dispatch WITH rollback (#234 finding 8): on a failed server write the
+    helper restores this item dict via the closure, re-broadcasts the old
+    state, and toasts."""
+    from jellytoast.player_state import PlayerBus
+    from jellytoast.ui_helpers import toggle_favorite_async
+
+    ud = item.get("UserData")
+    if not isinstance(ud, dict):
+        ud = {}
+        item["UserData"] = ud
+    new_state = not bool(ud.get("IsFavorite", False))
+    ud["IsFavorite"] = new_state
+    toggle_favorite_async(
+        item_id,
+        new_state,
+        on_rollback=lambda: ud.__setitem__("IsFavorite", not new_state),
+    )
+    PlayerBus.get().favorite_toggled.emit(item_id, new_state)
+
+
+def show_tile_context_menu(parent, item: Dict, kind: str, global_pos, on_play=None) -> None:
+    """The album / playlist / artist tile menu: play / favorite / radio /
+    smart playlist / download. Shared by every surface that shows tiles
+    (library grid, horizontal rails, artist page), so right-click and
+    touch long-press offer the same actions everywhere. Play and favorite
+    repeat the hover-revealed tile buttons a finger can't reach.
+    ``on_play(item_id)`` is omitted where "play" has no meaning (artists).
+    The only entry point for cascade downloads of albums / playlists /
+    artists; removal of a parent is confirmed first — it cascades (design
+    doc §5.7)."""
+    from PySide6.QtCore import QCoreApplication
+
+    from jellytoast import offline
+    from jellytoast.ui_helpers import (
+        opaque_menu,
+        open_create_smart_playlist,
+        start_seed_radio,
+    )
+
+    def tr(text):
+        # Same context the strings had as _LibraryListView.tr(), so the
+        # existing translations still match.
+        return QCoreApplication.translate("_LibraryListView", text)
+
+    item_id = item.get("Id", "")
+    if not item_id:
+        return
+    downloaded = offline.is_downloaded(item_id)
+    item_name = item.get("Name") or ""
+
+    menu = opaque_menu(parent)
+    play_act = menu.addAction(tr("Play")) if on_play is not None else None
+    fav_on = bool((item.get("UserData") or {}).get("IsFavorite"))
+    fav_act = menu.addAction(tr("Remove from favorites") if fav_on else tr("Favorite"))
+    menu.addSeparator()
+    # Album / artist tiles seed an INSTANT_MIX radio queue; the RadioFeeder
+    # auto-extends from the stamped seed_kind. Playlist tiles have no radio
+    # entry point (a playlist is already a curated set).
+    radio_act = None
+    if kind == "album":
+        radio_act = menu.addAction(tr("Start album radio"))
+    elif kind == "artist":
+        radio_act = menu.addAction(tr("Start artist radio"))
+    # Create smart playlist from this album / artist — pre-fills the editor
+    # with a from_album / from_artist recipe ("More like X" / "Deep Cuts: X").
+    sp_act = None
+    if item_name and kind in ("album", "artist"):
+        sp_act = menu.addAction(
+            tr("Create smart playlist: More like {0}").format(item_name)
+            if kind == "album"
+            else tr("Create smart playlist: Deep Cuts: {0}").format(item_name)
+        )
+    if radio_act is not None or sp_act is not None:
+        menu.addSeparator()
+    act = menu.addAction(tr("Remove download") if downloaded else tr("Download"))
+    chosen = menu.exec(global_pos)
+    if play_act is not None and chosen is play_act:
+        on_play(item_id)
+        return
+    if chosen is fav_act:
+        toggle_tile_favorite(item, item_id)
+        return
+    if radio_act is not None and chosen is radio_act:
+        start_seed_radio("album" if kind == "album" else "artist", item_id, item_name)
+        return
+    if sp_act is not None and chosen is sp_act:
+        # The full item dict lets from_album read Genres + ProductionYear for
+        # the era-vibe recipe (falls back to name-only without them).
+        open_create_smart_playlist(parent, kind, item_name, item=item)
+        return
+    if chosen is not act:
+        return
+    if not downloaded:
+        offline.download(item)
+        return
+    # Removing a parent cascades to its tracks — confirm first.
+    from jellytoast.frosted_dialog import frosted_confirm
+
+    name = item.get("Name") or tr("this {0}").format(kind)
+    if frosted_confirm(
+        parent,
+        tr("Remove download"),
+        tr("Remove the downloaded files for “{0}”?").format(name),
+        confirm_text=tr("Remove"),
+        destructive=True,
+    ):
+        offline.remove(item_id)
