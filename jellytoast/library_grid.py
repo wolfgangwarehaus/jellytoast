@@ -61,14 +61,13 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from jellytoast import disk_cache
-
 # Hot-path import: paint loops read TEXT / ACCENT via this module ref
 # so they pick up live-theme / live-accent changes without paying
 # Python's full `from jellytoast.ui_helpers import …` machinery on every
 # tile paint. Attribute access (``_u.TEXT``) is a single sys.modules
 # lookup; ``from X import Y`` inside a paint runs the IMPORT_NAME +
 # IMPORT_FROM opcodes every call.
+from jellytoast import disk_cache, touch
 from jellytoast import ui_helpers as _u
 from jellytoast.design_tokens import (
     RADIUS_LG,
@@ -758,7 +757,14 @@ class _TileDelegate(QStyledItemDelegate):
         # is theme-aware (light on a light theme, dark on dark) and the
         # glyph is theme-ink. Skipped for artists ("play an artist"
         # has no canonical meaning).
-        if self._show_play_overlay and option.state & QStyle.StateFlag.State_MouseOver:
+        # Hover affordances stay hidden after a touch: Qt's touch→mouse
+        # emulation sets the hover state, but a tap there won't fire them.
+        hover_ui = not touch.last_input_was_touch()
+        if (
+            hover_ui
+            and self._show_play_overlay
+            and option.state & QStyle.StateFlag.State_MouseOver
+        ):
             ov_rect = self.overlay_rect_for(rect)
             painter.save()
             painter.setPen(Qt.PenStyle.NoPen)
@@ -798,7 +804,7 @@ class _TileDelegate(QStyledItemDelegate):
         # progress RING stays unconditional (it's a status indicator, not a
         # reach-for-it button).
         dl_fraction = float(index.data(_LibraryItemsModel.DownloadFractionRole) or -1.0)
-        is_hovered = bool(option.state & QStyle.StateFlag.State_MouseOver)
+        is_hovered = hover_ui and bool(option.state & QStyle.StateFlag.State_MouseOver)
 
         def _in_corner(corner: str) -> bool:
             return (
@@ -1534,13 +1540,18 @@ class _LibraryListView(QListView):
             # → fall through. Corner buttons sit on top of the cover
             # so they outrank the play overlay; they're hover-revealed
             # but Qt's underMouse state implies hover anyway.
+            # Corner buttons + the play disc are revealed by mouse HOVER;
+            # a finger never hovers, so on touch a tap anywhere on the tile
+            # opens it (play / favorite / download live in its long-press
+            # menu and on the album page instead).
+            hover_live = not touch.is_touch_event(e)
             heart_rect = self._tile_delegate.heart_rect_for(cell)
-            if heart_rect.contains(pos) and item_id:
+            if hover_live and heart_rect.contains(pos) and item_id:
                 self._toggle_favorite(item, item_id)
                 e.accept()
                 return
             dl_rect = self._tile_delegate.download_rect_for(cell)
-            if dl_rect.contains(pos) and item_id:
+            if hover_live and dl_rect.contains(pos) and item_id:
                 # During an in-flight download the BL slot is the
                 # progress ring — clicks fall through to the normal
                 # browse so the user doesn't accidentally cancel by
@@ -1551,7 +1562,12 @@ class _LibraryListView(QListView):
                     e.accept()
                     return
             ov_rect = self._tile_delegate.overlay_rect_for(cell)
-            if self._tile_delegate._show_play_overlay and ov_rect.contains(pos) and item_id:
+            if (
+                hover_live
+                and self._tile_delegate._show_play_overlay
+                and ov_rect.contains(pos)
+                and item_id
+            ):
                 self.play_requested.emit(item_id)
                 e.accept()
                 return
@@ -1651,7 +1667,9 @@ class _LibraryListView(QListView):
         offline.remove(item_id)
 
     def contextMenuEvent(self, e):
-        """Right-click a tile → radio / smart playlist / download. This
+        """Right-click (or long-press, on touch) a tile → play / favorite /
+        radio / smart playlist / download. Play + favorite repeat the
+        hover-revealed tile buttons, which a finger can't reach. This
         is the only entry point for cascade downloads of albums /
         playlists / artists; track rows get theirs from
         ``SongsView._on_context_menu``. Removal of a parent is confirmed
@@ -1678,6 +1696,12 @@ class _LibraryListView(QListView):
         item_name = item.get("Name") or ""
 
         menu = opaque_menu(self)
+        play_act = None
+        if self._tile_delegate._show_play_overlay:
+            play_act = menu.addAction(self.tr("Play"))
+        fav_on = bool(idx.data(_LibraryItemsModel.IsFavoriteRole))
+        fav_act = menu.addAction(self.tr("Remove from favorites") if fav_on else self.tr("Favorite"))
+        menu.addSeparator()
         # Album / artist tiles seed an INSTANT_MIX radio queue; the
         # RadioFeeder auto-extends from the stamped seed_kind. Playlist
         # tiles have no radio entry point (a playlist is already a
@@ -1705,6 +1729,12 @@ class _LibraryListView(QListView):
             self.tr("Remove download") if downloaded else self.tr("Download")
         )
         chosen = menu.exec(e.globalPos())
+        if play_act is not None and chosen is play_act:
+            self.play_requested.emit(item_id)
+            return
+        if chosen is fav_act:
+            self._toggle_favorite(item, item_id)
+            return
         if radio_act is not None and chosen is radio_act:
             seed_kind = "album" if kind == "album" else "artist"
             start_seed_radio(seed_kind, item_id, item_name)

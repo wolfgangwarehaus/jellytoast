@@ -115,6 +115,8 @@ def test_album_menu_offers_radio_smart_playlist_download(
     view.contextMenuEvent(_ctx_event())
 
     assert captured_menu["labels"] == [
+        "Play",
+        "Favorite",
         "Start album radio",
         "Create smart playlist: More like Homogenic",
         "Download",
@@ -129,7 +131,10 @@ def test_artist_menu_offers_radio_smart_playlist_download(
 
     view.contextMenuEvent(_ctx_event())
 
+    # No "Play" on artists (there's no canonical "play an artist" — same
+    # rule as the tile's hover play disc).
     assert captured_menu["labels"] == [
+        "Favorite",
         "Start artist radio",
         "Create smart playlist: Deep Cuts: Homogenic",
         "Download",
@@ -140,13 +145,13 @@ def test_playlist_menu_has_no_radio_or_smart_playlist(
     qapp, captured_menu, _no_downloads, monkeypatch
 ):
     """A playlist is already a curated set — no radio, no smart-playlist
-    recipe; only the download entry."""
+    recipe; play / favorite / download only."""
     view, model = _make_library_view("playlist")
     monkeypatch.setattr(view, "indexAt", lambda _pos: model.index(0, 0))
 
     view.contextMenuEvent(_ctx_event())
 
-    assert captured_menu["labels"] == ["Download"]
+    assert captured_menu["labels"] == ["Play", "Favorite", "Download"]
 
 
 # ── Song rows ────────────────────────────────────────────────────────────

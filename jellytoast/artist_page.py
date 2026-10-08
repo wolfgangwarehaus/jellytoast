@@ -36,6 +36,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from jellytoast import touch
 from jellytoast.async_io import run_async
 from jellytoast.design_tokens import (
     SPACE_LG,
@@ -495,6 +496,7 @@ class ArtistPage(QWidget):
         cell = self._view.visualRect(idx)
         if (
             self._delegate._show_play_overlay
+            and not touch.is_touch_event(e)  # hover-revealed: not hit-live on touch
             and self._delegate.overlay_rect_for(cell).contains(pos)
             and item_id
         ):

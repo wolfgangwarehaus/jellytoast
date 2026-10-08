@@ -2373,6 +2373,13 @@ def main():
     app._smooth_scroll = SmoothScrollFilter(app)
     app.installEventFilter(app._smooth_scroll)
 
+    # Touchscreen support (Plasma Mobile, touch laptops): flick scrolling,
+    # tap-on-release inside scrolling views, long-press context menus. Only
+    # reacts to TouchScreen input — mouse / trackpad behaviour is unchanged.
+    from jellytoast import touch
+
+    touch.install(app)
+
     # Single-instance gate. Held by QSharedMemory; the QLocalServer is
     # the message channel for "raise me" pings from subsequent launch
     # attempts. We bind the result to `app` so it shares the app's
