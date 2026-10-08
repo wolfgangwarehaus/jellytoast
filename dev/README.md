@@ -14,6 +14,7 @@ index over renaming/moving.
 | `run.sh` / `install.sh` / `install_doctor.py` / `create_desktop_entry.sh` | Local dev setup: run from checkout, system install, install verifier, desktop shortcut. |
 | `smoke_test.py` | Headless end-to-end smoke against a live server (auth, search, stream, covers). Run by `qa_harness.py` and CI-adjacent checks. |
 | `qa_harness.py` | Screenshot-gallery QA driver: sweeps every surface (dark+light, window states, mini player, dialogs) via the test bridge using REAL compositor capture (`spectacle`/PowerShell — never `win.grab()`, it's blur-blind). |
+| `headless/sitecustomize.py` | Put `dev/headless` on `PYTHONPATH` for an offscreen app run — fakes a system tray so boot doesn't block on the modal "No system tray" warning. Full isolated-run recipe in `PLASMA_MOBILE_PLAN.md`. |
 | `jt_ctl.py` / `jt_drive.py` | Test-bridge clients (app launched with `JT_TEST_BRIDGE=1`): one-shot CLI / reusable scenario library. `TMPDIR=/tmp` on both ends is load-bearing on Linux. |
 | `gen_stress_library.py` | Generates a Skope-scale synthetic library (5,200 albums / 72.8k tracks / unique mixed-size covers, ~1.7 GB) for any Navidrome. Built for #cover-stall; reusable for all large-library work. |
 | `repro_cover_stall.py` | Drives the REAL provider + image loader + connectivity tracker against a live (throttled) server — the harness that reproduced and then verified the #cover-stall fix. Pair with `gen_stress_library.py`. |
@@ -37,6 +38,7 @@ pattern: `git pull`, open Claude Code at the repo root, say
 | `QA_STEAMDECK_FLATPAK.md` | The Deck flatpak leg (PR #231's matrix). |
 | `QA_STEAMDECK_BLUR.md` | Deck blur diagnosis (#229) + the opaque-blur follow-up — **resolved**, kept for the methodology (complementary-wallpaper trap, red/green control test). |
 | `QA_PICKUP.md` | Known QA-infra gaps to pick up (e.g. Windows capture foreground race). |
+| `PLASMA_MOBILE_PLAN.md` | Plasma Mobile support: audit findings + the phased checklist (quick fixes → fit the screen → touch → polish). |
 
 ## Historical findings (evidence — read, don't rerun)
 

@@ -12,6 +12,24 @@ developer-facing history lives in [`docs/CHANGELOG.md`](docs/CHANGELOG.md).
      should stand alone: the Store "What's new" shows just the title (+ first
      sentence in --detail mode). -->
 
+- **Fits phones and narrow windows.** jellytoast now works down to 360 px
+  wide — Plasma Mobile included: a compact player bar, Now Playing as one
+  pane with a Playing / Tracks switch, a slimmer top bar, and a section
+  picker in Settings. On desktop, the window can finally be made narrow.
+- **Touchscreen support.** Flick to scroll, tap to open, long-press for the
+  same menu a right-click gives. Touching a tile to scroll no longer opens
+  it. Album and playlist menus now also have Play and Favorite.
+- **Music no longer keeps your screen on.** On KDE, playing music used to
+  stop the screen from dimming and locking — without actually preventing
+  sleep. Now it's the other way round: the screen can turn off, and the
+  computer stays awake while music plays.
+- **Media controls open jellytoast.** Tapping jellytoast in Plasma's media
+  controls (and on the Plasma Mobile lock screen) now opens the app on
+  flatpak / deb / AppImage / AUR installs, with the right icon.
+- **Closing on Plasma Mobile.** Swiping jellytoast away keeps the music
+  playing in the background (tap the media controls to come back);
+  with nothing playing it just closes. No more invisible tray icon there.
+
 ## [0.2.2] — 2026-10-05
 
 - **Works with Jellyfin 12.** Jellyfin 12 turned off the old sign-in method
