@@ -2020,6 +2020,29 @@ def _setup_hidpi() -> None:
     QGuiApplication.setHighDpiScaleFactorRoundingPolicy(
         Qt.HighDpiScaleFactorRoundingPolicy.PassThrough
     )
+    _apply_phone_scale()
+
+
+# A phone shell gets the whole UI scaled up — fonts, spacing, covers and
+# buttons together — so it reads at phone size instead of a desktop UI
+# shrunk onto a small screen. 1.5 turns a ~600 px-wide Plasma Mobile screen
+# into ~400 logical px, about what phone UIs are laid out for, so the
+# compact layouts engage. JT_PHONE_SCALE overrides (1 = off); an exported
+# QT_SCALE_FACTOR always wins.
+PHONE_SCALE = 1.5
+
+
+def _apply_phone_scale() -> None:
+    from jellytoast.platform_compat import is_mobile_shell
+
+    if "QT_SCALE_FACTOR" in os.environ or not is_mobile_shell():
+        return
+    try:
+        scale = float(os.environ.get("JT_PHONE_SCALE", PHONE_SCALE))
+    except ValueError:
+        scale = PHONE_SCALE
+    if scale > 0 and scale != 1:
+        os.environ["QT_SCALE_FACTOR"] = f"{scale:g}"
 
 
 def _shutdown_log(msg: str) -> None:

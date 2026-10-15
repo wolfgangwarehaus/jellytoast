@@ -190,6 +190,10 @@ class _LeftPaneMixin:
                 self._scroll_to_active_lyric(self._active_line_idx)
         self._update_live_btn_visibility()
 
+    def _fit_compact_cover(self):
+        """Hook: the host re-sizes its cover when the pane's content changes
+        (NowPlayingPage grows it at phone width). No-op by default."""
+
     def _update_lyrics_visibility(self):
         # Preview mode forces lyrics + visualizer off — the user is
         # browsing, not listening.
@@ -238,6 +242,7 @@ class _LeftPaneMixin:
         }.get(nxt, QCoreApplication.translate("NowPlayingPage", "Show lyrics"))
         self._lyrics_toggle_btn.setText(next_label)
         self._sync_lyrics_toggle_visibility()
+        self._fit_compact_cover()
 
     @staticmethod
     def _next_left_pane_mode(current: str) -> str:

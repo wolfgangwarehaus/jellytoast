@@ -94,3 +94,19 @@ def test_rearm_is_noop_when_nothing_deferred(qapp, monkeypatch):
     monkeypatch.setattr(g, "_load_visible_covers", lambda: fired.__setitem__("n", fired["n"] + 1))
     g._rearm_failed_covers()
     assert fired["n"] == 0  # no failed covers → no work
+
+
+def test_coming_back_to_the_front_rechecks_visible_covers(qapp, monkeypatch):
+    """Paint keeps on-screen covers resident; an app behind another window
+    (a phone task switch, a launch in the background) paints nothing, so
+    prefetch can evict the visible tiles. Activation re-runs the pass."""
+    from PySide6.QtCore import Qt
+
+    g = lg.LibraryGrid("album")
+    g._model.set_items([{"Id": "a1"}])
+    fired = []
+    monkeypatch.setattr(g, "_load_visible_covers", lambda: fired.append(1))
+    g._on_app_state_changed(Qt.ApplicationState.ApplicationInactive)
+    g._on_app_state_changed(Qt.ApplicationState.ApplicationActive)
+    qapp.processEvents()
+    assert fired == [1]

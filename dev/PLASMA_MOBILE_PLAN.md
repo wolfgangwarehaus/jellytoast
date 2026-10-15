@@ -6,18 +6,17 @@ scale 2). Tick boxes as work lands; keep findings here, not in memory.
 
 ## ▶ Start here (next session)
 
-State as of 2026-10-08: phases 1–4 are **committed and pushed** on `main`
-(phase 4: `e6b70aa` compact NP shuffle/repeat/sleep row, `1de9d3e` shared tile
-menu, `533c40f` mini player / MPRIS local art / no login autofocus). Still
-open: the touch + on-screen-keyboard check on real hardware, and the metainfo
-"phone-friendly" flag, which is **on hold** (august: the app needs more work
-before we advertise it). `packaging/pyinstaller/jellytoast.spec` is august's
-own unrelated edit; leave it out of commits.
+State as of 2026-10-15: phases 1–5 are **committed** on `main` (phase 5,
+the phone sweep, as one commit, with CHANGELOG lines for phases 4–5). Now
+sweeping the remaining screens at phone scale — see "Phase 5" → "Next".
 
-0. **0.2.2 release:** every asset is rebuilt and Apple already approved 0.2.2
-   on the Mac App Store; august only has to publish the draft
-   (`gh release edit v0.2.2 --draft=false --latest`). The mobile work isn't in
-   0.2.2.
+Still open: the touch + on-screen-keyboard check on real hardware, and the
+metainfo "phone-friendly" flag, which is **on hold** (august: the app needs
+more work before we advertise it). `packaging/pyinstaller/jellytoast.spec` is
+august's own unrelated edit; leave it out of commits.
+
+0. **0.2.2 is published** (draft went live 2026-10-08). The mobile work
+   (phases 1–5) goes in the next release.
 1. **Real-device pass on august's Plasma Mobile session** (the one thing the
    headless runs can't cover): run from the checkout, then check — window fits
    601 px; compact bar; Now Playing Playing | Tracks switch; Settings dropdown;
@@ -221,6 +220,63 @@ All in `jellytoast/touch.py` (one QApplication event filter, installed in
 - [ ] Consider aligning the Wayland app_id with the reverse-DNS desktop id
   (`app.setDesktopFileName("jellytoast")` today; KDE matches via
   `StartupWMClass`, but Flathub/GNOME prefer app_id == desktop id).
+
+## Phase 5 — phone sweep (2026-10-08)
+
+august, on his Plasma Mobile session: "the overall scale is still much too
+small … much bigger fonts and scale and buttons", and "usable and touchable".
+
+Done (verified live on his session via the test bridge + `win.grab()`; tests
+for each):
+- [x] **Whole-UI phone scale.** `app._apply_phone_scale()` sets
+  `QT_SCALE_FACTOR=1.5` before QApplication on a mobile shell → his 600 px
+  screen is ~400 logical px, so every compact layout engages. Override with
+  `JT_PHONE_SCALE=<n>` (1 = off); an exported `QT_SCALE_FACTOR` wins.
+- [x] **Touch targets.** `IconButton` lifts itself to 48 px (glyph ≥ 24) on a
+  mobile shell (`icon_button.TOUCH_TARGET`); hover-only cover overlays opt
+  out (`touch_target = False`). Menu rows are finger-tall
+  (`ui_helpers.menu_item_vpad`).
+- [x] **Transport bar touch tiers** (`now_playing_bar._TOUCH_*`): 48 px
+  buttons, 56 px play, thick seek strip; sleep steps out < 720, shuffle /
+  repeat < 540, cast < 420 → cover · prev/play/next · volume fits 360 px.
+  Unequal clusters allowed when two equal ones can't fit (play a few px
+  off-centre rather than overflow / ratchet).
+- [x] **Top bar on a phone:** back · view dropdown · search · ⋮. The ⋮ menu
+  (`_show_more_menu`) holds Libraries…, Shuffle all, Sort…, grid/list, Home,
+  Settings. Dropdown re-centres after the flip (deferred `_fit_library_title`).
+- [x] **Now Playing:** cover ~85 % of width (max 360; 240 while lyrics /
+  visualizer share the pane), tabs 48 px, stepped row also carries cast,
+  flat icon styling. Browsing an album: tab reads "Album"/"Playlist", opens on
+  it, no queue-control row.
+- [x] **Artist page** two album columns; **Songs** rows stack title over
+  "artist · album" below 560 px; **Search** drops the redundant ✕;
+  **Settings** wraps the long notification option, "Check now" on its own
+  line, no focus box on ⓘ.
+- [x] **Bug:** covers on screen could stay placeholders after the app started
+  or sat in the background (nothing painted → LRU evicted them, nothing
+  re-armed). `LibraryGrid` now re-runs the visible-cover pass on
+  `applicationStateChanged → Active`.
+
+Next (the rest of the sweep):
+- [x] Commit phase 5 (single commit) + CHANGELOG lines for phases 4–5.
+- [ ] Ask august if 1.5× feels right on the device (try `JT_PHONE_SCALE=1.75`);
+  maybe a Settings "Interface size" option instead of env only.
+- [ ] Not yet swept at phone scale: queue/Up Next, radio, downloads, Smart
+  Mix editor, tag editor, cast dialog, login screen, other Settings pages
+  (Playback / Casting / Display / Hotkeys / Scrobbling), context menus.
+- [ ] Bar cover duplicates the big cover on Now Playing (could hide on the
+  compact NP page). Playlists empty state says "Click" (→ "Tap" on touch).
+  Settings button text sizes vary ("Change server URL…" vs "Check now").
+- [ ] Top bar view dropdown still reads "Albums" on artist / search pages
+  reached via internal nav — check it updates in real navigation.
+- [ ] The ⋮ menu was only verified in tests (popups don't show in
+  `win.grab()`); august to eyeball it.
+- [ ] Cover LRU is 64 MiB ≈ 55 covers at the phone scale (DPR 3); fine with
+  the activation re-arm, but consider a DPR-aware budget.
+- [ ] Order-dependent flaky tests (test_live_font, test_tile_corner_hover,
+  one full-suite hang seen once) — flagged as a separate task. Tip: run
+  single test files with `QT_QPA_PLATFORM=offscreen` (the sandbox has no
+  display; the full suite sets it via some module).
 
 ## Toward iOS / Android (scaffolding, not apps yet)
 

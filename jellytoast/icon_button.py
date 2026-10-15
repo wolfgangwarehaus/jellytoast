@@ -19,12 +19,38 @@ just call setIcon again) keep working with zero call-site churn.
 
 from __future__ import annotations
 
-from PySide6.QtCore import QPointF, Qt
+from PySide6.QtCore import QPointF, QSize, Qt
 from PySide6.QtGui import QIcon, QPainter
 from PySide6.QtWidgets import QPushButton
 
+from jellytoast import platform_compat
+
+# Touch sizing on a phone shell (Plasma Mobile): every icon button is at
+# least a 48 px finger target (Kirigami / Material guidance) with a glyph to
+# match. Desktop sizes are untouched. Applied here, at the one place every
+# chrome button sizes itself, so call sites keep their desktop numbers.
+TOUCH_TARGET = 48
+TOUCH_ICON = 24
+
+
+def touch_size(size: QSize) -> QSize:
+    """``size`` lifted to the touch target on a mobile shell."""
+    if platform_compat.is_mobile_shell():
+        return size.expandedTo(QSize(TOUCH_TARGET, TOUCH_TARGET))
+    return size
+
+
+def touch_icon_size(size: QSize) -> QSize:
+    if platform_compat.is_mobile_shell():
+        return size.expandedTo(QSize(TOUCH_ICON, TOUCH_ICON))
+    return size
+
 
 class IconButton(QPushButton):
+    # Off for hover-revealed overlays (a heart on a cover): touch never
+    # shows them, and a 48 px disc would swamp a tile.
+    touch_target = True
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self._jt_qicon: QIcon | None = None
@@ -44,6 +70,13 @@ class IconButton(QPushButton):
         self._jt_qicon = icon
         self.update()
 
+    def setFixedSize(self, *args) -> None:  # noqa: N802 — Qt override
+        size = QSize(*args) if len(args) == 2 else QSize(args[0])
+        super().setFixedSize(touch_size(size) if self.touch_target else size)
+
+    def setIconSize(self, size: QSize) -> None:  # noqa: N802 — Qt override
+        super().setIconSize(touch_icon_size(size) if self.touch_target else size)
+
     def icon(self) -> QIcon:  # noqa: N802 — keep the getter consistent
         return self._jt_qicon if self._jt_qicon is not None else QIcon()
 
@@ -52,7 +85,8 @@ class IconButton(QPushButton):
         # it. A button that doesn't setFixedSize would collapse to a bare
         # frame — fall back to the icon size so it stays the right size.
         s = self.iconSize()
-        return s if not s.isEmpty() else super().sizeHint()
+        hint = s if not s.isEmpty() else super().sizeHint()
+        return touch_size(hint) if self.touch_target else hint
 
     def paintEvent(self, e):  # noqa: N802 — Qt override
         # QPushButton paints the flat background + hover/pressed wash (it has

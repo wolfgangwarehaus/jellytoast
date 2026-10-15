@@ -51,3 +51,18 @@ def test_no_count_until_albums_resolve(qapp, monkeypatch):
     monkeypatch.setattr(page.api, "get_image_url", lambda *a, **k: "")
     page._on_meta_loaded("art3", {"Name": "A", "Genres": ["Rock"]})
     assert page._info.text() == "Rock"
+
+
+def test_narrow_width_fits_two_album_columns(qapp):
+    """A phone-width artist page shows two (smaller) album columns, not one
+    natural-size tile beside an empty half."""
+    page = ap.ArtistPage()
+    try:
+        cell = page._delegate.CELL_W
+        page._fit_columns(2 * cell + 40)
+        assert page._view.gridSize().isEmpty()  # natural cells fit two
+        page._fit_columns(360)
+        g = page._view.gridSize()
+        assert 2 * g.width() <= 360 and g.width() < cell
+    finally:
+        page.deleteLater()

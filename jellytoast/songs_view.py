@@ -192,6 +192,9 @@ class _SongRowDelegate(QStyledItemDelegate):
     COL_GAP = SPACE_MD
     DURATION_W = 56
     THUMB_RADIUS = RADIUS_SM
+    # Below this row width (a phone) the three columns each elided to a few
+    # letters; stack instead: title over "artist · album".
+    STACK_BELOW = 560
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -288,6 +291,10 @@ class _SongRowDelegate(QStyledItemDelegate):
 
         cols_x = thumb_rect.right() + self.COL_GAP
         cols_right = rect.right() - self.RIGHT_PAD - self.DURATION_W - self.COL_GAP
+        if rect.width() < self.STACK_BELOW:
+            self._paint_stacked(painter, rect, item, cols_x, cols_right, _TEXT, _ink)
+            painter.restore()
+            return
         cols_w = max(0, cols_right - cols_x)
         title_w = int(cols_w * 3 / 7)
         artist_w = int(cols_w * 2 / 7)
@@ -356,9 +363,45 @@ class _SongRowDelegate(QStyledItemDelegate):
 
         painter.restore()
 
+    def _paint_stacked(self, painter, rect, item, x, right, text_color, ink):
+        """Narrow row: title on top, "artist · album" below, duration right."""
+        w = max(0, right - x)
+        mid = rect.y() + rect.height() // 2
+        painter.setFont(self._body_font)
+        painter.setPen(QColor(text_color))
+        title = item.get("Name") or self.tr("Unknown")
+        painter.drawText(
+            QRect(x, rect.y(), w, mid - rect.y() + 1),
+            int(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignBottom),
+            self._fm_body.elidedText(title, Qt.TextElideMode.ElideRight, w),
+        )
+        artists = item.get("Artists") or []
+        artist = ", ".join(artists) if artists else (item.get("AlbumArtist", "") or "")
+        sub = " · ".join(t for t in (artist, item.get("Album", "") or "") if t)
+        painter.setFont(self._caption_font)
+        painter.setPen(QColor(*ink, 150))
+        painter.drawText(
+            QRect(x, mid + 2, w, rect.bottom() - mid - 2),
+            int(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop),
+            self._fm_caption.elidedText(sub, Qt.TextElideMode.ElideRight, w),
+        )
+        ticks = item.get("RunTimeTicks", 0) or 0
+        if ticks:
+            painter.setFont(self._mono_font)
+            painter.setPen(QColor(*ink, 150))
+            painter.drawText(
+                QRect(right + self.COL_GAP, rect.y(), self.DURATION_W, rect.height()),
+                int(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter),
+                fmt_duration_ticks(ticks),
+            )
+
     def album_rect_for(self, option_rect: QRect) -> QRect:
         """Sub-rect of the album column. Mirrors :meth:`paint`'s column
-        math so the view can hit-test album clicks against this rect."""
+        math so the view can hit-test album clicks against this rect.
+        Empty for a stacked (narrow) row: the album is part of the
+        subtitle there, and a tap plays the song."""
+        if option_rect.width() < self.STACK_BELOW:
+            return QRect()
         cols_x = option_rect.x() + self.LEFT_PAD + self.THUMB_SIZE + self.COL_GAP
         cols_right = option_rect.right() - self.RIGHT_PAD - self.DURATION_W - self.COL_GAP
         cols_w = max(0, cols_right - cols_x)

@@ -1156,7 +1156,13 @@ class SettingsDialog(QDialog):
         # About button (info circle) — opens a small overlay with the
         # name + version + blurb. Replaces the prior About settings page.
         about_btn = IconButton()
-        about_btn.setFocusPolicy(Qt.FocusPolicy.TabFocus)  # keyboard-reachable
+        from jellytoast.platform_compat import is_mobile_shell
+
+        # Keyboard-reachable — but not on a phone, where nothing tabs and the
+        # dialog's first focusable widget opened with a focus ring on it.
+        about_btn.setFocusPolicy(
+            Qt.FocusPolicy.NoFocus if is_mobile_shell() else Qt.FocusPolicy.TabFocus
+        )
         about_btn.setIcon(icon("info"))
         about_btn.setIconSize(QSize(18, 18))
         about_btn.setFixedSize(32, 28)
@@ -1452,7 +1458,15 @@ class SettingsDialog(QDialog):
             self._track_notify_check.toggled.connect(
                 lambda val: setattr(self.s, "notify_on_track_change", val)
             )
-            v.addWidget(self._track_notify_check)
+            # A sentence-long label: on a phone it wraps (a QCheckBox can't).
+            from jellytoast.platform_compat import is_mobile_shell
+            from jellytoast.ui_helpers import wrapping_checkbox
+
+            v.addWidget(
+                wrapping_checkbox(self._track_notify_check)
+                if is_mobile_shell()
+                else self._track_notify_check
+            )
 
             v.addSpacing(12)
 
@@ -1522,8 +1536,15 @@ class SettingsDialog(QDialog):
             up_row.addStretch(1)
             self._update_check_now = QPushButton(self.tr("Check now"))
             self._update_check_now.clicked.connect(self._on_check_updates_now)
-            up_row.addWidget(self._update_check_now)
             v.addLayout(up_row)
+            from jellytoast.platform_compat import is_mobile_shell
+
+            if is_mobile_shell():
+                # No room beside the checkbox at phone width — its own line.
+                v.addSpacing(6)
+                v.addWidget(self._update_check_now, 0, Qt.AlignmentFlag.AlignLeft)
+            else:
+                up_row.addWidget(self._update_check_now)
 
         # ── Diagnostics ───────────────────────────────────────────────
         # One-click support report (diagnostics.collect_report): versions,

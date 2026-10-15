@@ -115,7 +115,13 @@ class JtTopBar(QWidget):
         # titlebar: drag-to-move, double-click-maximize, and a
         # min / max / close cluster on the right.
         self._titlebar_mode = titlebar_mode
-        self.setFixedHeight(48)
+        from jellytoast.platform_compat import is_mobile_shell
+
+        # Touch: 48 px icon buttons (icon_button.TOUCH_TARGET) need the room,
+        # and the text dropdowns match their pill height.
+        touch = is_mobile_shell()
+        self.setFixedHeight(60 if touch else 48)
+        pill_h = 48 if touch else 34
         self.setObjectName("jtTopBar")
         # Transparent so the host window's painted body shows through.
         self.setStyleSheet("""
@@ -191,13 +197,14 @@ class JtTopBar(QWidget):
         self.library_btn.setIconSize(QSize(13, 13))
         self.library_btn.setLayoutDirection(Qt.LayoutDirection.RightToLeft)
         self.library_btn.setToolTip(self.tr("Choose which libraries to load"))
-        self.library_btn.setFixedHeight(34)
+        self.library_btn.setFixedHeight(pill_h)
         # Same overflow guard as title_label — a long library name in a big font
         # can't push the rest of the bar off-screen. QPushButton elides its label
         # with "…" when capped; the full name stays in the tooltip.
         self.library_btn.setMaximumWidth(260)
         self.library_btn.setStyleSheet(self._view_btn_qss())
-        self.library_btn.clicked.connect(self._show_library_menu)
+        # lambda: clicked(bool) would otherwise land in the anchor parameter.
+        self.library_btn.clicked.connect(lambda: self._show_library_menu())
         self._install_enter_to_click(self.library_btn)
         self.library_btn.hide()
         left_layout.addWidget(self.library_btn)
@@ -250,7 +257,7 @@ class JtTopBar(QWidget):
         # sizes to its natural text-padding height (~28 px) and the
         # highlight pill comes out visibly shorter than the shuffle /
         # view-toggle / sort buttons next to it.
-        self.view_btn.setFixedHeight(34)
+        self.view_btn.setFixedHeight(pill_h)
         self.view_btn.setStyleSheet(self._view_btn_qss())
         self.view_btn.clicked.connect(self._show_view_menu)
         self._install_enter_to_click(self.view_btn)
@@ -312,7 +319,7 @@ class JtTopBar(QWidget):
         )
         self._sort_order = s.library_sort_order
         self.sort_btn = self._icon_btn("sort", "")
-        self.sort_btn.clicked.connect(self._show_sort_menu)
+        self.sort_btn.clicked.connect(lambda: self._show_sort_menu())
         self._install_enter_to_click(self.sort_btn)
         lc.addWidget(self.sort_btn)
         self._refresh_sort_btn_tooltip()
@@ -364,6 +371,14 @@ class JtTopBar(QWidget):
         self.search_btn.setStyleSheet(self._search_btn_qss())
         self.search_btn.clicked.connect(lambda: self.nav_requested.emit("search"))
         right_layout.addWidget(self.search_btn)
+
+        # Phone (touch + compact): what doesn't fit at finger size — settings,
+        # the library picker, shuffle all, sort, grid/list, home — lives in
+        # this overflow menu instead. Hidden everywhere else.
+        self.more_btn = self._icon_btn("more_vert", self.tr("More"))
+        self.more_btn.clicked.connect(self._show_more_menu)
+        self.more_btn.hide()
+        right_layout.addWidget(self.more_btn)
 
         # Window controls — present only when the bar is the borderless
         # window's titlebar (KWin draws none of its own then). min / max
@@ -500,6 +515,52 @@ class JtTopBar(QWidget):
         self._separator.setVisible(not compact)
         self.view_mode_btn.setVisible(not compact)
         self.title_label.setVisible(not compact and not self._multi_library)
+        self._apply_overflow()
+
+    def _overflowing(self) -> bool:
+        """Phone bar: compact on a touch shell, where 48 px targets leave
+        room for back, the view dropdown, search and the ⋮ menu only."""
+        from jellytoast.platform_compat import is_mobile_shell
+
+        return self._compact and is_mobile_shell()
+
+    def _apply_overflow(self):
+        over = self._overflowing()
+        self.more_btn.setVisible(over)
+        self.settings_btn.setVisible(not over)
+        self.shuffle_all_btn.setVisible(not over)
+        self.sort_btn.setVisible(not over)
+        self.library_btn.setVisible(self._multi_library and not over)
+        # Re-centre once the layout has settled: geometry is stale mid-flip,
+        # and measuring it now reads as overflow (pinning the bar compact).
+        # Without it the dropdown keeps the pre-flip position until a resize.
+        QTimer.singleShot(0, self._fit_library_title)
+
+    def _show_more_menu(self):
+        """The phone bar's overflow menu: everything _apply_overflow hid.
+        Library-only rows appear only while a library grid is showing,
+        exactly when their bar buttons would."""
+        menu = QMenu(self)
+        menu.setStyleSheet(self._dropdown_menu_qss())
+        # Sub-menus open from the ⋮ button once this menu has closed.
+        later = lambda fn: lambda: QTimer.singleShot(0, fn)  # noqa: E731
+        if self._multi_library:
+            menu.addAction(
+                self.tr("Libraries…"), later(lambda: self._show_library_menu(self.more_btn))
+            )
+        if not self._library_ctrls.isHidden():
+            menu.addAction(self.tr("Shuffle all"), self.shuffle_all_requested.emit)
+            menu.addAction(self.tr("Sort…"), later(lambda: self._show_sort_menu(self.more_btn)))
+            menu.addAction(
+                self.tr("Show as list") if self._view_mode == "grid" else self.tr("Show as grid"),
+                self._on_view_toggle,
+            )
+        menu.addAction(self.tr("Home"), lambda: self.nav_requested.emit("home"))
+        menu.addSeparator()
+        menu.addAction(self.tr("Settings"), self.settings_requested.emit)
+        menu.ensurePolished()
+        right = self.more_btn.mapToGlobal(self.more_btn.rect().bottomRight())
+        self._exec_menu_with_kbd_grab(menu, QPoint(right.x() - menu.sizeHint().width(), right.y()))
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
@@ -664,7 +725,7 @@ class JtTopBar(QWidget):
                 padding: 6px;
             }}
             QMenu::item {{
-                padding: 7px 26px 7px {left}px;
+                padding: {_u.menu_item_vpad(7)}px 26px {_u.menu_item_vpad(7)}px {left}px;
                 border-radius: {rad(4)}px;
             }}
             QMenu::item:selected {{ background: rgba({_ar},{_ag},{_ab},0.2); }}
@@ -691,7 +752,7 @@ class JtTopBar(QWidget):
             btn_top_left.y() + button.height(),
         )
 
-    def _show_sort_menu(self):
+    def _show_sort_menu(self, anchor=None):
         menu = opaque_menu(self, blur_corner_radius=8)
         # Built fresh per-show so live-accent / dark↔light changes apply
         # without rebuilding the top bar (the shared QSS reads them live).
@@ -727,12 +788,13 @@ class JtTopBar(QWidget):
         # from no active row.
         if active_action is not None:
             menu.setActiveAction(active_action)
-        pt = self.sort_btn.mapToGlobal(self.sort_btn.rect().bottomLeft())
+        anchor = anchor or self.sort_btn
+        pt = anchor.mapToGlobal(anchor.rect().bottomLeft())
         # Park focus on the button so the library grid behind us loses
         # focus (and its _keyboard_mode resets) — otherwise on KDE
         # Wayland arrow keys leak through to the grid even with the
         # menu visible.
-        self.sort_btn.setFocus(Qt.FocusReason.OtherFocusReason)
+        anchor.setFocus(Qt.FocusReason.OtherFocusReason)
         self._exec_menu_with_kbd_grab(menu, pt)
 
     def _on_sort_picked(self, label: str, key: str):
@@ -1004,7 +1066,7 @@ class JtTopBar(QWidget):
         self._compact_need = 0
         self._apply_compact()
         self.title_label.setVisible(not multi and not self._compact)
-        self.library_btn.setVisible(multi)
+        self.library_btn.setVisible(multi and not self._overflowing())
         if current:
             self.set_title(current)  # also re-centres
         else:
@@ -1039,7 +1101,7 @@ class JtTopBar(QWidget):
             # All-mode (empty) → every library is effectively ON.
             act.setChecked((not selected) or lid in selected)
 
-    def _show_library_menu(self):
+    def _show_library_menu(self, anchor=None):
         """Multi-select menu of the server's music libraries. Checkable
         rows in a ``_StayOpenMenu`` so the menu does NOT close on each
         toggle (the user can flip several in one visit), plus an 'All
@@ -1085,8 +1147,9 @@ class JtTopBar(QWidget):
         # Centre the menu under its button — same balanced placement as the
         # view dropdown (was bottom-left-anchored, which read off-centre next
         # to the centred view menu).
-        pt = self._popup_menu_centered(menu, self.library_btn)
-        self.library_btn.setFocus(Qt.FocusReason.OtherFocusReason)
+        anchor = anchor or self.library_btn
+        pt = self._popup_menu_centered(menu, anchor)
+        anchor.setFocus(Qt.FocusReason.OtherFocusReason)
         # _StayOpenMenu keeps itself open across checkable toggles (a plain
         # QMenu would hide on the first click); it closes on click-away. Route
         # through the shared keyboard-grab helper like the sort / view menus so

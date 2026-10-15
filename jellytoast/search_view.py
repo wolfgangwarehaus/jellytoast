@@ -319,6 +319,11 @@ class SearchView(QWidget):
         self._close_btn.setStyleSheet(self._close_btn_qss())
         self._close_btn.clicked.connect(self.dismiss_requested.emit)
         input_layout.addWidget(self._close_btn)
+        from jellytoast.platform_compat import is_mobile_shell
+
+        # Phone: the top bar's back arrow closes search and the field has its
+        # own clear button — a third tiny control beside them is clutter.
+        self._close_btn.setVisible(not is_mobile_shell())
 
         outer.addWidget(input_row)
 

@@ -164,9 +164,73 @@ def test_login_focuses_a_field_only_off_a_phone_shell(qapp, isolated_settings, m
     try:
         view.show()
         qapp.processEvents()
-        focused = any(
-            f.hasFocus() for f in (view._server_field, view._username_field, view._password_field)
-        )
+        # The window's focus child, not hasFocus(): that also needs the
+        # window to be active, which depends on test order offscreen.
+        fields = (view._server_field, view._username_field, view._password_field)
+        focused = view.window().focusWidget() in fields
         assert focused is (not mobile)
     finally:
         view.deleteLater()
+
+
+class TestPhoneScale:
+    """A phone shell scales the whole UI (QT_SCALE_FACTOR, before Qt starts)."""
+
+    @pytest.fixture
+    def env(self, monkeypatch):
+        for var in ("QT_SCALE_FACTOR", "JT_PHONE_SCALE"):
+            monkeypatch.delenv(var, raising=False)
+        return monkeypatch
+
+    def _run(self, env, mobile):
+        import os
+
+        from jellytoast import app as app_mod
+
+        env.setattr(pc, "is_mobile_shell", lambda: mobile)
+        app_mod._apply_phone_scale()
+        return os.environ.get("QT_SCALE_FACTOR")
+
+    def test_phone_gets_the_scale(self, env):
+        assert self._run(env, True) == "1.5"
+
+    def test_desktop_untouched(self, env):
+        assert self._run(env, False) is None
+
+    def test_override_and_opt_out(self, env):
+        env.setenv("JT_PHONE_SCALE", "1.75")
+        assert self._run(env, True) == "1.75"
+        env.delenv("QT_SCALE_FACTOR")
+        env.setenv("JT_PHONE_SCALE", "1")
+        assert self._run(env, True) is None
+
+    def test_an_exported_scale_wins(self, env):
+        env.setenv("QT_SCALE_FACTOR", "2")
+        assert self._run(env, True) == "2"
+
+
+def test_wrapping_checkbox_label_wraps_and_toggles(qapp):
+    from PySide6.QtCore import QPointF, Qt
+    from PySide6.QtGui import QMouseEvent
+    from PySide6.QtWidgets import QCheckBox
+
+    from jellytoast.ui_helpers import wrapping_checkbox
+
+    cb = QCheckBox("Show a notification when the track changes")
+    row = wrapping_checkbox(cb)
+    label = row._jt_label
+    assert cb.text() == "" and label.wordWrap() and "notification" in label.text()
+
+    def press():
+        ev = QMouseEvent(
+            QMouseEvent.Type.MouseButtonPress, QPointF(2, 2), QPointF(2, 2),
+            Qt.MouseButton.LeftButton, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier,
+        )
+        label.mousePressEvent(ev)
+
+    press()
+    assert cb.isChecked()
+    cb.setEnabled(False)
+    press()
+    assert cb.isChecked()  # a disabled option's label doesn't toggle it
+    row.deleteLater()

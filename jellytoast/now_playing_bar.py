@@ -329,8 +329,13 @@ class NowPlayingBar(QWidget):
 
         # Play is the primary control — slightly larger than the others
         # so the eye lands on it first.
+        from jellytoast.platform_compat import is_mobile_shell
+
         self.play_btn = _icon_btn(
-            "play", self.tr("Play / Pause (Space)"), size=44, icon_size=22
+            "play",
+            self.tr("Play / Pause (Space)"),
+            # Touch: the thumb's main target, a size up from the 48 px others.
+            *((56, 28) if is_mobile_shell() else (44, 22)),
         )
         self.play_btn.clicked.connect(lambda: self.bus.pause_toggled.emit())
 
@@ -402,6 +407,10 @@ class NowPlayingBar(QWidget):
         self.seek_bar = ScrubbableSlider(Qt.Orientation.Horizontal)
         self.seek_bar.setRange(0, 1000)
         self.seek_bar.setStyleSheet(slider_style)
+        if is_mobile_shell():
+            # A finger-height strip around the thin groove, so a scrub
+            # doesn't have to land on a 4 px line.
+            self.seek_bar.setMinimumHeight(32)
         self.seek_bar.sliderPressed.connect(lambda: setattr(self, "_is_seeking", True))
         self.seek_bar.sliderReleased.connect(self._on_seek_release)
 
@@ -610,11 +619,12 @@ class NowPlayingBar(QWidget):
 
     def stepped_out(self) -> dict:
         """Which secondary controls this bar has hidden at the current
-        width ({"shuffle", "repeat", "sleep"} → hidden)."""
+        width ({"shuffle", "repeat", "sleep", "cast"} → hidden)."""
         return {
             "shuffle": self.shuffle_btn.isHidden(),
             "repeat": self.repeat_btn.isHidden(),
             "sleep": self.sleep_btn.isHidden(),
+            "cast": self.cast_btn.isHidden(),
         }
 
     def _open_sleep_menu(self, anchor=None):
@@ -737,9 +747,13 @@ class NowPlayingBar(QWidget):
     def _slider_qss(self) -> str:
         """Seek-bar QSS — ink-on-dim track. Bakes ink_alpha() + TEXT,
         so rebuilt on a live theme switch (see `_reapply_theme`)."""
+        from jellytoast.platform_compat import is_mobile_shell
+
+        # Touch: a thicker track and a handle a fingertip can find.
+        groove, handle = (6, 20) if is_mobile_shell() else (4, 12)
         return f"""
             QSlider::groove:horizontal {{
-                height: 4px;
+                height: {groove}px;
                 background: {ink_alpha(0.16)};
                 border-radius: {rad(2)}px;
             }}
@@ -752,8 +766,8 @@ class NowPlayingBar(QWidget):
                 border-radius: {rad(2)}px;
             }}
             QSlider::handle:horizontal {{
-                width: 12px; height: 12px; margin: -4px 0;
-                background: {TEXT}; border-radius: 6px;
+                width: {handle}px; height: {handle}px; margin: -{(handle - groove) // 2}px 0;
+                background: {TEXT}; border-radius: {handle // 2}px;
             }}
             QSlider::handle:horizontal:hover {{
                 background: {TEXT};
@@ -1424,6 +1438,19 @@ class NowPlayingBar(QWidget):
     _BAR_HEIGHT = 108
     _COMPACT_BAR_HEIGHT = 76
 
+    # A phone shell (touch sizing: 48 px buttons, 56 px play — see
+    # icon_button.TOUCH_TARGET) runs its own tiers, worked out from those
+    # sizes so nothing overflows down to a 360 px phone. Sleep steps out
+    # first (the compact Now Playing row has it), then shuffle / repeat,
+    # then cast — leaving cover, prev / play / next and volume.
+    _TOUCH_SLEEP_WIDTH = 720
+    _TOUCH_COMPACT_WIDTH = 560
+    _TOUCH_NARROW_WIDTH = 540
+    _TOUCH_CAST_WIDTH = 420
+    _TOUCH_BAR_HEIGHT = 116
+    _TOUCH_COMPACT_BAR_HEIGHT = 100
+    _TOUCH_MIN_WIDTH = 352
+
     _compact_mode = False
     # Shuffle / repeat / sleep left (or rejoined) the bar — the compact Now
     # Playing page mirrors exactly the ones this bar has hidden.
@@ -1442,18 +1469,38 @@ class NowPlayingBar(QWidget):
         resizeEvent re-flows to whatever width arrives, synchronously."""
         from PySide6.QtCore import QSize
 
-        return QSize(self._MIN_WIDTH, super().minimumSizeHint().height())
-
-    def _apply_compact(self, bar_w: int):
-        compact = bar_w < self._COMPACT_WIDTH
-        self._compact_mode = compact
-        narrow = bar_w < self._NARROW_WIDTH
         from jellytoast.platform_compat import is_mobile_shell
 
+        floor = self._TOUCH_MIN_WIDTH if is_mobile_shell() else self._MIN_WIDTH
+        return QSize(floor, super().minimumSizeHint().height())
+
+    def _apply_compact(self, bar_w: int):
+        from jellytoast.platform_compat import is_mobile_shell
+
+        touch = is_mobile_shell()
+        if touch:
+            compact = bar_w < self._TOUCH_COMPACT_WIDTH
+            narrow = bar_w < self._TOUCH_NARROW_WIDTH
+            sleep_out = bar_w < self._TOUCH_SLEEP_WIDTH
+            cast_out = bar_w < self._TOUCH_CAST_WIDTH
+            height = self._TOUCH_COMPACT_BAR_HEIGHT if compact else self._TOUCH_BAR_HEIGHT
+            # The 56 px play + 32 px seek strip need the column's slack.
+            margins, row_gap = ((8, 4, 8, 4), 4) if compact else ((12, 6, 12, 6), 6)
+            self._center_layout.setContentsMargins(*margins)
+            self._center_layout.setSpacing(row_gap)
+        else:
+            compact = bar_w < self._COMPACT_WIDTH
+            narrow = bar_w < self._NARROW_WIDTH
+            sleep_out = compact
+            cast_out = False
+            height = self._COMPACT_BAR_HEIGHT if compact else self._BAR_HEIGHT
+        self._compact_mode = compact
+
         # The mini player is a floating desktop window — no place on a phone.
-        self.mini_btn.setVisible(bar_w >= self._MINI_BTN_WIDTH and not is_mobile_shell())
+        self.mini_btn.setVisible(bar_w >= self._MINI_BTN_WIDTH and not touch)
         before = self.stepped_out()
-        self.sleep_btn.setVisible(not compact)
+        self.sleep_btn.setVisible(not sleep_out)
+        self.cast_btn.setVisible(not cast_out)
         # The "Streaming · MP3 · 262 kbps" overlay floats above the center
         # column; on the short compact bar it lands on the transport row.
         self.streaming_info.setVisible(not compact)
@@ -1461,7 +1508,6 @@ class NowPlayingBar(QWidget):
         self.repeat_btn.setVisible(not narrow)
         if self.stepped_out() != before:
             self.stepped_out_changed.emit()
-        height = self._COMPACT_BAR_HEIGHT if compact else self._BAR_HEIGHT
         if self.height() != height:
             self.setFixedHeight(height)
             self.thumb.setFixedSize(height, height)
@@ -1487,12 +1533,23 @@ class NowPlayingBar(QWidget):
         fit = (bar_w - center_min - 2 * spacing - margins.left() - margins.right()) // 2
         right_layout = self.right_cluster.layout()
         right_layout.setContentsMargins(0, 0, right_inset, 0)
-        floor = max(self.thumb.width(), right_layout.minimumSize().width())
-        cluster_w = max(floor, min(cluster_w, fit))
-        if self.left_cluster.width() != cluster_w:
-            self.left_cluster.setFixedWidth(cluster_w)
-        if self.right_cluster.width() != cluster_w:
-            self.right_cluster.setFixedWidth(cluster_w)
+        left_floor = self.thumb.width()
+        right_floor = right_layout.minimumSize().width()
+        target = min(cluster_w, fit)
+        big = max(left_floor, right_floor)
+        if target >= big:
+            left_w = right_w = target
+        else:
+            # Too narrow for two equal clusters (a phone): the bigger side
+            # gets its floor, the smaller one evens up with what's left.
+            # The play button sits a few px off-centre instead of the bar
+            # overflowing (which would ratchet the window's minimum width).
+            small = max(min(left_floor, right_floor), min(big, 2 * fit - big))
+            left_w, right_w = (big, small) if left_floor >= right_floor else (small, big)
+        if self.left_cluster.width() != left_w:
+            self.left_cluster.setFixedWidth(left_w)
+        if self.right_cluster.width() != right_w:
+            self.right_cluster.setFixedWidth(right_w)
         if self.layout().spacing() != spacing:
             self.layout().setSpacing(spacing)
         self._apply_text_layout(bar_w)

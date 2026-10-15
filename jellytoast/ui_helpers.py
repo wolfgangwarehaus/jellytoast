@@ -372,6 +372,14 @@ def apply_font_settings_live() -> None:
         PlayerBus.get().theme_changed.emit()
 
 
+def menu_item_vpad(desktop: int) -> int:
+    """Vertical padding for a menu row: ``desktop`` px, or finger-tall rows
+    (~48 px with the text) on a phone shell."""
+    from jellytoast.platform_compat import is_mobile_shell
+
+    return 14 if is_mobile_shell() else desktop
+
+
 def _build_global_style() -> str:
     # Radii flow through the rad()-resolved tokens so the "Square corners"
     # setting zeros every corner here in lockstep with the rest of the UI.
@@ -521,7 +529,7 @@ QMenu {{
     padding: 4px;
 }}
 QMenu::item {{
-    padding: 8px 24px 8px 14px; border-radius: {RADIUS_SM}px;
+    padding: {menu_item_vpad(8)}px 24px {menu_item_vpad(8)}px 14px; border-radius: {RADIUS_SM}px;
 }}
 QMenu::item:selected {{ background: rgba({ar},{ag},{ab},0.2); }}
 QMenu::separator {{
@@ -2259,6 +2267,7 @@ class CoverOverlayButton(IconButton):
 
     DEFAULT_SIZE = 28
     DEFAULT_MARGIN = 8
+    touch_target = False  # hover-revealed; see IconButton.touch_target
     HIDE_GRACE_MS = 80
 
     def __init__(
@@ -2598,7 +2607,7 @@ def opaque_menu(parent=None, *, menu_cls=None, blur_corner_radius: int = 4) -> "
                use, which made every menu wider than its longest entry
                needed. Symmetric padding tightens the menu to its
                content + matches the visual balance left↔right. */
-            padding: 7px 14px;
+            padding: {menu_item_vpad(7)}px 14px;
             border-radius: {rad(4)}px;
         }}
         QMenu::item:selected {{
@@ -3192,3 +3201,32 @@ def install_autofade_scrollbars(scroll_area: QScrollArea):
             + "QScrollArea { background: transparent; border: none; }"
         )
     return v, h
+
+
+def wrapping_checkbox(cb) -> "QWidget":
+    """``cb`` with a label that WRAPS: QCheckBox draws its text on one line,
+    so a sentence-long option ran off a phone-width page. Returns a row of
+    the bare box + a word-wrapped label; tapping the label toggles the box
+    (and follows its enabled state), so it still reads and acts as one
+    control."""
+    from PySide6.QtWidgets import QHBoxLayout, QLabel
+
+    text = cb.text()
+    cb.setText("")
+    row = QWidget()
+    h = QHBoxLayout(row)
+    h.setContentsMargins(0, 0, 0, 0)
+    h.setSpacing(8)
+    label = QLabel(text)
+    label.setWordWrap(True)
+    label.setBuddy(cb)
+
+    def _press(e, cb=cb):
+        if cb.isEnabled() and e.button() == Qt.MouseButton.LeftButton:
+            cb.toggle()
+
+    label.mousePressEvent = _press
+    h.addWidget(cb, 0, Qt.AlignmentFlag.AlignTop)
+    h.addWidget(label, 1)
+    row._jt_label = label
+    return row

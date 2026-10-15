@@ -21,7 +21,7 @@ Play overlay → install that album as the live queue + start.
 import logging
 from typing import Dict, List, Optional
 
-from PySide6.QtCore import QCoreApplication, Qt, Signal, Slot
+from PySide6.QtCore import QCoreApplication, QEvent, QSize, Qt, Signal, Slot
 
 logger = logging.getLogger(__name__)
 from PySide6.QtGui import QPalette, QPixmap
@@ -308,6 +308,9 @@ class ArtistPage(QWidget):
         _vp.setBackgroundRole(QPalette.ColorRole.NoRole)
         self._view.setStyleSheet("QListView { background: transparent; border: none; }")
         install_autofade_scrollbars(self._view)
+        # Narrow (phone) widths: fit two columns by shrinking the cells —
+        # the delegate scales the cover to the cell, as in the library grid.
+        self._view.viewport().installEventFilter(self)
         # Click routing: overlay → play, anywhere else → browse.
         self._view.mousePressEvent = self._on_view_press
         # Right-click / touch long-press → the library grid's tile menu.
@@ -495,6 +498,26 @@ class ArtistPage(QWidget):
             self._view.viewport().mapToGlobal(pos),
             on_play=self.album_play_requested.emit,
         )
+
+    _MIN_COLUMNS = 2
+
+    def eventFilter(self, obj, event):  # noqa: N802 — Qt override
+        if event.type() == QEvent.Type.Resize and obj is self._view.viewport():
+            self._fit_columns(obj.width())
+        return super().eventFilter(obj, event)
+
+    def _fit_columns(self, avail: int):
+        """Natural 196 px cells while two fit; narrower cells below that, so
+        a phone gets two columns instead of one tile and an empty half."""
+        cell_w = self._delegate.CELL_W
+        if avail >= self._MIN_COLUMNS * cell_w:
+            grid = QSize()
+        else:
+            # A couple of px under the exact split keeps IconMode from
+            # wrapping the second column (see LibraryGrid._apply_grid_size).
+            grid = QSize(max(120, (avail - 4) // self._MIN_COLUMNS), self._delegate.CELL_H)
+        if self._view.gridSize() != grid:
+            self._view.setGridSize(grid)
 
     def _on_view_press(self, e):
         """Replace QListView.mousePressEvent so we can hit-test the

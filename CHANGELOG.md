@@ -29,6 +29,15 @@ developer-facing history lives in [`docs/CHANGELOG.md`](docs/CHANGELOG.md).
 - **Closing on Plasma Mobile.** Swiping jellytoast away keeps the music
   playing in the background (tap the media controls to come back);
   with nothing playing it just closes. No more invisible tray icon there.
+- **Bigger and easier to tap on phones.** On Plasma Mobile the whole app is
+  scaled up, buttons are finger-sized, and the top bar tucks its extras into
+  a ⋮ menu. Now Playing gets a big cover, and shuffle, repeat, sleep timer and
+  cast move there when the bar runs out of room.
+- **Cover art on the lock screen, even offline.** The Plasma media controls
+  and lock screen now get jellytoast's cached artwork, so it shows up without
+  a trip to the server.
+- **Covers no longer stay blank.** Album covers that were on screen while
+  jellytoast sat in the background now load when you come back to it.
 
 ## [0.2.2] — 2026-10-05
 

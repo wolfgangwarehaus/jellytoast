@@ -126,12 +126,18 @@ class TestTransportBar:
 class TestTopBar:
     @pytest.fixture
     def top(self, qapp):
+        from PySide6.QtWidgets import QWidget
+
         from jellytoast.top_bar import JtTopBar
 
-        t = JtTopBar(titlebar_mode=True)
-        t.show()
+        # Hosted, not top-level: the offscreen platform can re-size a bare
+        # top-level window to its own default when the previous test's
+        # window goes away, which made the width under test order-dependent.
+        host = QWidget()
+        t = JtTopBar(host, titlebar_mode=True)
+        host.show()
         yield t
-        t.deleteLater()
+        host.deleteLater()
 
     def test_compact_sheds_secondary_controls(self, qapp, top):
         top.resize(360, 48)
@@ -241,16 +247,19 @@ class TestRealDeviceFindings:
     """Found on august's Plasma Mobile session (601 px wide, two libraries)."""
 
     def test_top_bar_compacts_when_the_library_picker_does_not_fit(self, qapp, monkeypatch):
+        from PySide6.QtWidgets import QWidget
+
         from jellytoast.top_bar import JtTopBar
 
-        top = JtTopBar(titlebar_mode=True)
+        host = QWidget()  # hosted: see TestTopBar.top
+        top = JtTopBar(host, titlebar_mode=True)
         try:
             top.set_title("Music")
             top.set_available_libraries(
                 [{"Id": "a", "Name": "Lossless Collection"}, {"Id": "b", "Name": "Lossy Archive"}]
             )
             top.set_library_controls_visible(True)
-            top.show()
+            host.show()
             # Above the fixed 520 floor but too tight for the full bar with the
             # picker (~575 px in the default font; august's wider monospace font
             # overflowed at his 600 px screen).
@@ -264,7 +273,7 @@ class TestRealDeviceFindings:
             assert not top._compact
             assert not top.fwd_btn.isHidden()
         finally:
-            top.deleteLater()
+            host.deleteLater()
 
     def test_no_blur_body_is_opaque_on_a_mobile_shell(self, monkeypatch):
         from jellytoast.blur import BlurStatus
@@ -342,3 +351,264 @@ class TestSteppedOutControls:
         _settle(qapp)
         page._apply_width_class(responsive.REGULAR)
         assert page._stepped_row.isHidden()
+
+
+class TestTouchSizing:
+    """On a phone shell every chrome button is a 48 px finger target (play
+    56), and the transport bar's own tiers keep that from overflowing down
+    to a 360 px phone. Desktop sizes don't change."""
+
+    @pytest.fixture
+    def bar_at(self, qapp, isolated_settings, monkeypatch):
+        from PySide6.QtWidgets import QVBoxLayout, QWidget
+
+        from jellytoast import now_playing_bar as _npb
+
+        monkeypatch.setattr(_npb, "load_image_async", lambda *a, **k: None)
+        made = []
+
+        def make(width, mobile=True):
+            monkeypatch.setattr(pc, "is_mobile_shell", lambda: mobile)
+            host = QWidget()
+            QVBoxLayout(host).setContentsMargins(0, 0, 0, 0)
+            bar = _npb.NowPlayingBar(host)
+            host.layout().addWidget(bar)
+            host.resize(width, 200)
+            host.show()
+            qapp.processEvents()
+            made.append(host)
+            return bar
+
+        yield make
+        for h in made:
+            h.deleteLater()
+
+    def test_icon_buttons_grow_only_on_a_phone(self, qapp, monkeypatch):
+        from PySide6.QtCore import QSize
+
+        from jellytoast.icon_button import IconButton
+        from jellytoast.ui_helpers import CoverOverlayButton
+
+        for mobile, want in ((True, 48), (False, 34)):
+            monkeypatch.setattr(pc, "is_mobile_shell", lambda m=mobile: m)
+            b = IconButton()
+            b.setIconSize(QSize(18, 18))
+            b.setFixedSize(34, 34)
+            assert b.width() == want
+            assert b.iconSize().width() == (24 if mobile else 18)
+        # Hover-revealed cover overlays stay small (touch never shows them).
+        monkeypatch.setattr(pc, "is_mobile_shell", lambda: True)
+        from PySide6.QtWidgets import QWidget
+
+        host = QWidget()
+        assert CoverOverlayButton(host, size=26).width() == 26
+
+    @pytest.mark.parametrize("width", [360, 400, 420, 480, 540, 560, 600, 680, 720, 900])
+    def test_phone_bar_fits_every_width(self, bar_at, width):
+        bar = bar_at(width)
+        assert bar.minimumSizeHint().width() <= width
+        assert bar.layout().minimumSize().width() <= width
+        visible = [b for b in (bar.shuffle_btn, bar.prev_btn, bar.next_btn, bar.repeat_btn,
+                               bar.sleep_btn, bar.cast_btn, bar.vol_btn) if b.isVisibleTo(bar)]
+        assert all(b.width() >= 48 and b.height() >= 48 for b in visible)
+        assert bar.play_btn.width() == 56
+        assert not bar.mini_btn.isVisibleTo(bar)
+
+    @pytest.mark.parametrize(
+        "width, out",
+        [
+            (900, set()),
+            (700, {"sleep"}),
+            (530, {"sleep", "shuffle", "repeat"}),
+            (380, {"sleep", "shuffle", "repeat", "cast"}),
+        ],
+    )
+    def test_phone_tiers_step_controls_out(self, bar_at, width, out):
+        bar = bar_at(width)
+        assert {k for k, hidden in bar.stepped_out().items() if hidden} == out
+
+    def test_desktop_bar_unchanged(self, bar_at):
+        bar = bar_at(900, mobile=False)
+        assert bar.prev_btn.width() == 36 and bar.play_btn.width() == 44
+        assert bar.height() == bar._BAR_HEIGHT
+        assert not any(bar.stepped_out().values())
+
+    def test_now_playing_row_carries_cast(self, bar_at, monkeypatch):
+        from jellytoast.now_playing_page import NowPlayingPage
+        from jellytoast.player_state import QueueContext
+
+        bar = bar_at(380)
+        qm = MagicMock()
+        qm.context = QueueContext()
+        qm.current_index = -1
+        qm.current_item = None
+        qm.original_items = []
+        qm.queue = []
+        page = NowPlayingPage(qm)
+        page.attach_transport_bar(bar)
+        page._apply_width_class(responsive.COMPACT)
+        try:
+            assert not page._stepped_btns["cast"].isHidden()
+            hits = []
+            bar.cast_requested.connect(lambda: hits.append(1))
+            page._stepped_btns["cast"].click()
+            assert hits == [1]
+        finally:
+            page.deleteLater()
+
+
+class TestPhoneTopBar:
+    """Touch + compact: back, the view dropdown, search and a ⋮ menu; the
+    rest moves into the menu. A narrow desktop window keeps its buttons."""
+
+    @pytest.fixture
+    def top_for(self, qapp, monkeypatch):
+        from PySide6.QtWidgets import QWidget
+
+        from jellytoast.top_bar import JtTopBar
+
+        hosts = []
+
+        def make(mobile):
+            monkeypatch.setattr(pc, "is_mobile_shell", lambda: mobile)
+            host = QWidget()
+            top = JtTopBar(host)
+            top.set_available_libraries([{"Id": "a", "Name": "A"}, {"Id": "b", "Name": "B"}])
+            top.set_library_controls_visible(True)
+            host.show()
+            top.resize(400, 60)
+            _settle(qapp)
+            hosts.append(host)
+            return top
+
+        yield make
+        for h in hosts:
+            h.deleteLater()
+
+    def test_phone_moves_secondary_controls_to_the_menu(self, top_for):
+        top = top_for(True)
+        assert top._compact and not top.more_btn.isHidden()
+        for w in (top.settings_btn, top.shuffle_all_btn, top.sort_btn, top.library_btn):
+            assert w.isHidden()
+        assert top.height() == 60 and top.search_btn.width() == 48
+
+    def test_narrow_desktop_keeps_its_buttons(self, top_for):
+        top = top_for(False)
+        assert top._compact and top.more_btn.isHidden()
+        for w in (top.settings_btn, top.shuffle_all_btn, top.sort_btn, top.library_btn):
+            assert not w.isHidden()
+
+    def test_menu_offers_what_was_hidden(self, top_for, monkeypatch):
+        top = top_for(True)
+        seen = []
+        monkeypatch.setattr(
+            type(top), "_exec_menu_with_kbd_grab",
+            lambda self, menu, pt: seen.extend(a.text() for a in menu.actions() if a.text()),
+        )
+        top._show_more_menu()
+        for label in ("Libraries…", "Shuffle all", "Sort…", "Show as list", "Home", "Settings"):
+            assert label in seen
+
+
+def test_phone_top_bar_recentres_the_dropdown(qapp, monkeypatch):
+    """Going compact on a phone shows ⋮ and hides settings / library: the
+    view dropdown must re-centre afterwards, not keep its old position."""
+    from PySide6.QtWidgets import QWidget
+
+    from jellytoast.top_bar import JtTopBar
+
+    monkeypatch.setattr(pc, "is_mobile_shell", lambda: True)
+    host = QWidget()
+    top = JtTopBar(host)
+    try:
+        top.view_btn.setText("Albums")
+        top.view_btn.show()
+        host.show()
+        top.resize(900, 60)
+        _settle(qapp)
+        top.resize(400, 60)
+        for _ in range(3):
+            _settle(qapp)
+        centre = top._center_cluster.geometry().x() + top.view_btn.width() // 2
+        assert abs(centre - top.width() // 2) <= 12
+    finally:
+        host.deleteLater()
+
+
+class TestCompactNowPlayingCover:
+    """Phone width: the cover grows toward the screen width on the Playing
+    tab, moderately while lyrics share the pane, and back to the desktop
+    size at regular width."""
+
+    @pytest.fixture
+    def page(self, qapp, isolated_settings):
+        from jellytoast.now_playing_page import NowPlayingPage
+        from jellytoast.player_state import QueueContext
+
+        qm = MagicMock()
+        qm.context = QueueContext()
+        qm.current_index = -1
+        qm.current_item = None
+        qm.original_items = []
+        qm.queue = []
+        p = NowPlayingPage(qm)
+        p.resize(400, 700)
+        p.show()
+        yield p
+        p.deleteLater()
+
+    def test_sizes(self, qapp, page):
+        page._apply_width_class(responsive.COMPACT)
+        _settle(qapp)
+        big = page._cover.width()
+        assert big > type(page).COVER_SIZE and big <= page._COMPACT_COVER_MAX
+        page._lyrics_scroll.show()
+        page._fit_compact_cover()
+        assert page._cover.width() <= page._COMPACT_COVER_SHARED
+        page._lyrics_scroll.hide()
+        page._apply_width_class(responsive.REGULAR)
+        assert page._cover.width() == type(page).COVER_SIZE
+
+
+def test_queue_controls_row_hidden_while_browsing(qapp, isolated_settings, monkeypatch):
+    """Browsing an album (preview) on a phone: no shuffle / repeat / sleep /
+    cast row — those drive the live queue, not the album being looked at."""
+    from PySide6.QtWidgets import QWidget
+
+    from jellytoast import now_playing_bar as _npb
+    from jellytoast.now_playing_page import NowPlayingPage
+    from jellytoast.player_state import QueueContext
+
+    monkeypatch.setattr(_npb, "load_image_async", lambda *a, **k: None)
+    monkeypatch.setattr(pc, "is_mobile_shell", lambda: False)
+    from PySide6.QtWidgets import QVBoxLayout
+
+    host = QWidget()
+    QVBoxLayout(host).setContentsMargins(0, 0, 0, 0)
+    bar = _npb.NowPlayingBar(host)
+    host.layout().addWidget(bar)
+    host.resize(400, 200)
+    host.show()
+    _settle(qapp)
+    qm = MagicMock()
+    qm.context = QueueContext()
+    qm.current_index = -1
+    qm.current_item = None
+    qm.original_items = []
+    qm.queue = []
+    page = NowPlayingPage(qm)
+    try:
+        page.attach_transport_bar(bar)
+        page._apply_width_class(responsive.COMPACT)
+        assert not page._stepped_row.isHidden()
+        page._preview_id = "album-1"
+        page._label_compact_tabs(True)
+        assert page._stepped_row.isHidden()
+        assert page._tab_playing.text() == "Album"
+        page._preview_id = ""
+        page._label_compact_tabs(False)
+        assert not page._stepped_row.isHidden()
+        assert page._tab_playing.text() == "Playing"
+    finally:
+        page.deleteLater()
+        host.deleteLater()

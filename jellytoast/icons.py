@@ -38,6 +38,13 @@ _SVG = {
         '<path d="M4 7 H20 M4 12 H20 M4 17 H20" stroke="currentColor" '
         'stroke-width="2" stroke-linecap="round"/></svg>'
     ),
+    # Overflow ("more") menu — the phone top bar's home for what doesn't fit.
+    "more_vert": (
+        '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">'
+        '<circle cx="12" cy="5" r="1.8" fill="currentColor"/>'
+        '<circle cx="12" cy="12" r="1.8" fill="currentColor"/>'
+        '<circle cx="12" cy="19" r="1.8" fill="currentColor"/></svg>'
+    ),
     "search": (
         '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">'
         '<circle cx="11" cy="11" r="6" stroke="currentColor" stroke-width="2" fill="none"/>'

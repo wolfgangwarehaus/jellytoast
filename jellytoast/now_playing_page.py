@@ -50,6 +50,7 @@ from PySide6.QtWidgets import (
 from jellytoast import disk_cache
 from jellytoast.async_io import run_async
 from jellytoast.design_tokens import (
+    BTN_ICON,
     BTN_PRIMARY,
     SPACE_LG,
     SPACE_MD,
@@ -69,6 +70,7 @@ from jellytoast.icons import accent_icon, icon
 from jellytoast.np_left_pane import _LeftPaneMixin
 from jellytoast.np_lyrics import _LyricsCache, _LyricsMixin, _ScrollbarFader
 from jellytoast.np_track_list import _TrackDelegate, _TracksListView, _TracksModel
+from jellytoast.platform_compat import is_mobile_shell
 from jellytoast.player_state import (
     NowPlaying,
     PlayerBus,
@@ -348,14 +350,32 @@ class NowPlayingPage(_LeftPaneMixin, _LyricsMixin, QWidget):
             btn.setCheckable(True)
             btn.setAutoExclusive(True)
             btn.setCursor(Qt.CursorShape.PointingHandCursor)
-            btn.setMinimumHeight(36)  # a comfortable touch target
+            btn.setMinimumHeight(48 if is_mobile_shell() else 36)  # touch target
             btn.toggled.connect(lambda on, idx=i: on and self._show_compact_pane(idx))
             row.addWidget(btn)
         row.addStretch(1)
         self._tab_playing.setChecked(True)
         self._restyle_compact_tabs()
+        self.preview_changed.connect(self._label_compact_tabs)
         bar.setVisible(False)
         return bar
+
+    def _label_compact_tabs(self, previewing: bool):
+        """Browsing an album / playlist isn't "Playing": name the first tab
+        for what it shows, and open on it (cover + Play) rather than
+        whichever tab the live queue was left on."""
+        self._sync_stepped_row()
+        if previewing:
+            label = (
+                self.tr("Playlist")
+                if self._preview_kind == QueueKind.PLAYLIST
+                else self.tr("Album")
+            )
+            self._tab_playing.setText(label)
+            self._tab_playing.setChecked(True)
+        else:
+            self._tab_playing.setText(self.tr("Playing"))
+        self._fit_compact_cover()
 
     def _restyle_compact_tabs(self):
         from jellytoast import ui_helpers as _u
@@ -391,6 +411,8 @@ class NowPlayingPage(_LeftPaneMixin, _LyricsMixin, QWidget):
             self.bus.sleep_timer_started,
             self.bus.sleep_timer_cancelled,
             self.bus.sleep_timer_fired,
+            self.bus.cast_started,
+            self.bus.cast_stopped,
         ):
             sig.connect(lambda *_a: self._refresh_stepped_icons())
         self._sync_stepped_row()
@@ -403,6 +425,8 @@ class NowPlayingPage(_LeftPaneMixin, _LyricsMixin, QWidget):
             bar.shuffle_btn.click()
         elif key == "repeat":
             bar.repeat_btn.click()
+        elif key == "cast":
+            bar.cast_requested.emit()
         else:
             bar._open_sleep_menu(anchor=self._stepped_btns["sleep"])
         self._refresh_stepped_icons()
@@ -423,11 +447,18 @@ class NowPlayingPage(_LeftPaneMixin, _LyricsMixin, QWidget):
         )
         armed = getattr(bar, "_sleep_deadline", None) is not None
         self._stepped_btns["sleep"].setIcon(accent_icon("moon") if armed else icon("moon"))
+        casting = getattr(bar, "_casting", False)
+        self._stepped_btns["cast"].setIcon(accent_icon("cast") if casting else icon("cast"))
 
     def _sync_stepped_row(self) -> None:
         bar = getattr(self, "_transport_bar", None)
         hidden = bar.stepped_out() if bar is not None else {}
-        show_row = getattr(self, "_is_compact", False) and any(hidden.values())
+        # Not while browsing an album / playlist: they control the live queue.
+        show_row = (
+            getattr(self, "_is_compact", False)
+            and any(hidden.values())
+            and not self._preview_id
+        )
         for key, btn in self._stepped_btns.items():
             btn.setVisible(bool(hidden.get(key)))
         self._stepped_row.setVisible(show_row)
@@ -450,6 +481,39 @@ class NowPlayingPage(_LeftPaneMixin, _LyricsMixin, QWidget):
         else:
             self._left_pane.setVisible(True)
             self._right_pane.setVisible(True)
+        self._fit_compact_cover()
+
+    # Phone width: the cover grows toward the screen width when it is the
+    # Playing tab's main content, and stays moderate while lyrics or the
+    # visualizer share the pane (they need the height).
+    _COMPACT_COVER_MAX = 360
+    _COMPACT_COVER_SHARED = 240
+
+    def _fit_compact_cover(self):
+        if not hasattr(self, "_lyrics_scroll"):  # mid-construction
+            return
+        side = type(self).COVER_SIZE
+        if getattr(self, "_is_compact", False):
+            sharing = self._lyrics_scroll.isVisibleTo(self._left_pane) or (
+                self._visualizer_widget is not None
+                and self._visualizer_widget.isVisibleTo(self._left_pane)
+            )
+            cap = self._COMPACT_COVER_SHARED if sharing else self._COMPACT_COVER_MAX
+            avail = self.width() - 2 * 12 - 24
+            side = max(side, min(cap, int(avail * 0.85)))
+        if side == self._cover.width():
+            return
+        # Instance attribute shadows the class default, so every fetch /
+        # rescale path that reads self.COVER_SIZE follows the new size.
+        self.COVER_SIZE = side
+        self._cover.setFixedSize(side, side)
+        orig = getattr(self, "_cover_orig", None)
+        if orig is not None and not orig.isNull():
+            self._on_cover_loaded(orig)
+
+    def resizeEvent(self, e):  # noqa: N802 — Qt override
+        super().resizeEvent(e)
+        self._fit_compact_cover()
 
     # ── Left pane (cover + metadata + lyrics) ───────────────────────────────
 
@@ -647,16 +711,26 @@ class NowPlayingPage(_LeftPaneMixin, _LyricsMixin, QWidget):
             ("shuffle", "shuffle", self.tr("Shuffle")),
             ("repeat", "repeat", self.tr("Repeat")),
             ("sleep", "moon", self.tr("Sleep timer")),
+            ("cast", "cast", self.tr("Cast")),
         ):
             btn = IconButton()
             btn.setIcon(icon(glyph))
             btn.setIconSize(QSize(20, 20))
             btn.setFixedSize(44, 44)  # comfortable touch target
             btn.setToolTip(tip)
+            btn.setStyleSheet(button_qss(BTN_ICON))
             btn.setCursor(Qt.CursorShape.PointingHandCursor)
             btn.clicked.connect(lambda _c=False, k=key: self._on_stepped_clicked(k))
             stepped.addWidget(btn)
             self._stepped_btns[key] = btn
+        # Long-press / right-click: the bar's quick cast menu, as on its own
+        # cast button.
+        cast_copy = self._stepped_btns["cast"]
+        cast_copy.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        cast_copy.customContextMenuRequested.connect(
+            lambda pos: self._transport_bar is not None
+            and self._transport_bar.cast_context_requested.emit(cast_copy.mapToGlobal(pos))
+        )
         stepped.addStretch(1)
         self._stepped_row.setVisible(False)
         self._transport_bar = None
@@ -686,6 +760,8 @@ class NowPlayingPage(_LeftPaneMixin, _LyricsMixin, QWidget):
         self._lyrics_toggle_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self._lyrics_toggle_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self._lyrics_toggle_btn.setStyleSheet(_lyrics_caption_btn_qss())
+        if is_mobile_shell():
+            self._lyrics_toggle_btn.setMinimumHeight(44)  # touch target
         self._lyrics_toggle_btn.clicked.connect(self._toggle_lyrics)
         toggle_row.addWidget(self._lyrics_toggle_btn)
         v.addLayout(toggle_row)
@@ -978,6 +1054,8 @@ class NowPlayingPage(_LeftPaneMixin, _LyricsMixin, QWidget):
         self._subtitle.setStyleSheet(f"color: {ink_alpha(0.62)};")
         self._work_line.setStyleSheet(f"color: {ink_alpha(0.50)};")
         self._restyle_compact_tabs()
+        for btn in self._stepped_btns.values():
+            btn.setStyleSheet(button_qss(BTN_ICON))
         self._refresh_stepped_icons()
         self._meta_line.setStyleSheet(
             f"color: {ink_alpha(0.42)}; letter-spacing: 0.6px;"

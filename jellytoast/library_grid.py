@@ -49,6 +49,7 @@ from PySide6.QtGui import (
 )
 from PySide6.QtWidgets import (
     QAbstractItemView,
+    QApplication,
     QFrame,
     QHBoxLayout,
     QLabel,
@@ -2103,6 +2104,15 @@ class LibraryGrid(_PaginatorMixin, QWidget):
         PlayerBus.get().theme_changed.connect(self._reapply_chrome_theme)
         # Cross-DPR refresh — clear cover cache and rerun visible load.
         PlayerBus.get().dpr_changed.connect(self._on_dpr_changed)
+        # Back in front → re-check the visible covers. Paint is what keeps
+        # on-screen covers resident in the LRU, and an app sitting behind
+        # another (a phone task switch, a launch in the background) paints
+        # nothing, so the prefetcher can evict exactly the tiles on screen;
+        # nothing else re-arms them until a scroll. Idempotent — resident
+        # rows are skipped.
+        app = QApplication.instance()
+        if app is not None:
+            app.applicationStateChanged.connect(self._on_app_state_changed)
         # Re-render when offline mode flips — the grid swaps between
         # server-backed and downloads-only sources. QueuedConnection so
         # the heavy refetch lands on the next event-loop tick instead
@@ -2155,6 +2165,10 @@ class LibraryGrid(_PaginatorMixin, QWidget):
             self._prefetch_idx = max(0, first)
             if not self._prefetch_timer.isActive():
                 self._prefetch_timer.start()
+
+    def _on_app_state_changed(self, state):
+        if state == Qt.ApplicationState.ApplicationActive and self._model.rowCount() > 0:
+            QTimer.singleShot(0, self._load_visible_covers)
 
     def _on_dpr_changed(self):
         if self._model.rowCount() == 0:
