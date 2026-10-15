@@ -186,8 +186,13 @@ class EqSettingsPage(QWidget):
         # Label uses the same width + body-type styling as Quality /
         # Normalization / Duration above so the four labels line up
         # in one column and the four field starts in another.
+        # On a phone the page is ~370 px: no trailing pad, the combo takes
+        # the row, and Save / Delete drop to a row of their own below.
+        from jellytoast.platform_compat import is_mobile_shell
+
+        phone = is_mobile_shell()
         preset_row = QHBoxLayout()
-        preset_row.setContentsMargins(0, 0, 46, 0)
+        preset_row.setContentsMargins(0, 0, 0 if phone else 46, 0)
         preset_row.setSpacing(16)
 
         preset_lbl = self._field_label(self.tr("Preset:"))
@@ -203,9 +208,16 @@ class EqSettingsPage(QWidget):
         # box read absurdly wide for the one short word "Flat". Stretch
         # is added AFTER the combo so the trailing Save / Delete buttons
         # still pin to the right edge of the row.
-        self._eq_preset_combo.setFixedWidth(120)
-        preset_row.addWidget(self._eq_preset_combo)
-        preset_row.addStretch(1)
+        if phone:
+            preset_row.addWidget(self._eq_preset_combo, 1)
+            wv.addLayout(preset_row)
+            preset_row = QHBoxLayout()
+            preset_row.setContentsMargins(0, 0, 0, 0)
+            preset_row.setSpacing(16)
+        else:
+            self._eq_preset_combo.setFixedWidth(120)
+            preset_row.addWidget(self._eq_preset_combo)
+            preset_row.addStretch(1)
 
         self._eq_save_btn = QPushButton(self.tr("Save…"))
         self._eq_save_btn.clicked.connect(self._on_eq_save_preset)
@@ -214,6 +226,8 @@ class EqSettingsPage(QWidget):
         self._eq_delete_btn = QPushButton(self.tr("Delete"))
         self._eq_delete_btn.clicked.connect(self._on_eq_delete_preset)
         preset_row.addWidget(self._eq_delete_btn)
+        if phone:
+            preset_row.addStretch(1)
 
         wv.addLayout(preset_row)
 
@@ -338,10 +352,17 @@ class EqSettingsPage(QWidget):
             col_layout.addWidget(band_lbl)
             self._eq_band_labels.append(band_lbl)
 
-            col_widget.setFixedWidth(42)
-            sf_layout.addWidget(col_widget)
+            if phone:
+                # Eleven fixed 42 px columns are 526 px — wider than a phone.
+                # Share the width instead (≈ 30 px each at 360).
+                col_widget.setMinimumWidth(26)
+                sf_layout.addWidget(col_widget, 1)
+            else:
+                col_widget.setFixedWidth(42)
+                sf_layout.addWidget(col_widget)
 
-        sf_layout.addStretch(1)
+        if not phone:
+            sf_layout.addStretch(1)
         wv.addWidget(slider_frame)
         self._eq_slider_frame = slider_frame
 

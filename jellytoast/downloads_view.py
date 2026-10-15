@@ -737,8 +737,10 @@ class DownloadsView(QWidget):
         downloads_row = QHBoxLayout()
         downloads_row.setContentsMargins(0, 0, 0, 0)
         downloads_row.setSpacing(SPACE_SM)
-        downloads_row.addWidget(self._storage)
-        downloads_row.addStretch(1)
+        # The readouts wrap (and take the stretch) so a phone-width page
+        # squeezes them instead of pushing the buttons off the edge.
+        self._storage.setWordWrap(True)
+        downloads_row.addWidget(self._storage, 1)
         downloads_row.addWidget(self._clear_all_btn)
         outer.addLayout(downloads_row)
 
@@ -756,8 +758,8 @@ class DownloadsView(QWidget):
         cache_row = QHBoxLayout()
         cache_row.setContentsMargins(0, 0, 0, 0)
         cache_row.setSpacing(SPACE_SM)
-        cache_row.addWidget(self._cache_size_label)
-        cache_row.addStretch(1)
+        self._cache_size_label.setWordWrap(True)
+        cache_row.addWidget(self._cache_size_label, 1)
         cache_row.addWidget(self._clear_cache_btn)
         outer.addLayout(cache_row)
         # Trailing stretch sits AFTER the cache section so the whole page

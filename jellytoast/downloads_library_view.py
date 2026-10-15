@@ -82,11 +82,12 @@ class DownloadsLibraryView(QWidget):
 
         self._empty = QLabel(
             self.tr(
-                "No downloads yet.\nRight-click an album, playlist, artist, or "
-                "track to download it."
+                "No downloads yet.\nRight-click (or long-press) an album, "
+                "playlist, artist, or track to download it."
             )
         )
         self._empty.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._empty.setWordWrap(True)
         self._empty.setStyleSheet(
             f"{type_qss(TYPE_BODY)} color: {TEXT_FAINT}; padding: {SPACE_XL}px;"
         )

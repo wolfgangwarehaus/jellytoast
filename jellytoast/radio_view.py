@@ -249,8 +249,8 @@ class _PopularPickerDialog(FrostedDialog):
 
         intro = QLabel(
             self.tr(
-                "Hand-picked publicly-streaming stations. Click Add to copy "
-                "one into your library — you can edit or remove it later."
+                "Hand-picked publicly-streaming stations. Add one to copy it "
+                "into your library — you can edit or remove it later."
             )
         )
         intro.setWordWrap(True)
@@ -513,11 +513,12 @@ class RadioView(QWidget):
 
         self._empty = QLabel(
             self.tr(
-                "No radio stations yet.\nClick “Add station” to paste in a "
+                "No radio stations yet.\nUse “Add station” to paste in a "
                 "stream URL — SomaFM, NTS, your local public radio's stream, …"
             )
         )
         self._empty.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._empty.setWordWrap(True)
         page.addWidget(self._empty, 1)
 
         self._apply_styling()

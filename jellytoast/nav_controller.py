@@ -206,6 +206,11 @@ class _NavMixin:
             self.np_page.preview_changed.connect(
                 lambda is_preview: self.np_bar.set_left_cluster_visible(is_preview)
             )
+            from jellytoast.player_state import PlayerBus
+
+            PlayerBus.get().width_class_changed.connect(
+                lambda _cls: self._sync_np_bar_cover()
+            )
 
             # Top-bar dropdown follows the preview state too — when the
             # user clicks a track in a previewed album, _on_row_clicked
@@ -228,6 +233,7 @@ class _NavMixin:
         else:
             self.np_page.clear_preview()
         self.content_stack.setCurrentWidget(self.np_page)
+        self._sync_np_bar_cover()
         # Top-bar dropdown reflects whether the user is in live
         # playback ("Now Playing") or previewing another album /
         # playlist ("Browsing"). Both modes show the same chevron menu
@@ -236,6 +242,25 @@ class _NavMixin:
         self.top_bar.set_now_playing_mode(True, label=nav_label)
         self.top_bar.set_library_controls_visible(False)
         self._push_nav(lambda pid=preview_id, pk=preview_kind: self._show_now_playing(pid, pk))
+
+    def _sync_np_bar_cover(self):
+        """Compact live Now Playing shows the cover big, so the bar's copy
+        steps out. (preview_changed only fires on a change, so a first live
+        open never hid it.) Wide is left alone, except to undo our own hide
+        on the way out of compact."""
+        if self.np_page is None or self.content_stack.currentWidget() is not self.np_page:
+            return
+        if self.np_page._preview_id:
+            return  # a preview keeps the playing track in the bar
+        from jellytoast import responsive
+
+        compact = responsive.is_compact()
+        hidden_here = getattr(self, "_np_cover_hidden_compact", False)
+        if compact:
+            self.np_bar.set_left_cluster_visible(False)
+        elif hidden_here:
+            self.np_bar.set_left_cluster_visible(True)
+        self._np_cover_hidden_compact = compact
 
     def _on_content_changed(self, _idx: int):
         """Sync top-bar mode with the visible content surface. The
@@ -248,6 +273,10 @@ class _NavMixin:
             return
         on_np = self.content_stack.currentWidget() is self.np_page
         if not on_np:
+            if getattr(self, "_np_cover_hidden_compact", False):
+                # Leaving compact Now Playing: the bar's cover comes back.
+                self.np_bar.set_left_cluster_visible(True)
+                self._np_cover_hidden_compact = False
             self.top_bar.set_now_playing_mode(False)
             return
         label = "Browsing" if self.np_page._preview_id else "Now Playing"

@@ -389,9 +389,9 @@ La reproducción bit-perfect reclama el dispositivo en exclusiva — detén el o
     <message>
         <location filename="../downloads_library_view.py" line="85"/>
         <source>No downloads yet.
-Right-click an album, playlist, artist, or track to download it.</source>
+Right-click (or long-press) an album, playlist, artist, or track to download it.</source>
         <translation>Aún no hay descargas.
-Haz clic derecho en un álbum, lista, artista o pista para descargarlo.</translation>
+Haz clic derecho (o mantén pulsado) en un álbum, lista, artista o pista para descargarlo.</translation>
     </message>
     <message>
         <location filename="../downloads_library_view.py" line="217"/>
@@ -1824,7 +1824,7 @@ Revisa el PIN — la causa más común es una errata o un código caducado (el r
     <message>
         <location filename="../radio_view.py" line="516"/>
         <source>No radio stations yet.
-Click “Add station” to paste in a stream URL — SomaFM, NTS, your local public radio&apos;s stream, …</source>
+Use “Add station” to paste in a stream URL — SomaFM, NTS, your local public radio&apos;s stream, …</source>
         <translation>Aún no hay emisoras de radio.
 Pulsa «Añadir emisora» y pega la URL de un stream — SomaFM, NTS, el stream de tu radio pública local, …</translation>
     </message>
@@ -3168,7 +3168,7 @@ Ejecuta pywal (o wallust) una vez para que genere una paleta, y vuelve a activar
     </message>
     <message>
         <location filename="../smart_playlists_view.py" line="203"/>
-        <source>No smart playlists yet. Click &quot;+ New smart playlist&quot; to define one.</source>
+        <source>No smart playlists yet. Use &quot;+ New smart playlist&quot; to define one.</source>
         <translation>Aún no hay listas inteligentes. Pulsa «+ Nueva lista inteligente» para definir una.</translation>
     </message>
     <message>
@@ -3416,8 +3416,8 @@ Ejecuta pywal (o wallust) una vez para que genere una paleta, y vuelve a activar
     </message>
     <message>
         <location filename="../tag_editor.py" line="374"/>
-        <source>Cover will be uploaded when you click Save.</source>
-        <translation>La carátula se subirá cuando pulses Guardar.</translation>
+        <source>Cover will be uploaded when you save.</source>
+        <translation>La carátula se subirá al guardar.</translation>
     </message>
     <message>
         <location filename="../tag_editor.py" line="419"/>
@@ -3868,8 +3868,8 @@ La carátula por pista no se modifica con esta escritura masiva.</translation>
     <name>_PopularPickerDialog</name>
     <message>
         <location filename="../radio_view.py" line="252"/>
-        <source>Hand-picked publicly-streaming stations. Click Add to copy one into your library — you can edit or remove it later.</source>
-        <translation>Emisoras públicas seleccionadas a mano. Pulsa Añadir para copiar una a tu biblioteca — luego puedes editarla o quitarla.</translation>
+        <source>Hand-picked publicly-streaming stations. Add one to copy it into your library — you can edit or remove it later.</source>
+        <translation>Emisoras públicas seleccionadas a mano. Añade una para copiarla a tu biblioteca — luego puedes editarla o quitarla.</translation>
     </message>
 </context>
 <context>

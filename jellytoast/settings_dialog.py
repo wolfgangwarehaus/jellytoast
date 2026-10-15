@@ -674,6 +674,11 @@ class SettingsDialog(QDialog):
 
     def __init__(self, parent=None):
         super().__init__(parent)
+        from jellytoast.platform_compat import is_mobile_shell
+
+        if is_mobile_shell():
+            # The theme row (combo + Import) must fit a ~370 px phone page.
+            self._THEME_COMBO_W = 220
         # Delete the C++ object when the dialog finishes. It's rebuilt
         # fresh on every open (jellytoast.app._open_settings drops its ref on
         # finished) and several pages connect bound-method slots to the
@@ -2206,7 +2211,10 @@ class SettingsDialog(QDialog):
         # width ≈ 516. EQ grid 16k right edge sits ~482 px in; a
         # 46-px trailing pad leaves a 12-px breath inside the 16k
         # boundary and mirrors what the preset row below uses.
-        _CONTENT_RIGHT_PAD = 46  # mirrors preset_row's trailing pad
+        from jellytoast.platform_compat import is_mobile_shell
+
+        # mirrors preset_row's trailing pad (none on a phone)
+        _CONTENT_RIGHT_PAD = 0 if is_mobile_shell() else 46
         dur_row = QHBoxLayout()
         dur_row.setContentsMargins(0, 0, _CONTENT_RIGHT_PAD, 0)
         dur_row.setSpacing(16)
@@ -3166,9 +3174,17 @@ class SettingsDialog(QDialog):
         lang_row.addWidget(self._language_combo)
         lang_hint = QLabel(self.tr("(needs restart)"))
         lang_hint.setStyleSheet(f"color: {TEXT_FAINT}; {type_qss(TYPE_CAPTION)}")
-        lang_row.addWidget(lang_hint)
-        lang_row.addStretch(1)
-        v.addLayout(lang_row)
+        from jellytoast.platform_compat import is_mobile_shell
+
+        if is_mobile_shell():
+            # No room beside the combo at phone width — the hint goes below.
+            lang_row.addStretch(1)
+            v.addLayout(lang_row)
+            v.addWidget(lang_hint)
+        else:
+            lang_row.addWidget(lang_hint)
+            lang_row.addStretch(1)
+            v.addLayout(lang_row)
 
         self._tooltips_check = QCheckBox(self.tr("Show hover tooltips"))
         self._tooltips_check.setChecked(self.s.show_tooltips)
@@ -3981,7 +3997,9 @@ class SettingsDialog(QDialog):
         # button leftward so they don't sit hard against the page's
         # right edge — leaves the right column of the page reading
         # as a column rather than a strip of edge-aligned widgets.
-        row.setContentsMargins(0, 0, 140, 0)
+        from jellytoast.platform_compat import is_mobile_shell
+
+        row.setContentsMargins(0, 0, 0 if is_mobile_shell() else 140, 0)
         row.setSpacing(8)
         name = QLabel(entry["label"])
         name.setStyleSheet(f"color: {TEXT}; {type_qss(TYPE_BODY)}")
@@ -3995,7 +4013,7 @@ class SettingsDialog(QDialog):
         except (AttributeError, TypeError):
             pass  # Qt < 6.5 — multi-chord accepted, harmless
         edit.setKeySequence(_hotkeys.get_sequence(action_id, entry["default_seq"]))
-        edit.setMaximumWidth(170)
+        edit.setMaximumWidth(120 if is_mobile_shell() else 170)
         edit.editingFinished.connect(
             lambda aid=action_id: self._on_hotkey_edited(aid)
         )
@@ -4086,7 +4104,9 @@ class SettingsDialog(QDialog):
         # Trailing right margin matches `_editable_hotkey_row` so the
         # binding chips line up under the Reset buttons above rather
         # than drifting all the way to the page's right edge.
-        row.setContentsMargins(0, 0, 140, 0)
+        from jellytoast.platform_compat import is_mobile_shell
+
+        row.setContentsMargins(0, 0, 0 if is_mobile_shell() else 140, 0)
         name = QLabel(label)
         name.setStyleSheet(f"color: {TEXT}; {type_qss(TYPE_BODY)}")
         row.addWidget(name)

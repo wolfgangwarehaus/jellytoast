@@ -200,7 +200,7 @@ class SmartPlaylistsView(QWidget):
         # of stranded top-left.
         self._empty_caption = QLabel(
             self.tr(
-                'No smart playlists yet. Click "+ New smart playlist" to define one.'
+                'No smart playlists yet. Use "+ New smart playlist" to define one.'
             )
         )
         self._empty_caption.setStyleSheet(f"color: {TEXT_DIM}; {type_qss(TYPE_CAPTION)}")

@@ -453,3 +453,16 @@ def test_downloads_library_view_has_object_name(qapp, fake_settings, fake_offlin
 
     view = DownloadsLibraryView()
     assert view.objectName() == "downloadsLibraryView"
+
+
+def test_cache_readouts_wrap_beside_their_buttons(
+    qapp, fake_settings, fake_offline, sync_run_async
+):
+    """On a phone-width page the size readouts give way (wrap) instead of
+    pushing "Refresh album art" / "Clear all" off the edge."""
+    from jellytoast.downloads_view import DownloadsView
+
+    view = DownloadsView()
+    view._cache_size_label.setText("Album art: 107.2 MB across 369 files")
+    assert view._cache_size_label.wordWrap()
+    assert view._storage.wordWrap()

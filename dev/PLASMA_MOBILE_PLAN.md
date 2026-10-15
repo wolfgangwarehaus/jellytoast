@@ -261,12 +261,39 @@ Next (the rest of the sweep):
 - [x] Commit phase 5 (single commit) + CHANGELOG lines for phases 4–5.
 - [ ] Ask august if 1.5× feels right on the device (try `JT_PHONE_SCALE=1.75`);
   maybe a Settings "Interface size" option instead of env only.
-- [ ] Not yet swept at phone scale: queue/Up Next, radio, downloads, Smart
-  Mix editor, tag editor, cast dialog, login screen, other Settings pages
-  (Playback / Casting / Display / Hotkeys / Scrobbling), context menus.
-- [ ] Bar cover duplicates the big cover on Now Playing (could hide on the
-  compact NP page). Playlists empty state says "Click" (→ "Tap" on touch).
-  Settings button text sizes vary ("Change server URL…" vs "Check now").
+- [x] **Sweep 2 (2026-10-15)**, headless at 400 px logical against the
+  Navidrome demo (login via "Try a demo"; `JT_AUDIO_PCM_FILE=/dev/null` so
+  nothing plays aloud — it runs faster than real time). Swept: login,
+  library, Now Playing + Tracks, radio, downloads, Smart Mixes, playlists,
+  genres, songs, every Settings page. Fixed:
+  - Settings pages clipped on the right (no sideways scroll): EQ bands share
+    the width on a phone, Save / Delete get their own row, no 46 / 140 px
+    trailing pads, "(needs restart)" under Language, theme combo 220 px,
+    narrower shortcut field. Every page ≤ 360 px (test pins it).
+  - Downloads cache readouts wrap beside their buttons.
+  - Radio / downloads empty states wrap (were clipped both sides); wording
+    no longer assumes a mouse ("Use …", "Right-click (or long-press)").
+    Spanish catalog updated for those 5 strings.
+  - Bar cover hides on compact live Now Playing, back on leaving it
+    (`_sync_np_bar_cover`). Desktop untouched — note desktop is itself
+    inconsistent: the bar cover hides after a preview → live switch but
+    not on a first live open (`clear_preview` emits nothing).
+- [ ] Still not swept: Smart Mix editor, tag editor, cast dialog, context
+  menus (popups block the bridge — render them via unit tests).
+- [ ] Nav: Now Playing → Radio (via the dropdown) → Back landed on the
+  library, skipping Now Playing (history held 2 entries). Check whether the
+  tab-switch path pushes history.
+- [ ] Tracks tab: ~58 px left gutter (track-number column) at phone width;
+  consider a narrower index column when compact. Push buttons (radio header,
+  Settings) are ~30 px tall — consider a touch min-height on a phone.
+- [ ] Translation drift: `dev/update_translations.sh` now finds 16
+  unfinished strings from phases 2–5, plus the shared tile menu's strings
+  land in an empty context (module-level `translate`) — fix the context
+  and translate them.
+- [ ] Songs view showed "No songs yet" once on the demo (slow server
+  timeout); Refresh fixed it. Fine, but the empty copy blames the library.
+- [x] Smart Mixes empty state says "Use", not "Click". Settings button text
+  sizes vary ("Change server URL…" vs "Check now") — still open.
 - [ ] Top bar view dropdown still reads "Albums" on artist / search pages
   reached via internal nav — check it updates in real navigation.
 - [ ] The ⋮ menu was only verified in tests (popups don't show in

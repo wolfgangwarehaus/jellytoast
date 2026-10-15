@@ -371,7 +371,7 @@ class TagEditorDialog(QDialog):
             self._new_cover_mime = ""
             return
         self._set_cover_pixmap(pix)
-        self._status.setText(self.tr("Cover will be uploaded when you click Save."))
+        self._status.setText(self.tr("Cover will be uploaded when you save."))
 
     # ── Edit collection + save ──────────────────────────────────────────
 

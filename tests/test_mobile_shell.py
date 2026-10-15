@@ -234,3 +234,98 @@ def test_wrapping_checkbox_label_wraps_and_toggles(qapp):
     press()
     assert cb.isChecked()  # a disabled option's label doesn't toggle it
     row.deleteLater()
+
+
+_SETTINGS_PAGES = ["General", "Playback", "Casting", "Display", "Hotkeys", "Scrobbling"]
+
+
+def test_settings_pages_fit_a_phone(qapp, isolated_settings, monkeypatch):
+    """At phone scale the Settings page is ~370 px wide, and its scroll area
+    doesn't scroll sideways: anything wider is clipped (the EQ's 16k band,
+    Save / Delete, "(needs restart)", the Reset buttons)."""
+    from jellytoast.settings_dialog import SettingsDialog
+
+    monkeypatch.setattr(pc, "is_mobile_shell", lambda: True)
+    dlg = SettingsDialog()
+    try:
+        for name in _SETTINGS_PAGES:
+            assert dlg.show_page(name)
+        qapp.processEvents()
+        for builder, _lazy, lay in dlg._page_builders:
+            if builder.__name__ == "_build_downloads":
+                continue  # its own scroll area; covered below
+            assert lay.parentWidget().minimumSizeHint().width() <= 360, builder.__name__
+    finally:
+        dlg.deleteLater()
+
+
+class _FakeBar:
+    def __init__(self):
+        self._left_suppressed = False
+
+    def set_left_cluster_visible(self, visible):
+        self._left_suppressed = not visible
+
+
+class _FakeNav:
+    def __init__(self):
+        from types import SimpleNamespace
+
+        self.np_page = SimpleNamespace(_preview_id="")
+        self.np_bar = _FakeBar()
+        page = self.np_page
+        self.content_stack = SimpleNamespace(currentWidget=lambda: page)
+
+
+@pytest.mark.parametrize("compact", [True, False])
+def test_compact_now_playing_hides_the_bar_cover(monkeypatch, compact):
+    """The compact Now Playing page shows the cover big; the bar's copy steps
+    out. Wide is left as it was."""
+    from jellytoast import responsive
+    from jellytoast.nav_controller import _NavMixin
+
+    monkeypatch.setattr(responsive, "is_compact", lambda: compact)
+    nav = _FakeNav()
+    _NavMixin._sync_np_bar_cover(nav)
+    assert nav.np_bar._left_suppressed is compact
+
+
+def test_bar_cover_returns_when_leaving_compact(monkeypatch):
+    from jellytoast import responsive
+    from jellytoast.nav_controller import _NavMixin
+
+    nav = _FakeNav()
+    monkeypatch.setattr(responsive, "is_compact", lambda: True)
+    _NavMixin._sync_np_bar_cover(nav)
+    monkeypatch.setattr(responsive, "is_compact", lambda: False)
+    _NavMixin._sync_np_bar_cover(nav)
+    assert nav.np_bar._left_suppressed is False
+
+
+def test_previewing_keeps_the_bar_cover(monkeypatch):
+    """Browsing an album keeps the playing track visible in the bar."""
+    from jellytoast import responsive
+    from jellytoast.nav_controller import _NavMixin
+
+    monkeypatch.setattr(responsive, "is_compact", lambda: True)
+    nav = _FakeNav()
+    nav.np_page._preview_id = "album-1"
+    _NavMixin._sync_np_bar_cover(nav)
+    assert nav.np_bar._left_suppressed is False
+
+
+def test_bar_cover_returns_when_leaving_now_playing(monkeypatch):
+    from types import SimpleNamespace
+
+    from jellytoast import responsive
+    from jellytoast.nav_controller import _NavMixin
+
+    monkeypatch.setattr(responsive, "is_compact", lambda: True)
+    nav = _FakeNav()
+    nav.top_bar = SimpleNamespace(set_now_playing_mode=lambda *a, **k: None)
+    _NavMixin._sync_np_bar_cover(nav)
+    assert nav.np_bar._left_suppressed
+    other = object()
+    nav.content_stack = SimpleNamespace(currentWidget=lambda: other)
+    _NavMixin._on_content_changed(nav, 1)
+    assert not nav.np_bar._left_suppressed
