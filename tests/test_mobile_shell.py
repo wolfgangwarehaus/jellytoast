@@ -262,9 +262,13 @@ def test_settings_pages_fit_a_phone(qapp, isolated_settings, monkeypatch):
 class _FakeBar:
     def __init__(self):
         self._left_suppressed = False
+        self.np_open = False
 
     def set_left_cluster_visible(self, visible):
         self._left_suppressed = not visible
+
+    def set_now_playing_open(self, open_):
+        self.np_open = open_
 
 
 class _FakeNav:

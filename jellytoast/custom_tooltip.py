@@ -228,6 +228,12 @@ class ToolTipFilter(QObject):
         if et == QEvent.Type.ToolTip:
             if not get_settings().show_tooltips:
                 return True
+            from jellytoast.touch import last_input_was_touch
+
+            # A finger can't hover: the "hover pause" is just where the last
+            # tap lifted, so a tooltip there would pop up unasked and stick.
+            if last_input_was_touch():
+                return True
             if isinstance(obj, QWidget):
                 tip = obj.toolTip()
                 if tip:

@@ -358,7 +358,26 @@ class NowPlayingPage(_LeftPaneMixin, _LyricsMixin, QWidget):
         self._restyle_compact_tabs()
         self.preview_changed.connect(self._label_compact_tabs)
         bar.setVisible(False)
+        # Phone: swipe between the two panes; swipe down on Playing closes
+        # the page (the Tracks list scrolls vertically, so it keeps that).
+        from jellytoast import touch
+
+        touch.on_swipe(
+            self,
+            self._on_compact_swipe,
+            ("left", "right", "down"),
+            when=lambda: getattr(self, "_is_compact", False),
+        )
         return bar
+
+    def _on_compact_swipe(self, direction: str) -> None:
+        on_playing = self._tab_playing.isChecked()
+        if direction == "left" and on_playing:
+            self._tab_tracks.setChecked(True)
+        elif direction == "right" and not on_playing:
+            self._tab_playing.setChecked(True)
+        elif direction == "down" and on_playing:
+            self.dismiss_requested.emit()
 
     def _label_compact_tabs(self, previewing: bool):
         """Browsing an album / playlist isn't "Playing": name the first tab

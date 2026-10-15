@@ -284,6 +284,67 @@ Next (the rest of the sweep):
   wrap to two lines with a finger-sized ×. Tag editor: 520 px minimum
   dropped, cover above the form. Cast dialog: no longer fixed 440×480.
   Tests pin all three ≤ 360 px.
+- [~] **Flick feel** (august: "not very smooth and kind of goes on too
+  long"). Qt's QScroller defaults (deceleration 0.125, max 0.5 m/s) glided
+  ~4 s, mostly a slow 1-px crawl, and capped every flick at one distance.
+  Now `touch.FLICK_DECELERATION = 0.6`, `FLICK_MAX_VELOCITY = 1.1`: gentle
+  ≈0.7 s / ½ screen, medium ≈1.5 s / 2 screens, hard ≈1.9 s / 3+ screens
+  (simulated with `QScroller.handleInput`). Headless grid paint is ~2.5 ms
+  a frame with steady 16 ms pacing, so jank wasn't paint there. Needs
+  august's feel check on the device; nudge the two constants if needed.
+- [x] **A–Z rail by touch** (august: "doesn't seem to be working great").
+  It was 26 tiny buttons: a tap only counted with press + release on one
+  ~20 px letter, no slide-to-scrub, and a jump during a flick got dragged
+  away by the still-gliding scroller. Now the strip takes touch itself
+  (`WA_AcceptTouchEvents`; letters don't, so touch lands on the strip):
+  touch / slide jumps live to the letter under the finger (clamped to A/Z
+  past the ends), a 64 px accent bubble shows it beside the finger, the
+  strip is 30 px wide on a phone, and a jump stops any running flick.
+  Mouse unchanged. Tests drive touch through the window handle (the
+  widget overload of `QTest.touchEvent` didn't reach the strip).
+- [x] **Touch polish pass (2026-10-15).** Audit + fixes, all in tests and
+  checked end to end headless with real data:
+  - Stuck hover after a tap (Qt parks its emulated pointer where the finger
+    lifted): `touch.clear_hover` runs after every touch release; tooltips
+    never fire for touch (`ToolTipFilter` skips while
+    `last_input_was_touch()`); `_last_input_touch` now flips on TouchBegin,
+    before the emulated enter reaches widgets.
+  - Button focus rings with no keyboard: a tapped button gives its focus
+    back after release; focus Qt hands to a button when a page hides
+    (Other / ActiveWindow reason) is dropped while input is touch. Not
+    mid-press — losing focus cancels the click.
+  - Volume: hover opened the slider and a click muted, so a tap muted and
+    the slider was unreachable. On touch a tap toggles the slider; it closes
+    on the next touch outside it (TouchBegin filter); the hover-out timer
+    ignores touch (Wayland's pointer position isn't the finger's — it would
+    have closed the slider ~180 ms after opening). Mouse unchanged (click
+    mutes). No touch mute now — the phone's own volume keys cover it.
+  - Swipes: `touch.on_swipe(widget, handler, directions, when=)`. A drag
+    that could scroll the view under the finger, or move a slider, stays a
+    scroll. Bar: swipe up → Now Playing. Compact Now Playing: left / right
+    switch Playing ↔ Tracks, down on Playing closes it.
+  - Touch filter fix: a press a label ignores bubbles up its parents and the
+    filter recorded each, ending on the top-level window — swipe handlers
+    and long-press menus now resolve from the innermost widget.
+  - Checked and fine: a vertical drag starting on a horizontal rail scrolls
+    the page; the seek bar jumps / drags under the finger.
+- [x] **Phone mini player** (august picked option A of three mockups). On a
+  mobile shell below the touch-compact width the bar is a mini player:
+  3 px progress line, 52 px cover · title / artist · play · next, 68 px
+  tall. Tap the cover / title (on release — a swipe must not also tap) or
+  swipe up for Now Playing. While the LIVE page is up the bar shows the
+  full transport (seek, previous, volume) instead; a preview keeps the
+  mini player (it shows what's playing). Nav drives it via
+  `np_bar.set_now_playing_open` from `_sync_np_bar_cover` (+ on
+  preview_changed, and off when leaving the page). Both views live in a
+  plain box with the inactive one hidden — a QStackedLayout sizes to its
+  largest page, and a hidden layout keeps stale sizes; either one held the
+  phone window at 460–516 px (the ratchet). Desktop and wide phones keep
+  the full bar.
+- [ ] Ideas not done: tap feedback on tiles / rows (a deferred tap shows no
+  pressed state while the finger is down); long-press volume → mute if
+  august wants touch mute back; favorite from the mini player (the heart
+  lives on the full bar's cover overlay / Now Playing).
 - [ ] Still not swept: context menus (popups block the bridge — render them
   via unit tests).
 - [x] Nav: Radio / Downloads / Smart Mixes never pushed history (Now Playing

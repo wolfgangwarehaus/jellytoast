@@ -1338,8 +1338,66 @@ class VolumeButton(IconButton):
     # ── Hover lifecycle ────────────────────────────────────────────────
     def enterEvent(self, e):
         super().enterEvent(e)
+        from jellytoast import touch
+
+        # A finger's emulated "enter" isn't hover: on touch a tap opens the
+        # slider instead (see mouseReleaseEvent).
+        if touch.is_touch_event(e) or touch.last_input_was_touch():
+            return
         self._hide_timer.stop()
         self._show_popup()
+
+    # ── Touch: tap = show / hide the slider (hover can't) ──────────────
+    def mousePressEvent(self, e):
+        from jellytoast import touch
+
+        if touch.is_touch_event(e):
+            self._touch_press = True
+            self.setDown(True)
+            e.accept()
+            return
+        self._touch_press = False
+        super().mousePressEvent(e)
+
+    def mouseReleaseEvent(self, e):
+        from jellytoast import touch
+
+        if getattr(self, "_touch_press", False) or touch.is_touch_event(e):
+            self._touch_press = False
+            self.setDown(False)
+            e.accept()
+            if self.rect().contains(e.position().toPoint()):
+                self._toggle_popup_by_touch()
+            return
+        super().mouseReleaseEvent(e)
+
+    def _toggle_popup_by_touch(self):
+        self._hide_timer.stop()
+        if self._popup is not None and self._popup.isVisible():
+            self._popup.hide()
+        else:
+            self._show_popup()
+            # No pointer leaves on touch, so the hover-out timer never runs:
+            # close on the next touch anywhere outside the button + slider.
+            from PySide6.QtWidgets import QApplication
+
+            QApplication.instance().installEventFilter(self)
+
+    def eventFilter(self, obj, e):
+        # Installed while a touch-opened slider is up: the next finger
+        # landing outside the button + slider closes it.
+        if e.type() == QEvent.Type.TouchBegin and self._popup is not None:
+            points = e.points()
+            if points:
+                gp = points[0].globalPosition().toPoint()
+                popup = self._popup
+                inside = self.rect().contains(self.mapFromGlobal(gp)) or (
+                    popup.isVisible() and popup.rect().contains(popup.mapFromGlobal(gp))
+                )
+                if not inside:
+                    popup.hide()
+                    QApplication.instance().removeEventFilter(self)
+        return False
 
     def leaveEvent(self, e):
         super().leaveEvent(e)
@@ -1566,6 +1624,12 @@ class VolumeButton(IconButton):
 
     def _maybe_hide_popup(self):
         if self._popup is None:
+            return
+        from jellytoast import touch
+
+        # Touch has no hover to leave (and the pointer position isn't the
+        # finger's): a touch-opened slider closes on a tap elsewhere instead.
+        if touch.last_input_was_touch():
             return
         # Keyboard owns the popup while the button holds focus — a stray
         # mouse-leave (e.g. the cursor drifting off after the user switched

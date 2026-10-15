@@ -102,7 +102,9 @@ class _Host(_NavMixin):
             set_now_playing_mode=lambda *a, **k: None,
             set_active_tab=self.labels.append,
         )
-        self.np_bar = SimpleNamespace(set_left_cluster_visible=lambda v: None)
+        self.np_bar = SimpleNamespace(
+            set_left_cluster_visible=lambda v: None, set_now_playing_open=lambda v: None
+        )
         self.np_page = None
         for attr in ("_radio_view", "_downloads_lib_view", "_smart_playlists_view"):
             setattr(self, attr, SimpleNamespace(name=attr, reload=lambda: None))

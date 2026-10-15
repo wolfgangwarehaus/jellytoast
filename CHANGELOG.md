@@ -34,6 +34,17 @@ developer-facing history lives in [`docs/CHANGELOG.md`](docs/CHANGELOG.md).
   a ⋮ menu. Now Playing gets a big cover, and shuffle, repeat, sleep timer and
   cast move there when the bar runs out of room. Settings, the smart playlist
   editor, the tag editor and the cast picker fit a phone screen too.
+- **Smoother flick scrolling, and an A–Z bar that works by touch.** Flicks
+  glide for a moment instead of crawling on for seconds. Slide a finger down
+  the letter bar to scrub through your library, with a big letter showing
+  where you are.
+- **A proper mini player on phones.** The player bar now shows the song,
+  artist and cover with play and next, and a thin progress line. Tap it (or
+  swipe up) for Now Playing, where the full controls are.
+- **Swipes and tidier taps on touchscreens.** Swipe up on the player bar
+  for Now Playing; there, swipe sideways between Playing and Tracks, or down
+  to close it. Tapping the volume button opens its slider. Buttons no longer
+  stay highlighted or pop up tooltips after you tap them.
 - **Back goes back from Radio, Downloads and Smart playlists.** It used to
   skip past the page you came from. The view picker at the top now also
   stays in step when you go back and forward.

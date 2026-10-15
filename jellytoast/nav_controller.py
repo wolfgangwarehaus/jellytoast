@@ -212,6 +212,7 @@ class _NavMixin:
             self.np_page.preview_changed.connect(
                 lambda is_preview: self.np_bar.set_left_cluster_visible(is_preview)
             )
+            self.np_page.preview_changed.connect(lambda _p: self._sync_np_bar_cover())
             from jellytoast.player_state import PlayerBus
 
             PlayerBus.get().width_class_changed.connect(
@@ -274,8 +275,14 @@ class _NavMixin:
         """Compact live Now Playing shows the cover big, so the bar's copy
         steps out. (preview_changed only fires on a change, so a first live
         open never hid it.) Wide is left alone, except to undo our own hide
-        on the way out of compact."""
-        if self.np_page is None or self.content_stack.currentWidget() is not self.np_page:
+        on the way out of compact.
+
+        Also tells the bar whether the LIVE page is up: on a phone it then
+        swaps its mini player for the full transport (seek, previous,
+        volume); a preview keeps the mini player showing what's playing."""
+        on_np = self.np_page is not None and self.content_stack.currentWidget() is self.np_page
+        self.np_bar.set_now_playing_open(on_np and not self.np_page._preview_id)
+        if not on_np:
             return
         if self.np_page._preview_id:
             return  # a preview keeps the playing track in the bar
@@ -298,6 +305,7 @@ class _NavMixin:
         current = self.content_stack.currentWidget()
         on_np = self.np_page is not None and current is self.np_page
         if not on_np:
+            self.np_bar.set_now_playing_open(False)
             if getattr(self, "_np_cover_hidden_compact", False):
                 # Leaving compact Now Playing: the bar's cover comes back.
                 self.np_bar.set_left_cluster_visible(True)

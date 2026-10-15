@@ -101,6 +101,56 @@ from jellytoast.volume_button import VolumeButton
 _BAR_SOURCE_PX = 324
 
 
+class _MiniProgress(QWidget):
+    """The mini player's playback position: a thin accent line along the
+    bar's top edge (seeking lives on Now Playing)."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setFixedHeight(3)
+        self._fraction = 0.0
+
+    def set_fraction(self, f: float) -> None:
+        f = max(0.0, min(1.0, f))
+        if abs(f - self._fraction) * max(1, self.width()) >= 0.5 or f == 0.0:
+            self._fraction = f
+            self.update()
+
+    def paintEvent(self, _e):
+        from PySide6.QtGui import QColor
+
+        from jellytoast import ui_helpers as _u
+
+        p = QPainter(self)
+        p.fillRect(self.rect(), QColor(ink_alpha(0.12)))
+        w = int(round(self.width() * self._fraction))
+        if w > 0:
+            p.fillRect(0, 0, w, self.height(), QColor(_u.ACCENT))
+        p.end()
+
+
+class _TapArea(QWidget):
+    """Calls ``on_tap`` on a click / tap released inside it. On release, not
+    press: a swipe that starts here must not also count as a tap."""
+
+    def __init__(self, on_tap, parent=None):
+        super().__init__(parent)
+        self._on_tap = on_tap
+        self._pressed = False
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+
+    def mousePressEvent(self, e):
+        self._pressed = e.button() == Qt.MouseButton.LeftButton
+        e.accept()
+
+    def mouseReleaseEvent(self, e):
+        tap = self._pressed and self.rect().contains(e.position().toPoint())
+        self._pressed = False
+        e.accept()
+        if tap:
+            self._on_tap()
+
+
 class NowPlayingBar(QWidget):
     """Persistent transport at the bottom of the main window."""
 
@@ -169,7 +219,10 @@ class NowPlayingBar(QWidget):
             b.setStyleSheet(icon_btn_style)
             return b
 
-        layout = QHBoxLayout(self)
+        # Two views share the bar: this full transport, and (phone width on
+        # a mobile shell) a mini player — see _build_mini / _apply_compact.
+        self._full = QWidget()
+        layout = QHBoxLayout(self._full)
         # Left margin = 0 so the cover sits flush in the bottom-left
         # corner of the window. Right margin = 0 too so the heart and
         # mini-player flanks land symmetric around the bar's true
@@ -301,6 +354,17 @@ class NowPlayingBar(QWidget):
             self.show_now_playing_requested.emit()
 
         self.thumb.mousePressEvent = _on_thumb_press
+        # Touch: swipe up on the bar opens Now Playing (the phone convention;
+        # the bar has no room for the title there). Not while the page is
+        # already up — the bar's cover steps out then.
+        from jellytoast import touch
+
+        touch.on_swipe(
+            self,
+            lambda _d: self.show_now_playing_requested.emit(),
+            ("up",),
+            when=lambda: not self._left_suppressed,
+        )
         # Exposed so the host can blank the cover/title while the
         # now-playing page is showing. The cluster's responsive width
         # (set in _apply_responsive_layout) stays reserved regardless
@@ -489,6 +553,18 @@ class NowPlayingBar(QWidget):
         self.right_cluster = right
         layout.addWidget(right)
 
+        self._np_open = False
+        self._mini = self._build_mini()
+        # A plain box with the inactive view hidden, not a QStackedLayout:
+        # that sizes to its LARGEST page, so the hidden full transport's
+        # minimum would hold the phone window wider than the mini player.
+        modes = QVBoxLayout(self)
+        modes.setContentsMargins(0, 0, 0, 0)
+        modes.setSpacing(0)
+        modes.addWidget(self._full)
+        modes.addWidget(self._mini)
+        self._mini.hide()
+
         # Initial volume from settings — VolumeButton owns the popup
         # slider, so we push the persisted value through its API and
         # let the bus syncing handle subsequent changes.
@@ -523,8 +599,8 @@ class NowPlayingBar(QWidget):
         # track-change is a memory-cache hit instead of a fresh
         # network round-trip — same idea as mpv's audio prefetch.
         self.bus.queue_prefetch_request.connect(self._prefetch_cover)
-        self.bus.playback_paused.connect(lambda: self.play_btn.setIcon(icon("play")))
-        self.bus.playback_resumed.connect(lambda: self.play_btn.setIcon(icon("pause")))
+        self.bus.playback_paused.connect(lambda: self._set_play_icon(icon("play")))
+        self.bus.playback_resumed.connect(lambda: self._set_play_icon(icon("pause")))
         self.bus.playback_restored.connect(self._on_restored)
         self.bus.position_updated.connect(self._on_position)
         self.bus.duration_set.connect(self._on_duration)
@@ -616,6 +692,124 @@ class NowPlayingBar(QWidget):
     # Preset durations offered in the menu, in minutes. "End of track"
     # is handled separately because it's a mode, not a duration.
     _SLEEP_PRESETS = (15, 30, 45, 60, 90)
+
+    def _set_play_icon(self, ic) -> None:
+        self.play_btn.setIcon(ic)
+        mini = getattr(self, "mini_play_btn", None)
+        if mini is not None:
+            mini.setIcon(ic)
+
+    # ── Mini player (phone) ─────────────────────────────────────────────
+    # At phone width the full bar can't fit a title beside its controls,
+    # so outside Now Playing it shows the phone convention instead: a thin
+    # progress line, cover · title / artist · play · next. Tap the cover or
+    # title (or swipe up) for Now Playing, where the full transport — seek,
+    # previous, volume — comes back (set_now_playing_open).
+    _MINI_HEIGHT = 68
+    _MINI_COVER = 52
+
+    def _build_mini(self) -> QWidget:
+        mini = QWidget()
+        col = QVBoxLayout(mini)
+        col.setContentsMargins(0, 0, 0, 0)
+        col.setSpacing(0)
+        self.mini_progress = _MiniProgress()
+        col.addWidget(self.mini_progress)
+
+        row = QHBoxLayout()
+        row.setContentsMargins(8, 6, 4, 6)
+        row.setSpacing(12)
+        info = _TapArea(self.show_now_playing_requested.emit)
+        info_row = QHBoxLayout(info)
+        info_row.setContentsMargins(0, 0, 0, 0)
+        info_row.setSpacing(12)
+        self.mini_cover = QLabel()
+        self.mini_cover.setFixedSize(self._MINI_COVER, self._MINI_COVER)
+        info_row.addWidget(self.mini_cover)
+        text = QVBoxLayout()
+        text.setContentsMargins(0, 0, 0, 0)
+        text.setSpacing(2)
+        text.addStretch(1)
+        self.mini_title = MarqueeLabel(self.tr("Nothing Playing"))
+        self.mini_artist = MarqueeLabel("")
+        text.addWidget(self.mini_title)
+        text.addWidget(self.mini_artist)
+        text.addStretch(1)
+        info_row.addLayout(text, 1)
+        row.addWidget(info, 1)
+
+        btn_qss = self._icon_btn_qss()
+        self.mini_play_btn = IconButton()
+        self.mini_play_btn.setIcon(self.play_btn.icon())
+        self.mini_play_btn.setIconSize(QSize(26, 26))
+        self.mini_play_btn.setFixedSize(48, 48)
+        self.mini_play_btn.setToolTip(self.tr("Play / Pause"))
+        self.mini_play_btn.setStyleSheet(btn_qss)
+        self.mini_play_btn.clicked.connect(lambda: self.bus.pause_toggled.emit())
+        self.mini_next_btn = IconButton()
+        self.mini_next_btn.setIcon(icon("next"))
+        self.mini_next_btn.setProperty("_jt_icon", "next")
+        self.mini_next_btn.setIconSize(QSize(22, 22))
+        self.mini_next_btn.setFixedSize(48, 48)
+        self.mini_next_btn.setToolTip(self.tr("Next"))
+        self.mini_next_btn.setStyleSheet(btn_qss)
+        self.mini_next_btn.clicked.connect(lambda: self.bus.next_track.emit())
+        row.addWidget(self.mini_play_btn, 0, Qt.AlignmentFlag.AlignVCenter)
+        row.addWidget(self.mini_next_btn, 0, Qt.AlignmentFlag.AlignVCenter)
+        col.addLayout(row, 1)
+        self._style_mini()
+        return mini
+
+    def _style_mini(self) -> None:
+        idle = not bool(self._track_title)
+        self.mini_title.setStyleSheet(
+            f"color: {TEXT if not idle else IDLE_TEXT}; {type_qss(TYPE_BODY)} font-weight: 600;"
+        )
+        self.mini_artist.setStyleSheet(f"color: {TEXT_DIM}; {type_qss(TYPE_CAPTION)}")
+
+    def _refresh_mini(self) -> None:
+        if not hasattr(self, "mini_title"):
+            return  # mid-construction
+        self.mini_title.setText(self._track_title or self.tr("Nothing Playing"))
+        self.mini_artist.setText(self._track_subtitle or "")
+        self.mini_artist.setVisible(bool(self._track_subtitle))
+        self._style_mini()
+        self.mini_progress.setVisible(not getattr(self, "_is_radio", False))
+
+    def _refresh_mini_cover(self) -> None:
+        if not hasattr(self, "mini_cover"):
+            return
+        if self._cover_orig is None or self._cover_orig.isNull():
+            self.mini_cover.setPixmap(QPixmap())
+            return
+        side = self._MINI_COVER
+        dpr = screen_dpr(self)
+        phys = max(side, int(round(side * dpr)))
+        scaled = self._cover_orig.scaled(
+            phys,
+            phys,
+            Qt.AspectRatioMode.KeepAspectRatioByExpanding,
+            Qt.TransformationMode.SmoothTransformation,
+        )
+        if scaled.width() != phys or scaled.height() != phys:
+            cx = max(0, (scaled.width() - phys) // 2)
+            cy = max(0, (scaled.height() - phys) // 2)
+            scaled = scaled.copy(cx, cy, phys, phys)
+        r = int(round(rad(6) * dpr))
+        scaled = _round_corners(scaled, tl=r, tr=r, br=r, bl=r)
+        scaled.setDevicePixelRatio(dpr)
+        self.mini_cover.setPixmap(scaled)
+
+    def is_mini(self) -> bool:
+        return not self._mini.isHidden()
+
+    def set_now_playing_open(self, open_: bool) -> None:
+        """The live Now Playing page is up: show the full transport (seek,
+        previous, volume) instead of the mini player."""
+        if open_ == self._np_open:
+            return
+        self._np_open = open_
+        self._apply_responsive_layout(self.width())
 
     def stepped_out(self) -> dict:
         """Which secondary controls this bar has hidden at the current
@@ -831,15 +1025,18 @@ class NowPlayingBar(QWidget):
                 continue
             b.setIcon(icon(name))
         # Play / pause glyph reflects playback state.
-        self.play_btn.setIcon(
+        self._set_play_icon(
             icon("pause") if (np.item_id and not np.is_paused) else icon("play")
         )
 
         # 3. Button + seek-bar QSS rebuilt from the fresh tokens.
         btn_qss = self._icon_btn_qss()
         for b in (self.mini_btn, self.cast_btn, self.sleep_btn, self.shuffle_btn,
-                  self.prev_btn, self.play_btn, self.next_btn, self.repeat_btn):
+                  self.prev_btn, self.play_btn, self.next_btn, self.repeat_btn,
+                  self.mini_play_btn, self.mini_next_btn):
             b.setStyleSheet(btn_qss)
+        self._style_mini()
+        self.mini_progress.update()
         self.seek_bar.setStyleSheet(self._slider_qss())
 
         # 4. Text colours — title / sub / album via _apply_text_layout
@@ -897,7 +1094,7 @@ class NowPlayingBar(QWidget):
         # cache-clear / dpr-change while playback is paused — an
         # unconditional "pause" glyph would then lie about the state. Mirror
         # the _reapply_theme logic and show "play" when paused.
-        self.play_btn.setIcon(
+        self._set_play_icon(
             icon("pause") if (np.item_id and not np.is_paused) else icon("play")
         )
         self._set_favorite(np.is_favorite)
@@ -1016,6 +1213,7 @@ class NowPlayingBar(QWidget):
         scaled = _round_corners(scaled, tl=r10, tr=r10, br=r10, bl=r_body)
         scaled.setDevicePixelRatio(dpr)
         self.thumb.setPixmap(scaled)
+        self._refresh_mini_cover()
 
     @Slot(object)
     def _on_radio_state(self, state):
@@ -1126,9 +1324,11 @@ class NowPlayingBar(QWidget):
         self._apply_text_layout(self.width())
         self._cover_orig = None
         self.thumb.setPixmap(QPixmap())
-        self.play_btn.setIcon(icon("play"))
+        self._refresh_mini_cover()
+        self._set_play_icon(icon("play"))
         self._set_favorite(False)
         self.seek_bar.setValue(0)
+        self.mini_progress.set_fraction(0.0)
         self.cur_time.setText("0:00")
         self.tot_time.setText("0:00")
         # Keep the "Casting to …" line if a cast is still live (a stop
@@ -1260,7 +1460,7 @@ class NowPlayingBar(QWidget):
         stays as 'play' (not 'pause') because mpv hasn't loaded yet."""
         self._on_started(np)
         # _on_started flipped the icon to pause — override back to play.
-        self.play_btn.setIcon(icon("play"))
+        self._set_play_icon(icon("play"))
         self._on_duration(np.duration)
         self._on_position(np.position)
 
@@ -1269,6 +1469,7 @@ class NowPlayingBar(QWidget):
         np = get_now_playing()
         if not self._is_seeking and np.duration > 0:
             self.seek_bar.setValue(int(ms / np.duration * 1000))
+        self.mini_progress.set_fraction(ms / np.duration if np.duration > 0 else 0.0)
         # Position fires at mpv's observer cadence (~10 Hz) but the
         # elapsed-time label only changes once per second. Skip the
         # setText (and its relayout) when the visible second hasn't
@@ -1478,12 +1679,14 @@ class NowPlayingBar(QWidget):
         from jellytoast.platform_compat import is_mobile_shell
 
         touch = is_mobile_shell()
+        mini = False
         if touch:
             compact = bar_w < self._TOUCH_COMPACT_WIDTH
             narrow = bar_w < self._TOUCH_NARROW_WIDTH
             sleep_out = bar_w < self._TOUCH_SLEEP_WIDTH
             cast_out = bar_w < self._TOUCH_CAST_WIDTH
             height = self._TOUCH_COMPACT_BAR_HEIGHT if compact else self._TOUCH_BAR_HEIGHT
+            mini = compact and not self._np_open
             # The 56 px play + 32 px seek strip need the column's slack.
             margins, row_gap = ((8, 4, 8, 4), 4) if compact else ((12, 6, 12, 6), 6)
             self._center_layout.setContentsMargins(*margins)
@@ -1508,8 +1711,13 @@ class NowPlayingBar(QWidget):
         self.repeat_btn.setVisible(not narrow)
         if self.stepped_out() != before:
             self.stepped_out_changed.emit()
-        if self.height() != height:
-            self.setFixedHeight(height)
+        if self._mini.isHidden() == mini:
+            self._full.setVisible(not mini)
+            self._mini.setVisible(mini)
+        bar_h = self._MINI_HEIGHT if mini else height
+        if self.height() != bar_h:
+            self.setFixedHeight(bar_h)
+        if self.thumb.height() != height:
             self.thumb.setFixedSize(height, height)
             self.refresh_cover()
 
@@ -1528,7 +1736,14 @@ class NowPlayingBar(QWidget):
         # to it and could never shrink back past that breakpoint — the
         # 720→740 "won't go narrower" ratchet. The floor is what the
         # clusters' contents need (cover; the visible right-side icons).
-        margins = self.layout().contentsMargins()
+        # Re-measure from scratch: behind the mini player the full view is
+        # hidden, and a hidden layout keeps its cached size — the buttons
+        # _apply_compact just stepped out would still count (a stale 460 px
+        # minimum at 400 px wide = the window-width ratchet again).
+        self._center_layout.invalidate()
+        self.right_cluster.layout().invalidate()
+        self._full.layout().invalidate()
+        margins = self._full.layout().contentsMargins()
         center_min = self._center_layout.minimumSize().width()
         fit = (bar_w - center_min - 2 * spacing - margins.left() - margins.right()) // 2
         right_layout = self.right_cluster.layout()
@@ -1550,8 +1765,8 @@ class NowPlayingBar(QWidget):
             self.left_cluster.setFixedWidth(left_w)
         if self.right_cluster.width() != right_w:
             self.right_cluster.setFixedWidth(right_w)
-        if self.layout().spacing() != spacing:
-            self.layout().setSpacing(spacing)
+        if self._full.layout().spacing() != spacing:
+            self._full.layout().setSpacing(spacing)
         self._apply_text_layout(bar_w)
 
     def _apply_text_layout(self, bar_w: int, force: bool = False):
@@ -1563,6 +1778,7 @@ class NowPlayingBar(QWidget):
         layout mode hasn't changed — used by `_reapply_theme` so a
         live theme switch refreshes their colours (the per-mode style
         block is otherwise skipped on a same-width call)."""
+        self._refresh_mini()
         # Host owns visibility while the now-playing page is showing;
         # set_left_cluster_visible will re-trigger this when un-suppressing.
         if self._left_suppressed:

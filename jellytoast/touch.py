@@ -19,6 +19,13 @@ branch keys off a TouchScreen device:
   alike) works by touch; the rest of that touch is swallowed.
 * :func:`last_input_was_touch` / :func:`is_touch_event` let delegates skip
   hover-only affordances (corner buttons revealed on mouse hover) on touch.
+* **Swipes** — :func:`on_swipe` lets a widget take a quick one-direction
+  drag (open Now Playing from the bar, switch its tabs). A drag that could
+  scroll the view under the finger, or move a slider, stays a scroll.
+* **No stuck hover** — Qt leaves its emulated pointer where the finger
+  lifted, so the tapped button kept its hover fill (and, after ~0.7 s,
+  popped its tooltip) until the next touch elsewhere. Each touch release
+  clears the hover state under the finger; tooltips stay off for touch.
 """
 
 from __future__ import annotations
@@ -27,8 +34,9 @@ import logging
 from typing import Optional
 
 from PySide6.QtCore import QEvent, QObject, QPoint, QPointF, Qt, QTimer
-from PySide6.QtGui import QContextMenuEvent, QInputDevice, QMouseEvent
+from PySide6.QtGui import QContextMenuEvent, QHoverEvent, QInputDevice, QMouseEvent
 from PySide6.QtWidgets import (
+    QAbstractButton,
     QAbstractScrollArea,
     QApplication,
     QScroller,
@@ -43,6 +51,9 @@ LONG_PRESS_MS = 500
 # long-press. Fingers wobble far more than a mouse; Qt's mouse drag distance
 # (~10) is too twitchy for a fat-finger tap.
 TAP_SLOP_PX = 18
+# A swipe: this far along one axis, clearly more along it than across.
+SWIPE_PX = 56
+SWIPE_AXIS_RATIO = 1.6
 
 _KINETIC_PROP = "jtKineticScroll"
 _last_input_touch = False
@@ -65,6 +76,11 @@ def last_input_was_touch() -> bool:
     return _last_input_touch
 
 
+# Flick feel (QScroller units: deceleration factor, metres / second).
+FLICK_DECELERATION = 0.6
+FLICK_MAX_VELOCITY = 1.1
+
+
 def enable_kinetic_scrolling(area: QAbstractScrollArea) -> None:
     """Flick-scroll ``area`` by touch. Idempotent."""
     vp = area.viewport()
@@ -78,6 +94,11 @@ def enable_kinetic_scrolling(area: QAbstractScrollArea) -> None:
     off = QScrollerProperties.OvershootPolicy.OvershootAlwaysOff
     props.setScrollMetric(QScrollerProperties.ScrollMetric.HorizontalOvershootPolicy, off)
     props.setScrollMetric(QScrollerProperties.ScrollMetric.VerticalOvershootPolicy, off)
+    # Qt's defaults (deceleration 0.125, max 0.5 m/s) glide ~4 s, mostly a
+    # slow 1-px crawl, and cap every flick at the same distance. Stronger
+    # deceleration + a higher cap: gentle ≈0.7 s, hard ≈1.9 s / 3+ screens.
+    props.setScrollMetric(QScrollerProperties.ScrollMetric.DecelerationFactor, FLICK_DECELERATION)
+    props.setScrollMetric(QScrollerProperties.ScrollMetric.MaximumVelocity, FLICK_MAX_VELOCITY)
     QScroller.scroller(vp).setScrollerProperties(props)
 
 
@@ -103,6 +124,7 @@ class _PendingPress:
         self.viewport = viewport
         self.deferred = viewport is not None
         self.consumed = False  # long-press fired / flick stopped → no tap
+        self.swiped = False  # a swipe handler took this touch
 
     def mouse_event(self, kind: QEvent.Type, buttons) -> QMouseEvent:
         return QMouseEvent(
@@ -137,6 +159,29 @@ class TouchFilter(QObject):
             return False
         if self._replaying:
             return False
+        if (
+            et == QEvent.Type.FocusIn
+            and _last_input_touch
+            and isinstance(obj, QAbstractButton)
+            and event.reason()
+            in (Qt.FocusReason.OtherFocusReason, Qt.FocusReason.ActiveWindowFocusReason)
+        ):
+            # Qt hands focus on when a page hides (a swipe back, a tap that
+            # closed something); a button's :focus ring then paints although
+            # no key was pressed. Touch doesn't need button focus — drop it.
+            # (Not a press's own MouseFocusReason: losing focus mid-press
+            # cancels the click — clear_hover drops that after release.)
+            # Text fields keep theirs (the on-screen keyboard needs it).
+            from jellytoast.keyboard_focus import last_input_was_keyboard
+
+            if not last_input_was_keyboard():
+                QTimer.singleShot(0, lambda w=obj: _drop_focus(w))
+            return False
+        if et == QEvent.Type.TouchBegin:
+            # Before Qt's emulated enter / press reach any widget: an enter
+            # handler checking last_input_was_touch() must already see it.
+            _last_input_touch = True
+            return False
         if et == QEvent.Type.TouchUpdate:
             self._track_movement(event)
             return False
@@ -153,6 +198,9 @@ class TouchFilter(QObject):
             p = self._pending
             return p is not None and (p.deferred or p.consumed)
         if et == QEvent.Type.MouseButtonRelease:
+            # After the release is handled (it may replay a tap), drop the
+            # hover state the emulated pointer leaves behind.
+            QTimer.singleShot(0, lambda w=obj: clear_hover(w))
             return self._on_release(obj, event)
         if et == QEvent.Type.MouseButtonDblClick:
             return self._pending is not None and self._pending.deferred
@@ -161,6 +209,17 @@ class TouchFilter(QObject):
     def _on_press(self, target: QWidget, event) -> bool:
         if event.button() != Qt.MouseButton.LeftButton:
             return False
+        p = self._pending
+        if (
+            p is not None
+            and p.target is not None
+            and target.isAncestorOf(p.target)
+            and p.global_ == event.globalPosition()
+        ):
+            # The same press bubbling up from a child that ignored it (a
+            # label): keep the innermost widget the finger is actually on —
+            # swipe handlers and long-press menus resolve from there.
+            return p.deferred
         viewport = _kinetic_viewport_of(target)
         pending = _PendingPress(target, event, viewport)
         if viewport is not None:
@@ -175,17 +234,38 @@ class TouchFilter(QObject):
 
     def _track_movement(self, event) -> None:
         p = self._pending
-        if p is None or p.consumed:
+        if p is None or p.swiped:
             return
         points = event.points()
         if not points:
             return
         delta = points[0].globalPosition() - self._start
+        if self._try_swipe(p, delta):
+            return
+        if p.consumed:
+            return
         if abs(delta.x()) > TAP_SLOP_PX or abs(delta.y()) > TAP_SLOP_PX:
             # It's a scroll / drag now: no tap at release, no long-press.
             self._long_press.stop()
             if p.deferred:
                 p.consumed = True
+
+    def _try_swipe(self, p: _PendingPress, delta) -> bool:
+        dx, dy = delta.x(), delta.y()
+        if abs(dx) >= SWIPE_PX and abs(dx) >= SWIPE_AXIS_RATIO * abs(dy):
+            direction = "left" if dx < 0 else "right"
+        elif abs(dy) >= SWIPE_PX and abs(dy) >= SWIPE_AXIS_RATIO * abs(dx):
+            direction = "up" if dy < 0 else "down"
+        else:
+            return False
+        handler = _swipe_handler_for(p.target, direction)
+        if handler is None:
+            return False
+        p.swiped = True
+        p.consumed = True  # no tap / long-press / button click at release
+        self._long_press.stop()
+        QTimer.singleShot(0, lambda: handler(direction))
+        return True
 
     def _on_release(self, target: QWidget, event) -> bool:
         p, self._pending = self._pending, None
@@ -246,6 +326,74 @@ class TouchFilter(QObject):
         # Only a menu that something actually showed turns the touch into a
         # long-press; with no context menu here the release stays a tap.
         p.consumed = menu_event.isAccepted()
+
+
+def _drop_focus(w: QWidget) -> None:
+    try:
+        if w.hasFocus():
+            w.clearFocus()
+    except RuntimeError:  # deleted meanwhile
+        pass
+
+
+def on_swipe(widget: QWidget, handler, directions, when=None) -> None:
+    """Call ``handler(direction)`` when a finger swipes across ``widget`` (or
+    anything inside it) in one of ``directions`` ("left" / "right" / "up" /
+    "down"). The innermost widget with a handler for that direction wins.
+    ``when()`` (optional) gates it: while False the drag is left alone."""
+    widget._jt_swipe = (handler, frozenset(directions), when)
+
+
+def _can_scroll(area: QAbstractScrollArea, direction: str) -> bool:
+    bar = (
+        area.horizontalScrollBar()
+        if direction in ("left", "right")
+        else area.verticalScrollBar()
+    )
+    return bar is not None and bar.maximum() > bar.minimum()
+
+
+def _swipe_handler_for(target: Optional[QWidget], direction: str):
+    from PySide6.QtWidgets import QAbstractSlider
+
+    w = target
+    while w is not None:
+        if isinstance(w, QAbstractSlider):
+            return None  # the slider owns its drag (seek, volume)
+        if isinstance(w, QAbstractScrollArea) and _can_scroll(w, direction):
+            return None  # a scroll, not a swipe
+        entry = getattr(w, "_jt_swipe", None)
+        if entry is not None and direction in entry[1] and (entry[2] is None or entry[2]()):
+            return entry[0]
+        w = w.parentWidget()
+    return None
+
+
+def clear_hover(widget: Optional[QWidget]) -> None:
+    """Un-hover ``widget`` and its ancestors (the finger has lifted — nothing
+    is "under the mouse"). Qt re-sets it on the next real pointer enter.
+    A tapped button also gives back the focus the press gave it, so no
+    :focus ring is left on it (unless the keyboard is in use)."""
+    from jellytoast.keyboard_focus import last_input_was_keyboard
+
+    if isinstance(widget, QAbstractButton) and not last_input_was_keyboard():
+        _drop_focus(widget)
+    w = widget
+    while w is not None:
+        try:
+            if w.testAttribute(Qt.WidgetAttribute.WA_UnderMouse):
+                w.setAttribute(Qt.WidgetAttribute.WA_UnderMouse, False)
+                if w.testAttribute(Qt.WidgetAttribute.WA_Hover):
+                    # Item views track the hovered index from hover events.
+                    off = QPointF(-1, -1)
+                    QApplication.sendEvent(
+                        w, QHoverEvent(QEvent.Type.HoverLeave, off, off, off)
+                    )
+                QApplication.sendEvent(w, QEvent(QEvent.Type.Leave))
+                w.update()
+            w = w.parentWidget()
+        except RuntimeError:  # deleted mid-walk (a tap that closed a dialog)
+            return
 
 
 def install(app: QApplication) -> TouchFilter:

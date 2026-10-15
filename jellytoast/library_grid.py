@@ -120,12 +120,24 @@ class _AlphabetIndex(QWidget):
 
     jump_requested = Signal(str)
 
+    # Touch: a wider strip to land a finger on (the letters stay put).
+    TOUCH_WIDTH = 30
+
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setFixedWidth(20)
+        from jellytoast.platform_compat import is_mobile_shell
+
+        self.setFixedWidth(self.TOUCH_WIDTH if is_mobile_shell() else 20)
         self.setStyleSheet("background: transparent;")
         self._current = ""
         self._buttons = {}
+        # Touch scrubbing: the strip takes the touch itself (the letter
+        # buttons don't accept touch, so it lands here), jumps to the letter
+        # under the finger as it slides, and shows that letter in a bubble.
+        # Mouse input still reaches the buttons unchanged.
+        self.setAttribute(Qt.WidgetAttribute.WA_AcceptTouchEvents, True)
+        self._scrub_letter = ""
+        self._bubble = None
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, SPACE_LG, 4, SPACE_LG)
@@ -171,6 +183,54 @@ class _AlphabetIndex(QWidget):
         for ch, btn in self._buttons.items():
             btn.setStyleSheet(self._btn_style(active=(ch == self._current)))
 
+    def letter_at(self, y: float) -> str:
+        """The letter under ``y`` (strip coordinates), clamped to A / Z
+        above and below the strip so a finger overshooting still lands."""
+        buttons = [self._buttons[ch] for ch in self.LETTERS]
+        if y < buttons[0].geometry().top():
+            return self.LETTERS[0]
+        for ch, btn in zip(self.LETTERS, buttons, strict=True):
+            if y <= btn.geometry().bottom():
+                return ch
+        return self.LETTERS[-1]
+
+    def event(self, e):
+        et = e.type()
+        if et in (QEvent.Type.TouchBegin, QEvent.Type.TouchUpdate):
+            points = e.points()
+            if points:
+                pos = points[0].position()
+                letter = self.letter_at(pos.y())
+                if letter != self._scrub_letter:
+                    self._scrub_letter = letter
+                    self.jump_requested.emit(letter)
+                self._show_bubble(letter, pos.y())
+            e.accept()
+            return True
+        if et in (QEvent.Type.TouchEnd, QEvent.Type.TouchCancel):
+            self._scrub_letter = ""
+            if self._bubble is not None:
+                self._bubble.hide()
+            e.accept()
+            return True
+        return super().event(e)
+
+    def _show_bubble(self, letter: str, y: float) -> None:
+        host = self.parentWidget()
+        if host is None:
+            return
+        if self._bubble is None:
+            self._bubble = _LetterBubble(host)
+        b = self._bubble
+        b.set_letter(letter)
+        # Left of the strip (clear of the finger), centred on it vertically.
+        at = self.mapTo(host, QPoint(0, int(y)))
+        x = at.x() - b.width() - 16
+        top = max(0, min(host.height() - b.height(), at.y() - b.height() // 2))
+        b.move(x, top)
+        b.show()
+        b.raise_()
+
     def set_current_letter(self, letter: str):
         letter = (letter or "").upper()
         if letter == self._current:
@@ -180,6 +240,42 @@ class _AlphabetIndex(QWidget):
         self._current = letter
         if letter and letter in self._buttons:
             self._buttons[letter].setStyleSheet(self._btn_style(active=True))
+
+
+class _LetterBubble(QWidget):
+    """The big letter shown beside the strip while a finger scrubs it —
+    the finger covers the strip's own tiny letters."""
+
+    SIZE = 64
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setFixedSize(self.SIZE, self.SIZE)
+        self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
+        self._letter = ""
+        self.hide()
+
+    def set_letter(self, letter: str) -> None:
+        if letter != self._letter:
+            self._letter = letter
+            self.update()
+
+    def letter(self) -> str:
+        return self._letter
+
+    def paintEvent(self, _e):
+        p = QPainter(self)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        p.setPen(Qt.PenStyle.NoPen)
+        p.setBrush(QColor(_u.ACCENT))
+        p.drawEllipse(self.rect())
+        f = QFont(self.font())
+        f.setPixelSize(30)
+        f.setBold(True)
+        p.setFont(f)
+        p.setPen(QColor("white"))
+        p.drawText(self.rect(), Qt.AlignmentFlag.AlignCenter, self._letter)
+        p.end()
 
 
 # ── Model ────────────────────────────────────────────────────────────────
@@ -2650,6 +2746,12 @@ class LibraryGrid(_PaginatorMixin, QWidget):
         if row is None:
             return
         idx = self._model.index(row, 0)
+        # A flick still gliding would carry the view straight past the jump
+        # (it keeps writing the scroll bar); stop it first.
+        from PySide6.QtWidgets import QScroller
+
+        if QScroller.hasScroller(self._view.viewport()):
+            QScroller.scroller(self._view.viewport()).stop()
         # Set the scrollbar value directly via cell-math rather than
         # going through scrollTo(). In IconMode + Wayland, scrollTo can
         # leave the scrollbar value lagging the visual position, and the

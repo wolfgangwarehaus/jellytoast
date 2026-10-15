@@ -612,3 +612,91 @@ def test_queue_controls_row_hidden_while_browsing(qapp, isolated_settings, monke
     finally:
         page.deleteLater()
         host.deleteLater()
+
+
+class TestPhoneMiniPlayer:
+    """At phone width (mobile shell) the bar is a mini player — cover ·
+    title / artist · play · next over a thin progress line — and the full
+    transport comes back while the live Now Playing page is up."""
+
+    @pytest.fixture
+    def bar_at(self, qapp, isolated_settings, monkeypatch):
+        from PySide6.QtWidgets import QVBoxLayout, QWidget
+
+        from jellytoast import now_playing_bar as _npb
+
+        monkeypatch.setattr(_npb, "load_image_async", lambda *a, **k: None)
+        made = []
+
+        def make(width, mobile=True):
+            monkeypatch.setattr(pc, "is_mobile_shell", lambda: mobile)
+            host = QWidget()
+            QVBoxLayout(host).setContentsMargins(0, 0, 0, 0)
+            bar = _npb.NowPlayingBar(host)
+            host.layout().addWidget(bar)
+            host.resize(width, 300)
+            host.show()
+            qapp.processEvents()
+            made.append(host)
+            return bar
+
+        yield make
+        for h in made:
+            h.deleteLater()
+
+    @pytest.mark.parametrize("width", [360, 400, 540])
+    def test_phone_width_shows_the_mini_player(self, bar_at, width):
+        bar = bar_at(width)
+        assert bar.is_mini()
+        assert bar.height() == bar._MINI_HEIGHT
+        assert bar.layout().minimumSize().width() <= width
+        assert bar.mini_play_btn.width() >= 48 and bar.mini_next_btn.width() >= 48
+
+    @pytest.mark.parametrize("width", [360, 400, 420])
+    def test_now_playing_brings_back_the_full_transport(self, qapp, bar_at, width):
+        bar = bar_at(width)
+        bar.set_now_playing_open(True)
+        qapp.processEvents()
+        assert not bar.is_mini()
+        assert bar.seek_bar.isVisibleTo(bar) and bar.prev_btn.isVisibleTo(bar)
+        assert bar.layout().minimumSize().width() <= width
+        bar.set_now_playing_open(False)
+        qapp.processEvents()
+        assert bar.is_mini()
+
+    def test_wide_phone_and_desktop_keep_the_full_bar(self, bar_at):
+        assert not bar_at(700).is_mini()
+        assert not bar_at(400, mobile=False).is_mini()
+
+    def test_mini_mirrors_title_play_state_and_progress(self, qapp, bar_at, monkeypatch):
+        from types import SimpleNamespace
+
+        from jellytoast import now_playing_bar as _npb
+        from jellytoast.icons import icon
+
+        bar = bar_at(400)
+        bar._track_title, bar._track_subtitle = "Project Wildfire", "Binaerpilot"
+        bar._apply_text_layout(bar.width())
+        assert bar.mini_title.text() == "Project Wildfire"
+        assert bar.mini_artist.text() == "Binaerpilot"
+        pause = icon("pause")
+        bar._set_play_icon(pause)
+        assert bar.mini_play_btn.icon().cacheKey() == bar.play_btn.icon().cacheKey()
+        monkeypatch.setattr(_npb, "get_now_playing", lambda: SimpleNamespace(duration=200_000))
+        bar._on_position(50_000)
+        assert bar.mini_progress._fraction == pytest.approx(0.25)
+
+    def test_tapping_the_mini_title_opens_now_playing(self, qapp, bar_at):
+        from PySide6.QtCore import QPoint, Qt
+        from PySide6.QtTest import QTest
+
+        bar = bar_at(400)
+        opened = []
+        bar.show_now_playing_requested.connect(lambda: opened.append(1))
+        QTest.mouseClick(bar.mini_title, Qt.MouseButton.LeftButton, pos=QPoint(10, 5))
+        assert opened == [1]
+        # Pressed then released elsewhere (a swipe that left): no open.
+        area = bar.mini_title.parentWidget()
+        QTest.mousePress(area, Qt.MouseButton.LeftButton, pos=QPoint(5, 5))
+        QTest.mouseRelease(area, Qt.MouseButton.LeftButton, pos=QPoint(-500, 5))
+        assert opened == [1]
