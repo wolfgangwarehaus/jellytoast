@@ -101,7 +101,12 @@ class TagEditorDialog(QDialog):
 
         self.setWindowTitle(self.tr("Edit tags"))
         self.setModal(True)
-        self.setMinimumWidth(520)
+        from jellytoast.platform_compat import is_mobile_shell
+
+        # 520 keeps the form roomy on a desktop; a phone (~400 px, maximized
+        # by the shell) only has its natural ~350.
+        self._phone = is_mobile_shell()
+        self.setMinimumWidth(360 if self._phone else 520)
         # Live-accent: re-stamp baked QSS on theme_changed. With
         # theme_mode=="auto" (follow-OS) an OS dark/light flip fires
         # theme_changed globally even while this modal is up, so without a
@@ -119,7 +124,8 @@ class TagEditorDialog(QDialog):
         # Cover preview on the left, form on the right — gives the
         # dialog visual anchor and matches the song-row mental model
         # ("here's the song; here are its tags").
-        top = QHBoxLayout()
+        # Phone: the cover sits above the form, which then gets the width.
+        top = QVBoxLayout() if self._phone else QHBoxLayout()
         top.setSpacing(SPACE_LG)
         top.addLayout(self._build_cover_column(), 0)
         top.addLayout(self._build_form_column(), 1)

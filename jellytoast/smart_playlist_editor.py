@@ -197,9 +197,22 @@ class _RuleChip(QFrame):
             }}
             """
         )
-        row = QHBoxLayout(self)
-        row.setContentsMargins(SPACE_SM, 4, SPACE_SM, 4)
+        from jellytoast.platform_compat import is_mobile_shell
+
+        phone = is_mobile_shell()
+        if phone:
+            # field · operator · × over the value: one row is ~420 px.
+            col = QVBoxLayout(self)
+            col.setContentsMargins(SPACE_SM, 4, SPACE_SM, 4)
+            col.setSpacing(4)
+            row, vrow = QHBoxLayout(), QHBoxLayout()
+            col.addLayout(row)
+            col.addLayout(vrow)
+        else:
+            row = vrow = QHBoxLayout(self)
+            row.setContentsMargins(SPACE_SM, 4, SPACE_SM, 4)
         row.setSpacing(SPACE_SM)
+        vrow.setSpacing(SPACE_SM)
 
         # Minimum widths so the friendly labels ("Date added",
         # "greater than", …) never render clipped when the dialog is
@@ -237,24 +250,24 @@ class _RuleChip(QFrame):
         # (before / after).
         self._value = QLineEdit()
         self._value.setPlaceholderText(self.tr("value"))
-        row.addWidget(self._value, 1)
+        vrow.addWidget(self._value, 1)
 
         self._value_low = QSpinBox()
         self._value_low.setRange(0, 9999)
         self._value_low.hide()
-        row.addWidget(self._value_low)
+        vrow.addWidget(self._value_low)
 
         self._between_dash = QLabel("–")
         from jellytoast.ui_helpers import TEXT_DIM as _TEXT_DIM_RC
 
         self._between_dash.setStyleSheet(f"color: {_TEXT_DIM_RC};")
         self._between_dash.hide()
-        row.addWidget(self._between_dash)
+        vrow.addWidget(self._between_dash)
 
         self._value_high = QSpinBox()
         self._value_high.setRange(0, 9999)
         self._value_high.hide()
-        row.addWidget(self._value_high)
+        vrow.addWidget(self._value_high)
 
         # `in_the_last` day count — the " days" suffix makes the unit
         # unambiguous (a bare "30" read as anything).
@@ -263,7 +276,7 @@ class _RuleChip(QFrame):
         self._value_days.setValue(30)
         self._value_days.setSuffix(self.tr(" days"))
         self._value_days.hide()
-        row.addWidget(self._value_days)
+        vrow.addWidget(self._value_days)
 
         # `before` / `after` calendar date.
         self._value_date = QDateEdit()
@@ -271,16 +284,16 @@ class _RuleChip(QFrame):
         self._value_date.setDisplayFormat("yyyy-MM-dd")
         self._value_date.setDate(QDate.currentDate())
         self._value_date.hide()
-        row.addWidget(self._value_date)
+        vrow.addWidget(self._value_date)
 
         # Bool-field value widget (used by ``is_favorite``). Only one of
         # _value / spin pair / _value_bool is visible at a time.
         self._value_bool = QCheckBox(self.tr("yes"))
         self._value_bool.hide()
-        row.addWidget(self._value_bool)
+        vrow.addWidget(self._value_bool)
 
         remove = QPushButton("×")
-        remove.setFixedSize(22, 22)
+        remove.setFixedSize(40 if phone else 22, 40 if phone else 22)
         from jellytoast.ui_helpers import TEXT as _TEXT_RM
         from jellytoast.ui_helpers import TEXT_DIM as _TEXT_DIM_RM
 
@@ -455,7 +468,15 @@ class SmartPlaylistEditorDialog(QDialog):
         self.setWindowTitle(SMART_PLAYLIST_EDITOR_WINDOW_TITLE)
         # Wide enough that the left form's match / sort / rule combos
         # show their labels in full — 720 squeezed them to clipping.
-        self.setMinimumSize(860, 520)
+        # On a phone the shell maximizes it; the form stacks over the
+        # preview instead (see below).
+        from jellytoast.platform_compat import is_mobile_shell
+
+        self._phone = is_mobile_shell()
+        if self._phone:
+            self.setMinimumSize(360, 420)
+        else:
+            self.setMinimumSize(860, 520)
 
         # Mirror the Cast + Settings dialogs: independent top-level
         # window (not Qt.Dialog so the main window doesn't fade as a
@@ -496,7 +517,7 @@ class SmartPlaylistEditorDialog(QDialog):
 
         body = QWidget()
         body.setStyleSheet("background: transparent;")
-        outer = QHBoxLayout(body)
+        outer = QVBoxLayout(body) if self._phone else QHBoxLayout(body)
         outer.setContentsMargins(SPACE_LG, SPACE_LG, SPACE_LG, SPACE_LG)
         outer.setSpacing(SPACE_LG)
         root.addWidget(body, 1)
@@ -534,7 +555,14 @@ class SmartPlaylistEditorDialog(QDialog):
         self._match.addItem(self.tr("any rule (OR)"), "any")
         self._match.currentIndexChanged.connect(lambda _i: self._queue_preview())
         match_row.addWidget(self._match)
-        match_row.addSpacing(SPACE_MD)
+        if self._phone:
+            # Match and Sort don't fit one ~360 px row.
+            match_row.addStretch(1)
+            left.addLayout(match_row)
+            match_row = QHBoxLayout()
+            match_row.setSpacing(SPACE_SM)
+        else:
+            match_row.addSpacing(SPACE_MD)
         match_row.addWidget(_label(self.tr("Sort")))
         self._sort = Selector()
         for s in _SORT_OPTIONS:
@@ -597,7 +625,7 @@ class SmartPlaylistEditorDialog(QDialog):
         # ── Right column: live preview + footer ──────────────────────
         right = QVBoxLayout()
         right.setSpacing(SPACE_SM)
-        outer.addLayout(right, 2)
+        outer.addLayout(right, 0 if self._phone else 2)
 
         right.addWidget(_label(self.tr("Preview"), dim=False))
         self._preview_status = _label("")
@@ -613,6 +641,10 @@ class SmartPlaylistEditorDialog(QDialog):
         )
         self._preview_list.setTextElideMode(Qt.TextElideMode.ElideRight)
         self._preview_list.setUniformItemSizes(True)
+        if self._phone:
+            # Stacked under the form: a glimpse of the result, so the rules
+            # (what the user is editing) keep most of the height.
+            self._preview_list.setMaximumHeight(160)
         right.addWidget(self._preview_list, 1)
 
         # Footer: Save / Cancel — beneath the preview column so the list

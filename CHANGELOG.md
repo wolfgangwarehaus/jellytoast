@@ -32,8 +32,11 @@ developer-facing history lives in [`docs/CHANGELOG.md`](docs/CHANGELOG.md).
 - **Bigger and easier to tap on phones.** On Plasma Mobile the whole app is
   scaled up, buttons are finger-sized, and the top bar tucks its extras into
   a ⋮ menu. Now Playing gets a big cover, and shuffle, repeat, sleep timer and
-  cast move there when the bar runs out of room. Settings fits a phone screen
-  too, equalizer included.
+  cast move there when the bar runs out of room. Settings, the smart playlist
+  editor, the tag editor and the cast picker fit a phone screen too.
+- **Back goes back from Radio, Downloads and Smart playlists.** It used to
+  skip past the page you came from. The view picker at the top now also
+  stays in step when you go back and forward.
 - **Cover art on the lock screen, even offline.** The Plasma media controls
   and lock screen now get jellytoast's cached artwork, so it shows up without
   a trip to the server.

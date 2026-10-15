@@ -476,6 +476,10 @@ class NowPlayingPage(_LeftPaneMixin, _LyricsMixin, QWidget):
         self._compact_tabs.setVisible(compact)
         margin = 12 if compact else 20
         self._root_layout.setContentsMargins(margin, 12, margin, 12)
+        if hasattr(self, "_tracks_delegate"):
+            self._tracks_delegate.set_compact(compact)
+            self._right_kicker.setContentsMargins(self._tracks_delegate.text_left(), 4, 12, 0)
+            self._list_container.viewport().update()
         if compact:
             self._show_compact_pane(0 if self._tab_playing.isChecked() else 1)
         else:

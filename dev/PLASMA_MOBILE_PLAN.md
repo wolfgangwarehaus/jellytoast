@@ -278,24 +278,31 @@ Next (the rest of the sweep):
     (`_sync_np_bar_cover`). Desktop untouched — note desktop is itself
     inconsistent: the bar cover hides after a preview → live switch but
     not on a first live open (`clear_preview` emits nothing).
-- [ ] Still not swept: Smart Mix editor, tag editor, cast dialog, context
-  menus (popups block the bridge — render them via unit tests).
-- [ ] Nav: Now Playing → Radio (via the dropdown) → Back landed on the
-  library, skipping Now Playing (history held 2 entries). Check whether the
-  tab-switch path pushes history.
-- [ ] Tracks tab: ~58 px left gutter (track-number column) at phone width;
-  consider a narrower index column when compact. Push buttons (radio header,
-  Settings) are ~30 px tall — consider a touch min-height on a phone.
-- [ ] Translation drift: `dev/update_translations.sh` now finds 16
-  unfinished strings from phases 2–5, plus the shared tile menu's strings
-  land in an empty context (module-level `translate`) — fix the context
-  and translate them.
+- [x] **Sweep 3 (2026-10-15):** the dialogs. Smart Mix editor needed
+  ~710 px (form | preview side by side, 860 px minimum): on a phone the
+  form stacks over a capped preview, Match / Sort split rows, rule chips
+  wrap to two lines with a finger-sized ×. Tag editor: 520 px minimum
+  dropped, cover above the form. Cast dialog: no longer fixed 440×480.
+  Tests pin all three ≤ 360 px.
+- [ ] Still not swept: context menus (popups block the bridge — render them
+  via unit tests).
+- [x] Nav: Radio / Downloads / Smart Mixes never pushed history (Now Playing
+  → Radio → Back skipped Now Playing). They do now, and the View dropdown
+  follows back / forward and in-app links (`_tab_for_surface`, also before
+  Now Playing was ever opened).
+- [x] Tracks tab gutter 58 → 38 px when compact (`_TrackDelegate.set_compact`).
+  Push buttons (~30 px) left alone: at 1.5× that's ~45 dp on the phone,
+  close to the 48 dp guideline; a global min-height risks the compact bars.
+- [x] Translation drift fixed: the shared tile menu spells out
+  `QCoreApplication.translate("_LibraryListView", …)` so lupdate keeps its
+  context, and all 29 new / unfinished Spanish strings (phases 2–5 +
+  Quick Connect) are translated. Catalog 774/774.
 - [ ] Songs view showed "No songs yet" once on the demo (slow server
   timeout); Refresh fixed it. Fine, but the empty copy blames the library.
 - [x] Smart Mixes empty state says "Use", not "Click". Settings button text
   sizes vary ("Change server URL…" vs "Check now") — still open.
-- [ ] Top bar view dropdown still reads "Albums" on artist / search pages
-  reached via internal nav — check it updates in real navigation.
+- [x] Top bar view dropdown follows the surface (see Nav above). Search
+  and the login screen keep whatever it read before (no tab of their own).
 - [ ] The ⋮ menu was only verified in tests (popups don't show in
   `win.grab()`); august to eyeball it.
 - [ ] Cover LRU is 64 MiB ≈ 55 covers at the phone scale (DPR 3); fine with

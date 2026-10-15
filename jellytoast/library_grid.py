@@ -2765,10 +2765,10 @@ def show_tile_context_menu(parent, item: Dict, kind: str, global_pos, on_play=No
         start_seed_radio,
     )
 
-    def tr(text):
-        # Same context the strings had as _LibraryListView.tr(), so the
-        # existing translations still match.
-        return QCoreApplication.translate("_LibraryListView", text)
+    # The _LibraryListView context these strings always had, so existing
+    # translations still match. Spelled out per call: lupdate takes the
+    # context only from a literal translate("ctx", "text").
+    _q = QCoreApplication
 
     item_id = item.get("Id", "")
     if not item_id:
@@ -2777,30 +2777,42 @@ def show_tile_context_menu(parent, item: Dict, kind: str, global_pos, on_play=No
     item_name = item.get("Name") or ""
 
     menu = opaque_menu(parent)
-    play_act = menu.addAction(tr("Play")) if on_play is not None else None
+    play_act = None
+    if on_play is not None:
+        play_act = menu.addAction(_q.translate("_LibraryListView", "Play"))
     fav_on = bool((item.get("UserData") or {}).get("IsFavorite"))
-    fav_act = menu.addAction(tr("Remove from favorites") if fav_on else tr("Favorite"))
+    fav_act = menu.addAction(
+        _q.translate("_LibraryListView", "Remove from favorites")
+        if fav_on
+        else _q.translate("_LibraryListView", "Favorite")
+    )
     menu.addSeparator()
     # Album / artist tiles seed an INSTANT_MIX radio queue; the RadioFeeder
     # auto-extends from the stamped seed_kind. Playlist tiles have no radio
     # entry point (a playlist is already a curated set).
     radio_act = None
     if kind == "album":
-        radio_act = menu.addAction(tr("Start album radio"))
+        radio_act = menu.addAction(_q.translate("_LibraryListView", "Start album radio"))
     elif kind == "artist":
-        radio_act = menu.addAction(tr("Start artist radio"))
+        radio_act = menu.addAction(_q.translate("_LibraryListView", "Start artist radio"))
     # Create smart playlist from this album / artist — pre-fills the editor
     # with a from_album / from_artist recipe ("More like X" / "Deep Cuts: X").
     sp_act = None
     if item_name and kind in ("album", "artist"):
         sp_act = menu.addAction(
-            tr("Create smart playlist: More like {0}").format(item_name)
-            if kind == "album"
-            else tr("Create smart playlist: Deep Cuts: {0}").format(item_name)
+            (
+                _q.translate("_LibraryListView", "Create smart playlist: More like {0}")
+                if kind == "album"
+                else _q.translate("_LibraryListView", "Create smart playlist: Deep Cuts: {0}")
+            ).format(item_name)
         )
     if radio_act is not None or sp_act is not None:
         menu.addSeparator()
-    act = menu.addAction(tr("Remove download") if downloaded else tr("Download"))
+    act = menu.addAction(
+        _q.translate("_LibraryListView", "Remove download")
+        if downloaded
+        else _q.translate("_LibraryListView", "Download")
+    )
     chosen = menu.exec(global_pos)
     if play_act is not None and chosen is play_act:
         on_play(item_id)
@@ -2824,12 +2836,12 @@ def show_tile_context_menu(parent, item: Dict, kind: str, global_pos, on_play=No
     # Removing a parent cascades to its tracks — confirm first.
     from jellytoast.frosted_dialog import frosted_confirm
 
-    name = item.get("Name") or tr("this {0}").format(kind)
+    name = item.get("Name") or _q.translate("_LibraryListView", "this {0}").format(kind)
     if frosted_confirm(
         parent,
-        tr("Remove download"),
-        tr("Remove the downloaded files for “{0}”?").format(name),
-        confirm_text=tr("Remove"),
+        _q.translate("_LibraryListView", "Remove download"),
+        _q.translate("_LibraryListView", "Remove the downloaded files for “{0}”?").format(name),
+        confirm_text=_q.translate("_LibraryListView", "Remove"),
         destructive=True,
     ):
         offline.remove(item_id)

@@ -93,6 +93,8 @@ class _NavMixin:
             view.reload()
         self.content_stack.setCurrentWidget(view)
         self.top_bar.set_library_controls_visible(False)
+        self.np_bar.set_left_cluster_visible(True)
+        self._push_nav(lambda: self._show_downloads_library_view())
 
     def _show_smart_playlists_view(self):
         """Lazy-build + swap to the saved-smart-playlists page. Rules
@@ -110,6 +112,8 @@ class _NavMixin:
             view.reload()
         self.content_stack.setCurrentWidget(view)
         self.top_bar.set_library_controls_visible(False)
+        self.np_bar.set_left_cluster_visible(True)
+        self._push_nav(lambda: self._show_smart_playlists_view())
 
     def _show_radio_view(self):
         """Lazy-build + swap to the standalone Radio page that lists
@@ -127,6 +131,8 @@ class _NavMixin:
             view.reload()
         self.content_stack.setCurrentWidget(view)
         self.top_bar.set_library_controls_visible(False)
+        self.np_bar.set_left_cluster_visible(True)
+        self._push_nav(lambda: self._show_radio_view())
 
     def _show_native_music_grid(self, kind: str = "album"):
         """Lazy-build + swap to a native LibraryGrid for the music
@@ -243,6 +249,27 @@ class _NavMixin:
         self.top_bar.set_library_controls_visible(False)
         self._push_nav(lambda pid=preview_id, pk=preview_kind: self._show_now_playing(pid, pk))
 
+    def _tab_for_surface(self, widget) -> str:
+        """The View dropdown label for a content surface ("" = leave it)."""
+        if widget is None:
+            return ""
+        surfaces = (
+            ("album_grid", "Albums"),
+            ("artist_grid", "Artists"),
+            ("artist_page", "Artists"),
+            ("playlist_grid", "Playlists"),
+            ("songs_view", "Songs"),
+            ("genres_view", "Genres"),
+            ("suggestions_view", "Suggestions"),
+            ("_smart_playlists_view", "Smart playlists"),
+            ("_downloads_lib_view", "Downloads"),
+            ("_radio_view", "Radio"),
+        )
+        for attr, label in surfaces:
+            if getattr(self, attr, None) is widget:
+                return label
+        return ""
+
     def _sync_np_bar_cover(self):
         """Compact live Now Playing shows the cover big, so the bar's copy
         steps out. (preview_changed only fires on a change, so a first live
@@ -268,16 +295,17 @@ class _NavMixin:
         "Browsing" (preview of an album / playlist that isn't the
         active queue) — surfaced via the dropdown label so the user
         always knows which mode they're in."""
-        if self.np_page is None:
-            self.top_bar.set_now_playing_mode(False)
-            return
-        on_np = self.content_stack.currentWidget() is self.np_page
+        current = self.content_stack.currentWidget()
+        on_np = self.np_page is not None and current is self.np_page
         if not on_np:
             if getattr(self, "_np_cover_hidden_compact", False):
                 # Leaving compact Now Playing: the bar's cover comes back.
                 self.np_bar.set_left_cluster_visible(True)
                 self._np_cover_hidden_compact = False
             self.top_bar.set_now_playing_mode(False)
+            # Back / forward replay and in-app links (artist, year, genre)
+            # swap surfaces without the dropdown; keep its label honest.
+            self.top_bar.set_active_tab(self._tab_for_surface(current))
             return
         label = "Browsing" if self.np_page._preview_id else "Now Playing"
         self.top_bar.set_now_playing_mode(True, label=label)

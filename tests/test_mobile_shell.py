@@ -322,10 +322,67 @@ def test_bar_cover_returns_when_leaving_now_playing(monkeypatch):
 
     monkeypatch.setattr(responsive, "is_compact", lambda: True)
     nav = _FakeNav()
-    nav.top_bar = SimpleNamespace(set_now_playing_mode=lambda *a, **k: None)
+    nav.top_bar = SimpleNamespace(
+        set_now_playing_mode=lambda *a, **k: None, set_active_tab=lambda label: None
+    )
+    nav._tab_for_surface = lambda w: ""
     _NavMixin._sync_np_bar_cover(nav)
     assert nav.np_bar._left_suppressed
     other = object()
     nav.content_stack = SimpleNamespace(currentWidget=lambda: other)
     _NavMixin._on_content_changed(nav, 1)
     assert not nav.np_bar._left_suppressed
+
+
+@pytest.mark.parametrize("mobile", [True, False])
+def test_smart_mix_editor_fits_a_phone(qapp, monkeypatch, mobile):
+    """Side by side (form | preview) the editor needs ~710 px; on a phone the
+    form stacks over the preview and each rule wraps to two lines."""
+    from jellytoast.smart_playlist_editor import SmartPlaylistEditorDialog
+
+    monkeypatch.setattr(pc, "is_mobile_shell", lambda: mobile)
+    dlg = SmartPlaylistEditorDialog()
+    try:
+        dlg._add_chip(None)
+        width = max(dlg.minimumSizeHint().width(), dlg.minimumWidth())
+        assert (width <= 360) is mobile
+    finally:
+        dlg.deleteLater()
+
+
+@pytest.mark.parametrize("mobile", [True, False])
+def test_tag_editor_fits_a_phone(qapp, monkeypatch, mobile):
+    from jellytoast.tag_editor import TagEditorDialog
+
+    monkeypatch.setattr(pc, "is_mobile_shell", lambda: mobile)
+    dlg = TagEditorDialog({"Id": "x", "Name": "Song", "Album": "Album"})
+    try:
+        width = max(dlg.minimumSizeHint().width(), dlg.minimumWidth())
+        assert (width <= 360) is mobile
+    finally:
+        dlg.deleteLater()
+
+
+@pytest.mark.parametrize("mobile", [True, False])
+def test_cast_dialog_is_not_fixed_wider_than_a_phone(qapp, monkeypatch, mobile):
+    from jellytoast.cast_dialog import CastDialog
+    from tests.test_dialog_lifetime import _FakeCastManager
+
+    monkeypatch.setattr(pc, "is_mobile_shell", lambda: mobile)
+    dlg = CastDialog(_FakeCastManager(), parent=None)
+    try:
+        assert (dlg.maximumWidth() == 440) is not mobile
+        assert dlg.minimumWidth() <= (360 if mobile else 440)
+    finally:
+        dlg.reject()
+
+
+def test_compact_track_gutter():
+    from jellytoast.np_track_list import _TrackDelegate
+
+    d = _TrackDelegate()
+    assert d.text_left() == 58
+    d.set_compact(True)
+    assert d.text_left() == 38
+    d.set_compact(False)
+    assert d.text_left() == 58

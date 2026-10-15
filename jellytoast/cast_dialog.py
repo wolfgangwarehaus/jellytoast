@@ -462,7 +462,13 @@ class CastDialog(QDialog):
         from jellytoast.keep_above import CAST_DIALOG_WINDOW_TITLE
 
         self.setWindowTitle(CAST_DIALOG_WINDOW_TITLE)
-        self.setFixedSize(440, 480)
+        from jellytoast.platform_compat import is_mobile_shell
+
+        if is_mobile_shell():
+            # 440 is wider than a phone; let the shell maximize it.
+            self.setMinimumSize(320, 420)
+        else:
+            self.setFixedSize(440, 480)
         # Mirror the settings dialog's window setup so the cast picker
         # draws the same way — frameless everywhere EXCEPT KDE Wayland,
         # where it stays a decorated Window stripped by the app-wide

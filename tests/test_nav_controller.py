@@ -78,3 +78,57 @@ def test_core_and_qt_overrides_did_not_move():
     # _push_nav reads it via self, resolving on the combined instance).
     assert "_NAV_HISTORY_CAP" in JellytoastWindow.__dict__
     assert "_NAV_HISTORY_CAP" not in _NavMixin.__dict__
+
+
+class _Host(_NavMixin):
+    """Just enough window for the history / dropdown paths."""
+
+    _NAV_HISTORY_CAP = 50
+
+    def __init__(self):
+        from types import SimpleNamespace
+
+        self._nav_history, self._nav_pos, self._suppress_nav_push = [], -1, False
+        self.labels = []
+        self.current = None
+        host = self
+        self.content_stack = SimpleNamespace(
+            setCurrentWidget=self._swap, currentWidget=lambda: host.current
+        )
+        self.top_bar = SimpleNamespace(
+            set_library_controls_visible=lambda v: None,
+            set_back_enabled=lambda v: None,
+            set_forward_enabled=lambda v: None,
+            set_now_playing_mode=lambda *a, **k: None,
+            set_active_tab=self.labels.append,
+        )
+        self.np_bar = SimpleNamespace(set_left_cluster_visible=lambda v: None)
+        self.np_page = None
+        for attr in ("_radio_view", "_downloads_lib_view", "_smart_playlists_view"):
+            setattr(self, attr, SimpleNamespace(name=attr, reload=lambda: None))
+
+    def _swap(self, w):
+        self.current = w
+        self._on_content_changed(0)
+
+
+def test_radio_downloads_smart_mixes_are_in_history():
+    """Now Playing → Radio → Back must return to the previous surface,
+    not skip it (these three never pushed history)."""
+    host = _Host()
+    host._show_radio_view()
+    host._show_downloads_library_view()
+    host._show_smart_playlists_view()
+    assert len(host._nav_history) == 3
+    assert host._go_back()
+    assert host.current is host._downloads_lib_view
+
+
+def test_dropdown_follows_back_and_forward():
+    host = _Host()
+    host._show_radio_view()
+    host._show_downloads_library_view()
+    host._go_back()
+    assert host.labels[-1] == "Radio"
+    host._go_forward()
+    assert host.labels[-1] == "Downloads"

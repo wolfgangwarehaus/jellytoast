@@ -478,6 +478,16 @@ class _TrackDelegate(QStyledItemDelegate):
     RIGHT_PAD = 12
     COL_GAP = 14
 
+    def set_compact(self, compact: bool) -> None:
+        """Phone width: a slimmer index gutter (58 → 38 px before the
+        title), so titles get the room. Instance attrs shadow the class
+        defaults; the host repaints."""
+        self.IDX_W, self.LEFT_PAD, self.COL_GAP = (24, 4, 10) if compact else (32, 12, 14)
+
+    def text_left(self) -> int:
+        """x of the title column within a row — the kicker aligns to it."""
+        return self.LEFT_PAD + self.IDX_W + self.COL_GAP
+
     def __init__(self, parent=None):
         super().__init__(parent)
         self._build_fonts()
