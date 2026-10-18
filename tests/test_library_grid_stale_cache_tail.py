@@ -216,3 +216,96 @@ def test_on_tail_probe_drops_superseded_generation(grid, monkeypatch):
     grid._load_gen = 9
     grid._on_tail_probe({"Items": _albums(1, start=150)}, gen=8)  # stale
     assert shots == []
+
+
+# ── Newest probe: a re-IDed album past page 1 (bug 2026-10-18) ─────────
+
+
+def test_replaced_album_behind_complete_cache_triggers_rebuild(grid, monkeypatch):
+    """A Navidrome rescan re-IDs an album past page 1 ("Bad (Remastered)"
+    → "Bad"): the total stays 150, so page 1 matches AND the tail probe
+    is empty. The newest probe must spot the new ID and rebuild."""
+    stale = _albums(150)
+    server = _albums(150)
+    server[120] = {**server[120], "Id": "fresh", "Name": "Album 0120 (new)"}
+
+    monkeypatch.setattr(
+        _disk_cache, "load", lambda *a, **k: {"items": list(stale), "complete": True}
+    )
+    run_q = []
+    timer_q = []
+    monkeypatch.setattr(
+        lp, "run_async",
+        lambda fn, *a, on_result=None, on_error=None, **k: run_q.append((fn, a, k, on_result)),
+    )
+    monkeypatch.setattr(lg.QTimer, "singleShot", staticmethod(lambda _d, cb: timer_q.append(cb)))
+
+    def get_items(parent, item_type, limit, offset, sort_by="", *a, **k):
+        if sort_by == "DateCreated":
+            return {"Items": [server[120]]}
+        return {"Items": list(server[offset : offset + limit])}
+
+    grid.api.get_items.side_effect = get_items
+    saved = []
+    grid._save_cache_async = lambda items, complete: saved.append((list(items), complete))
+
+    grid.load_items("p", "")
+    for _ in range(2000):
+        if run_q:
+            fn, a, k, on_result = run_q.pop(0)
+            r = fn(*a, **k)
+            if on_result:
+                on_result(r)
+        elif timer_q:
+            timer_q.pop(0)()
+        else:
+            break
+    else:  # pragma: no cover
+        pytest.fail("did not terminate — runaway cascade")
+
+    assert saved, "replaced album was not detected — no rebuild fired"
+    final_items, complete = saved[-1]
+    assert complete is True
+    final_ids = {it["Id"] for it in final_items}
+    assert "fresh" in final_ids and "id0120" not in final_ids
+
+
+def test_on_tail_probe_empty_runs_newest_probe(grid, monkeypatch):
+    calls = []
+    monkeypatch.setattr(lp, "run_async", lambda fn, *a, **k: calls.append(a))
+    monkeypatch.setattr(grid._model, "items", lambda: _albums(150))
+    grid._load_gen = 1
+    grid._on_tail_probe({"Items": []}, gen=1)
+    assert len(calls) == 1
+    # get_items(parent, item_type, limit, offset, sort_by, sort_order, ...)
+    assert calls[0][4:6] == ("DateCreated", "Descending")
+
+
+def test_newest_probe_skips_filtered_scope(grid, monkeypatch):
+    calls = []
+    monkeypatch.setattr(lp, "run_async", lambda *a, **k: calls.append(a))
+    monkeypatch.setattr(grid._model, "items", lambda: _albums(150))
+    grid._genre_id = "g1"
+    grid._probe_newest(gen=None)
+    grid._genre_id = ""
+    grid._year = "1987"
+    grid._probe_newest(gen=None)
+    assert calls == []
+
+
+def test_on_newest_probe_all_cached_does_not_rebuild(grid, monkeypatch):
+    shots = []
+    monkeypatch.setattr(lg.QTimer, "singleShot", staticmethod(lambda _d, cb: shots.append(cb)))
+    monkeypatch.setattr(grid._model, "items", lambda: _albums(150))
+    grid._load_gen = 1
+    grid._on_newest_probe({"Items": _albums(20, start=130)}, gen=1)
+    assert shots == []
+
+
+def test_on_newest_probe_unknown_id_kicks_rebuild(grid, monkeypatch):
+    shots = []
+    monkeypatch.setattr(lg.QTimer, "singleShot", staticmethod(lambda _d, cb: shots.append(cb)))
+    monkeypatch.setattr(grid._model, "items", lambda: _albums(150))
+    grid._load_gen = 1
+    grid._on_newest_probe({"Items": [{"Id": "fresh"}]}, gen=1)
+    assert len(shots) == 1

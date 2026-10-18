@@ -826,6 +826,56 @@ class _PaginatorMixin:
             return
         items = (resp or {}).get("Items") or []
         if not items:
+            self._probe_newest(gen)
+            return
+        self._partial_cache_buffer = []
+        QTimer.singleShot(200, lambda g=gen: self._silent_rebuild_tick(g))
+
+    # How many of the server's most-recently-added albums the newest
+    # probe checks against the cache.
+    _NEWEST_PROBE_SIZE = 20
+
+    def _probe_newest(self, gen=None):
+        """Page 1 and the tail both matched, but a *replaced* album slips
+        past both: a rescan that re-IDs an album past page 1 (retagged
+        "Bad (Remastered)" → "Bad") keeps the total the same, so the
+        tail probe is empty and the cache keeps the dead ID forever (bug
+        2026-10-18). The replacement is a fresh add server-side, so it
+        sorts first by DateCreated — fetch the newest few and rebuild if
+        any is missing from the cache. Unfiltered album scopes only: a
+        genre/year filter would turn the probe into byGenre/byYear on
+        Subsonic, and other kinds can't sort by DateCreated."""
+        if gen is not None and gen != self._load_gen:
+            return
+        if self.kind != "album" or self._genre_id or self._year:
+            return
+        if len(getattr(self, "_parent_ids", [""])) > 1:
+            return  # union scope renders complete; per-folder offsets don't apply
+        if not self._model.items():
+            return
+        run_async(
+            self.api.get_items,
+            self._parent_id,
+            self._ITEM_TYPE.get(self.kind, ""),
+            self._NEWEST_PROBE_SIZE,
+            0,
+            "DateCreated",
+            "Descending",
+            True,
+            "",
+            on_result=lambda resp, g=gen: self._on_newest_probe(resp, g),
+            on_error=lambda _e: None,
+        )
+
+    def _on_newest_probe(self, resp, gen=None):
+        """Newest-probe result. Any recently-added album the cache doesn't
+        hold means the library changed under the complete cache — kick the
+        silent rebuild."""
+        if gen is not None and gen != self._load_gen:
+            return
+        items = (resp or {}).get("Items") or []
+        cached = self._items_signature(self._model.items())
+        if all(it.get("Id") in cached for it in items):
             return
         self._partial_cache_buffer = []
         QTimer.singleShot(200, lambda g=gen: self._silent_rebuild_tick(g))
