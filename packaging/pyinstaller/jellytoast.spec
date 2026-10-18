@@ -14,6 +14,7 @@
 # packaging/windows/libmpv/libmpv-2.dll before building (see
 # .github/workflows/release.yml); the spec picks it up when present.
 
+import os
 import sys
 from pathlib import Path
 
@@ -231,6 +232,101 @@ if sys.platform == "darwin":
             f"{len(_mac_drop)} Intel-only macOS collection(s) for universal-"
             f"merge symmetry: {sorted(b[0] for b in _mac_drop)}"
         )
+
+# --- Prune Qt payload PyInstaller collects but jellytoast never uses -------
+# The `excludes=` list above is a PYTHON-import filter: it stops
+# `import PySide6.QtQuick` from pulling the module in, but it cannot stop
+# PyInstaller's *binary* collector from copying Qt plugins and the shared
+# libraries they drag behind them. Measured on the 0.2.2 AppImage (501 MB
+# unpacked), that shipped a chain nothing in this app touches:
+#
+#   platforminputcontexts/libqtvirtualkeyboardplugin.so   (an on-screen
+#       touch keyboard) → libQt6VirtualKeyboard → libQt6Quick → QmlMeta →
+#       QmlModels → libQt6Qml  ..................................  ~17 MB
+#   platformthemes/libqgtk3.so (GTK3 platform theme) → libgtk-3 + the
+#       gdk-pixbuf/rsvg stack behind it  .......................  ~8 MB+
+#   libQt6Pdf  (QtPdf is in `excludes` already; the lib still came)  ~4 MB
+#   Qt's own .qm catalogs for 100+ languages we don't ship  ......  ~6 MB
+#
+# What is deliberately NOT pruned:
+#   * the OTHER platforminputcontexts plugins (ibus / fcitx / compose) —
+#     those are real input methods, and dropping them would break CJK and
+#     dead-key entry. Only the virtual keyboard goes.
+#   * wayland-shell-integration — load-bearing on KDE Wayland.
+#   * QtMultimedia and its ffmpeg backend — the visualizer's QAudioDecoder
+#     needs them (see the excludes note above).
+# Losing libqgtk3 means GNOME users get Qt's own file dialog rather than
+# the GTK one; jellytoast draws its whole UI with QSS regardless.
+_QT_DROP_BASENAMES = {
+    "libqtvirtualkeyboardplugin.so",
+    "qtvirtualkeyboardplugin.dll",
+    "libqgtk3.so",
+}
+_QT_DROP_STEMS = (
+    "libQt6VirtualKeyboard",
+    "Qt6VirtualKeyboard",
+    "libQt6Quick",
+    "Qt6Quick",
+    "libQt6Qml",
+    "Qt6Qml",
+    "libQt6Pdf",
+    "Qt6Pdf",
+    "libgtk-3",
+    "libgdk-3",
+)
+
+
+def _qt_prunable(dest: str) -> bool:
+    base = os.path.basename(dest)
+    if base in _QT_DROP_BASENAMES:
+        return True
+    return any(base.startswith(stem) for stem in _QT_DROP_STEMS)
+
+
+_qt_dropped = [b for b in a.binaries if _qt_prunable(b[0])]
+if _qt_dropped:
+    a.binaries = [b for b in a.binaries if not _qt_prunable(b[0])]
+    print(
+        f"jellytoast.spec: pruned {len(_qt_dropped)} unused Qt binaries "
+        "(virtual keyboard + its QML chain, GTK3 theme, QtPdf)"
+    )
+
+# Qt ships a .qm per module per language. Keep only the languages jellytoast
+# actually offers — derived from i18n.SHIPPED_LANGUAGES so adding a language
+# needs no spec edit — plus English. A pruned language simply falls back to
+# Qt's built-in English strings, which is what an unshipped locale already did.
+_keep_langs = {"en"}
+try:
+    sys.path.insert(0, str(REPO_ROOT))
+    from jellytoast.i18n import SHIPPED_LANGUAGES as _SHIPPED
+
+    _keep_langs |= {code for code, _en, _native in _SHIPPED}
+except Exception as exc:  # pragma: no cover - build-time best effort
+    print(f"jellytoast.spec: could not read SHIPPED_LANGUAGES ({exc}); keeping en only")
+
+
+def _stale_qt_translation(dest: str) -> bool:
+    d = dest.replace("\\", "/")
+    if "/Qt/translations/" not in d or not d.endswith(".qm"):
+        return False
+    # Filenames are `<module>_<locale>.qm`, and BOTH halves can contain
+    # underscores (`qt_help_ja`, `qtbase_es_MX`). Rather than parse that
+    # ambiguity, test the last two segments and keep the file if either is
+    # a language we ship — errs toward keeping, which is the safe direction.
+    parts = os.path.basename(d)[: -len(".qm")].split("_")
+    candidates = {parts[-1]}
+    if len(parts) >= 2:
+        candidates.add(parts[-2])
+    return not (candidates & _keep_langs)
+
+
+_tr_dropped = [d for d in a.datas if _stale_qt_translation(d[0])]
+if _tr_dropped:
+    a.datas = [d for d in a.datas if not _stale_qt_translation(d[0])]
+    print(
+        f"jellytoast.spec: pruned {len(_tr_dropped)} Qt translation catalogs; "
+        f"kept {sorted(_keep_langs)}"
+    )
 
 pyz = PYZ(a.pure)
 
