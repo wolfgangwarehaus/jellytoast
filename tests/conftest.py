@@ -355,6 +355,47 @@ def pytest_runtest_call(item):
         QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete.value)
 
 
+_THEME_BASELINE: dict = {}
+
+
+def _theme_state() -> dict:
+    """Every module-level theme value a test can change: ui_helpers' tokens
+    (TEXT, ACCENT, … + the _THEME object) and each color-token override
+    target (``color_tokens.TOKENS`` live in several modules)."""
+    out = {}
+    uih = sys.modules.get("jellytoast.ui_helpers")
+    if uih is not None:
+        for k, v in vars(uih).items():
+            if (k.isupper() and isinstance(v, (str, int, float, tuple))) or k == "_THEME":
+                out[("jellytoast.ui_helpers", k)] = v
+    ct = sys.modules.get("jellytoast.color_tokens")
+    if ct is not None:
+        for name, token in getattr(ct, "TOKENS", {}).items():
+            mod = sys.modules.get(token.module)
+            if mod is not None and hasattr(mod, name):
+                out[(token.module, name)] = getattr(mod, name)
+    return out
+
+
+@pytest.fixture(autouse=True)
+def _theme_state_leak_guard():
+    """Restore theme tokens a test changed (a theme / accent / color-token
+    test that didn't put them back). A later test then read a leaked ACCENT
+    or TEXT — order-dependent failures in test_color_tokens and
+    test_settings_dialog_button_color. The baseline is the first snapshot
+    taken (the suite's default theme); keys first seen later join it."""
+    before = _theme_state()
+    for key, val in before.items():
+        _THEME_BASELINE.setdefault(key, val)
+    yield
+    after = _theme_state()
+    changed = [k for k, v in after.items() if k in _THEME_BASELINE and v != _THEME_BASELINE[k]]
+    for mod_name, attr in changed:
+        mod = sys.modules.get(mod_name)
+        if mod is not None:
+            setattr(mod, attr, _THEME_BASELINE[(mod_name, attr)])
+
+
 @pytest.fixture(autouse=True)
 def _font_state_leak_guard():
     """Undo a test's font changes: the app-wide QFont and the font-scale
