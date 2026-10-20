@@ -100,3 +100,27 @@ def test_album_page_renders_grid_known_item_before_the_server_answers(qapp, isol
     page.load_preview("unknown", "album")
     assert page._title.text() == "Loading…"
     page.deleteLater()
+
+
+def test_cover_size_does_not_follow_the_title_length(page, monkeypatch):
+    """A title wrapping to two lines used to shrink and shift the art on
+    every track change; the title box is a fixed height now."""
+    from jellytoast import now_playing_page as npp
+    from jellytoast.player_state import NowPlaying
+
+    page._apply_width_class(responsive.COMPACT)
+    page.show()
+    short = NowPlaying(item_id="a", title="Venus", subtitle="Air")
+    long_ = NowPlaying(
+        item_id="b",
+        title="An extremely long track title that certainly wraps onto a second line",
+        subtitle="A band with a very very very long name featuring several guests",
+    )
+    sizes = []
+    for np_ in (short, long_, short):
+        monkeypatch.setattr(npp, "get_now_playing", lambda n=np_: n)
+        monkeypatch.setattr("jellytoast.np_phone.get_now_playing", lambda n=np_: n)
+        page._phone_refresh_meta()
+        page._phone_fit_cover()
+        sizes.append((page._cover.width(), page._phone_meta.height()))
+    assert sizes[0] == sizes[1] == sizes[2]

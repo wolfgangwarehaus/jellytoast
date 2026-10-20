@@ -128,13 +128,18 @@ class _PhonePlayerMixin:
         self._phone_title.setWordWrap(True)
         self._phone_artist = QLabel("")
         self._phone_artist.setAlignment(Qt.AlignmentFlag.AlignHCenter)
-        self._phone_artist.setWordWrap(True)
+        self._phone_artist_full = ""  # elided to one line in _phone_fit_cover
         names = QVBoxLayout()
         names.setContentsMargins(0, 0, 0, 0)
         names.setSpacing(4)
         names.addWidget(self._phone_title)
         names.addWidget(self._phone_artist)
-        meta = QHBoxLayout()
+        names.addStretch(1)
+        # A FIXED-height box (a 2-line title + a 1-line artist): the cover is
+        # sized against it, so a long title wrapping no longer shrinks / moves
+        # the art on every track change.
+        self._phone_meta = QWidget()
+        meta = QHBoxLayout(self._phone_meta)
         meta.setContentsMargins(0, 0, 0, 0)
         meta.setSpacing(8)
         self._phone_heart = _phone_btn("favorite_outline", 44, 24, QCoreApplication.translate("NowPlayingPage", "Favorite"))
@@ -142,7 +147,7 @@ class _PhonePlayerMixin:
         meta.addWidget(self._phone_heart, 0, Qt.AlignmentFlag.AlignVCenter)
         meta.addLayout(names, 1)
         meta.addWidget(self._phone_more, 0, Qt.AlignmentFlag.AlignVCenter)
-        cb.addLayout(meta)
+        cb.addWidget(self._phone_meta)
         cb.addStretch(1)
         self._phone_slot.addWidget(self._phone_cover_block, 1)
         # Lyrics surface on a track without lyrics: say so, don't leave a
@@ -429,7 +434,12 @@ class _PhonePlayerMixin:
             return
         margins = self._root_layout.contentsMargins()
         avail_w = self.width() - margins.left() - margins.right() - 8
-        cb_extra = self._phone_cover_block.sizeHint().height() - self._cover.height()
+        meta_h = self._phone_meta_height()
+        if self._phone_meta.height() != meta_h:
+            self._phone_meta.setFixedHeight(meta_h)
+        self._phone_elide_artist()
+        # Constant, not the block's sizeHint: that grew with a wrapped title.
+        cb_extra = 8 + 18 + meta_h
         avail_h = (
             self.height()
             - margins.top()
@@ -447,6 +457,18 @@ class _PhonePlayerMixin:
                 self._on_cover_loaded(orig)
         self._phone_refresh_thumb()
 
+    def _phone_meta_height(self) -> int:
+        title_line = self._phone_title.fontMetrics().lineSpacing()
+        self._phone_title.setMaximumHeight(2 * title_line)  # wrap to 2 lines max
+        return 2 * title_line + 4 + self._phone_artist.fontMetrics().lineSpacing()
+
+    def _phone_elide_artist(self) -> None:
+        w = self._phone_artist.width()
+        text = self._phone_artist_full
+        if w > 0 and text:
+            text = self._phone_artist.fontMetrics().elidedText(text, Qt.TextElideMode.ElideRight, w)
+        self._phone_artist.setText(text)
+
     # ── Track info ─────────────────────────────────────────────────────────
 
     def _phone_refresh_meta(self) -> None:
@@ -456,8 +478,8 @@ class _PhonePlayerMixin:
         title = np.title or QCoreApplication.translate("NowPlayingPage", "Nothing Playing")
         artist = np.subtitle or ""
         self._phone_title.setText(title)
-        self._phone_artist.setText(artist)
-        self._phone_artist.setVisible(bool(artist))
+        self._phone_artist_full = artist  # stays visible (empty) so nothing shifts
+        self._phone_elide_artist()
         self._phone_h_title.setText(title)
         self._phone_h_artist.setText(artist)
         self._phone_refresh_heart()
@@ -576,6 +598,7 @@ class _PhonePlayerMixin:
         idle = QCoreApplication.translate("NowPlayingPage", "Nothing Playing")
         for lbl in (self._phone_title, self._phone_h_title):
             lbl.setText(idle)
+        self._phone_artist_full = ""
         for lbl in (self._phone_artist, self._phone_h_artist):
             lbl.setText("")
         self._phone_thumb.clear()
