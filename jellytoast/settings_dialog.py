@@ -2168,12 +2168,16 @@ class SettingsDialog(QDialog):
         # left, "Skip on albums" sibling right. Duration sits beneath
         # both as a sub-option of the parent (only meaningful when
         # crossfade is on; greyed via _refresh_xf_enabled_state).
-        toggle_row = QHBoxLayout()
+        from jellytoast.platform_compat import is_mobile_shell as _mobile
+
+        # Phone: stacked — side by side they need ~330 px in a wide font
+        # (DejaVu), past a 360 px phone's page.
+        toggle_row = QVBoxLayout() if _mobile() else QHBoxLayout()
         # 16→28: extra breathing room between the parent "Crossfade
         # between tracks" toggle and its "Skip on albums" sibling, so
         # the sub-option reads as a distinct choice rather than
         # crowding the parent label.
-        toggle_row.setSpacing(28)
+        toggle_row.setSpacing(6 if _mobile() else 28)
         self._xf_enabled = QCheckBox(self.tr("Crossfade between tracks"))
         self._xf_enabled.setChecked(self.s.crossfade_enabled)
         self._xf_enabled.toggled.connect(self._on_xf_enabled_toggled)

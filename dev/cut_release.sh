@@ -64,6 +64,30 @@ if git rev-parse "v$NEW_VERSION" >/dev/null 2>&1; then
   exit 1
 fi
 
+# ── Pre-flight: CI green on the exact commit being cut ──────────────────
+# Pushes to main bypass the required checks, so nothing else stops a red
+# main from shipping: 0.2.3 was cut while CI had failed for a week (phone
+# layouts overflowing 360 px in CI's wider DejaVu font). JT_SKIP_CI_CHECK=1
+# overrides — say why in the release notes if you ever need it.
+HEAD_SHA="$(git rev-parse HEAD)"
+if [ "${JT_SKIP_CI_CHECK:-0}" != "1" ]; then
+  ci="$(gh run list --workflow ci.yml --commit "$HEAD_SHA" --limit 1 \
+        --json status,conclusion --jq '.[0] | "\(.status) \(.conclusion)"' 2>/dev/null || true)"
+  case "$ci" in
+    "completed success") echo "✓ CI green on ${HEAD_SHA:0:7}" ;;
+    "") echo "error: no CI run found for ${HEAD_SHA:0:7} (is gh authenticated?)" >&2; exit 1 ;;
+    completed*) echo "error: CI ${ci#completed } on ${HEAD_SHA:0:7} — fix main first: gh run list --workflow ci.yml" >&2; exit 1 ;;
+    *) echo "error: CI still running on ${HEAD_SHA:0:7} — wait for it: gh run watch" >&2; exit 1 ;;
+  esac
+fi
+# Pin-health reports (deps-watch) — informational, but they went unread for
+# weeks once; surface them at the one moment someone is paying attention.
+pins="$(gh issue list --label pin-health --state open --json number,url --jq '.[] | "#\(.number) \(.url)"' 2>/dev/null || true)"
+if [ -n "$pins" ]; then
+  echo "note: open pin-health report(s) — skim before shipping:"
+  echo "$pins" | sed 's/^/  /'
+fi
+
 TODAY="$(date -u +%Y-%m-%d)"
 
 # ── Bump every source-of-truth file in one atomic Python pass ───────────

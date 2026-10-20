@@ -18,6 +18,7 @@ from PySide6.QtCore import (
     QPropertyAnimation,
     QRect,
     QRectF,
+    QSize,
     Qt,
     QTimer,
     QUrl,
@@ -2121,6 +2122,15 @@ class MarqueeLabel(QLabel):
     PAUSE_TICKS = 90  # ~3s at 33ms tick — longer dwell on the start
     TICK_MS = 33
     FADE_PX = 16  # soft edge so overflow dissolves instead of hard-clipping
+
+    # A marquee scrolls whatever doesn't fit, so its text width is never a
+    # floor: reporting it let a long title (or a wide font — DejaVu on CI)
+    # hold a phone layout wider than 360 px.
+    MIN_WIDTH = 32
+
+    def minimumSizeHint(self):  # noqa: N802 — Qt naming
+        hint = super().minimumSizeHint()
+        return QSize(min(hint.width(), self.MIN_WIDTH), hint.height())
 
     def __init__(self, text: str = "", parent=None):
         super().__init__(parent)
