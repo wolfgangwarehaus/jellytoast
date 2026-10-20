@@ -44,7 +44,7 @@ jobs:
         with:
           # release event → the published tag; manual run → the tag input.
           ref: ${{ github.event.release.tag_name || inputs.tag }}
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
       - name: Build + check sdist & wheel
@@ -53,7 +53,7 @@ jobs:
           python -m build
           python -m twine check dist/*
       - name: Publish to PyPI (Trusted Publishing / OIDC)
-        uses: pypa/gh-action-pypi-publish@cef221092ed1bacb1cc03d23a2d87d1d172e277b # release/v1 (2026-07 tip)
+        uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # release/v1 (2026-07 tip)
         with:
           # Idempotent: a re-run (or a re-published release) won't fail on an
           # already-uploaded version — PyPI forbids overwriting a version anyway.
