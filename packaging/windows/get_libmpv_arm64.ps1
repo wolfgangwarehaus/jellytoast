@@ -29,17 +29,25 @@
 
 $ErrorActionPreference = "Stop"
 
-# Same shinchiro release/tag as the x64 dll get_libmpv.ps1 pins (20261018,
-# git 01e2533f31). Hash pinned from a local download of the asset; the contained
-# libmpv-2.dll was verified as a genuine ARM64 PE (machine 0xAA64) before
-# pinning. Bump URL + hash together, in step with get_libmpv.ps1.
-$Url = "https://github.com/shinchiro/mpv-winbuild-cmake/releases/download/20261018/mpv-dev-aarch64-20261018-git-01e2533f31.7z"
+# Same shinchiro release as get_libmpv.ps1, mirrored into
+# wolfgangwarehaus/jellytoast-deps ($Url; $UpstreamUrl is the origin and the
+# fallback). dev/mirror_libmpv.sh re-pins both scripts together and checks the
+# contained libmpv-2.dll is a genuine ARM64 PE (machine 0xAA64).
+$Url = "https://github.com/wolfgangwarehaus/jellytoast-deps/releases/download/libmpv-windows-20261018/mpv-dev-aarch64-20261018-git-01e2533f31.7z"
+$UpstreamUrl = "https://github.com/shinchiro/mpv-winbuild-cmake/releases/download/20261018/mpv-dev-aarch64-20261018-git-01e2533f31.7z"
 $Sha256 = "062b07022d1fadefd341485602658a51d973c216bb4282859e10daa09ad55478"
 
 $Dest = Join-Path $PSScriptRoot "libmpv"
 $Archive = Join-Path $env:TEMP "libmpv-dev-aarch64.7z"
 
-Invoke-WebRequest -Uri $Url -OutFile $Archive
+# Our copy first; upstream only if the mirror is unreachable. Either way
+# the SHA-256 check below decides.
+try {
+    Invoke-WebRequest -Uri $Url -OutFile $Archive
+} catch {
+    Write-Warning "libmpv (aarch64) mirror download failed ($_); trying upstream"
+    Invoke-WebRequest -Uri $UpstreamUrl -OutFile $Archive
+}
 
 $actual = (Get-FileHash -Algorithm SHA256 $Archive).Hash.ToLower()
 if ($actual -ne $Sha256.ToLower()) {

@@ -3,8 +3,10 @@
 # Dependabot covers pyproject deps + action versions. But the release pipeline
 # also rides pins that live in shell scripts and the flatpak manifest, and
 # every one of these has already broken (or nearly broken) a release once:
-#   • shinchiro libmpv archive URLs + SHA-256 (x64 + aarch64) — upstream
-#     deletes old release assets eventually; a dead URL = a red release run.
+#   • shinchiro libmpv archives (x64 + aarch64) — upstream keeps ~30 days of
+#     releases, so since 0.2.3 CI downloads OUR copy (wolfgangwarehaus/
+#     jellytoast-deps, $Url in the ps1s); this checks that copy resolves and
+#     how far behind upstream the pin is ($UpstreamUrl's tag).
 #   • The flatpak runtime / BaseApp branches (org.kde.Platform 6.10) — KDE
 #     runtimes EOL; staying on a dead branch stops security updates.
 #   • The MAS from-source pins (FFmpeg n7.1, mpv tag) — drift silently.
@@ -40,19 +42,19 @@ jobs:
           PROBLEMS=()
           note() { PROBLEMS+=("$1"); echo "::warning::$1"; }
 
-          # ── 1. shinchiro libmpv archive URLs still resolve ─────────────
+          # ── 1. our libmpv copies (jellytoast-deps) still resolve ────────
           for f in packaging/windows/get_libmpv.ps1 packaging/windows/get_libmpv_arm64.ps1; do
             url=$(grep -oP '(?<=\$Url = ")[^"]+' "$f")
             code=$(curl -sIL -o /dev/null -w '%{http_code}' "$url")
             if [ "$code" != "200" ]; then
-              note "DEAD PIN: $f archive URL returns $code — $url"
+              note "DEAD PIN: $f mirror URL returns $code — $url (re-run dev/mirror_libmpv.sh)"
             fi
           done
           # …and how far behind upstream's latest release we are.
-          pinned_tag=$(grep -oP '(?<=download/)[0-9]+' packaging/windows/get_libmpv.ps1 | head -1)
+          pinned_tag=$(grep -oP '(?<=\$UpstreamUrl = ")[^"]+' packaging/windows/get_libmpv.ps1 | grep -oP '(?<=download/)[0-9]+' | head -1)
           latest_tag=$(curl -s https://api.github.com/repos/shinchiro/mpv-winbuild-cmake/releases/latest | python3 -c "import json,sys; print(json.load(sys.stdin).get('tag_name',''))")
           if [ -n "$latest_tag" ] && [ "$pinned_tag" != "$latest_tag" ]; then
-            note "DRIFT: shinchiro libmpv pinned at $pinned_tag; upstream latest is $latest_tag (bump both windows ps1 pins together + revalidate hashes)"
+            note "DRIFT: shinchiro libmpv pinned at $pinned_tag; upstream latest is $latest_tag (dev/mirror_libmpv.sh $latest_tag re-pins both)"
           fi
 
           # ── 2. flatpak runtime / BaseApp branches still published ──────

@@ -29,6 +29,14 @@ jobs:
     env:
       HAVE_TOKEN: ${{ secrets.WINGET_TOKEN != '' }}
     steps:
+      # komac branches off upstream's newest commit inside OUR fork; a fork
+      # that's fallen far behind fails with "failed to create branch" (0.2.2
+      # never reached winget that way). Sync it first — cheap when current.
+      - name: Sync the winget-pkgs fork with upstream
+        if: env.HAVE_TOKEN == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.WINGET_TOKEN }}
+        run: gh repo sync wolfgangwarehaus/winget-pkgs --source microsoft/winget-pkgs --branch master
       - name: Submit version update to microsoft/winget-pkgs
         if: env.HAVE_TOKEN == 'true'
         uses: vedantmgoyal9/winget-releaser@4ffc7888bffd451b357355dc214d43bb9f23917e # v2
@@ -45,6 +53,16 @@ jobs:
           # is the input tag (so a release that published before the token existed
           # can be backfilled). The PackageVersion derives from it (minus `v`).
           release-tag: ${{ github.event.inputs.tag || github.event.release.tag_name }}
+      # komac lists the universal setup.exe as x64 only; add the arm64 entries
+      # (same URL / hash / scopes) to the PR it just opened.
+      - uses: actions/checkout@v7
+        if: env.HAVE_TOKEN == 'true'
+      - name: Add arm64 installer entries to the PR
+        if: env.HAVE_TOKEN == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.WINGET_TOKEN }}
+          TAG: ${{ github.event.inputs.tag || github.event.release.tag_name }}
+        run: python3 dev/winget_add_arm64.py "${TAG#v}"
       - name: Dormant — WINGET_TOKEN not set
         if: env.HAVE_TOKEN != 'true'
         run: |
