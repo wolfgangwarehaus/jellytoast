@@ -313,6 +313,48 @@ def _drain_async_and_stop_cast_singletons():
             gc.enable()
 
 
+@pytest.hookimpl(hookwrapper=True)
+def pytest_runtest_call(item):
+    """Delete the DIALOGS a test BODY created and didn't clean up.
+
+    Hundreds of dialogs / mini players / settings windows used to outlive
+    their test (27 after just three theme files). Every later theme change
+    restyled all of them — ~1.3 s per theme-test teardown — and live leftovers
+    caused order-dependent failures (a stale SettingsDialog rebuilding on a
+    theme flip drove the keyring retry stall into a suite "hang"). Scoped to
+    QDialogs created during the call phase: other top-level widgets are often
+    fixture-owned (factory fixtures build hosts mid-test and delete them in
+    their own teardown) or module singletons (the custom tooltip popup), and
+    deleting those under them errors."""
+    from PySide6.QtWidgets import QApplication, QDialog
+
+    def _app():
+        try:  # a test may monkeypatch instance() to raise (theme fallbacks)
+            return QApplication.instance()
+        except Exception:
+            return None
+
+    app = _app()
+    before = {id(w) for w in app.topLevelWidgets()} if app is not None else set()
+    yield
+    app = _app()
+    if app is None:
+        return
+    leaked = [
+        w for w in app.topLevelWidgets() if id(w) not in before and isinstance(w, QDialog)
+    ]
+    for w in leaked:
+        try:
+            w.hide()
+            w.deleteLater()
+        except RuntimeError:  # already gone
+            pass
+    if leaked:
+        from PySide6.QtCore import QCoreApplication, QEvent
+
+        QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete.value)
+
+
 @pytest.fixture(autouse=True)
 def _font_state_leak_guard():
     """Undo a test's font changes: the app-wide QFont and the font-scale
