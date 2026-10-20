@@ -1999,10 +1999,20 @@ class NowPlayingPage(_PhonePlayerMixin, _LeftPaneMixin, _LyricsMixin, QWidget):
             self._on_preview_meta_loaded(item_id, cached["meta"])
             self._on_preview_tracks_loaded(item_id, cached["tracks"])
         else:
-            # Cold path — placeholders while we wait on the network.
-            self._title.setText(self.tr("Loading…"))
-            self._subtitle.setText("")
-            self._set_work_line("")
+            # Cold path. If a grid / rail showed this item, render its title,
+            # artist and cover NOW (the cover comes straight from the shared
+            # image cache) — a slow server (a Navidrome mid-scan) otherwise
+            # left a blank "Loading…" page for many seconds. The fetch below
+            # still replaces it with the full metadata.
+            from jellytoast.library_grid import known_item
+
+            seed = known_item(item_id)
+            if seed:
+                self._on_preview_meta_loaded(item_id, dict(seed))
+            else:
+                self._title.setText(self.tr("Loading…"))
+                self._subtitle.setText("")
+                self._set_work_line("")
             self._refresh_track_list()
             self._refresh_meta_line()
         # Async fetches dispatch back to the GUI thread via signals.

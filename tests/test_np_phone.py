@@ -71,3 +71,32 @@ def test_not_on_a_desktop_shell(page, monkeypatch):
     monkeypatch.setattr(pc, "is_mobile_shell", lambda: False)
     page._apply_width_class(responsive.COMPACT)
     assert not page.phone_player_active()
+
+
+def test_album_page_renders_grid_known_item_before_the_server_answers(qapp, isolated_settings, monkeypatch):
+    """A Navidrome mid-scan can take 15 s to answer getAlbum; the album page
+    showed a blank "Loading…" meanwhile. The grid already has the album —
+    render that at once."""
+    from unittest.mock import MagicMock
+
+    from jellytoast import disk_cache, library_grid
+    from jellytoast import now_playing_page as npp
+    from jellytoast.player_state import QueueContext
+
+    monkeypatch.setattr(disk_cache, "load", lambda *a, **k: None)
+    monkeypatch.setattr(npp, "run_async", lambda *a, **k: None)  # server never answers
+    monkeypatch.setattr(npp, "load_image_async", lambda *a, **k: None)
+    library_grid._remember_items([{"Id": "alb1", "Name": "25", "AlbumArtist": "Adele"}])
+    qm = MagicMock()
+    qm.context = QueueContext()
+    qm.current_index = -1
+    qm.current_item = None
+    qm.original_items = []
+    qm.queue = []
+    page = npp.NowPlayingPage(qm)
+    page.load_preview("alb1", "album")
+    assert page._title.text() == "25"
+    assert "Adele" in page._subtitle.text()
+    page.load_preview("unknown", "album")
+    assert page._title.text() == "Loading…"
+    page.deleteLater()

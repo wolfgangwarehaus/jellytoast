@@ -48,7 +48,10 @@ def available() -> bool:
     except Exception:
         return False
     try:
-        signed_in = bool(prov.is_authenticated())
+        # A property on the real providers (MediaProvider.is_authenticated);
+        # tolerate a callable too.
+        auth = prov.is_authenticated
+        signed_in = bool(auth() if callable(auth) else auth)
     except Exception:
         signed_in = False
     return (

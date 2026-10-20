@@ -134,8 +134,7 @@ class _FakeProvider:
         self.added = []
         self.created = []
 
-    def is_authenticated(self):
-        return True
+    is_authenticated = True  # a property on the real providers
 
     def get_playlists(self):
         return [{"Id": "p1", "Name": "Chill"}, {"Id": "p2", "Name": "Gym"}]
@@ -215,7 +214,7 @@ def test_hidden_when_offline_or_signed_out(actions, monkeypatch):
     monkeypatch.setattr(offline, "is_offline_mode", lambda: True)
     assert pa.add_playlist_submenu(QMenu(), lambda: [], host=QWidget()) is None
     monkeypatch.setattr(offline, "is_offline_mode", lambda: False)
-    monkeypatch.setattr(prov, "is_authenticated", lambda: False)
+    monkeypatch.setattr(prov, "is_authenticated", False)
     assert pa.add_playlist_submenu(QMenu(), lambda: [], host=QWidget()) is None
 
 
@@ -227,3 +226,16 @@ def test_text_input_needs_text(qapp):
     dlg.edit.setText("  Mix  ")
     assert dlg._confirm.isEnabled() and dlg.value() == "Mix"
     dlg.deleteLater()
+
+
+def test_available_with_a_real_provider(qapp, monkeypatch):
+    """Real providers expose is_authenticated as a PROPERTY; calling it
+    raised and silently hid the submenu for every signed-in user."""
+    from jellytoast import offline, playlist_actions
+    from jellytoast.providers.subsonic import SubsonicProvider
+
+    p = SubsonicProvider()
+    p._username, p._password, p._server_url = "me", "pw", "http://x"
+    monkeypatch.setattr(playlist_actions, "_provider", lambda: p)
+    monkeypatch.setattr(offline, "is_offline_mode", lambda: False)
+    assert playlist_actions.available() is True

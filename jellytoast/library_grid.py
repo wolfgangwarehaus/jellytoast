@@ -417,6 +417,30 @@ class _LetterBubble(QWidget):
 # ── Model ────────────────────────────────────────────────────────────────
 
 
+# Every item a library grid / rail has shown, by Id — so a page opened from a
+# tile (the album page) can render the title, artist and cover the grid
+# already has instead of a blank "Loading…" while the server answers (a
+# Navidrome mid-scan can take 15 s). Bounded LRU; dicts are shared, not
+# copied.
+_KNOWN_ITEMS: "OrderedDict[str, Dict]" = OrderedDict()
+_KNOWN_ITEMS_MAX = 20000
+
+
+def _remember_items(items: List[Dict]) -> None:
+    for it in items:
+        iid = it.get("Id") if isinstance(it, dict) else None
+        if iid:
+            _KNOWN_ITEMS[iid] = it
+            _KNOWN_ITEMS.move_to_end(iid)
+    while len(_KNOWN_ITEMS) > _KNOWN_ITEMS_MAX:
+        _KNOWN_ITEMS.popitem(last=False)
+
+
+def known_item(item_id: str) -> "Dict | None":
+    """The item dict a grid / rail last showed for ``item_id``, if any."""
+    return _KNOWN_ITEMS.get(item_id)
+
+
 class _LibraryItemsModel(QAbstractListModel):
     """Items + sparse cover cache for the album/playlist/artist grid.
     Delegates paint from four custom roles — ItemRole returns the source
@@ -523,6 +547,7 @@ class _LibraryItemsModel(QAbstractListModel):
     def set_items(self, items: List[Dict]):
         self.beginResetModel()
         self._items = list(items)
+        _remember_items(self._items)
         self._covers = OrderedDict()
         self._covers_bytes = 0
         self._reseed_downloaded()
@@ -536,6 +561,7 @@ class _LibraryItemsModel(QAbstractListModel):
         self.beginInsertRows(QModelIndex(), first, last)
         self._items.extend(new_items)
         self.endInsertRows()
+        _remember_items(new_items)
         # Pull in any rows that flipped while paging was in flight.
         self._reseed_downloaded(emit=True)
 
