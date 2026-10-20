@@ -53,8 +53,13 @@ jobs:
           # …and how far behind upstream's latest release we are.
           pinned_tag=$(grep -oP '(?<=\$UpstreamUrl = ")[^"]+' packaging/windows/get_libmpv.ps1 | grep -oP '(?<=download/)[0-9]+' | head -1)
           latest_tag=$(curl -s https://api.github.com/repos/shinchiro/mpv-winbuild-cmake/releases/latest | python3 -c "import json,sys; print(json.load(sys.stdin).get('tag_name',''))")
+          # Upstream publishes DAILY, and since 0.2.3 our mirrored copy can't
+          # expire — so only flag a pin that's fallen well behind (60+ days).
           if [ -n "$latest_tag" ] && [ "$pinned_tag" != "$latest_tag" ]; then
-            note "DRIFT: shinchiro libmpv pinned at $pinned_tag; upstream latest is $latest_tag (dev/mirror_libmpv.sh $latest_tag re-pins both)"
+            age=$(( ( $(date -d "$latest_tag" +%s) - $(date -d "$pinned_tag" +%s) ) / 86400 ))
+            if [ "$age" -gt 60 ]; then
+              note "DRIFT: shinchiro libmpv pinned at $pinned_tag, $age days behind upstream $latest_tag (dev/mirror_libmpv.sh $latest_tag re-pins both)"
+            fi
           fi
 
           # ── 2. flatpak runtime / BaseApp branches still published ──────
