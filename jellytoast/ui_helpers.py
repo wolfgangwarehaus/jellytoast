@@ -303,14 +303,6 @@ def _hex_to_rgb_safe(hex_value: str) -> tuple[int, int, int]:
         return (128, 128, 128)
 
 
-def _tooltip_fill_opaque() -> str:
-    """Tooltip backdrop colour. Returns ``POPUP_OPAQUE_FILL`` directly,
-    which the active theme picks: frosted themes diverge to a
-    translucent wash (backstopped by ``apply_elevated_blur`` on
-    show), solid + transparent themes keep an opaque value."""
-    return POPUP_OPAQUE_FILL
-
-
 def _ui_font_family_stack() -> str:
     """CSS font-family stack for the global style. Prefixes the user's chosen
     family (Settings → Display → Font) onto the built-in Inter stack; an empty
