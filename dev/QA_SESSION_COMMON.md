@@ -96,7 +96,7 @@ command (see your platform brief).
 platform brief.
 
 ## Reporting
-Append your findings to **`dev/QA_0.1.5.md`** (the shared tracker) under your
+Append your findings to a **`dev/QA_<version>.md`** tracker for the release under test (the 0.1.5 one is archived in jellytoast-ops `docs/qa-archive/`) under your
 platform's section — or, if you can't push, write `/tmp/jt_qa_findings_<os>.md`
 and hand it back. Each issue = surface + what's wrong + screenshot path +
 severity (**P1** blocker / **P2** should-fix / **P3** polish). Note what you
@@ -110,4 +110,4 @@ verified GOOD too. Then summarize back to august.
   back anything else you flip — these write to real config).
 - **Lowercase "jellytoast"** everywhere.
 - If you change code to fix a nav call or a small bug, keep it on
-  `test/cross-platform-qa`; note it in `QA_0.1.5.md`.
+  `test/cross-platform-qa`; note it in that tracker.

@@ -810,7 +810,7 @@ class MpvController(_CastTransportMixin, QObject):
         client), and the 0.2.0 Windows QA crash showed these fire-and-
         forget reports still hitting the server mid-transition while
         offline widened the race window around track changes (see
-        dev/WINDOWS_TEST_FINDINGS_0.2.0.md). Session bookkeeping still
+        jellytoast-ops docs/qa-archive/WINDOWS_TEST_FINDINGS_0.2.0.md). Session bookkeeping still
         runs — only the network dispatch is skipped."""
         try:
             from jellytoast import offline as _offline

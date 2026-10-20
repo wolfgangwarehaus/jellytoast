@@ -697,7 +697,7 @@ class TestPlaybackStartedPauseFlag:
 # ── Offline mode suppresses playback reporting ──────────────────────────────
 # Offline mode's contract is "leave the network alone", and the 0.2.0 Windows
 # QA crash showed the fire-and-forget play-state reports still hitting the
-# server mid-track-transition while offline (dev/WINDOWS_TEST_FINDINGS_0.2.0.md).
+# server mid-track-transition while offline (jellytoast-ops docs/qa-archive/WINDOWS_TEST_FINDINGS_0.2.0.md).
 # These pin: no run_async dispatch when offline; session bookkeeping unaffected.
 
 

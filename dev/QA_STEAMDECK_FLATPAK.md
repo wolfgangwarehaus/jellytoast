@@ -4,7 +4,7 @@ You are a Claude Code session running on **august's Steam Deck, in desktop
 mode**, in the `~/jellytoast` repo checkout on `main` (`git pull` first).
 This is the Deck leg of the 0.2.0 QA program — the Mac and Windows legs ran
 the same way (see `dev/MAC_TEST_FINDINGS_0.2.0.md` /
-`WINDOWS_TEST_FINDINGS_0.2.0.md` for the house findings style). Your PR
+`WINDOWS_TEST_FINDINGS_0.2.0.md`, archived in jellytoast-ops `docs/qa-archive/`, for the house findings style). Your PR
 carries the checklist matrix — tick it as you go and report findings there.
 
 **jellytoast** is a PySide6/Qt6 music client for Jellyfin +

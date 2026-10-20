@@ -33,19 +33,16 @@ pattern: `git pull`, open Claude Code at the repo root, say
 |---|---|
 | `QA_SESSION_COMMON.md` | Shared bridge idioms + house rules every brief builds on. |
 | `QA_SESSION_PLASMA.md` / `QA_SESSION_UBUNTU.md` / `QA_SESSION_WINDOWS.md` | Per-platform QA sessions (0.1.x era; still the base pattern). |
-| `MAC_TEST_SESSION.md` | The macOS on-hardware session brief (0.1.7 blur era; superseded in parts by `QA_0.2.0_UNIVERSAL.md`). |
 | `QA_0.2.0_UNIVERSAL.md` | The 0.2.0 artifact-QA program: installer + wheel matrix on Mac & Windows (PR #228's walkthrough). |
 | `QA_STEAMDECK_FLATPAK.md` | The Deck flatpak leg (PR #231's matrix). |
 | `QA_STEAMDECK_BLUR.md` | Deck blur diagnosis (#229) + the opaque-blur follow-up — **resolved**, kept for the methodology (complementary-wallpaper trap, red/green control test). |
 | `QA_PICKUP.md` | Known QA-infra gaps to pick up (e.g. Windows capture foreground race). |
 | `PLASMA_MOBILE_PLAN.md` | Plasma Mobile support: audit findings + the phased checklist (quick fixes → fit the screen → touch → polish). |
 
-## Historical findings (evidence — read, don't rerun)
+## Historical findings (archived)
 
-| File | What it records |
-|---|---|
-| `QA_0.1.5.md`, `MAC_TEST_FINDINGS.md`, `MAC_TEST_FINDINGS_0.1.7.md`, `UBUNTU_TEST_FINDINGS.md`, `WINDOWS_TEST_FINDINGS.md` | 0.1.x-era platform findings. |
-| `MAC_TEST_FINDINGS_0.2.0.md` | 0.2.0 universal-dmg QA (found the ABI-broken bundled cryptography). |
-| `WINDOWS_TEST_FINDINGS_0.2.0.md` | 0.2.0 Windows QA (validated DPAPI end-to-end; found the offline-play crash + upgrade-orphan issue). |
-| `STEAMDECK_TEST_FINDINGS_0.2.0.md` | Deck flatpak QA (found the Qt-skew blur bug #230 and the https/TLS gap; the "opaque blur" row later resolved as a wallpaper artifact). |
-| `mac_test_artifacts/`, `steamdeck_test_artifacts/` | Screenshot evidence referenced by the findings files. |
+The one-off QA reports (0.1.x and 0.2.0 platform findings, the 0.1.7 macOS
+session brief) and their screenshot evidence moved to the private ops repo,
+`jellytoast-ops/docs/qa-archive/`, on 2026-10-20 — read-only evidence that
+was cluttering the public repo. The git history here still has them.
+

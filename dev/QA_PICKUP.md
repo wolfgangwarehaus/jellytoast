@@ -2,7 +2,7 @@
 
 How to go from "check the open PR" to driving the live app and posting
 findings, without re-deriving the rigging. Platform briefs with WHAT to test:
-`QA_SESSION_WINDOWS.md`, `MAC_TEST_SESSION.md`. This doc is the HOW.
+`QA_SESSION_WINDOWS.md`, `MAC_TEST_SESSION.md` (archived in jellytoast-ops `docs/qa-archive/`). This doc is the HOW.
 
 ## 1. Pick up the PR
 
