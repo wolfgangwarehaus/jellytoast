@@ -718,3 +718,37 @@ class TestPhoneMiniPlayer:
         QTest.mousePress(area, Qt.MouseButton.LeftButton, pos=QPoint(5, 5))
         QTest.mouseRelease(area, Qt.MouseButton.LeftButton, pos=QPoint(-500, 5))
         assert opened == [1]
+
+
+def test_phone_popups_are_opaque(monkeypatch):
+    """Plasma Mobile claims blur but nothing blurs behind a popup there: menus
+    must be opaque on a phone shell regardless of the theme / blur status."""
+    from jellytoast import blur, ui_helpers
+
+    monkeypatch.setattr(blur, "status", lambda: blur.BlurStatus.ACTIVE)
+    monkeypatch.setattr(pc, "is_mobile_shell", lambda: True)
+    assert ui_helpers.popup_blur_active() is False
+
+
+def test_tap_opened_menu_drops_the_buttons_focus_ring(qapp, monkeypatch):
+    from PySide6.QtWidgets import QApplication, QMenu, QWidget
+
+    from jellytoast import keyboard_focus
+    from jellytoast.top_bar import JtTopBar
+
+    host = QWidget()
+    top = JtTopBar(host, titlebar_mode=True)
+    host.show()
+    host.activateWindow()
+    class _Menu(QMenu):  # stands in for the modal exec: just park focus
+        def exec(self, *_a):
+            top.view_btn.setFocus()
+
+    keyboard_focus.note_pointer_input()
+    top._exec_menu_with_kbd_grab(_Menu(), None)
+    assert QApplication.focusWidget() is not top.view_btn
+    keyboard_focus.note_keyboard_input()  # keyboard user: keep the ring
+    top._exec_menu_with_kbd_grab(_Menu(), None)
+    assert QApplication.focusWidget() is top.view_btn or not top.view_btn.isVisible()
+    keyboard_focus.note_pointer_input()
+    host.deleteLater()

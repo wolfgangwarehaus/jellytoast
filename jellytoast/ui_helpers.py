@@ -2654,8 +2654,14 @@ def popup_blur_active() -> bool:
     blur-status check in :func:`body_color_tuple`. Never raises."""
     try:
         from jellytoast import blur
+        from jellytoast.platform_compat import is_mobile_shell
         from jellytoast.theme import get_active_theme
 
+        # Plasma Mobile reports blur active, but nothing blurs behind popups
+        # there — a frosted menu read see-through over the page. Opaque, like
+        # the phone body (theme.body_color_for).
+        if is_mobile_shell():
+            return False
         return bool(get_active_theme().blur) and (
             blur.status() is blur.BlurStatus.ACTIVE
         )

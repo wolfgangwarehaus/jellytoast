@@ -16,6 +16,9 @@ developer-facing history lives in [`docs/CHANGELOG.md`](docs/CHANGELOG.md).
   a playlist and pick **Add to playlist** — any of your Navidrome / Jellyfin
   playlists, or **New playlist…** to start one. Also in the ⋮ menu on the
   phone's Now Playing.
+- **Tidier menus on phones.** The view menu at the top is solid instead of
+  see-through, and the button you opened it from no longer stays outlined
+  in purple afterwards.
 - **Phone screens fit with wider fonts.** With some fonts (like DejaVu Sans)
   the player bar and a Settings page ran a little past the edge of a 360 px
   phone. Long titles now scroll instead of pushing the layout wider.

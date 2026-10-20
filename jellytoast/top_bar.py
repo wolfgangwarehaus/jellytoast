@@ -7,7 +7,15 @@ the header zone doesn't fight us on transparency.
 
 from PySide6.QtCore import QEvent, QPoint, QSize, Qt, QTimer, Signal
 from PySide6.QtGui import QAction
-from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QMenu, QPushButton, QWidget
+from PySide6.QtWidgets import (
+    QApplication,
+    QFrame,
+    QHBoxLayout,
+    QLabel,
+    QMenu,
+    QPushButton,
+    QWidget,
+)
 
 from jellytoast.design_tokens import TYPE_SUBHEAD, rad, type_qss
 from jellytoast.icon_button import IconButton
@@ -854,6 +862,15 @@ class JtTopBar(QWidget):
             menu.exec(pos)
         finally:
             menu.releaseKeyboard()
+            # The callers park focus on the anchor button so arrow keys don't
+            # leak to the grid; after a tap / click that left the button's
+            # :focus ring lit (the purple outline around "Now Playing" on a
+            # phone). Keyboard users keep it — they need to see where they are.
+            from jellytoast.keyboard_focus import last_input_was_keyboard
+
+            fw = QApplication.focusWidget()
+            if fw is not None and self.isAncestorOf(fw) and not last_input_was_keyboard():
+                fw.clearFocus()
 
     def _install_enter_to_click(self, btn: QPushButton) -> None:
         """Make Return/Enter on a focused button trigger click() the same
