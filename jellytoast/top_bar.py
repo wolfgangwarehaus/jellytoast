@@ -596,10 +596,15 @@ class JtTopBar(QWidget):
     def eventFilter(self, obj, event):  # noqa: N802 — Qt naming
         et = event.type()
         if et in (QEvent.Type.FocusIn, QEvent.Type.FocusOut) and isinstance(obj, QPushButton):
+            from jellytoast import touch
             from jellytoast.keyboard_focus import last_input_was_keyboard
 
-            kbd = et == QEvent.Type.FocusIn and (
-                event.reason() in self._KBD_REASONS or last_input_was_keyboard()
+            # No focus ring at all on a phone (august: not wanted there —
+            # a streamed phone can still deliver stray key events).
+            kbd = (
+                et == QEvent.Type.FocusIn
+                and not touch.phone_ui()
+                and (event.reason() in self._KBD_REASONS or last_input_was_keyboard())
             )
             if bool(obj.property("kbdFocus")) != kbd:
                 obj.setProperty("kbdFocus", kbd)

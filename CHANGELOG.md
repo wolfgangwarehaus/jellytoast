@@ -17,10 +17,11 @@ developer-facing history lives in [`docs/CHANGELOG.md`](docs/CHANGELOG.md).
   playlists, or **New playlist…** to start one. Also in the ⋮ menu on the
   phone's Now Playing.
 - **Tidier menus on phones.** The view menu at the top is solid instead of
-  see-through, and top-bar buttons only get their purple outline when you're
-  using the keyboard.
-- **Steady cover art on phone Now Playing.** The cover no longer resizes and
-  jumps between tracks when a song title wraps to two lines.
+  see-through, and the top-bar buttons never get a purple outline on a phone
+  (on desktop it only shows while you're using the keyboard).
+- **Steady layout on phone Now Playing.** The cover, title, seek bar and
+  buttons stay put between tracks — a long title or format line no longer
+  nudges everything around.
 - **Each song shows its own cover art.** On albums where songs carry their
   own embedded art (compilations, singles collections), Now Playing, the
   player bar and the lock screen now show each song's picture instead of

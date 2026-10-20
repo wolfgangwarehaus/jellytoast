@@ -780,3 +780,30 @@ def test_top_bar_focus_ring_only_for_keyboard_focus(qapp):
     assert btn.property("kbdFocus") is True
     assert 'QPushButton[kbdFocus="true"]:focus' in btn.styleSheet()
     host.deleteLater()
+
+
+def test_no_top_bar_focus_ring_on_a_phone_even_from_keys(qapp, monkeypatch):
+    """A phone (streamed input can include stray key events) never shows the
+    accent ring on "Now Playing"; docked keeps it for keyboard users."""
+    from PySide6.QtCore import Qt
+    from PySide6.QtWidgets import QWidget
+
+    from jellytoast import keyboard_focus, touch
+    from jellytoast.top_bar import JtTopBar
+
+    monkeypatch.setattr(pc, "is_mobile_shell", lambda: True)
+    monkeypatch.setattr(pc, "is_docked", lambda: False)
+    monkeypatch.setattr(touch, "_hover_shell", (-1e9, True))
+    host = QWidget()
+    top = JtTopBar(host, titlebar_mode=True)
+    host.show()
+    host.activateWindow()
+    _settle(qapp)
+    btn = top.view_btn
+    btn.show()
+    keyboard_focus.note_keyboard_input()
+    btn.setFocus(Qt.FocusReason.TabFocusReason)
+    _settle(qapp)
+    assert not btn.property("kbdFocus")
+    keyboard_focus.note_pointer_input()
+    host.deleteLater()

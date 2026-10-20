@@ -73,16 +73,11 @@ _HOVER_SHELL_TTL_S = 2.0
 _hover_shell = (-1e9, True)  # (checked_at, phone shell allows hover)
 
 
-def hover_affordances() -> bool:
-    """Whether hover-revealed UI (a tile's play disc, heart / download
-    corners) may show. Never after a touch; and never on a phone shell
-    unless docked — a phone has no real hover, and when it is driven
-    through a streamed mouse the parked pointer "hovered" whatever tile it
-    sat on at launch. Cached briefly: delegates ask on every paint and
-    ``is_docked()`` reads a file."""
+def phone_ui() -> bool:
+    """A phone shell that isn't docked — the touch-first UI, whatever the
+    input device (a phone streamed as mouse / keyboard events is still a
+    phone). Cached like :func:`hover_affordances`."""
     global _hover_shell
-    if _last_input_touch:
-        return False
     import time
 
     from jellytoast.platform_compat import is_docked, is_mobile_shell
@@ -92,7 +87,19 @@ def hover_affordances() -> bool:
     if now - checked > _HOVER_SHELL_TTL_S:
         ok = (not is_mobile_shell()) or is_docked()
         _hover_shell = (now, ok)
-    return ok
+    return not ok
+
+
+def hover_affordances() -> bool:
+    """Whether hover-revealed UI (a tile's play disc, heart / download
+    corners) may show. Never after a touch; and never on a phone shell
+    unless docked — a phone has no real hover, and when it is driven
+    through a streamed mouse the parked pointer "hovered" whatever tile it
+    sat on at launch. Cached briefly: delegates ask on every paint and
+    ``is_docked()`` reads a file."""
+    if _last_input_touch:
+        return False
+    return not phone_ui()
 
 
 def last_input_was_touch() -> bool:

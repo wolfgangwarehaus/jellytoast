@@ -124,7 +124,7 @@ class _PhonePlayerMixin:
         # instead of taking a row of their own.
         self._phone_title = QLabel("")
         self._phone_title.setFont(font(TYPE_TITLE))
-        self._phone_title.setAlignment(Qt.AlignmentFlag.AlignHCenter)
+        self._phone_title.setAlignment(Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignBottom)
         self._phone_title.setWordWrap(True)
         self._phone_artist = QLabel("")
         self._phone_artist.setAlignment(Qt.AlignmentFlag.AlignHCenter)
@@ -188,9 +188,12 @@ class _PhonePlayerMixin:
         # The format line gets its own centred line: "Streaming · Bit
         # Perfect · FLAC · 1724 kbps" is too long to sit between the times
         # (it ran into them in a monospace font).
+        # ONE line, always there (even empty): its text changes per track
+        # (empty until the stream starts, then any length) and a wrapping
+        # line changed the controls' height — which moved the art.
         self._phone_info = QLabel("")
         self._phone_info.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self._phone_info.setWordWrap(True)
+        self._phone_info_full = ""
         c.addWidget(self._phone_info)
         c.addSpacing(16)
 
@@ -438,13 +441,20 @@ class _PhonePlayerMixin:
         if self._phone_meta.height() != meta_h:
             self._phone_meta.setFixedHeight(meta_h)
         self._phone_elide_artist()
+        # Pin the controls too: every child is now a fixed size, so this is
+        # constant per font — nothing about the current track can move it.
+        self._phone_info.setFixedHeight(self._phone_info.fontMetrics().lineSpacing())
+        self._phone_elide_info()
+        controls_h = self._phone_controls.sizeHint().height()
+        if self._phone_controls.height() != controls_h:
+            self._phone_controls.setFixedHeight(controls_h)
         # Constant, not the block's sizeHint: that grew with a wrapped title.
         cb_extra = 8 + 18 + meta_h
         avail_h = (
             self.height()
             - margins.top()
             - margins.bottom()
-            - self._phone_controls.sizeHint().height()
+            - controls_h
             - cb_extra
             - 12
         )
@@ -459,7 +469,9 @@ class _PhonePlayerMixin:
 
     def _phone_meta_height(self) -> int:
         title_line = self._phone_title.fontMetrics().lineSpacing()
-        self._phone_title.setMaximumHeight(2 * title_line)  # wrap to 2 lines max
+        # Exactly two lines tall, text at the bottom: a one-line title sits
+        # just above the artist, and the artist line never moves.
+        self._phone_title.setFixedHeight(2 * title_line)
         return 2 * title_line + 4 + self._phone_artist.fontMetrics().lineSpacing()
 
     def _phone_elide_artist(self) -> None:
@@ -504,7 +516,14 @@ class _PhonePlayerMixin:
 
     def _phone_refresh_info(self) -> None:
         bar = getattr(self, "_transport_bar", None)
-        text = bar.streaming_info.text() if bar is not None else ""
+        self._phone_info_full = bar.streaming_info.text() if bar is not None else ""
+        self._phone_elide_info()
+
+    def _phone_elide_info(self) -> None:
+        w = self._phone_info.width()
+        text = self._phone_info_full
+        if w > 0 and text:
+            text = self._phone_info.fontMetrics().elidedText(text, Qt.TextElideMode.ElideRight, w)
         self._phone_info.setText(text)
 
     def _phone_refresh_toggles(self) -> None:
@@ -602,6 +621,7 @@ class _PhonePlayerMixin:
         for lbl in (self._phone_artist, self._phone_h_artist):
             lbl.setText("")
         self._phone_thumb.clear()
+        self._phone_info_full = ""
         self._phone_info.setText("")
 
     def _phone_on_position(self, ms: int) -> None:

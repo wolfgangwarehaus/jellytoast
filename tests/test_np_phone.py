@@ -122,5 +122,14 @@ def test_cover_size_does_not_follow_the_title_length(page, monkeypatch):
         monkeypatch.setattr("jellytoast.np_phone.get_now_playing", lambda n=np_: n)
         page._phone_refresh_meta()
         page._phone_fit_cover()
-        sizes.append((page._cover.width(), page._phone_meta.height()))
+        page._phone_info_full = "Streaming · Bit Perfect · FLAC · 1724 kbps" if np_ is long_ else ""
+        page._phone_fit_cover()
+        sizes.append(
+            (
+                page._cover.width(),
+                page._phone_meta.height(),
+                page._phone_controls.height(),
+                page._phone_artist.geometry().top(),
+            )
+        )
     assert sizes[0] == sizes[1] == sizes[2]
