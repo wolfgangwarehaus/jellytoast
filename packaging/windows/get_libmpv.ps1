@@ -4,14 +4,17 @@
 # Source: shinchiro's mpv-winbuild-cmake releases — the de-facto
 # upstream for Windows libmpv (what mpv.io links to). Pinned by URL +
 # SHA-256 so a release build is reproducible; bump both together.
+# NB: shinchiro keeps only the last ~30 daily releases, so a pin 404s about
+# a month after it was set (the 0.2.3 cut hit this with the 20260610 pin).
+# Re-pin to a recent tag (and get_libmpv_arm64.ps1 with it) before a release.
 #
 # Run from the repo root:  pwsh packaging/windows/get_libmpv.ps1
 
 $ErrorActionPreference = "Stop"
 
 # Plain x86_64 (not -v3) so older CPUs stay supported.
-$Url = "https://github.com/shinchiro/mpv-winbuild-cmake/releases/download/20260610/mpv-dev-x86_64-20260610-git-304426c.7z"
-$Sha256 = "8cbb25ea784f01afbb3f904217cab1317430a8bcfd5680fd827a866367f71cc9"
+$Url = "https://github.com/shinchiro/mpv-winbuild-cmake/releases/download/20261018/mpv-dev-x86_64-20261018-git-01e2533f31.7z"
+$Sha256 = "d7f5621f42b6e161fe032df914a10bdece28a89df3e57c6c3e16a5a250929b5e"
 
 $Dest = Join-Path $PSScriptRoot "libmpv"
 $Archive = Join-Path $env:TEMP "libmpv-dev.7z"

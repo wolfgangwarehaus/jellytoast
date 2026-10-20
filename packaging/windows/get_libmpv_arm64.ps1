@@ -29,12 +29,12 @@
 
 $ErrorActionPreference = "Stop"
 
-# Same shinchiro release/tag as the x64 dll get_libmpv.ps1 pins (20260610,
-# git 304426c). Hash pinned from a local download of the asset; the contained
+# Same shinchiro release/tag as the x64 dll get_libmpv.ps1 pins (20261018,
+# git 01e2533f31). Hash pinned from a local download of the asset; the contained
 # libmpv-2.dll was verified as a genuine ARM64 PE (machine 0xAA64) before
 # pinning. Bump URL + hash together, in step with get_libmpv.ps1.
-$Url = "https://github.com/shinchiro/mpv-winbuild-cmake/releases/download/20260610/mpv-dev-aarch64-20260610-git-304426c.7z"
-$Sha256 = "d9dd60db1c7b24db2e19d041f70abf0a4995f3e9eadf80a34e54f72300df6ed4"
+$Url = "https://github.com/shinchiro/mpv-winbuild-cmake/releases/download/20261018/mpv-dev-aarch64-20261018-git-01e2533f31.7z"
+$Sha256 = "062b07022d1fadefd341485602658a51d973c216bb4282859e10daa09ad55478"
 
 $Dest = Join-Path $PSScriptRoot "libmpv"
 $Archive = Join-Path $env:TEMP "libmpv-dev-aarch64.7z"
