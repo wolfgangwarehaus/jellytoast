@@ -2023,13 +2023,13 @@ def _setup_hidpi() -> None:
     _apply_phone_scale()
 
 
-# A phone shell gets the whole UI scaled up — fonts, spacing, covers and
-# buttons together — so it reads at phone size instead of a desktop UI
-# shrunk onto a small screen. 1.5 turns a ~600 px-wide Plasma Mobile screen
-# into ~400 logical px, about what phone UIs are laid out for, so the
-# compact layouts engage. JT_PHONE_SCALE overrides (1 = off); an exported
-# QT_SCALE_FACTOR always wins.
-PHONE_SCALE = 1.5
+# Extra whole-UI scale on a phone shell, on top of the shell's own display
+# scale. Off by default: the shell's scale is the user's size choice, and
+# stacking ours on it squeezed a 402 px-wide phone (shell at 3×) to 268 px —
+# one album column, the mini player overlapping itself. (1.5 was a crutch
+# for a shell left at 2×, ~600 px wide.) JT_PHONE_SCALE=<n> still opts in;
+# an exported QT_SCALE_FACTOR always wins.
+PHONE_SCALE = 1.0
 
 
 def _apply_phone_scale() -> None:

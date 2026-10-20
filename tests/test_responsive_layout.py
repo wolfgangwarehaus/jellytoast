@@ -171,6 +171,24 @@ class TestTopBar:
         top.update_window_controls()
         assert not top.close_btn.isHidden()
 
+    def test_dropdown_centred_on_a_maximized_phone_bar(self, qapp, top, monkeypatch):
+        # The live bug (window controls hiding without a bar resize left the
+        # dropdown off-centre) only reproduced in the real app; this pins the
+        # end state.
+        win = top.window()
+        monkeypatch.setattr(pc, "is_mobile_shell", lambda: True)
+        monkeypatch.setattr(win, "isMaximized", lambda: False)
+        top.set_collection("music")  # a library page: the dropdown shows
+        top.resize(460, 48)
+        top.update_window_controls()
+        _settle(qapp)
+        monkeypatch.setattr(win, "isMaximized", lambda: True)
+        top.update_window_controls()
+        _settle(qapp)
+        vb = top.view_btn
+        centre = vb.mapTo(top, vb.rect().center()).x()
+        assert abs(centre - top.width() // 2) <= 2
+
 
 def test_login_view_fits_a_phone(qapp, isolated_settings):
     from jellytoast.login_view import LoginView

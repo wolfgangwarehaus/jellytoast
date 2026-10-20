@@ -26,6 +26,7 @@ from typing import Dict, List
 from PySide6.QtCore import (
     QAbstractListModel,
     QCoreApplication,
+    QEasingCurve,
     QEvent,
     QModelIndex,
     QPoint,
@@ -34,6 +35,7 @@ from PySide6.QtCore import (
     QSize,
     Qt,
     QTimer,
+    QVariantAnimation,
     Signal,
     Slot,
 )
@@ -119,15 +121,33 @@ class _AlphabetIndex(QWidget):
     LETTERS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
 
     jump_requested = Signal(str)
+    visibility_changed = Signal(bool)
 
     # Touch: a wider strip to land a finger on (the letters stay put).
     TOUCH_WIDTH = 30
+    # Phone: at rest the strip draws a faint A / Z, a hairline track between
+    # them and a soft pill at the scroll position instead of 26 letters; the letters
+    # come back while a finger is on it (or the mouse, docked) and linger
+    # this long after. Only the look changes — the touch strip is the same.
+    REVEAL_HOLD_MS = 700
 
     def __init__(self, parent=None):
         super().__init__(parent)
         from jellytoast.platform_compat import is_mobile_shell
 
         self.setFixedWidth(self.TOUCH_WIDTH if is_mobile_shell() else 20)
+        self._quiet = is_mobile_shell()
+        self._revealed = not self._quiet
+        self._hide_timer = QTimer(self)
+        self._hide_timer.setSingleShot(True)
+        self._hide_timer.setInterval(self.REVEAL_HOLD_MS)
+        self._hide_timer.timeout.connect(lambda: self._set_revealed(False))
+        # 0 = resting line, 1 = letters. Animated so the swap cross-fades:
+        # quick in (a touch must feel instant), slower settle back out.
+        self._amt = 0.0 if self._quiet else 1.0
+        self._anim = QVariantAnimation(self)
+        self._anim.setEasingCurve(QEasingCurve.Type.OutCubic)
+        self._anim.valueChanged.connect(self._on_anim)
         self.setStyleSheet("background: transparent;")
         self._current = ""
         self._buttons = {}
@@ -147,7 +167,7 @@ class _AlphabetIndex(QWidget):
             btn.setFlat(True)
             btn.setCursor(Qt.CursorShape.PointingHandCursor)
             btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-            btn.setStyleSheet(self._btn_style(active=False))
+            btn.setStyleSheet(self._btn_style(active=False, hidden=self._quiet))
             # stretch=1 so the 26 letters distribute evenly across the
             # available height — keeps the strip readable on tall and
             # short windows alike, no fixed per-letter height needed.
@@ -156,7 +176,15 @@ class _AlphabetIndex(QWidget):
             self._buttons[ch] = btn
 
     @staticmethod
-    def _btn_style(active: bool) -> str:
+    def _btn_style(active: bool, hidden: bool = False) -> str:
+        if hidden:
+            # Quiet phone rail: the button keeps its slot (letter_at reads its
+            # geometry, a click still jumps) but paints nothing — paintEvent
+            # draws the letters / track so the swap can animate.
+            return (
+                "QPushButton { background: transparent; color: transparent; "
+                "border: none; padding: 0; font-size: 9px; }"
+            )
         # Read TEXT / ink_alpha live off ui_helpers — these flip between dark
         # and light, so a dark↔light switch must be able to re-stamp with the
         # current palette (see _reapply_theme). ink_alpha already resolves
@@ -181,7 +209,106 @@ class _AlphabetIndex(QWidget):
         letters otherwise keep the old theme's ink (near-invisible contrast)
         after a dark↔light switch until the user clicks one."""
         for ch, btn in self._buttons.items():
-            btn.setStyleSheet(self._btn_style(active=(ch == self._current)))
+            btn.setStyleSheet(self._btn_style(active=(ch == self._current), hidden=self._quiet))
+        self.update()
+
+    def setVisible(self, visible: bool) -> None:  # noqa: N802 — Qt naming
+        super().setVisible(visible)
+        self.visibility_changed.emit(bool(visible))
+
+    def _set_revealed(self, revealed: bool) -> None:
+        if not self._quiet:
+            return
+        if revealed:
+            self._hide_timer.stop()
+        if revealed == self._revealed:
+            return
+        self._revealed = revealed
+        self._anim.stop()
+        self._anim.setDuration(self.REVEAL_IN_MS if revealed else self.REVEAL_OUT_MS)
+        self._anim.setStartValue(self._amt)
+        self._anim.setEndValue(1.0 if revealed else 0.0)
+        self._anim.start()
+
+    REVEAL_IN_MS = 120
+    REVEAL_OUT_MS = 280
+
+    def _on_anim(self, value) -> None:
+        self._amt = float(value)
+        self.update()
+
+    def enterEvent(self, e):  # noqa: N802
+        # Docked mode / a mouse on the phone: hovering reveals the letters.
+        if not touch.last_input_was_touch():
+            self._set_revealed(True)
+        super().enterEvent(e)
+
+    def leaveEvent(self, e):  # noqa: N802
+        if self._quiet and self._revealed and not self._scrub_letter:
+            self._hide_timer.start()
+        super().leaveEvent(e)
+
+    def paintEvent(self, e):  # noqa: N802
+        super().paintEvent(e)
+        if not self._quiet:
+            return
+        first, last = self._buttons[self.LETTERS[0]], self._buttons[self.LETTERS[-1]]
+        if first.height() <= 0:
+            return
+        amt = self._amt  # 0 resting line … 1 letters
+        p = QPainter(self)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        cx = first.geometry().center().x() + 0.5
+        f = QFont(p.font())
+        f.setPixelSize(9)
+        rest = 1.0 - amt
+        if rest > 0.01:
+            # Faint A / Z capping a hairline track and a soft pill at the
+            # scroll position — just enough to say "A–Z scrubber here".
+            p.setFont(f)
+            p.setPen(QColor(*ink_rgb(), int(80 * rest)))
+            p.drawText(first.geometry(), Qt.AlignmentFlag.AlignCenter, self.LETTERS[0])
+            p.drawText(last.geometry(), Qt.AlignmentFlag.AlignCenter, self.LETTERS[-1])
+            top = first.geometry().center().y() + 9
+            bottom = last.geometry().center().y() - 9
+            if bottom > top:
+                p.setPen(Qt.PenStyle.NoPen)
+                p.setBrush(QColor(*ink_rgb(), int(32 * rest)))
+                p.drawRoundedRect(QRectF(cx - 1, top, 2, bottom - top), 1, 1)
+                # Sized like a scroll thumb (on screen vs the whole list).
+                span = bottom - top
+                if self._page_frac < 1.0:
+                    pill_h = max(18.0, min(span, span * self._page_frac))
+                    y = top + (span - pill_h) * self._scroll_frac
+                    pill = QColor(_u.ACCENT)
+                    pill.setAlpha(int(150 * rest))
+                    p.setBrush(pill)
+                    p.drawRoundedRect(QRectF(cx - 2, y, 4, pill_h), 2, 2)
+        if amt > 0.01:
+            # The letters, drifting in from (and back out to) a few px right
+            # as they fade, so the swap reads as one motion.
+            dx = round((1.0 - amt) * 4)
+            bold = QFont(f)
+            bold.setWeight(QFont.Weight.Bold)
+            for ch, btn in self._buttons.items():
+                active = ch == self._current
+                p.setFont(bold if active else f)
+                p.setPen(QColor(*ink_rgb(), int((255 if active else 115) * amt)))
+                p.drawText(
+                    btn.geometry().translated(dx, 0), Qt.AlignmentFlag.AlignCenter, ch
+                )
+        p.end()
+
+    _scroll_frac = 0.0
+    _page_frac = 1.0
+
+    def set_scroll(self, value: int, minimum: int, maximum: int, page: int) -> None:
+        """Feed the resting rail's position pill from the grid's scroll bar."""
+        rng = maximum - minimum
+        self._scroll_frac = (value - minimum) / rng if rng > 0 else 0.0
+        self._page_frac = page / (rng + page) if rng > 0 and page > 0 else 1.0
+        if self._quiet and self._amt < 1.0:
+            self.update()
 
     def letter_at(self, y: float) -> str:
         """The letter under ``y`` (strip coordinates), clamped to A / Z
@@ -197,6 +324,7 @@ class _AlphabetIndex(QWidget):
     def event(self, e):
         et = e.type()
         if et in (QEvent.Type.TouchBegin, QEvent.Type.TouchUpdate):
+            self._set_revealed(True)
             points = e.points()
             if points:
                 pos = points[0].position()
@@ -211,6 +339,8 @@ class _AlphabetIndex(QWidget):
             self._scrub_letter = ""
             if self._bubble is not None:
                 self._bubble.hide()
+            if self._quiet:
+                self._hide_timer.start()
             e.accept()
             return True
         return super().event(e)
@@ -236,10 +366,16 @@ class _AlphabetIndex(QWidget):
         if letter == self._current:
             return
         if self._current and self._current in self._buttons:
-            self._buttons[self._current].setStyleSheet(self._btn_style(active=False))
+            self._buttons[self._current].setStyleSheet(
+                self._btn_style(active=False, hidden=self._quiet)
+            )
         self._current = letter
         if letter and letter in self._buttons:
-            self._buttons[letter].setStyleSheet(self._btn_style(active=True))
+            self._buttons[letter].setStyleSheet(
+                self._btn_style(active=True, hidden=self._quiet)
+            )
+        if self._quiet:
+            self.update()  # the painted letters follow the current one
 
 
 class _LetterBubble(QWidget):
@@ -981,6 +1117,8 @@ class _TileDelegate(QStyledItemDelegate):
 
         painter.restore()
 
+    _fine_steps = False
+
     def _effective_cover_size(self, cell_rect: QRect) -> int:
         """Cell width minus 8 px breathing room, capped at the
         delegate's natural COVER_SIZE. Used in paint + hit-tests
@@ -995,7 +1133,11 @@ class _TileDelegate(QStyledItemDelegate):
         max_cover = max(48, cell_rect.width() - 8)
         if max_cover >= self.COVER_SIZE:
             return self.COVER_SIZE
-        return max(48, (max_cover // 12) * 12)
+        # A phone barely resizes (rotation, docking), so the coarse steps
+        # only cost cover size there — 12 px steps left up to 11 px of dead
+        # space around every cover. Fine steps on a phone.
+        step = 4 if self._fine_steps else 12
+        return max(48, (max_cover // step) * step)
 
     def _scaled_cover(self, cover, target_logical: int):
         """Return `cover` scaled to `target_logical` logical pixels,
@@ -1486,15 +1628,38 @@ class _LibraryListView(QListView):
                 return cols
         return self._COL_BANDS[-1][1]
 
+    # Phone: the A–Z rail floats over the view's right margin (it isn't a
+    # layout column), so equal side margins centre the columns on the screen
+    # without spending the rail's width twice. The scroll bar is hidden while
+    # the rail shows — it would sit on top of the rail's track.
+    _side_rail = 0
+    _PHONE_HMARGIN = 24
+
+    def set_side_rail(self, width: int) -> None:
+        width = max(0, int(width))
+        if width == self._side_rail:
+            return
+        self._side_rail = width
+        self.setVerticalScrollBarPolicy(
+            Qt.ScrollBarPolicy.ScrollBarAlwaysOff
+            if width
+            else Qt.ScrollBarPolicy.ScrollBarAlwaysOn
+        )
+        self._last_cols = -1  # force the relayout
+        self._apply_grid_size()
+
+    def _hmargins(self) -> "tuple[int, int]":
+        if self._side_rail:
+            return self._PHONE_HMARGIN, self._PHONE_HMARGIN
+        return self._BASE_HMARGIN, self._RIGHT_HMARGIN
+
     def _available_width(self) -> int:
         """Logical px left for tiles after the scrollbar + side margins
         — the input to both the column-band lookup and cell sizing."""
         sb = self.verticalScrollBar()
-        sb_w = sb.sizeHint().width() if sb is not None else 0
-        return max(
-            self.MIN_TILE_WIDTH,
-            self.width() - sb_w - self._BASE_HMARGIN - self._RIGHT_HMARGIN,
-        )
+        sb_w = sb.sizeHint().width() if sb is not None and not self._side_rail else 0
+        left, right = self._hmargins()
+        return max(self.MIN_TILE_WIDTH, self.width() - sb_w - left - right)
 
     def _apply_grid_size(self):
         """Cells fill the viewport; column count comes from the
@@ -1522,7 +1687,8 @@ class _LibraryListView(QListView):
         self._last_grid_size = new_grid
         self._last_cols = cols
         self.setGridSize(new_grid)
-        self.setViewportMargins(self._BASE_HMARGIN, 0, self._RIGHT_HMARGIN, 0)
+        left, right = self._hmargins()
+        self.setViewportMargins(left, 0, right, 0)
         # A column-count change is a structural reflow; force it so the
         # view never sits at a stale density after a coincidental
         # cell_w match.
@@ -2125,7 +2291,29 @@ class LibraryGrid(_PaginatorMixin, QWidget):
         body.addWidget(self._view, 1)
         self._alphabet = _AlphabetIndex()
         self._alphabet.jump_requested.connect(self._on_alphabet_jump)
-        body.addWidget(self._alphabet)
+        if self._alphabet._quiet:
+            # Phone: floats over the view's right margin (see set_side_rail).
+            self._alphabet.setParent(body_widget)
+            self._body_widget = body_widget
+            body_widget.installEventFilter(self)
+            self._tile_delegate._fine_steps = True
+            sb = self._view.verticalScrollBar()
+
+            def _feed_rail(*_):
+                self._alphabet.set_scroll(
+                    sb.value(), sb.minimum(), sb.maximum(), sb.pageStep()
+                )
+
+            sb.valueChanged.connect(_feed_rail)
+            sb.rangeChanged.connect(_feed_rail)
+            self._alphabet.visibility_changed.connect(
+                lambda shown: (
+                    self._view.set_side_rail(self._alphabet.width() if shown else 0),
+                    self._place_floating_rail(),
+                )
+            )
+        else:
+            body.addWidget(self._alphabet)
 
         # Empty-state surface — shown whenever the model is empty
         # AFTER an initial load has completed. Copy is refreshed per
@@ -2152,6 +2340,13 @@ class LibraryGrid(_PaginatorMixin, QWidget):
         self._content_stack.setStyleSheet("background: transparent;")
         self._content_stack.addWidget(body_widget)
         self._content_stack.addWidget(self._empty_state)
+        # Page 2: spinner while a cold fetch (no disk cache — e.g. the
+        # first sign-in) is in flight, so a slow server doesn't read as a
+        # failed login. Items or the empty state replace it on landing.
+        from jellytoast.busy_spinner import LoadingState
+
+        self._loading_state = LoadingState(self._loading_caption(), self)
+        self._content_stack.addWidget(self._loading_state)
         outer.addWidget(self._content_stack, 1)
 
         # "Loading more…" footer surfaces while a paginated next-page
@@ -2236,7 +2431,17 @@ class LibraryGrid(_PaginatorMixin, QWidget):
 
     # ── Scroll plumbing ───────────────────────────────────────────────
 
+    def _place_floating_rail(self) -> None:
+        body = getattr(self, "_body_widget", None)
+        if body is None:
+            return
+        w = self._alphabet.width()
+        self._alphabet.setGeometry(body.width() - w, 0, w, body.height())
+        self._alphabet.raise_()
+
     def eventFilter(self, obj, event):
+        if obj is getattr(self, "_body_widget", None) and event.type() == QEvent.Type.Resize:
+            self._place_floating_rail()
         if obj is self._view.viewport():
             if event.type() == QEvent.Type.Resize:
                 if not self._scroll_coalesce.isActive():
@@ -2400,6 +2605,19 @@ class LibraryGrid(_PaginatorMixin, QWidget):
                 "Your library may still be loading, or it's empty. Refresh to retry."
             ),
         )
+
+    def _loading_caption(self) -> str:
+        if self.kind == "artist":
+            return self.tr("Loading artists…")
+        if self.kind == "playlist":
+            return self.tr("Loading playlists…")
+        return self.tr("Loading albums…")
+
+    def _show_loading_state(self):
+        self._loading_state.set_text(self._loading_caption())
+        self._content_stack.setCurrentIndex(2)
+        self._alphabet.setVisible(False)
+        self._loading_more_label.setVisible(False)
 
     def _show_empty_state(self):
         headline, sub = self._empty_copy_for_scope()
@@ -2589,7 +2807,16 @@ class LibraryGrid(_PaginatorMixin, QWidget):
             return
         self._covers_loaded.add(row)
 
+        def _still_at_row(r: int) -> bool:
+            # A reload (login, scope change, refresh) can replace the items
+            # while this fetch is in flight; landing it by row alone painted
+            # the old album's art onto whatever album now sits there.
+            rows = self._model.items()
+            return 0 <= r < len(rows) and rows[r].get("Id", "") == cover_id
+
         def _on_pix(pix, r=row):
+            if not _still_at_row(r):
+                return
             self._model.set_cover(r, pix)
             # Loaded cleanly — clear any retry tally so that if this cover
             # is later EVICTED from the model LRU and re-armed on scroll-back,
@@ -2615,6 +2842,8 @@ class LibraryGrid(_PaginatorMixin, QWidget):
             #     scroll. Past the cap we leave it marked loaded and stop.
             from jellytoast import offline as _offline
 
+            if not _still_at_row(r):
+                return  # stale: the row holds a different item now
             if _offline.is_offline_mode():
                 self._cover_failed.add(r)
                 return

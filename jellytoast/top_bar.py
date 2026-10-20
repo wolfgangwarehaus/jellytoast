@@ -5,7 +5,7 @@ PySide6 widgets sharing the host window's translucent body color so
 the header zone doesn't fight us on transparency.
 """
 
-from PySide6.QtCore import QPoint, QSize, Qt, QTimer, Signal
+from PySide6.QtCore import QEvent, QPoint, QSize, Qt, QTimer, Signal
 from PySide6.QtGui import QAction
 from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QMenu, QPushButton, QWidget
 
@@ -402,6 +402,11 @@ class JtTopBar(QWidget):
         # is positioned absolutely in resizeEvent — see _position_center_cluster.
         self._left_col = left_col
         self._right_col = right_col
+        # The side clusters change width without the bar resizing (window
+        # controls hide on maximize, buttons step into the ⋮ menu), which
+        # left the dropdown at a stale, off-centre x. Re-centre on those too.
+        left_col.installEventFilter(self)
+        right_col.installEventFilter(self)
         layout.addWidget(left_col)
         layout.addStretch(1)
         layout.addWidget(right_col)
@@ -561,6 +566,14 @@ class JtTopBar(QWidget):
         menu.ensurePolished()
         right = self.more_btn.mapToGlobal(self.more_btn.rect().bottomRight())
         self._exec_menu_with_kbd_grab(menu, QPoint(right.x() - menu.sizeHint().width(), right.y()))
+
+    def eventFilter(self, obj, event):  # noqa: N802 — Qt naming
+        if event.type() in (QEvent.Type.Resize, QEvent.Type.Move) and obj in (
+            getattr(self, "_left_col", None),
+            getattr(self, "_right_col", None),
+        ):
+            self._position_center_cluster()
+        return super().eventFilter(obj, event)
 
     def resizeEvent(self, event):
         super().resizeEvent(event)

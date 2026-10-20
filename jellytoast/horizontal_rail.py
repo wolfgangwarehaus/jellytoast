@@ -340,7 +340,12 @@ class HorizontalRail(QWidget):
             if not cover_url:
                 continue
 
-            def _on_pix(pix, r=row):
+            def _on_pix(pix, r=row, cid=cover_id):
+                # Drop a cover from before a re-populate: by row alone it
+                # would land on whatever item now sits there.
+                rows = self._model.items()
+                if not (0 <= r < len(rows) and rows[r].get("Id", "") == cid):
+                    return
                 self._model.set_cover(r, pix)
 
             load_image_async(

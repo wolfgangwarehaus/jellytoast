@@ -191,8 +191,10 @@ class TestPhoneScale:
         app_mod._apply_phone_scale()
         return os.environ.get("QT_SCALE_FACTOR")
 
-    def test_phone_gets_the_scale(self, env):
-        assert self._run(env, True) == "1.5"
+    def test_phone_follows_the_shell_scale_by_default(self, env):
+        # No extra scale stacked on the shell's own (402 px phone at 3× →
+        # the app gets all 402 px, not 268).
+        assert self._run(env, True) is None
 
     def test_desktop_untouched(self, env):
         assert self._run(env, False) is None

@@ -216,6 +216,21 @@ _SVG = {
         '<path d="M16 9 L21 14 M21 9 L16 14" stroke="currentColor" stroke-width="2" '
         'fill="none" stroke-linecap="round"/></svg>'
     ),
+    # Lyrics — speech bubble with two quote ticks (phone Now Playing).
+    "lyrics": (
+        '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">'
+        '<path d="M5 4 H19 A2 2 0 0 1 21 6 V15 A2 2 0 0 1 19 17 H11 L7 20.5 V17 H5 '
+        'A2 2 0 0 1 3 15 V6 A2 2 0 0 1 5 4 Z" stroke="currentColor" stroke-width="2" '
+        'fill="none" stroke-linejoin="round"/>'
+        '<path d="M9 9 V11.5 M14 9 V11.5" stroke="currentColor" stroke-width="2.2" '
+        'stroke-linecap="round"/></svg>'
+    ),
+    # Visualizer — four level bars.
+    "visualizer": (
+        '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">'
+        '<path d="M5 14 V19 M10 7 V19 M15 10 V19 M20 4 V19" stroke="currentColor" '
+        'stroke-width="2.4" stroke-linecap="round"/></svg>'
+    ),
     "queue": (
         '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">'
         '<path d="M3 6 H21 M3 12 H15 M3 18 H15 M18 16 V21 L21 19 Z" '

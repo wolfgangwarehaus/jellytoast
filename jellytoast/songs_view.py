@@ -764,7 +764,14 @@ class SongsView(QWidget):
 
             # Default-arg-bind row so the callback captures the right
             # index even if the loop var changes before the reply lands.
-            def _on_pix(pix, r=row):
+            def _on_pix(pix, r=row, cid=cover_id):
+                # Drop a thumb from before a reload: by row alone it would
+                # land on whatever song now sits there.
+                rows = self._model.items()
+                if not (0 <= r < len(rows)):
+                    return
+                if (rows[r].get("AlbumId") or rows[r].get("Id", "")) != cid:
+                    return
                 self._model.set_cover(r, pix)
 
             load_image_async(

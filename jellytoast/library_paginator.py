@@ -191,6 +191,7 @@ class _PaginatorMixin:
                 QTimer.singleShot(500, lambda g=gen: self._silent_buffered_fill(g))
             return
         self._clear()
+        self._show_loading_state()
         run_async(
             self.api.get_items,
             parent_id,
@@ -339,6 +340,7 @@ class _PaginatorMixin:
             )
             return
         self._clear()
+        self._show_loading_state()
         run_async(
             self._fetch_union_sync,
             item_type,

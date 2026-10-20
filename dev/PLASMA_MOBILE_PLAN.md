@@ -259,7 +259,11 @@ for each):
 
 Next (the rest of the sweep):
 - [x] Commit phase 5 (single commit) + CHANGELOG lines for phases 4–5.
-- [ ] Ask august if 1.5× feels right on the device (try `JT_PHONE_SCALE=1.75`);
+- [x] Phone scale default now **1.0** (2026-10-20): august set the shell to 3×
+  (402×816 logical); our 1.5× stacked on it left the app 268 px — one
+  column, mini player overlapping itself. The shell's scale is the size
+  choice; `JT_PHONE_SCALE` still opts in. Was:
+  Ask august if 1.5× feels right on the device (try `JT_PHONE_SCALE=1.75`);
   maybe a Settings "Interface size" option instead of env only.
 - [x] **Sweep 2 (2026-10-15)**, headless at 400 px logical against the
   Navidrome demo (login via "Try a demo"; `JT_AUDIO_PCM_FILE=/dev/null` so
@@ -341,6 +345,32 @@ Next (the rest of the sweep):
   largest page, and a hidden layout keeps stale sizes; either one held the
   phone window at 460–516 px (the ratchet). Desktop and wide phones keep
   the full bar.
+- [x] **Balance pass (2026-10-20, from august's phone screenshot):**
+  - View dropdown now truly centred: the side clusters shrink without the
+    bar resizing (window controls hide on maximize, buttons step into ⋮),
+    which left it at a stale x. `JtTopBar` re-centres on their Resize/Move.
+  - Two album columns centred on the screen: on a mobile shell the grid puts
+    the A–Z rail's width into its LEFT margin too and hides its own scroll
+    bar while the rail shows (`_LibraryListView.set_side_rail`).
+  - Quiet A–Z rail: at rest a slim track + accent dot at the current letter,
+    faint A / Z at the ends; letters come back while touched (or hovered,
+    docked) and linger 0.7 s. Same 30 px touch strip, scrubbing unchanged.
+  - Mini player 1.5× taller (68 → 102 px): 64 px play / next, 72 px cover,
+    title / artist one type tier up; still fits 360 px.
+  - august to feel-check all four on the device.
+- [x] **Phone Now Playing redesign (2026-10-20, Arpeggi as reference, not a
+  copy):** `jellytoast/np_phone.py` (`_PhonePlayerMixin`). Mobile shell +
+  compact + live only (previews / desktop untouched). One surface in the
+  middle — big cover (title / artist / heart · ⋮ under it), or lyrics /
+  visualizer / queue under a slim header (thumb · title · heart · ⋮).
+  Fixed below: full-width seek + elapsed / format / remaining, shuffle ·
+  prev · play · next · repeat, then cast · lyrics · visualizer · queue ·
+  sleep (active one lit). Playing | Tracks tabs gone on the live player.
+  The page's cover / lyrics / visualizer / right pane are MOVED in and back
+  (`_left_cover_row`, `_lyrics_home_idx`, `_left_live_row`, `_outer`). Nav
+  hides the bar while it's up (`phone_player_changed`). New icons: lyrics,
+  visualizer. Rail: letters ↔ line cross-fade, scroll pill.
+  Not yet seen: real synced lyrics in it (demo has none).
 - [ ] Ideas not done: tap feedback on tiles / rows (a deferred tap shows no
   pressed state while the finger is down); long-press volume → mute if
   august wants touch mute back; favorite from the mini player (the heart

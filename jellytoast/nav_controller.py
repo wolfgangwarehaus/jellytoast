@@ -213,6 +213,7 @@ class _NavMixin:
                 lambda is_preview: self.np_bar.set_left_cluster_visible(is_preview)
             )
             self.np_page.preview_changed.connect(lambda _p: self._sync_np_bar_cover())
+            self.np_page.phone_player_changed.connect(lambda _on: self._sync_np_bar_cover())
             from jellytoast.player_state import PlayerBus
 
             PlayerBus.get().width_class_changed.connect(
@@ -282,6 +283,12 @@ class _NavMixin:
         volume); a preview keeps the mini player showing what's playing."""
         on_np = self.np_page is not None and self.content_stack.currentWidget() is self.np_page
         self.np_bar.set_now_playing_open(on_np and not self.np_page._preview_id)
+        # The phone player carries the whole transport — the bar would
+        # only repeat it.
+        phone = on_np and getattr(self.np_page, "phone_player_active", lambda: False)()
+        if phone != getattr(self, "_np_bar_hidden_phone", False):
+            self.np_bar.setVisible(not phone)
+            self._np_bar_hidden_phone = phone
         if not on_np:
             return
         if self.np_page._preview_id:
@@ -306,6 +313,9 @@ class _NavMixin:
         on_np = self.np_page is not None and current is self.np_page
         if not on_np:
             self.np_bar.set_now_playing_open(False)
+            if getattr(self, "_np_bar_hidden_phone", False):
+                self.np_bar.setVisible(True)
+                self._np_bar_hidden_phone = False
             if getattr(self, "_np_cover_hidden_compact", False):
                 # Leaving compact Now Playing: the bar's cover comes back.
                 self.np_bar.set_left_cluster_visible(True)

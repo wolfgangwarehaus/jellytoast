@@ -69,6 +69,7 @@ from jellytoast.icon_button import IconButton
 from jellytoast.icons import accent_icon, icon
 from jellytoast.np_left_pane import _LeftPaneMixin
 from jellytoast.np_lyrics import _LyricsCache, _LyricsMixin, _ScrollbarFader
+from jellytoast.np_phone import _PhonePlayerMixin
 from jellytoast.np_track_list import _TrackDelegate, _TracksListView, _TracksModel
 from jellytoast.platform_compat import is_mobile_shell
 from jellytoast.player_state import (
@@ -131,13 +132,16 @@ def _lyrics_caption_btn_qss() -> str:
 # heterogeneous model rows ("track" vs "disc" entries).
 
 
-class NowPlayingPage(_LeftPaneMixin, _LyricsMixin, QWidget):
+class NowPlayingPage(_PhonePlayerMixin, _LeftPaneMixin, _LyricsMixin, QWidget):
     """Full-screen now-playing view. Owned by JellytoastWindow; swapped
     into the content stack when the user clicks the now-playing pill
     in the transport bar."""
 
     # Emitted when the user wants to dismiss the page (back button).
     dismiss_requested = Signal()
+    # The phone player (np_phone) took over / gave back the page — the host
+    # hides the transport bar while it's up (the page has the transport).
+    phone_player_changed = Signal(bool)
     # Emitted whenever the page enters / leaves preview mode. The host
     # uses this to keep the bottom-transport-bar's left cluster (cover +
     # title + artist + heart) visible while the user browses (so the
@@ -314,6 +318,10 @@ class NowPlayingPage(_LeftPaneMixin, _LyricsMixin, QWidget):
         self._right_pane = self._build_right_pane()
         outer.addWidget(self._left_pane, 1)
         outer.addWidget(self._right_pane, 1)
+        self._outer = outer
+        # Phone: one-surface player (np_phone); hidden until it applies.
+        outer.addWidget(self._build_phone_pane(), 1)
+        self.preview_changed.connect(lambda _p: self._sync_phone_mode())
         from jellytoast import responsive
 
         self._apply_width_class(responsive.current())
@@ -413,7 +421,7 @@ class NowPlayingPage(_LeftPaneMixin, _LyricsMixin, QWidget):
         # A flag, not _compact_tabs.isVisible(): the page is often hidden in
         # the content stack when the width class flips, and isVisible() is
         # False for every child of a hidden page.
-        if not getattr(self, "_is_compact", False):
+        if not getattr(self, "_is_compact", False) or self._phone_on:
             return
         self._left_pane.setVisible(idx == 0)
         self._right_pane.setVisible(idx == 1)
@@ -423,6 +431,9 @@ class NowPlayingPage(_LeftPaneMixin, _LyricsMixin, QWidget):
         Clicks drive the bar's own buttons — they own the shuffle / repeat
         / sleep logic — and the icons follow the bus like the bar's do."""
         self._transport_bar = bar
+        if self._phone_built:
+            self._phone_restyle()
+            self._phone_refresh_info()
         bar.stepped_out_changed.connect(self._sync_stepped_row)
         self.bus.shuffle_changed.connect(lambda _on: self._refresh_stepped_icons())
         self.bus.repeat_changed.connect(lambda _m: self._refresh_stepped_icons())
@@ -505,6 +516,7 @@ class NowPlayingPage(_LeftPaneMixin, _LyricsMixin, QWidget):
             self._left_pane.setVisible(True)
             self._right_pane.setVisible(True)
         self._fit_compact_cover()
+        self._sync_phone_mode()
 
     # Phone width: the cover grows toward the screen width when it is the
     # Playing tab's main content, and stays moderate while lyrics or the
@@ -514,6 +526,11 @@ class NowPlayingPage(_LeftPaneMixin, _LyricsMixin, QWidget):
 
     def _fit_compact_cover(self):
         if not hasattr(self, "_lyrics_scroll"):  # mid-construction
+            return
+        if self._phone_on:
+            # The phone player owns which surface shows and the cover size
+            # (also re-asserts its surface after a lyrics / mode update).
+            self._phone_apply_surface()
             return
         side = type(self).COVER_SIZE
         if getattr(self, "_is_compact", False):
@@ -614,6 +631,7 @@ class NowPlayingPage(_LeftPaneMixin, _LyricsMixin, QWidget):
         cover_row.addWidget(self._cover)
         cover_row.addStretch(1)
         v.addLayout(cover_row)
+        self._left_cover_row = cover_row  # np_phone hands the cover back here
         v.addSpacing(20)
 
         # Lyrics own the moment; title is the label.
@@ -816,6 +834,7 @@ class NowPlayingPage(_LeftPaneMixin, _LyricsMixin, QWidget):
         self._live_btn.hide()
         live_row.addWidget(self._live_btn)
         v.addLayout(live_row)
+        self._left_live_row = live_row
 
         # Lyrics scroll area — fills the remaining vertical space.
         self._lyrics_scroll = QScrollArea(self)
@@ -854,6 +873,7 @@ class NowPlayingPage(_LeftPaneMixin, _LyricsMixin, QWidget):
         # and Qt redistributes the leftover space among the remaining
         # widgets, sliding everything around.
         v.addWidget(self._lyrics_scroll, 100)
+        self._lyrics_home_idx = v.indexOf(self._lyrics_scroll)
         v.addStretch(1)
 
         # Smooth-scroll animation on the lyrics scrollbar — used by the
@@ -1077,6 +1097,8 @@ class NowPlayingPage(_LeftPaneMixin, _LyricsMixin, QWidget):
         self._subtitle.setStyleSheet(f"color: {ink_alpha(0.62)};")
         self._work_line.setStyleSheet(f"color: {ink_alpha(0.50)};")
         self._restyle_compact_tabs()
+        if self._phone_built:
+            self._phone_restyle()
         for btn in self._stepped_btns.values():
             btn.setStyleSheet(button_qss(BTN_ICON))
         self._refresh_stepped_icons()
@@ -1403,6 +1425,8 @@ class NowPlayingPage(_LeftPaneMixin, _LyricsMixin, QWidget):
         # short and reveal whatever sits behind the cover.
         pix = scale_pixmap_for_dpr(pix, self.COVER_SIZE, screen_dpr(self))
         self._cover.setPixmap(pix)
+        if self._phone_built:
+            self._phone_refresh_thumb()
 
     def _refresh_track_list(self):
         # Preview mode short-circuits the queue-driven path: we render

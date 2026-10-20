@@ -705,8 +705,11 @@ class NowPlayingBar(QWidget):
     # progress line, cover · title / artist · play · next. Tap the cover or
     # title (or swipe up) for Now Playing, where the full transport — seek,
     # previous, volume — comes back (set_now_playing_open).
-    _MINI_HEIGHT = 68
-    _MINI_COVER = 52
+    # 1.5× the first cut's height (68 px) with 64 px buttons — bigger
+    # targets for a thumb. Cover + gaps are sized so it still fits 360 px.
+    _MINI_HEIGHT = 102
+    _MINI_COVER = 72
+    _MINI_BTN = 64
 
     def _build_mini(self) -> QWidget:
         mini = QWidget()
@@ -717,7 +720,7 @@ class NowPlayingBar(QWidget):
         col.addWidget(self.mini_progress)
 
         row = QHBoxLayout()
-        row.setContentsMargins(8, 6, 4, 6)
+        row.setContentsMargins(10, 10, 4, 10)
         row.setSpacing(12)
         info = _TapArea(self.show_now_playing_requested.emit)
         info_row = QHBoxLayout(info)
@@ -728,7 +731,7 @@ class NowPlayingBar(QWidget):
         info_row.addWidget(self.mini_cover)
         text = QVBoxLayout()
         text.setContentsMargins(0, 0, 0, 0)
-        text.setSpacing(2)
+        text.setSpacing(4)
         text.addStretch(1)
         self.mini_title = MarqueeLabel(self.tr("Nothing Playing"))
         self.mini_artist = MarqueeLabel("")
@@ -741,16 +744,16 @@ class NowPlayingBar(QWidget):
         btn_qss = self._icon_btn_qss()
         self.mini_play_btn = IconButton()
         self.mini_play_btn.setIcon(self.play_btn.icon())
-        self.mini_play_btn.setIconSize(QSize(26, 26))
-        self.mini_play_btn.setFixedSize(48, 48)
+        self.mini_play_btn.setIconSize(QSize(36, 36))
+        self.mini_play_btn.setFixedSize(self._MINI_BTN, self._MINI_BTN)
         self.mini_play_btn.setToolTip(self.tr("Play / Pause"))
         self.mini_play_btn.setStyleSheet(btn_qss)
         self.mini_play_btn.clicked.connect(lambda: self.bus.pause_toggled.emit())
         self.mini_next_btn = IconButton()
         self.mini_next_btn.setIcon(icon("next"))
         self.mini_next_btn.setProperty("_jt_icon", "next")
-        self.mini_next_btn.setIconSize(QSize(22, 22))
-        self.mini_next_btn.setFixedSize(48, 48)
+        self.mini_next_btn.setIconSize(QSize(30, 30))
+        self.mini_next_btn.setFixedSize(self._MINI_BTN, self._MINI_BTN)
         self.mini_next_btn.setToolTip(self.tr("Next"))
         self.mini_next_btn.setStyleSheet(btn_qss)
         self.mini_next_btn.clicked.connect(lambda: self.bus.next_track.emit())
@@ -763,9 +766,9 @@ class NowPlayingBar(QWidget):
     def _style_mini(self) -> None:
         idle = not bool(self._track_title)
         self.mini_title.setStyleSheet(
-            f"color: {TEXT if not idle else IDLE_TEXT}; {type_qss(TYPE_BODY)} font-weight: 600;"
+            f"color: {TEXT if not idle else IDLE_TEXT}; {type_qss(TYPE_SUBHEAD)} font-weight: 600;"
         )
-        self.mini_artist.setStyleSheet(f"color: {TEXT_DIM}; {type_qss(TYPE_CAPTION)}")
+        self.mini_artist.setStyleSheet(f"color: {TEXT_DIM}; {type_qss(TYPE_BODY)}")
 
     def _refresh_mini(self) -> None:
         if not hasattr(self, "mini_title"):

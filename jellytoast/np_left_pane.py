@@ -121,6 +121,9 @@ class _LeftPaneMixin:
         self._live_btn.setVisible(show)
 
     def eventFilter(self, obj, event):
+        phone = getattr(self, "_phone_event", None)
+        if phone is not None and phone(obj, event):
+            return True
         # Hover gate for the lyrics toggle button — visible whenever the
         # cursor is over any left-pane content surface (lyrics scroll,
         # cover label, visualizer widget) or the toggle button itself.
