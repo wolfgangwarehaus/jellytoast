@@ -19,12 +19,15 @@ working unchanged. Shuffle / repeat / sleep / cast and the track favorite
 drive the transport bar's own controls — one source of truth.
 
 ``_PhonePlayerMixin`` is mixed into ``NowPlayingPage``; it relies on the
-page's widgets and on ``attach_transport_bar`` having run.
+page's widgets and on ``attach_transport_bar`` having run. Strings use
+``QCoreApplication.translate("NowPlayingPage", …)``, not ``self.tr``: at
+runtime ``tr`` looks up the instance's class (NowPlayingPage) while lupdate
+files mixin strings under the mixin's name, so they'd never translate.
 """
 
 from __future__ import annotations
 
-from PySide6.QtCore import QEvent, QPoint, QSize, Qt, QTimer
+from PySide6.QtCore import QCoreApplication, QEvent, QPoint, QSize, Qt, QTimer
 from PySide6.QtWidgets import QHBoxLayout, QLabel, QVBoxLayout, QWidget
 
 from jellytoast import ui_helpers as _u
@@ -95,8 +98,8 @@ class _PhonePlayerMixin:
         col.addWidget(self._phone_h_artist)
         col.addStretch(1)
         h.addLayout(col, 1)
-        self._phone_h_heart = _phone_btn("favorite_outline", 44, 22, self.tr("Favorite"))
-        self._phone_h_more = _phone_btn("more_vert", 44, 22, self.tr("More"))
+        self._phone_h_heart = _phone_btn("favorite_outline", 44, 22, QCoreApplication.translate("NowPlayingPage", "Favorite"))
+        self._phone_h_more = _phone_btn("more_vert", 44, 22, QCoreApplication.translate("NowPlayingPage", "More"))
         h.addWidget(self._phone_h_heart)
         h.addWidget(self._phone_h_more)
         v.addWidget(self._phone_header)
@@ -134,8 +137,8 @@ class _PhonePlayerMixin:
         meta = QHBoxLayout()
         meta.setContentsMargins(0, 0, 0, 0)
         meta.setSpacing(8)
-        self._phone_heart = _phone_btn("favorite_outline", 44, 24, self.tr("Favorite"))
-        self._phone_more = _phone_btn("more_vert", 44, 24, self.tr("More"))
+        self._phone_heart = _phone_btn("favorite_outline", 44, 24, QCoreApplication.translate("NowPlayingPage", "Favorite"))
+        self._phone_more = _phone_btn("more_vert", 44, 24, QCoreApplication.translate("NowPlayingPage", "More"))
         meta.addWidget(self._phone_heart, 0, Qt.AlignmentFlag.AlignVCenter)
         meta.addLayout(names, 1)
         meta.addWidget(self._phone_more, 0, Qt.AlignmentFlag.AlignVCenter)
@@ -144,7 +147,7 @@ class _PhonePlayerMixin:
         self._phone_slot.addWidget(self._phone_cover_block, 1)
         # Lyrics surface on a track without lyrics: say so, don't leave a
         # blank middle.
-        self._phone_no_lyrics = QLabel(self.tr("No lyrics for this track"))
+        self._phone_no_lyrics = QLabel(QCoreApplication.translate("NowPlayingPage", "No lyrics for this track"))
         self._phone_no_lyrics.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._phone_no_lyrics.hide()
         self._phone_slot.addWidget(self._phone_no_lyrics, 1)
@@ -188,11 +191,11 @@ class _PhonePlayerMixin:
 
         transport = QHBoxLayout()
         transport.setContentsMargins(0, 0, 0, 0)
-        self._phone_shuffle = _phone_btn("shuffle", 48, 22, self.tr("Shuffle"))
-        self._phone_prev = _phone_btn("prev", 56, 30, self.tr("Previous"))
-        self._phone_play = _phone_btn("play", 72, 44, self.tr("Play / Pause"))
-        self._phone_next = _phone_btn("next", 56, 30, self.tr("Next"))
-        self._phone_repeat = _phone_btn("repeat", 48, 22, self.tr("Repeat"))
+        self._phone_shuffle = _phone_btn("shuffle", 48, 22, QCoreApplication.translate("NowPlayingPage", "Shuffle"))
+        self._phone_prev = _phone_btn("prev", 56, 30, QCoreApplication.translate("NowPlayingPage", "Previous"))
+        self._phone_play = _phone_btn("play", 72, 44, QCoreApplication.translate("NowPlayingPage", "Play / Pause"))
+        self._phone_next = _phone_btn("next", 56, 30, QCoreApplication.translate("NowPlayingPage", "Next"))
+        self._phone_repeat = _phone_btn("repeat", 48, 22, QCoreApplication.translate("NowPlayingPage", "Repeat"))
         for i, b in enumerate(
             (
                 self._phone_shuffle,
@@ -213,11 +216,11 @@ class _PhonePlayerMixin:
         self._phone_toggles = {}
         for i, (key, glyph, tip) in enumerate(
             (
-                ("cast", "cast", self.tr("Cast")),
-                ("lyrics", "lyrics", self.tr("Lyrics")),
-                ("visualizer", "visualizer", self.tr("Visualizer")),
-                ("queue", "queue", self.tr("Queue")),
-                ("sleep", "moon", self.tr("Sleep timer")),
+                ("cast", "cast", QCoreApplication.translate("NowPlayingPage", "Cast")),
+                ("lyrics", "lyrics", QCoreApplication.translate("NowPlayingPage", "Lyrics")),
+                ("visualizer", "visualizer", QCoreApplication.translate("NowPlayingPage", "Visualizer")),
+                ("queue", "queue", QCoreApplication.translate("NowPlayingPage", "Queue")),
+                ("sleep", "moon", QCoreApplication.translate("NowPlayingPage", "Sleep timer")),
             )
         ):
             if i:
@@ -450,7 +453,7 @@ class _PhonePlayerMixin:
         if not self._phone_built:
             return
         np = get_now_playing()
-        title = np.title or self.tr("Nothing Playing")
+        title = np.title or QCoreApplication.translate("NowPlayingPage", "Nothing Playing")
         artist = np.subtitle or ""
         self._phone_title.setText(title)
         self._phone_artist.setText(artist)
@@ -528,12 +531,12 @@ class _PhonePlayerMixin:
         if not np.item_id:
             return
         menu = opaque_menu(self)
-        download = menu.addAction(self.tr("Download album"))
+        download = menu.addAction(QCoreApplication.translate("NowPlayingPage", "Download album"))
         download.setVisible(bool(getattr(self._download_cta, "_enabled", True)))
         fav_album = menu.addAction(
-            self.tr("Remove album from favorites")
+            QCoreApplication.translate("NowPlayingPage", "Remove album from favorites")
             if self._live_source_fav
-            else self.tr("Add album to favorites")
+            else QCoreApplication.translate("NowPlayingPage", "Add album to favorites")
         )
         fav_album.setVisible(bool(self.queue_mgr.context.source_id))
         menu.ensurePolished()
@@ -567,7 +570,7 @@ class _PhonePlayerMixin:
         if self._preview_id or not self._phone_built:
             return
         # The queue ran out: match the page's idle state.
-        idle = self.tr("Nothing Playing")
+        idle = QCoreApplication.translate("NowPlayingPage", "Nothing Playing")
         for lbl in (self._phone_title, self._phone_h_title):
             lbl.setText(idle)
         for lbl in (self._phone_artist, self._phone_h_artist):

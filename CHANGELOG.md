@@ -12,6 +12,16 @@ developer-facing history lives in [`docs/CHANGELOG.md`](docs/CHANGELOG.md).
      should stand alone: the Store "What's new" shows just the title (+ first
      sentence in --detail mode). -->
 
+- **Phone screens fit with wider fonts.** With some fonts (like DejaVu Sans)
+  the player bar and a Settings page ran a little past the edge of a 360 px
+  phone. Long titles now scroll instead of pushing the layout wider.
+- **The new phone Now Playing speaks Spanish.** Its buttons, the loading
+  spinner and the cast firewall message were showing in English.
+- **Font size changes apply right away, every time.** Changing the text size
+  in Settings could occasionally redraw at the old size until a restart.
+- **Faster start without a keyring.** On systems with no keyring service,
+  jellytoast no longer waits half a second retrying it.
+
 ## [0.2.3] — 2026-10-20
 
 - **Fits phones and narrow windows.** jellytoast now works down to 360 px

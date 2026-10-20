@@ -38,6 +38,15 @@ if _xdist_worker:
     os.environ["XDG_CONFIG_HOME"] = os.path.join(_worker_home, ".config")
     os.environ["XDG_DATA_HOME"] = os.path.join(_worker_home, ".local", "share")
     os.environ["XDG_CACHE_HOME"] = os.path.join(_worker_home, ".cache")
+else:
+    # A plain (non-xdist) run keeps HOME, but the cache dir must still move:
+    # app._diag_log_dir() resolves $XDG_CACHE_HOME/jellytoast for crash.log +
+    # jellytoast.log, and tests that exercise it were appending to the
+    # developer's REAL log (hundreds of test lines mixed into the file a bug
+    # report asks the user to send).
+    import tempfile
+
+    os.environ["XDG_CACHE_HOME"] = tempfile.mkdtemp(prefix="jellytoast-test-cache-")
 
 # Tests must not depend on the developer's session: run from a Plasma Mobile
 # login, these make platform_compat.is_mobile_shell() True for the whole
@@ -55,6 +64,7 @@ for _mobile_var in ("PLASMA_PLATFORM", "QT_QUICK_CONTROLS_MOBILE"):
 os.environ["PYTHON_KEYRING_BACKEND"] = "keyring.backends.null.Keyring"
 
 from PySide6.QtCore import QStandardPaths  # noqa: E402
+from PySide6.QtGui import QFont  # noqa: E402
 
 # Per-process redirect: every QStandardPaths.writableLocation(...) call
 # now resolves under a tmpfs-style "test mode" path that QtCore picks up,
@@ -301,6 +311,57 @@ def _drain_async_and_stop_cast_singletons():
         gc.collect()
         if _gc_was_enabled:
             gc.enable()
+
+
+@pytest.fixture(autouse=True)
+def _font_state_leak_guard():
+    """Undo a test's font changes: the app-wide QFont and the font-scale
+    tokens (design_tokens rebuilds TYPE_* from the persisted ui/font_scale).
+    A live-font test that left them scaled made list rows taller, so a later
+    touch test's tap at y=20 hit row 0 instead of row 1, and the live-font
+    tests themselves read a leaked scale — failures only under the full,
+    randomized suite."""
+    from PySide6.QtWidgets import QApplication
+
+    app = QApplication.instance()
+    font_before = QFont(app.font()) if app is not None else None
+    yield
+    app = QApplication.instance()
+    if app is not None and font_before is not None and app.font() != font_before:
+        app.setFont(font_before)
+    dt = sys.modules.get("jellytoast.design_tokens")
+    if dt is None:
+        return
+    try:
+        from jellytoast.settings import get_settings
+
+        if get_settings().font_scale != "default":
+            get_settings().font_scale = "default"
+        if dt.FONT_SCALE != 1.0:
+            dt.refresh_fonts()
+            uih = sys.modules.get("jellytoast.ui_helpers")
+            if uih is not None and hasattr(uih, "_propagate_font_constants"):
+                uih._propagate_font_constants()
+    except Exception:
+        pass
+
+
+@pytest.fixture(autouse=True)
+def _input_mode_leak_guard():
+    """Reset the "last input was touch / keyboard" module flags after every
+    test. A touch test leaves ``touch._last_input_touch`` True, and the tile
+    delegate then hides its hover-revealed corner buttons (a finger can't
+    hover) — so the corner-hover tests failed whenever a touch test ran
+    before them on the same worker (the long-standing order-dependent
+    flake)."""
+    yield
+    for mod, attr in (
+        ("jellytoast.touch", "_last_input_touch"),
+        ("jellytoast.keyboard_focus", "_last_input_keyboard"),
+    ):
+        m = sys.modules.get(mod)
+        if m is not None:
+            setattr(m, attr, False)
 
 
 @pytest.fixture(autouse=True)

@@ -44,6 +44,13 @@ def _tap(app, device, widget, pos):
     _settle(app)
 
 
+def _row_center(lw, row):
+    """Where row ``row`` actually is. Row height follows the font, so a
+    hard-coded y (20 px "is row 1") hit row 0 under wider fonts / a font left
+    by another test."""
+    return lw.visualItemRect(lw.item(row)).center()
+
+
 def _long_press(app, device, widget, pos):
     QTest.touchEvent(widget, device).press(0, pos)
     _settle(app)
@@ -126,7 +133,7 @@ def test_a_hard_flick_settles_quickly(app):
 
 def test_tap_in_a_list_clicks(app, device, listw):
     lw, log = listw
-    _tap(app, device, lw.viewport(), QPoint(50, 30))
+    _tap(app, device, lw.viewport(), _row_center(lw, 1))
     assert log == ["press", ("clicked", 1)]
     assert touch.last_input_was_touch()
 
@@ -171,7 +178,7 @@ def test_long_press_opens_one_menu_and_no_click(app, device):
 
 def test_long_press_without_a_menu_is_a_tap(app, device, listw):
     lw, log = listw
-    _long_press(app, device, lw.viewport(), QPoint(40, 20))
+    _long_press(app, device, lw.viewport(), _row_center(lw, 1))
     assert ("clicked", 1) in log
 
 
@@ -631,6 +638,12 @@ def test_no_button_focus_ring_after_touch(app, monkeypatch):
     btn = QPushButton("Albums")
     lay.addWidget(btn)
     host.show()
+    # Focus only "sticks" in an ACTIVE window; alone, nothing had activated
+    # one, so the Tab-focus half failed unless an earlier test left a window
+    # active (order-dependent).
+    host.activateWindow()
+    QTest.qWaitForWindowActive(host, 1000)
+    btn.clearFocus()  # activation already focused it — start from no focus
     _settle(app)
     monkeypatch.setattr(touch, "_last_input_touch", True)
     keyboard_focus.note_pointer_input()

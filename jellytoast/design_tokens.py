@@ -48,10 +48,21 @@ def _load_font_scale() -> float:
     handle `jellytoast.settings` uses. Falls back to
     1.0 on any error so this never breaks the import."""
     try:
-        from jellytoast.settings_migration import open_qsettings
+        # Prefer the live Settings singleton when it exists: that's the object
+        # the Settings dialog WRITES through, and a separate QSettings handle
+        # keeps its own in-memory cache that doesn't reliably see those writes
+        # (a live font-size change could recompute at the OLD scale). Before
+        # the singleton exists (early import), a fresh handle is fine.
+        import sys
 
-        s = open_qsettings()
-        key = s.value("ui/font_scale", "default", type=str)
+        settings_mod = sys.modules.get("jellytoast.settings")
+        singleton = getattr(settings_mod, "_settings", None) if settings_mod else None
+        if singleton is not None:
+            key = singleton.font_scale
+        else:
+            from jellytoast.settings_migration import open_qsettings
+
+            key = open_qsettings().value("ui/font_scale", "default", type=str)
         return _FONT_SCALE_MAP.get(key, 1.0)
     except Exception:
         return 1.0

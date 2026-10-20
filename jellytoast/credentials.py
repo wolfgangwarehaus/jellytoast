@@ -336,6 +336,18 @@ def _keyring_get_token(max_attempts: int = 5, interval_s: float = 0.1) -> Option
         return None
     import time
 
+    # The retry exists for a SLOW real backend (KDE wallet waking up). The
+    # null / fail backends (no keyring at all — e.g. a bare WM, the test
+    # suite) can never return a value, so retrying just stalls 0.5 s per
+    # read; many reads (the Settings page rebuilds on a theme change) added
+    # up to a minutes-long "hang" in the suite.
+    try:
+        backend_mod = type(keyring.get_keyring()).__module__
+    except Exception:
+        backend_mod = ""
+    if backend_mod in ("keyring.backends.null", "keyring.backends.fail"):
+        max_attempts = 1
+
     last_error = None
     for attempt in range(max_attempts):
         try:
