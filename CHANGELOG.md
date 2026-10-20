@@ -12,6 +12,8 @@ developer-facing history lives in [`docs/CHANGELOG.md`](docs/CHANGELOG.md).
      should stand alone: the Store "What's new" shows just the title (+ first
      sentence in --detail mode). -->
 
+## [0.2.3] — 2026-10-20
+
 - **Fits phones and narrow windows.** jellytoast now works down to 360 px
   wide — Plasma Mobile included: a compact player bar, a slimmer top bar,
   and a section picker in Settings. On desktop, the window can finally be
