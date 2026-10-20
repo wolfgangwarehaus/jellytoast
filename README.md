@@ -46,7 +46,7 @@ Latest builds are on [**Releases**][rel].
   - [AUR][aur] — `yay -S jellytoast`
 - **macOS**
   - [App Store][mas]
-  - [.dmg][dl-dmg] *(universal — Apple Silicon + Intel, macOS 15+)*
+  - [.dmg][dl-dmg] *(Apple Silicon, macOS 15+)*
 - **Windows**
   - [Microsoft Store][store]
   - [.exe][dl-exe] *(one installer — x64 + ARM64)*

@@ -13,9 +13,9 @@ developer-facing history lives in [`docs/CHANGELOG.md`](docs/CHANGELOG.md).
      sentence in --detail mode). -->
 
 - **Fits phones and narrow windows.** jellytoast now works down to 360 px
-  wide — Plasma Mobile included: a compact player bar, Now Playing as one
-  pane with a Playing / Tracks switch, a slimmer top bar, and a section
-  picker in Settings. On desktop, the window can finally be made narrow.
+  wide — Plasma Mobile included: a compact player bar, a slimmer top bar,
+  and a section picker in Settings. On desktop, the window can finally be
+  made narrow.
 - **Touchscreen support.** Flick to scroll, tap to open, long-press for the
   same menu a right-click gives. Touching a tile to scroll no longer opens
   it. Album and playlist menus now also have Play and Favorite.
@@ -29,16 +29,20 @@ developer-facing history lives in [`docs/CHANGELOG.md`](docs/CHANGELOG.md).
 - **Closing on Plasma Mobile.** Swiping jellytoast away keeps the music
   playing in the background (tap the media controls to come back);
   with nothing playing it just closes. No more invisible tray icon there.
-- **Bigger and easier to tap on phones.** On Plasma Mobile the whole app is
-  scaled up, buttons are finger-sized, and the top bar tucks its extras into
-  a ⋮ menu. Now Playing gets a big cover, and shuffle, repeat, sleep timer and
-  cast move there when the bar runs out of room. Settings, the smart playlist
-  editor, the tag editor and the cast picker fit a phone screen too.
+- **Easier to tap on phones.** On Plasma Mobile buttons are finger-sized and
+  the top bar tucks its extras into a ⋮ menu. jellytoast follows your phone's
+  own display scale. Settings, the smart playlist editor, the tag editor and
+  the cast picker fit a phone screen too.
+- **A new Now Playing on phones.** A big cover with the song, artist, heart
+  and ⋮ beside it, a full-width seek bar, and big transport buttons. Lyrics,
+  the visualizer and the queue each swap in for the cover from a row of
+  buttons at the bottom; cast and the sleep timer live there too.
 - **Smoother flick scrolling, and an A–Z bar that works by touch.** Flicks
   glide for a moment instead of crawling on for seconds. Slide a finger down
   the letter bar to scrub through your library, with a big letter showing
-  where you are.
-- **A proper mini player on phones.** The player bar now shows the song,
+  where you are. On phones the bar stays a slim line with your position until
+  you touch it, and album columns sit centred with bigger covers.
+- **A proper mini player on phones.** The (now taller) player bar shows the song,
   artist and cover with play and next, and a thin progress line. Tap it (or
   swipe up) for Now Playing, where the full controls are.
 - **Swipes and tidier taps on touchscreens.** Swipe up on the player bar
@@ -53,6 +57,18 @@ developer-facing history lives in [`docs/CHANGELOG.md`](docs/CHANGELOG.md).
   a trip to the server.
 - **Covers no longer stay blank.** Album covers that were on screen while
   jellytoast sat in the background now load when you come back to it.
+- **No more covers on the wrong albums while loading.** On first sign-in, art
+  could land on the wrong albums until the library finished loading.
+- **A loading spinner on first sign-in.** Loading a big library for the first
+  time shows a spinner instead of an empty grid, so it doesn't look like the
+  login failed.
+- **Clearer cast failures.** When a TV or speaker can't reach your computer
+  to fetch the music (usually a firewall), the error now says so and shows
+  the exact command to allow it.
+- **The album name dropdown stays centred.** It could drift off-centre in the
+  top bar after the window was maximized.
+- **macOS: Apple Silicon only from this version.** The Mac download now runs on
+  Apple Silicon Macs (macOS 15+). Intel Macs stay on 0.2.2.
 
 ## [0.2.2] — 2026-10-05
 
