@@ -351,6 +351,17 @@ class JellyfinProvider(MediaProvider):
     def get_playlist_items(self, playlist_id: str) -> List[Dict[str, Any]]:
         return self.api.get_playlist_items(playlist_id)
 
+    supports_playlist_editing = True
+
+    def get_playlists(self) -> List[Dict[str, Any]]:
+        return self.api.get_music_playlists()
+
+    def add_to_playlist(self, playlist_id: str, item_ids: List[str]) -> None:
+        self.api.add_to_playlist(playlist_id, item_ids)
+
+    def create_playlist(self, name: str, item_ids: List[str]) -> str:
+        return self.api.create_playlist(name, item_ids)
+
     def get_genres(self) -> List[Dict[str, Any]]:
         return self.api.get_genres()
 

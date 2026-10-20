@@ -281,6 +281,87 @@ class FrostedConfirmDialog(FrostedDialog):
         self.content_layout.addLayout(btn_row)
 
 
+class FrostedInputDialog(FrostedDialog):
+    """A frameless, frosted one-line text prompt — the app-styled
+    replacement for ``QInputDialog.getText``. Use :func:`frosted_text_input`."""
+
+    def __init__(
+        self,
+        parent: Optional[QWidget] = None,
+        *,
+        title: str = "",
+        label: str = "",
+        text: str = "",
+        placeholder: str = "",
+        icon_name: str = "",
+        confirm_text: str = "OK",
+        cancel_text: str = "Cancel",
+    ) -> None:
+        super().__init__(parent, title=title, icon_name=icon_name)
+        from PySide6.QtWidgets import QLineEdit
+
+        from jellytoast.design_tokens import BTN_PRIMARY, TYPE_BODY, button_qss, type_qss
+        from jellytoast.ui_helpers import TEXT
+
+        if label:
+            lab = QLabel(label)
+            lab.setWordWrap(True)
+            lab.setStyleSheet(f"color: {TEXT}; {type_qss(TYPE_BODY)} background: transparent;")
+            self.content_layout.addWidget(lab)
+        self.edit = QLineEdit(text)
+        self.edit.setPlaceholderText(placeholder)
+        self.content_layout.addWidget(self.edit)
+
+        btn_row = QHBoxLayout()
+        btn_row.addStretch(1)
+        cancel = QPushButton(cancel_text)
+        cancel.setObjectName("ghost")
+        cancel.setCursor(Qt.CursorShape.PointingHandCursor)
+        cancel.clicked.connect(self.reject)
+        btn_row.addWidget(cancel)
+        self._confirm = QPushButton(confirm_text)
+        self._confirm.setObjectName("accent")
+        self._confirm.setStyleSheet(button_qss(BTN_PRIMARY))
+        self._confirm.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._confirm.setDefault(True)
+        self._confirm.clicked.connect(self.accept)
+        btn_row.addWidget(self._confirm)
+        self.content_layout.addLayout(btn_row)
+        # Nothing to confirm until there's text.
+        self.edit.textChanged.connect(lambda t: self._confirm.setEnabled(bool(t.strip())))
+        self._confirm.setEnabled(bool(text.strip()))
+        self.edit.setFocus()
+
+    def value(self) -> str:
+        return self.edit.text().strip()
+
+
+def frosted_text_input(
+    parent: Optional[QWidget],
+    title: str,
+    label: str = "",
+    *,
+    text: str = "",
+    placeholder: str = "",
+    icon_name: str = "",
+    confirm_text: str = "OK",
+    cancel_text: str = "Cancel",
+) -> Optional[str]:
+    """Ask for one line of text in the app's frosted chrome; return the
+    stripped text, or ``None`` if cancelled."""
+    dlg = FrostedInputDialog(
+        parent,
+        title=title,
+        label=label,
+        text=text,
+        placeholder=placeholder,
+        icon_name=icon_name,
+        confirm_text=confirm_text,
+        cancel_text=cancel_text,
+    )
+    return dlg.value() if dlg.exec() == QDialog.DialogCode.Accepted else None
+
+
 def frosted_warning(
     parent: Optional[QWidget],
     title: str,

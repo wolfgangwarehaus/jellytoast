@@ -237,6 +237,26 @@ class MediaProvider(ABC):
     @abstractmethod
     def get_playlist_items(self, playlist_id: str) -> List[Dict[str, Any]]: ...
 
+    # ── Playlist editing (#238) ──────────────────────────────────────
+    # Not abstract: a provider (or a test fake) without it simply offers no
+    # "Add to playlist" (the UI checks ``supports_playlist_editing``).
+
+    supports_playlist_editing = False
+
+    def get_playlists(self) -> List[Dict[str, Any]]:
+        """Playlists the user can ADD to, as ``{Id, Name, ChildCount}``
+        dicts sorted by name."""
+        return []
+
+    def add_to_playlist(self, playlist_id: str, item_ids: List[str]) -> None:
+        """Append tracks to a playlist. Raises on failure."""
+        raise NotImplementedError
+
+    def create_playlist(self, name: str, item_ids: List[str]) -> str:
+        """Create a playlist holding ``item_ids``; returns its id. Raises
+        on failure."""
+        raise NotImplementedError
+
     @abstractmethod
     def get_genres(self) -> List[Dict[str, Any]]: ...
 

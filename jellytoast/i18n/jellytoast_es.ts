@@ -221,7 +221,7 @@ firewalld:
 <context>
     <name>ClassicalWork</name>
     <message>
-        <location filename="../ui_helpers.py" line="1118"/>
+        <location filename="../ui_helpers.py" line="1110"/>
         <source>Movement {0} of {1}</source>
         <translation>Movimiento {0} de {1}</translation>
     </message>
@@ -1070,57 +1070,57 @@ jellytoast funcionará, pero las funciones de bandeja no estarán disponibles.</
         <translation>Cargando más…</translation>
     </message>
     <message>
-        <location filename="../library_grid.py" line="2581"/>
+        <location filename="../library_grid.py" line="2585"/>
         <source>No playlists yet</source>
         <translation>Aún no hay listas de reproducción</translation>
     </message>
     <message>
-        <location filename="../library_grid.py" line="2583"/>
+        <location filename="../library_grid.py" line="2587"/>
         <source>No artists yet</source>
         <translation>Aún no hay artistas</translation>
     </message>
     <message>
-        <location filename="../library_grid.py" line="2584"/>
+        <location filename="../library_grid.py" line="2588"/>
         <source>No albums yet</source>
         <translation>Aún no hay álbumes</translation>
     </message>
     <message>
-        <location filename="../library_grid.py" line="2594"/>
+        <location filename="../library_grid.py" line="2598"/>
         <source>No {0}s in this genre</source>
         <translation>No hay {0}s en este género</translation>
     </message>
     <message>
-        <location filename="../library_grid.py" line="2595"/>
+        <location filename="../library_grid.py" line="2599"/>
         <source>Try a different genre or refresh the library.</source>
         <translation>Prueba otro género o actualiza la biblioteca.</translation>
     </message>
     <message>
-        <location filename="../library_grid.py" line="2599"/>
+        <location filename="../library_grid.py" line="2603"/>
         <source>No {0}s from {1}</source>
         <translation>No hay {0}s de {1}</translation>
     </message>
     <message>
-        <location filename="../library_grid.py" line="2600"/>
+        <location filename="../library_grid.py" line="2604"/>
         <source>Try a different year or refresh the library.</source>
         <translation>Prueba otro año o actualiza la biblioteca.</translation>
     </message>
     <message>
-        <location filename="../library_grid.py" line="2605"/>
+        <location filename="../library_grid.py" line="2609"/>
         <source>Your library may still be loading, or it&apos;s empty. Refresh to retry.</source>
         <translation>Puede que tu biblioteca aún esté cargando, o que esté vacía. Actualiza para reintentar.</translation>
     </message>
     <message>
-        <location filename="../library_grid.py" line="2611"/>
+        <location filename="../library_grid.py" line="2615"/>
         <source>Loading artists…</source>
         <translation>Cargando artistas…</translation>
     </message>
     <message>
-        <location filename="../library_grid.py" line="2613"/>
+        <location filename="../library_grid.py" line="2617"/>
         <source>Loading playlists…</source>
         <translation>Cargando listas de reproducción…</translation>
     </message>
     <message>
-        <location filename="../library_grid.py" line="2614"/>
+        <location filename="../library_grid.py" line="2618"/>
         <source>Loading albums…</source>
         <translation>Cargando álbumes…</translation>
     </message>
@@ -1642,7 +1642,7 @@ jellytoast funcionará, pero las funciones de bandeja no estarán disponibles.</
         <location filename="../now_playing_page.py" line="642"/>
         <location filename="../now_playing_page.py" line="1178"/>
         <location filename="../np_phone.py" line="456"/>
-        <location filename="../np_phone.py" line="573"/>
+        <location filename="../np_phone.py" line="576"/>
         <source>Nothing Playing</source>
         <translation>Nada en reproducción</translation>
     </message>
@@ -1713,13 +1713,13 @@ jellytoast funcionará, pero las funciones de bandeja no estarán disponibles.</
     <message>
         <location filename="../now_playing_page.py" line="1303"/>
         <location filename="../now_playing_page.py" line="1367"/>
-        <location filename="../now_playing_page.py" line="2072"/>
+        <location filename="../now_playing_page.py" line="2078"/>
         <source>Unknown</source>
         <translation>Desconocido</translation>
     </message>
     <message>
         <location filename="../now_playing_page.py" line="1438"/>
-        <location filename="../now_playing_page.py" line="1997"/>
+        <location filename="../now_playing_page.py" line="2003"/>
         <source>Loading…</source>
         <translation>Cargando…</translation>
     </message>
@@ -1772,87 +1772,87 @@ jellytoast funcionará, pero las funciones de bandeja no estarán disponibles.</
         <translation>Añadir a la cola</translation>
     </message>
     <message>
-        <location filename="../now_playing_page.py" line="1699"/>
+        <location filename="../now_playing_page.py" line="1705"/>
         <source>Remove from queue</source>
         <translation>Quitar de la cola</translation>
     </message>
     <message>
-        <location filename="../now_playing_page.py" line="1823"/>
+        <location filename="../now_playing_page.py" line="1829"/>
         <source>this album</source>
         <translation>este álbum</translation>
     </message>
     <message>
-        <location filename="../now_playing_page.py" line="1826"/>
+        <location filename="../now_playing_page.py" line="1832"/>
         <source>Remove download</source>
         <translation>Eliminar descarga</translation>
     </message>
     <message>
-        <location filename="../now_playing_page.py" line="1827"/>
+        <location filename="../now_playing_page.py" line="1833"/>
         <source>Remove the downloaded copy of “{0}”?</source>
         <translation>¿Eliminar la copia descargada de «{0}»?</translation>
     </message>
     <message>
-        <location filename="../now_playing_page.py" line="1828"/>
+        <location filename="../now_playing_page.py" line="1834"/>
         <source>Remove</source>
         <translation>Eliminar</translation>
     </message>
     <message>
-        <location filename="../now_playing_page.py" line="2067"/>
+        <location filename="../now_playing_page.py" line="2073"/>
         <source>Couldn&apos;t load</source>
         <translation>No se pudo cargar</translation>
     </message>
     <message>
-        <location filename="../now_playing_page.py" line="2136"/>
+        <location filename="../now_playing_page.py" line="2142"/>
         <source>●  LIVE  ·  {0}</source>
         <translation>●  EN VIVO  ·  {0}</translation>
     </message>
     <message>
-        <location filename="../now_playing_page.py" line="2138"/>
+        <location filename="../now_playing_page.py" line="2144"/>
         <source>●  LIVE</source>
         <translation>●  EN VIVO</translation>
     </message>
     <message>
-        <location filename="../now_playing_page.py" line="2143"/>
+        <location filename="../now_playing_page.py" line="2149"/>
         <source>PAUSED  ·  {0}</source>
         <translation>EN PAUSA  ·  {0}</translation>
     </message>
     <message>
-        <location filename="../now_playing_page.py" line="2145"/>
+        <location filename="../now_playing_page.py" line="2151"/>
         <source>PAUSED</source>
         <translation>EN PAUSA</translation>
     </message>
     <message>
-        <location filename="../now_playing_page.py" line="2170"/>
+        <location filename="../now_playing_page.py" line="2176"/>
         <source>song</source>
         <translation>canción</translation>
     </message>
     <message>
-        <location filename="../now_playing_page.py" line="2170"/>
+        <location filename="../now_playing_page.py" line="2176"/>
         <source>songs</source>
         <translation>canciones</translation>
     </message>
     <message>
-        <location filename="../now_playing_page.py" line="2172"/>
+        <location filename="../now_playing_page.py" line="2178"/>
         <source>track</source>
         <translation>pista</translation>
     </message>
     <message>
-        <location filename="../now_playing_page.py" line="2172"/>
+        <location filename="../now_playing_page.py" line="2178"/>
         <source>tracks</source>
         <translation>pistas</translation>
     </message>
     <message>
-        <location filename="../now_playing_page.py" line="2192"/>
+        <location filename="../now_playing_page.py" line="2198"/>
         <source>{0} min</source>
         <translation>{0} min</translation>
     </message>
     <message>
-        <location filename="../now_playing_page.py" line="2196"/>
+        <location filename="../now_playing_page.py" line="2202"/>
         <source>{0} hr</source>
         <translation>{0} h</translation>
     </message>
     <message>
-        <location filename="../now_playing_page.py" line="2197"/>
+        <location filename="../now_playing_page.py" line="2203"/>
         <source>{0} hr {1} min</source>
         <translation>{0} h {1} min</translation>
     </message>
@@ -1930,17 +1930,17 @@ jellytoast funcionará, pero las funciones de bandeja no estarán disponibles.</
         <translation>Cola</translation>
     </message>
     <message>
-        <location filename="../np_phone.py" line="534"/>
+        <location filename="../np_phone.py" line="537"/>
         <source>Download album</source>
         <translation>Descargar álbum</translation>
     </message>
     <message>
-        <location filename="../np_phone.py" line="537"/>
+        <location filename="../np_phone.py" line="540"/>
         <source>Remove album from favorites</source>
         <translation>Quitar el álbum de favoritos</translation>
     </message>
     <message>
-        <location filename="../np_phone.py" line="539"/>
+        <location filename="../np_phone.py" line="542"/>
         <source>Add album to favorites</source>
         <translation>Añadir el álbum a favoritos</translation>
     </message>
@@ -2042,6 +2042,74 @@ Double-check the PIN — common cause is a typo or a stale code (the receiver ro
         <translation>Falló el emparejamiento: {0}
 
 Revisa el PIN — la causa más común es una errata o un código caducado (el receptor los rota cada pocos minutos).</translation>
+    </message>
+</context>
+<context>
+    <name>PlaylistActions</name>
+    <message>
+        <location filename="../playlist_actions.py" line="91"/>
+        <source>Add to playlist</source>
+        <translation>Añadir a lista de reproducción</translation>
+    </message>
+    <message>
+        <location filename="../playlist_actions.py" line="98"/>
+        <source>New playlist…</source>
+        <translation>Nueva lista de reproducción…</translation>
+    </message>
+    <message>
+        <location filename="../playlist_actions.py" line="104"/>
+        <source>Loading…</source>
+        <translation>Cargando…</translation>
+    </message>
+    <message>
+        <location filename="../playlist_actions.py" line="153"/>
+        <source>Added to {0}</source>
+        <translation>Añadida a {0}</translation>
+    </message>
+    <message>
+        <location filename="../playlist_actions.py" line="154"/>
+        <source>Added {0} songs to {1}</source>
+        <translation>{0} canciones añadidas a {1}</translation>
+    </message>
+    <message>
+        <location filename="../playlist_actions.py" line="173"/>
+        <source>Nothing to add</source>
+        <translation>No hay nada que añadir</translation>
+    </message>
+    <message>
+        <location filename="../playlist_actions.py" line="178"/>
+        <source>Couldn&apos;t add to {0}</source>
+        <translation>No se pudo añadir a {0}</translation>
+    </message>
+    <message>
+        <location filename="../playlist_actions.py" line="189"/>
+        <source>New playlist</source>
+        <translation>Nueva lista de reproducción</translation>
+    </message>
+    <message>
+        <location filename="../playlist_actions.py" line="190"/>
+        <source>Name</source>
+        <translation>Nombre</translation>
+    </message>
+    <message>
+        <location filename="../playlist_actions.py" line="191"/>
+        <source>My playlist</source>
+        <translation>Mi lista</translation>
+    </message>
+    <message>
+        <location filename="../playlist_actions.py" line="192"/>
+        <source>Create</source>
+        <translation>Crear</translation>
+    </message>
+    <message>
+        <location filename="../playlist_actions.py" line="209"/>
+        <source>Created {0}</source>
+        <translation>Se creó {0}</translation>
+    </message>
+    <message>
+        <location filename="../playlist_actions.py" line="217"/>
+        <source>Couldn&apos;t create {0}</source>
+        <translation>No se pudo crear {0}</translation>
     </message>
 </context>
 <context>
@@ -3455,19 +3523,19 @@ Ejecuta pywal (o wallust) una vez para que genere una paleta, y vuelve a activar
     <name>SongsView</name>
     <message>
         <location filename="../songs_view.py" line="604"/>
-        <location filename="../songs_view.py" line="1433"/>
+        <location filename="../songs_view.py" line="1439"/>
         <source>No songs yet</source>
         <translation>Aún no hay canciones</translation>
     </message>
     <message>
         <location filename="../songs_view.py" line="605"/>
-        <location filename="../songs_view.py" line="1434"/>
+        <location filename="../songs_view.py" line="1440"/>
         <source>Your library is empty, or your connection isn&apos;t ready.</source>
         <translation>Tu biblioteca está vacía, o tu conexión no está lista.</translation>
     </message>
     <message>
         <location filename="../songs_view.py" line="606"/>
-        <location filename="../songs_view.py" line="1435"/>
+        <location filename="../songs_view.py" line="1441"/>
         <source>Refresh</source>
         <translation>Actualizar</translation>
     </message>
@@ -3482,37 +3550,37 @@ Ejecuta pywal (o wallust) una vez para que genere una paleta, y vuelve a activar
         <translation>Añadir a la cola</translation>
     </message>
     <message>
-        <location filename="../songs_view.py" line="809"/>
+        <location filename="../songs_view.py" line="815"/>
         <source>Start radio from this song</source>
         <translation>Iniciar radio desde esta canción</translation>
     </message>
     <message>
-        <location filename="../songs_view.py" line="823"/>
+        <location filename="../songs_view.py" line="829"/>
         <source>Create smart playlist: More like {0}</source>
         <translation>Crear lista inteligente: Más como {0}</translation>
     </message>
     <message>
-        <location filename="../songs_view.py" line="836"/>
+        <location filename="../songs_view.py" line="842"/>
         <source>Edit tags…</source>
         <translation>Editar etiquetas…</translation>
     </message>
     <message>
-        <location filename="../songs_view.py" line="858"/>
+        <location filename="../songs_view.py" line="864"/>
         <source>Tags updated</source>
         <translation>Etiquetas actualizadas</translation>
     </message>
     <message>
-        <location filename="../songs_view.py" line="1144"/>
+        <location filename="../songs_view.py" line="1150"/>
         <source>Couldn&apos;t load songs</source>
         <translation>No se pudieron cargar las canciones</translation>
     </message>
     <message>
-        <location filename="../songs_view.py" line="1146"/>
+        <location filename="../songs_view.py" line="1152"/>
         <source>The server didn&apos;t respond. Check your connection and try again.</source>
         <translation>El servidor no respondió. Comprueba tu conexión e inténtalo de nuevo.</translation>
     </message>
     <message>
-        <location filename="../songs_view.py" line="1148"/>
+        <location filename="../songs_view.py" line="1154"/>
         <source>Retry</source>
         <translation>Reintentar</translation>
     </message>
@@ -3795,29 +3863,29 @@ La carátula por pista no se modifica con esta escritura masiva.</translation>
 <context>
     <name>UiHelpers</name>
     <message>
-        <location filename="../ui_helpers.py" line="1513"/>
+        <location filename="../ui_helpers.py" line="1505"/>
         <source>Couldn&apos;t update favorite — check your connection.</source>
         <translation>No se pudo actualizar el favorito — comprueba tu conexión.</translation>
     </message>
     <message>
-        <location filename="../ui_helpers.py" line="3015"/>
+        <location filename="../ui_helpers.py" line="3007"/>
         <source>Deep Cuts: {0}</source>
         <translation>Rarezas: {0}</translation>
     </message>
     <message>
-        <location filename="../ui_helpers.py" line="3018"/>
-        <location filename="../ui_helpers.py" line="3032"/>
+        <location filename="../ui_helpers.py" line="3010"/>
+        <location filename="../ui_helpers.py" line="3024"/>
         <source>More like {0}</source>
         <translation>Más como {0}</translation>
     </message>
     <message>
-        <location filename="../ui_helpers.py" line="3024"/>
-        <location filename="../ui_helpers.py" line="3034"/>
+        <location filename="../ui_helpers.py" line="3016"/>
+        <location filename="../ui_helpers.py" line="3026"/>
         <source>{0} has no genre tags, add some to help suggestions.</source>
         <translation>{0} no tiene etiquetas de género; añade algunas para mejorar las sugerencias.</translation>
     </message>
     <message>
-        <location filename="../ui_helpers.py" line="3029"/>
+        <location filename="../ui_helpers.py" line="3021"/>
         <source>{0} Discoveries</source>
         <translation>Descubrimientos de {0}</translation>
     </message>
@@ -4069,66 +4137,66 @@ La carátula por pista no se modifica con esta escritura masiva.</translation>
     <name>_LibraryListView</name>
     <message>
         <location filename="../library_grid.py" line="1904"/>
-        <location filename="../library_grid.py" line="3170"/>
+        <location filename="../library_grid.py" line="3192"/>
         <source>this {0}</source>
         <translation>este {0}</translation>
     </message>
     <message>
         <location filename="../library_grid.py" line="1907"/>
-        <location filename="../library_grid.py" line="3143"/>
-        <location filename="../library_grid.py" line="3173"/>
+        <location filename="../library_grid.py" line="3165"/>
+        <location filename="../library_grid.py" line="3195"/>
         <source>Remove download</source>
         <translation>Eliminar descarga</translation>
     </message>
     <message>
         <location filename="../library_grid.py" line="1908"/>
-        <location filename="../library_grid.py" line="3174"/>
+        <location filename="../library_grid.py" line="3196"/>
         <source>Remove the downloaded files for “{0}”?</source>
         <translation>¿Eliminar los archivos descargados de «{0}»?</translation>
     </message>
     <message>
         <location filename="../library_grid.py" line="1909"/>
-        <location filename="../library_grid.py" line="3175"/>
+        <location filename="../library_grid.py" line="3197"/>
         <source>Remove</source>
         <translation>Eliminar</translation>
     </message>
     <message>
-        <location filename="../library_grid.py" line="3113"/>
+        <location filename="../library_grid.py" line="3125"/>
         <source>Play</source>
         <translation>Reproducir</translation>
     </message>
     <message>
-        <location filename="../library_grid.py" line="3116"/>
+        <location filename="../library_grid.py" line="3128"/>
         <source>Remove from favorites</source>
         <translation>Quitar de favoritos</translation>
     </message>
     <message>
-        <location filename="../library_grid.py" line="3118"/>
+        <location filename="../library_grid.py" line="3130"/>
         <source>Favorite</source>
         <translation>Favorito</translation>
     </message>
     <message>
-        <location filename="../library_grid.py" line="3126"/>
+        <location filename="../library_grid.py" line="3148"/>
         <source>Start album radio</source>
         <translation>Iniciar radio del álbum</translation>
     </message>
     <message>
-        <location filename="../library_grid.py" line="3128"/>
+        <location filename="../library_grid.py" line="3150"/>
         <source>Start artist radio</source>
         <translation>Iniciar radio del artista</translation>
     </message>
     <message>
-        <location filename="../library_grid.py" line="3135"/>
+        <location filename="../library_grid.py" line="3157"/>
         <source>Create smart playlist: More like {0}</source>
         <translation>Crear lista inteligente: Más como {0}</translation>
     </message>
     <message>
-        <location filename="../library_grid.py" line="3137"/>
+        <location filename="../library_grid.py" line="3159"/>
         <source>Create smart playlist: Deep Cuts: {0}</source>
         <translation>Crear lista inteligente: Rarezas: {0}</translation>
     </message>
     <message>
-        <location filename="../library_grid.py" line="3145"/>
+        <location filename="../library_grid.py" line="3167"/>
         <source>Download</source>
         <translation>Descargar</translation>
     </message>

@@ -531,6 +531,9 @@ class _PhonePlayerMixin:
         if not np.item_id:
             return
         menu = opaque_menu(self)
+        from jellytoast import playlist_actions
+
+        playlist_actions.add_playlist_submenu(menu, lambda sid=np.item_id: [sid], host=self)
         download = menu.addAction(QCoreApplication.translate("NowPlayingPage", "Download album"))
         download.setVisible(bool(getattr(self._download_cta, "_enabled", True)))
         fav_album = menu.addAction(

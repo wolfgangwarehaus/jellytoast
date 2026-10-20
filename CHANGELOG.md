@@ -12,6 +12,10 @@ developer-facing history lives in [`docs/CHANGELOG.md`](docs/CHANGELOG.md).
      should stand alone: the Store "What's new" shows just the title (+ first
      sentence in --detail mode). -->
 
+- **Add songs to playlists.** Right-click (or long-press) a song, an album or
+  a playlist and pick **Add to playlist** — any of your Navidrome / Jellyfin
+  playlists, or **New playlist…** to start one. Also in the ⋮ menu on the
+  phone's Now Playing.
 - **Phone screens fit with wider fonts.** With some fonts (like DejaVu Sans)
   the player bar and a Settings page ran a little past the edge of a 360 px
   phone. Long titles now scroll instead of pushing the layout wider.

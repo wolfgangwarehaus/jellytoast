@@ -1693,6 +1693,12 @@ class NowPlayingPage(_PhonePlayerMixin, _LeftPaneMixin, _LyricsMixin, QWidget):
         menu = opaque_menu(self._list_container)
         play_next = menu.addAction(self.tr("Play next"))
         add_end = menu.addAction(self.tr("Add to queue"))
+        if item.get("Id"):
+            from jellytoast import playlist_actions
+
+            playlist_actions.add_playlist_submenu(
+                menu, lambda sid=item["Id"]: [sid], host=self
+            )
         remove_act = None
         if not self._preview_id:
             menu.addSeparator()

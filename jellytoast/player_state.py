@@ -461,6 +461,9 @@ class PlayerBus(QObject):
 
     # ── Favorite ────────────────────────────────────────────────────────────
     favorite_toggled = Signal(str, bool)  # item_id, is_favorite
+    # A server playlist was created or had tracks added (#238) — the
+    # Playlists grid drops its cache and reloads.
+    playlists_changed = Signal()
 
     # ── Sleep timer ─────────────────────────────────────────────────────────
     # Session-scoped countdown owned by the Player. `sleep_timer_started`

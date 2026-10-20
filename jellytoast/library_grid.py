@@ -2418,6 +2418,10 @@ class LibraryGrid(_PaginatorMixin, QWidget):
         PlayerBus.get().image_cache_cleared.connect(
             self._on_image_cache_cleared,
         )
+        # A playlist was created / added to (#238): the Playlists grid's
+        # cached counts + covers are stale — refetch like the Refresh button.
+        if self.kind == "playlist":
+            PlayerBus.get().playlists_changed.connect(self._on_playlists_changed)
 
     # ── Backwards-compatible accessors ────────────────────────────────
 
@@ -2625,6 +2629,14 @@ class LibraryGrid(_PaginatorMixin, QWidget):
         self._content_stack.setCurrentIndex(1)
         self._alphabet.setVisible(False)
         self._loading_more_label.setVisible(False)
+
+    def _on_playlists_changed(self):
+        try:
+            disk_cache.clear(self._cache_name)
+        except Exception:
+            pass
+        if self._initial_load_complete:  # never loaded → the next show loads
+            self._on_empty_state_refresh()
 
     def _on_empty_state_refresh(self):
         """User clicked Refresh on the empty-state — drop the disk
@@ -3117,6 +3129,16 @@ def show_tile_context_menu(parent, item: Dict, kind: str, global_pos, on_play=No
         if fav_on
         else _q.translate("_LibraryListView", "Favorite")
     )
+    if kind in ("album", "playlist"):
+        from jellytoast import playlist_actions
+
+        playlist_actions.add_playlist_submenu(
+            menu,
+            playlist_actions.album_track_ids(item_id)
+            if kind == "album"
+            else playlist_actions.playlist_track_ids(item_id),
+            host=parent,
+        )
     menu.addSeparator()
     # Album / artist tiles seed an INSTANT_MIX radio queue; the RadioFeeder
     # auto-extends from the stamped seed_kind. Playlist tiles have no radio

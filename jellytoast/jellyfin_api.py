@@ -692,6 +692,38 @@ class JellyfinAPI:
         }
         return self._get(f"/Playlists/{playlist_id}/Items", params).get("Items", [])
 
+    def get_music_playlists(self) -> List[Dict]:
+        params = {
+            "UserId": self.user_id,
+            "IncludeItemTypes": "Playlist",
+            "MediaTypes": "Audio",
+            "Recursive": "true",
+            "SortBy": "SortName",
+            "Fields": "ChildCount",
+        }
+        return self._get("/Items", params).get("Items", [])
+
+    def add_to_playlist(self, playlist_id: str, item_ids: List[str]) -> None:
+        # Ids ride in the query string; batch so a big album can't blow
+        # past a proxy's URL length limit.
+        for i in range(0, len(item_ids), 50):
+            ids = ",".join(item_ids[i : i + 50])
+            self._post(
+                f"/Playlists/{playlist_id}/Items?ids={ids}&userId={self.user_id}",
+                strict=True,
+            )
+
+    def create_playlist(self, name: str, item_ids: List[str]) -> str:
+        resp = self._post(
+            "/Playlists",
+            {"Name": name, "Ids": list(item_ids), "UserId": self.user_id, "MediaType": "Audio"},
+            strict=True,
+        )
+        pid = (resp or {}).get("Id", "")
+        if not pid:
+            raise RuntimeError("server returned no playlist id")
+        return pid
+
     def get_random_audio_items(self, parent_id: str, limit: int = 500) -> List[Dict]:
         # Random-sorted Audio items under a library/folder — used to
         # synthesize a true library-wide shuffle when Jellyfin Web's

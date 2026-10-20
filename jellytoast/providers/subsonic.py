@@ -99,7 +99,9 @@ def _build_query(params: dict) -> str:
     here previously stripped it and silently defeated the all-songs
     pagination (#10), degrading the Songs view to a single random page."""
     clean = {k: v for k, v in params.items() if v is not None}
-    return urlencode(clean)
+    # doseq: a list value repeats the key (updatePlaylist's songIdToAdd=…
+    # once per song). Plain strings are not expanded by urlencode.
+    return urlencode(clean, doseq=True)
 
 
 def _pick_lyrics(structured: List[dict]) -> Optional[dict]:
@@ -987,6 +989,46 @@ class SubsonicProvider(MediaProvider):
         if limit and limit > 0:
             flat = flat[:limit]
         return flat
+
+    # ── Playlist editing (#238) ──
+    supports_playlist_editing = True
+    _PLAYLIST_BATCH = 50  # songs per request — keeps GET URLs short
+
+    def get_playlists(self) -> List[Dict[str, Any]]:
+        """Only playlists this user OWNS: Subsonic lets just the owner
+        update one (a public playlist of someone else's would reject)."""
+        items = self._get_playlists().get("Items", [])
+        me = (self._username or "").lower()
+        mine = [
+            p
+            for p in items
+            if not me or str((p.get("_subsonic_raw") or {}).get("owner", me)).lower() == me
+        ]
+        return sorted(mine, key=lambda p: (p.get("Name") or "").lower())
+
+    def add_to_playlist(self, playlist_id: str, item_ids: List[str]) -> None:
+        for i in range(0, len(item_ids), self._PLAYLIST_BATCH):
+            self._request(
+                "updatePlaylist",
+                {"playlistId": playlist_id, "songIdToAdd": item_ids[i : i + self._PLAYLIST_BATCH]},
+            )
+
+    def create_playlist(self, name: str, item_ids: List[str]) -> str:
+        first = item_ids[: self._PLAYLIST_BATCH]
+        resp = self._request("createPlaylist", {"name": name, "songId": first})
+        pid = str((resp.get("playlist") or {}).get("id", ""))
+        if not pid:
+            # Pre-1.14 Subsonic returns an empty body: find it by name
+            # (newest wins if names repeat).
+            same = [p for p in self.get_playlists() if p.get("Name") == name]
+            same.sort(key=lambda p: str((p.get("_subsonic_raw") or {}).get("created", "")))
+            pid = same[-1]["Id"] if same else ""
+        if not pid:
+            raise SubsonicError(-1, "created playlist not found")
+        rest = item_ids[self._PLAYLIST_BATCH :]
+        if rest:
+            self.add_to_playlist(pid, rest)
+        return pid
 
     def get_playlist_items(self, playlist_id: str) -> List[Dict[str, Any]]:
         try:
