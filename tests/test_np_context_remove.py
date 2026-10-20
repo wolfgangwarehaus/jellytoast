@@ -75,8 +75,13 @@ def _patch_menu(monkeypatch, choose):
     # opaque_menu is imported lazily inside the handler via
     # `from jellytoast.ui_helpers import opaque_menu`, so patch it at source.
     import jellytoast.ui_helpers as uih
+    from jellytoast import playlist_actions
 
     monkeypatch.setattr(uih, "opaque_menu", _fake_opaque_menu)
+    # These tests are about the queue entries. "Add to playlist" shows only
+    # when signed in, which an earlier test's provider state can make true —
+    # and the fake menu has no submenus. Keep it out explicitly.
+    monkeypatch.setattr(playlist_actions, "available", lambda: False)
 
 
 def test_remove_on_shuffled_album_maps_source_to_play_order(qapp, monkeypatch):

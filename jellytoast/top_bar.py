@@ -579,8 +579,15 @@ class JtTopBar(QWidget):
         self._exec_menu_with_kbd_grab(menu, QPoint(right.x() - menu.sizeHint().width(), right.y()))
 
     def _watch_button_focus(self) -> None:
+        from jellytoast import touch
+
+        phone = touch.phone_ui()
         for btn in self.findChildren(QPushButton):
             btn.installEventFilter(self)
+            if phone:
+                # A phone has no keyboard nav to serve; a focused button only
+                # drew outlines (our ring, then Breeze's own faint one).
+                btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
 
     # Focus that arrives by keyboard. Anything else — a page swap handing
     # focus to the first button, a click, a menu parking focus on its anchor

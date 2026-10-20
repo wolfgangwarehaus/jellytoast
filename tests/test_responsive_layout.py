@@ -807,3 +807,33 @@ def test_no_top_bar_focus_ring_on_a_phone_even_from_keys(qapp, monkeypatch):
     assert not btn.property("kbdFocus")
     keyboard_focus.note_pointer_input()
     host.deleteLater()
+
+
+def test_phone_top_bar_buttons_take_no_focus(qapp, monkeypatch):
+    from PySide6.QtCore import Qt
+    from PySide6.QtWidgets import QPushButton, QWidget
+
+    from jellytoast import touch
+    from jellytoast.top_bar import JtTopBar
+
+    monkeypatch.setattr(pc, "is_mobile_shell", lambda: True)
+    monkeypatch.setattr(pc, "is_docked", lambda: False)
+    monkeypatch.setattr(touch, "_hover_shell", (-1e9, True))
+    host = QWidget()
+    top = JtTopBar(host, titlebar_mode=True)
+    _settle(qapp)
+    assert all(
+        b.focusPolicy() == Qt.FocusPolicy.NoFocus for b in top.findChildren(QPushButton)
+    )
+    host.deleteLater()
+
+
+def test_phone_popups_are_fully_opaque(monkeypatch):
+    from jellytoast import ui_helpers
+
+    monkeypatch.setattr(pc, "is_mobile_shell", lambda: True)
+    monkeypatch.setattr(pc, "is_docked", lambda: False)
+    assert ui_helpers._popup_fill_opaque_on_macos("rgba(67, 67, 67, 0.65)") == "rgb(67, 67, 67)"
+    monkeypatch.setattr(pc, "is_mobile_shell", lambda: False)
+    if not ui_helpers.IS_MACOS:
+        assert ui_helpers._popup_fill_opaque_on_macos("rgba(67, 67, 67, 0.65)").endswith("0.65)")

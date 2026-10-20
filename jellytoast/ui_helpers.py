@@ -84,7 +84,25 @@ def _popup_fill_opaque_on_macos(fill: str) -> str:
     GLOBAL_STYLE bare QMenu/QComboBox path and the blur-aware
     ``popup_body_fill``). No-op off macOS, where the fill rides real blur or an
     opaque popup window. Accepts an ``rgba(r, g, b, a)`` literal; returns it
-    unchanged if it can't parse. Never raises."""
+    unchanged if it can't parse. Never raises.
+
+    A phone shell (Plasma Mobile, not docked) gets FULL opacity: it reports
+    blur but nothing blurs behind a popup there, so the 0.65 fill let the page
+    show through every dropdown."""
+    phone = False
+    try:
+        from jellytoast.platform_compat import is_docked, is_mobile_shell
+
+        phone = is_mobile_shell() and not is_docked()
+    except Exception:
+        pass
+    if phone:
+        s = fill.strip()
+        if s.startswith("rgba(") and s.endswith(")"):
+            parts = [p.strip() for p in s[5:-1].split(",")]
+            if len(parts) == 4:
+                return f"rgb({parts[0]}, {parts[1]}, {parts[2]})"
+        return fill
     if not IS_MACOS:
         return fill
     s = fill.strip()

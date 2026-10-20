@@ -712,6 +712,10 @@ class NowPlayingPage(_PhonePlayerMixin, _LeftPaneMixin, _LyricsMixin, QWidget):
         # starts playback. button_qss(BTN_PRIMARY) renders a visible
         # focus state via Qt's default focus rect on top of the fill.
         self._play_cta.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+        from jellytoast import touch as _touch
+
+        if _touch.phone_ui():  # no keyboard nav on a phone: no focus outline
+            self._play_cta.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self._play_cta.clicked.connect(self._on_play_preview)
         self._play_cta.hide()  # shown by _update_cta_visibility in preview mode
         # Down arrow on the focused Play CTA dives into the track

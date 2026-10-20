@@ -394,6 +394,17 @@ def _theme_state_leak_guard():
         mod = sys.modules.get(mod_name)
         if mod is not None:
             setattr(mod, attr, _THEME_BASELINE[(mod_name, attr)])
+    if changed:
+        # Modules that did `from jellytoast.ui_helpers import TEXT` hold their
+        # own copies; push the restored values to them too, as refresh_theme
+        # does — otherwise e.g. settings_dialog kept a leaked light-theme TEXT.
+        uih = sys.modules.get("jellytoast.ui_helpers")
+        prop = getattr(uih, "_propagate_theme_constants", None)
+        if prop is not None:
+            try:
+                prop()
+            except Exception:
+                pass
 
 
 @pytest.fixture(autouse=True)
