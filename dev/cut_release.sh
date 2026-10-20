@@ -85,7 +85,7 @@ fi
 pins="$(gh issue list --label pin-health --state open --json number,url --jq '.[] | "#\(.number) \(.url)"' 2>/dev/null || true)"
 if [ -n "$pins" ]; then
   echo "note: open pin-health report(s) — skim before shipping:"
-  echo "$pins" | sed 's/^/  /'
+  while IFS= read -r line; do echo "  $line"; done <<<"$pins"
 fi
 
 TODAY="$(date -u +%Y-%m-%d)"
