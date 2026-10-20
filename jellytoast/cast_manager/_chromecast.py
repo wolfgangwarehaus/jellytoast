@@ -235,6 +235,9 @@ class _ChromecastMixin:
         current_time: float = 0.0,
         is_live: bool = False,
     ) -> bool:
+        # Why the last cast failed, when we can tell; the dispatcher reads it
+        # to give a useful message instead of a bare "Could not cast".
+        self.last_cast_failure = None
         try:
             cc = dev.cast_object
             if cc is None:
@@ -327,6 +330,7 @@ class _ChromecastMixin:
                         "LAN-only hostname) or the codec is unsupported."
                     )
                     self._dump_cast_status(mc)
+                    self._note_relay_unreachable(url)
                     return False
                 time.sleep(0.25)
             final = getattr(mc.status, "player_state", None)
@@ -340,10 +344,29 @@ class _ChromecastMixin:
                 final,
             )
             self._dump_cast_status(mc)
+            self._note_relay_unreachable(url)
             return False
         except Exception as e:
             logger.warning("Chromecast play: %s", e)
             return False
+
+    def _note_relay_unreachable(self, url: str) -> None:
+        """The receiver took the session but never played. If the stream
+        went through our relay and the device never fetched it, it couldn't
+        reach this machine — a host firewall (CachyOS ships ufw on) blocking
+        the relay port. Seen with a Tailscale server address, which always
+        routes through the relay."""
+        try:
+            from jellytoast.cast_proxy import get_cast_proxy
+
+            if get_cast_proxy().was_fetched(url) is False:
+                logger.warning(
+                    "Chromecast play: the device never fetched the relayed "
+                    "stream — a firewall is likely blocking the cast relay port"
+                )
+                self.last_cast_failure = "relay_unreachable"
+        except Exception as e:
+            logger.debug("relay fetch check failed: %s", e)
 
     def connect_to_chromecast_async(
         self, dev: CastDevice, on_done: Optional[Callable[[bool], None]] = None

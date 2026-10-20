@@ -375,6 +375,10 @@ class _ProxyServer(http.server.ThreadingHTTPServer):
         # relayed unverified from then on, so a self-signed media server
         # doesn't pay a failed-verify round-trip on every chunk/seek request.
         self._insecure_hosts: set[str] = set()
+        # Tokens a cast device has actually requested. A failed cast whose
+        # stream token was never fetched means the device couldn't reach
+        # this machine at all — almost always a host firewall.
+        self._fetched: set[str] = set()
         self._lock = threading.Lock()
 
     def is_insecure_host(self, host: str) -> bool:
@@ -391,6 +395,7 @@ class _ProxyServer(http.server.ThreadingHTTPServer):
         The server keeps running for the next session."""
         with self._lock:
             self._tokens.clear()
+            self._fetched.clear()
 
     def register(self, upstream_url: str) -> str:
         token = secrets.token_urlsafe(12)
@@ -411,7 +416,15 @@ class _ProxyServer(http.server.ThreadingHTTPServer):
                 # (re-requested on every buffer refill / seek) can't age
                 # out and get FIFO-evicted mid-playback.
                 self._tokens.move_to_end(token)
+                self._fetched.add(token)
             return url
+
+    def was_fetched(self, token: str) -> Optional[bool]:
+        """True/False once ``token`` is registered; None if it isn't."""
+        with self._lock:
+            if token not in self._tokens:
+                return None
+            return token in self._fetched
 
 
 class CastProxy:
@@ -533,6 +546,20 @@ class CastProxy:
             token = self._server.register(upstream_url)
             port = self._server.server_address[1]
             return f"http://{self._lan_ip}:{port}/s/{token}"
+
+    def was_fetched(self, url: str) -> Optional[bool]:
+        """Whether a cast device ever requested the relay URL ``url``
+        (as returned by :meth:`proxy_url`). None when ``url`` isn't one of
+        ours — a direct cast, or the token already expired."""
+        with self._lock:
+            server, lan_ip = self._server, self._lan_ip
+        if server is None or not url:
+            return None
+        u = urlparse(url)
+        parts = u.path.strip("/").split("/")
+        if u.hostname != lan_ip or len(parts) != 2 or parts[0] != "s":
+            return None
+        return server.was_fetched(parts[1])
 
     def clear_tokens(self) -> None:
         """Expire all registered stream tokens — called when a cast session

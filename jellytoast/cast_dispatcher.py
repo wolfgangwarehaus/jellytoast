@@ -38,6 +38,42 @@ def _ap2_dbg(msg: str) -> None:
         logger.debug("ap2: %s", msg)
 
 
+
+def _cast_failure_text(cast_manager, dev) -> str:
+    text = QCoreApplication.translate("CastDispatcher", "Could not cast to {0}.").format(
+        dev.name
+    )
+    if getattr(cast_manager, "last_cast_failure", None) != "relay_unreachable":
+        return text
+    # The device took the session but never fetched the stream from our
+    # relay: this machine's firewall is blocking it (CachyOS ships ufw
+    # on). Hand over the exact rule, scoped to the LAN.
+    from jellytoast.cast_manager import _lan_cidrs
+    from jellytoast.cast_proxy import _PROXY_PORT
+    from jellytoast.platform_compat import IS_MACOS, IS_WINDOWS
+
+    text += "\n\n" + QCoreApplication.translate(
+        "CastDispatcher",
+        "{0} couldn't reach this computer to fetch the audio. A firewall "
+        "is probably blocking jellytoast's cast relay (port {1}).",
+    ).format(dev.name, _PROXY_PORT)
+    if IS_WINDOWS or IS_MACOS:
+        text += " " + QCoreApplication.translate(
+            "CastDispatcher",
+            "Allow incoming connections for jellytoast on private networks.",
+        )
+        return text
+    cidrs = _lan_cidrs()
+    src = f"from {cidrs[0]} " if cidrs else ""
+    text += "\n\n" + QCoreApplication.translate(
+        "CastDispatcher",
+        "ufw:\n    sudo ufw allow {0}to any port {1} proto tcp\n\n"
+        "firewalld:\n    sudo firewall-cmd --permanent --add-port={1}/tcp\n"
+        "    sudo firewall-cmd --reload",
+    ).format(src, _PROXY_PORT)
+    return text
+
+
 class _CastDispatcherMixin:
     """Cast dispatch, mixed into ``JellytoastWindow``. Plain-``object`` mixin
     (single Qt base on the window)."""
@@ -261,9 +297,7 @@ class _CastDispatcherMixin:
                 frosted_warning(
                     self,
                     QCoreApplication.translate("CastDispatcher", "Cast failed"),
-                    QCoreApplication.translate(
-                        "CastDispatcher", "Could not cast to {0}."
-                    ).format(_dev.name),
+                    _cast_failure_text(self.cast_manager, _dev),
                     icon_name="cast",
                 )
                 # We stopped local mpv up front (stop_requested at the top of
