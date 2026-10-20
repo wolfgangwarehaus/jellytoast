@@ -992,7 +992,7 @@ class _TileDelegate(QStyledItemDelegate):
         # has no canonical meaning).
         # Hover affordances stay hidden after a touch: Qt's touch→mouse
         # emulation sets the hover state, but a tap there won't fire them.
-        hover_ui = not touch.last_input_was_touch()
+        hover_ui = touch.hover_affordances()
         if (
             hover_ui
             and self._show_play_overlay
@@ -1807,7 +1807,7 @@ class _LibraryListView(QListView):
             # a finger never hovers, so on touch a tap anywhere on the tile
             # opens it (play / favorite / download live in its long-press
             # menu and on the album page instead).
-            hover_live = not touch.is_touch_event(e)
+            hover_live = not touch.is_touch_event(e) and touch.hover_affordances()
             heart_rect = self._tile_delegate.heart_rect_for(cell)
             if hover_live and heart_rect.contains(pos) and item_id:
                 self._toggle_favorite(item, item_id)

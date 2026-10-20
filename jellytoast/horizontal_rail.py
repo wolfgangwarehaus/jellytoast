@@ -150,6 +150,7 @@ class _RailListView(QListView):
         if (
             self._delegate._show_play_overlay
             and not touch.is_touch_event(e)  # hover-revealed: not hit-live on touch
+            and touch.hover_affordances()  # …nor on a phone shell (no hover)
             and self._delegate.overlay_rect_for(cell).contains(pos)
             and item_id
         ):

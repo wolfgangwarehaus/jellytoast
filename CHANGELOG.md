@@ -19,6 +19,9 @@ developer-facing history lives in [`docs/CHANGELOG.md`](docs/CHANGELOG.md).
 - **Tidier menus on phones.** The view menu at the top is solid instead of
   see-through, and top-bar buttons only get their purple outline when you're
   using the keyboard.
+- **No stray play buttons on phones.** Album covers no longer show their
+  hover play button (or the heart / download corners) on a phone — tap an
+  album to open it, long-press for its menu.
 - **No more "not bit-perfect" pop-up.** It used to appear whenever other audio
   played at the same time.
 - **Phone screens fit with wider fonts.** With some fonts (like DejaVu Sans)

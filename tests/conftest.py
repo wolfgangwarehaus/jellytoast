@@ -404,6 +404,9 @@ def _input_mode_leak_guard():
         m = sys.modules.get(mod)
         if m is not None:
             setattr(m, attr, False)
+    t = sys.modules.get("jellytoast.touch")
+    if t is not None and hasattr(t, "_hover_shell"):
+        t._hover_shell = (-1e9, True)  # re-read the shell next time
 
 
 @pytest.fixture(autouse=True)

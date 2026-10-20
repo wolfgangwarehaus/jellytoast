@@ -658,3 +658,23 @@ def test_no_button_focus_ring_after_touch(app, monkeypatch):
     finally:
         keyboard_focus.note_pointer_input()
         host.deleteLater()
+
+
+def test_no_hover_affordances_on_a_phone_shell(monkeypatch):
+    """A phone has no real hover: a streamed mouse parked over a tile at
+    launch lit its play disc. Docked (keyboard + mouse) keeps hover."""
+    from jellytoast import platform_compat as pc
+
+    monkeypatch.setattr(touch, "_hover_shell", (-1e9, True))
+    monkeypatch.setattr(touch, "_last_input_touch", False)
+    monkeypatch.setattr(pc, "is_mobile_shell", lambda: True)
+    monkeypatch.setattr(pc, "is_docked", lambda: False)
+    assert touch.hover_affordances() is False
+    monkeypatch.setattr(touch, "_hover_shell", (-1e9, True))
+    monkeypatch.setattr(pc, "is_docked", lambda: True)
+    assert touch.hover_affordances() is True
+    monkeypatch.setattr(touch, "_hover_shell", (-1e9, True))
+    monkeypatch.setattr(pc, "is_mobile_shell", lambda: False)
+    assert touch.hover_affordances() is True
+    monkeypatch.setattr(touch, "_last_input_touch", True)
+    assert touch.hover_affordances() is False

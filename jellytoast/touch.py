@@ -69,6 +69,32 @@ def is_touch_event(event) -> bool:
         return False
 
 
+_HOVER_SHELL_TTL_S = 2.0
+_hover_shell = (-1e9, True)  # (checked_at, phone shell allows hover)
+
+
+def hover_affordances() -> bool:
+    """Whether hover-revealed UI (a tile's play disc, heart / download
+    corners) may show. Never after a touch; and never on a phone shell
+    unless docked — a phone has no real hover, and when it is driven
+    through a streamed mouse the parked pointer "hovered" whatever tile it
+    sat on at launch. Cached briefly: delegates ask on every paint and
+    ``is_docked()`` reads a file."""
+    global _hover_shell
+    if _last_input_touch:
+        return False
+    import time
+
+    from jellytoast.platform_compat import is_docked, is_mobile_shell
+
+    now = time.monotonic()
+    checked, ok = _hover_shell
+    if now - checked > _HOVER_SHELL_TTL_S:
+        ok = (not is_mobile_shell()) or is_docked()
+        _hover_shell = (now, ok)
+    return ok
+
+
 def last_input_was_touch() -> bool:
     """Whether the most recent pointer input was a finger (flips back on the
     next real mouse movement). Delegates use it to hide hover-revealed
