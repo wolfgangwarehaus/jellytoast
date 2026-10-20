@@ -371,6 +371,21 @@ Next (the rest of the sweep):
   hides the bar while it's up (`phone_player_changed`). New icons: lyrics,
   visualizer. Rail: letters ↔ line cross-fade, scroll pill.
   Not yet seen: real synced lyrics in it (demo has none).
+- [x] **Phone polish round 2 (2026-10-20, from august's device screenshots):**
+  - august drives the phone through a STREAM, so input arrives as mouse/keys,
+    not touch. Phone behaviour is gated on `touch.phone_ui()` (mobile shell,
+    not docked), never on touch events.
+  - No hover play disc / corner buttons on tiles (`touch.hover_affordances()`),
+    including the matching hit-tests (grid, rails, artist page).
+  - Top-bar buttons and the album page's Play take no focus on a phone (our
+    focus ring, then Breeze's own faint one, kept outlining "Now Playing").
+  - Popups fully opaque on a phone (`_popup_fill_opaque_on_macos`): the
+    "opaque" popup token is 0.65 alpha on dark/frosted themes.
+  - Now Playing layout pinned: fixed 2-line title box (bottom-anchored), one
+    elided format line, controls at a constant height, so the art doesn't
+    shift between tracks. Device confirmation pending.
+  - Album pages render at once from grid data (`library_grid.known_item`):
+    a Navidrome mid-scan took 15 s to answer getAlbum.
 - [ ] Ideas not done: tap feedback on tiles / rows (a deferred tap shows no
   pressed state while the finger is down); long-press volume → mute if
   august wants touch mute back; favorite from the mini player (the heart
