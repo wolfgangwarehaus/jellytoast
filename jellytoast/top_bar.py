@@ -414,6 +414,9 @@ class JtTopBar(QWidget):
         # controls hide on maximize, buttons step into the ⋮ menu), which
         # left the dropdown at a stale, off-centre x. Re-centre on those too.
         left_col.installEventFilter(self)
+        # Focus-visible: a button's accent ring only for KEYBOARD focus (see
+        # eventFilter). Wired once every button exists — end of __init__.
+        QTimer.singleShot(0, self._watch_button_focus)
         right_col.installEventFilter(self)
         layout.addWidget(left_col)
         layout.addStretch(1)
@@ -575,7 +578,34 @@ class JtTopBar(QWidget):
         right = self.more_btn.mapToGlobal(self.more_btn.rect().bottomRight())
         self._exec_menu_with_kbd_grab(menu, QPoint(right.x() - menu.sizeHint().width(), right.y()))
 
+    def _watch_button_focus(self) -> None:
+        for btn in self.findChildren(QPushButton):
+            btn.installEventFilter(self)
+
+    # Focus that arrives by keyboard. Anything else — a page swap handing
+    # focus to the first button, a click, a menu parking focus on its anchor
+    # — got the same accent ring, which read as a stuck purple outline on
+    # "Now Playing" (worst on a phone streamed as mouse input, where the
+    # touch filter's focus drop never runs).
+    _KBD_REASONS = (
+        Qt.FocusReason.TabFocusReason,
+        Qt.FocusReason.BacktabFocusReason,
+        Qt.FocusReason.ShortcutFocusReason,
+    )
+
     def eventFilter(self, obj, event):  # noqa: N802 — Qt naming
+        et = event.type()
+        if et in (QEvent.Type.FocusIn, QEvent.Type.FocusOut) and isinstance(obj, QPushButton):
+            from jellytoast.keyboard_focus import last_input_was_keyboard
+
+            kbd = et == QEvent.Type.FocusIn and (
+                event.reason() in self._KBD_REASONS or last_input_was_keyboard()
+            )
+            if bool(obj.property("kbdFocus")) != kbd:
+                obj.setProperty("kbdFocus", kbd)
+                obj.style().unpolish(obj)
+                obj.style().polish(obj)
+            return super().eventFilter(obj, event)
         if event.type() in (QEvent.Type.Resize, QEvent.Type.Move) and obj in (
             getattr(self, "_left_col", None),
             getattr(self, "_right_col", None),
@@ -920,10 +950,10 @@ class JtTopBar(QWidget):
             QPushButton:pressed {{
                 background: {_u.WASH_PRESSED};
             }}
-            QPushButton:focus {{
+            QPushButton:focus {{ outline: none; }}
+            QPushButton[kbdFocus="true"]:focus {{
                 background: {_u.WASH_HOVER};
                 border-color: {_u.ACCENT};
-                outline: none;
             }}
         """
 
@@ -946,10 +976,10 @@ class JtTopBar(QWidget):
             }}
             QPushButton:hover {{ background: {_u.WASH_HOVER}; }}
             QPushButton:pressed {{ background: {_u.WASH_PRESSED}; }}
-            QPushButton:focus {{
+            QPushButton:focus {{ outline: none; }}
+            QPushButton[kbdFocus="true"]:focus {{
                 background: {_u.WASH_HOVER};
                 border-color: {_u.ACCENT};
-                outline: none;
             }}
         """
 
@@ -969,10 +999,10 @@ class JtTopBar(QWidget):
             }}
             QPushButton:hover {{ background: {_u.WASH_HOVER}; }}
             QPushButton:pressed {{ background: {_u.WASH_PRESSED}; }}
-            QPushButton:focus {{
+            QPushButton:focus {{ outline: none; }}
+            QPushButton[kbdFocus="true"]:focus {{
                 background: {_u.WASH_HOVER};
                 border-color: {_u.ACCENT};
-                outline: none;
             }}
         """
 

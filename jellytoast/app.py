@@ -1127,18 +1127,12 @@ class JellytoastWindow(_NavMixin, _SessionMixin, _CastDispatcherMixin, _ShuffleP
 
     def _on_bit_perfect_contested(self):
         """Other apps' streams are mixing on the sink while bit-perfect
-        plays through PipeWire — sound works, the claim doesn't. A
-        transient toast (not a dialog: nothing is broken, the user just
-        deserves to know)."""
-        from jellytoast.toast import show_toast
-
-        show_toast(
-            self,
-            self.tr(
-                "Other audio is playing — output is shared, not bit-perfect, "
-                "until other playback stops."
-            ),
-            bottom_margin=128,
+        plays through PipeWire — sound works, the claim doesn't. Logged only:
+        august found the toast that used to pop here unwanted (2026-10-20);
+        nothing is broken and playback continues."""
+        logger.info(
+            "bit-perfect contested: other audio is mixing on the output "
+            "until other playback stops"
         )
 
     def _reveal_window(self):

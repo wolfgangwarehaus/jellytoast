@@ -752,3 +752,31 @@ def test_tap_opened_menu_drops_the_buttons_focus_ring(qapp, monkeypatch):
     assert QApplication.focusWidget() is top.view_btn or not top.view_btn.isVisible()
     keyboard_focus.note_pointer_input()
     host.deleteLater()
+
+
+def test_top_bar_focus_ring_only_for_keyboard_focus(qapp):
+    """A page swap / click handing focus to "Now Playing" must not light the
+    accent ring (the stuck purple outline); Tab focus still does."""
+    from PySide6.QtCore import Qt
+    from PySide6.QtWidgets import QWidget
+
+    from jellytoast import keyboard_focus
+    from jellytoast.top_bar import JtTopBar
+
+    host = QWidget()
+    top = JtTopBar(host, titlebar_mode=True)
+    host.show()
+    host.activateWindow()
+    _settle(qapp)
+    btn = top.view_btn
+    btn.show()
+    keyboard_focus.note_pointer_input()
+    btn.setFocus(Qt.FocusReason.OtherFocusReason)
+    _settle(qapp)
+    assert not btn.property("kbdFocus")
+    btn.clearFocus()
+    btn.setFocus(Qt.FocusReason.TabFocusReason)
+    _settle(qapp)
+    assert btn.property("kbdFocus") is True
+    assert 'QPushButton[kbdFocus="true"]:focus' in btn.styleSheet()
+    host.deleteLater()
