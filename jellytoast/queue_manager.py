@@ -16,6 +16,33 @@ from typing import Dict, List, Optional
 from PySide6.QtCore import QObject, QTimer, Slot
 
 logger = logging.getLogger(__name__)
+
+
+def _own_track_art(item: Dict) -> "tuple[str, str] | None":
+    """``(image_id, art_tag)`` for a track that has art of its OWN, else
+    None (show the album's). Offline keeps album art: that's what's cached.
+
+    * Navidrome / Subsonic: the song's ``coverArt`` (adapted into
+      ``AlbumPrimaryImageTag``) is ``mf-<song>_<hash>`` when the file
+      embeds art and ``al-<album>_<hash>`` when it doesn't. getCoverArt
+      takes the ``mf-`` id directly.
+    * Jellyfin: a track with its own image has ``ImageTags.Primary``
+      distinct from the album's ``AlbumPrimaryImageTag``.
+    """
+    try:
+        from jellytoast import offline
+
+        if offline.is_offline_mode():
+            return None
+    except Exception:
+        pass
+    cover = str(item.get("AlbumPrimaryImageTag") or "")
+    if cover.startswith("mf-"):
+        return cover, cover
+    own_tag = str((item.get("ImageTags") or {}).get("Primary") or "")
+    if own_tag and not cover.startswith(("al-", "mf-")) and own_tag != cover:
+        return item.get("Id", ""), own_tag
+    return None
 from jellytoast import async_io
 from jellytoast.player_state import (
     NowPlaying,
@@ -658,18 +685,23 @@ class QueueManager(QObject):
             thumb_url = ""
             art_tag = ""
         else:
-            image_id = (
-                item.get("AlbumId") if item_type == "Audio" and item.get("AlbumId") else item_id
-            )
+            own = _own_track_art(item) if item_type == "Audio" else None
+            if own is not None:
+                # The track carries its own art (#239: an album whose tracks
+                # each embed a different picture showed the album cover for
+                # all of them).
+                image_id, art_tag = own
+            else:
+                image_id = (
+                    item.get("AlbumId") if item_type == "Audio" and item.get("AlbumId") else item_id
+                )
+                # Art version token — prefer the ALBUM's tag when we're
+                # showing album art (it moves when the album cover changes);
+                # fall back to the track's own primary tag.
+                tags = item.get("ImageTags") or {}
+                art_tag = str(item.get("AlbumPrimaryImageTag") or tags.get("Primary") or "")
             thumb_url = self.api.get_image_url(image_id, "Primary", 600)
             image_id = image_id or ""
-            # Art version token — prefer the ALBUM's tag when we're
-            # showing album art (it moves when the album cover changes);
-            # fall back to the track's own primary tag.
-            tags = item.get("ImageTags") or {}
-            art_tag = str(
-                item.get("AlbumPrimaryImageTag") or tags.get("Primary") or ""
-            )
 
         if item_type == "Audio":
             artists = item.get("Artists", [])

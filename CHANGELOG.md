@@ -19,6 +19,10 @@ developer-facing history lives in [`docs/CHANGELOG.md`](docs/CHANGELOG.md).
 - **Tidier menus on phones.** The view menu at the top is solid instead of
   see-through, and top-bar buttons only get their purple outline when you're
   using the keyboard.
+- **Each song shows its own cover art.** On albums where songs carry their
+  own embedded art (compilations, singles collections), Now Playing, the
+  player bar and the lock screen now show each song's picture instead of
+  the album's.
 - **Albums open instantly.** Tapping an album now shows its cover, title and
   artist right away from what the library already loaded, instead of a blank
   "Loading…" while a busy server (say, Navidrome mid-scan) catches up.

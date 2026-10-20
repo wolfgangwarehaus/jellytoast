@@ -1135,6 +1135,12 @@ def art_stem(item_id: str, tag: str = "") -> str:
     (matching today's per-item behaviour). The URL is still built from
     the item id — only cache IDENTITY carries the token."""
     tag = (tag or "").strip()
+    # A Navidrome track's own art (``mf-<song>_<hash>``, #239): key it by the
+    # image hash, so the tracks of an album that embed the SAME picture share
+    # one cache slot instead of a download each. (Album keys stay as they
+    # were — changing them would re-fetch every cached cover.)
+    if tag.startswith("mf-") and "_" in tag:
+        return f"mf@{tag.rsplit('_', 1)[1]}"
     return f"{item_id}@{tag}" if tag else item_id
 
 
