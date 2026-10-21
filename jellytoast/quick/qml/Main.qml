@@ -25,14 +25,14 @@ ApplicationWindow {
 
     // ── sections ──
     readonly property var sections: [
-        { key: "home", label: qsTr("Home") },
-        { key: "album", label: qsTr("Albums") },
-        { key: "artist", label: qsTr("Artists") },
-        { key: "playlist", label: qsTr("Playlists") },
-        { key: "song", label: qsTr("Songs") },
-        { key: "genre", label: qsTr("Genres") },
-        { key: "favorite", label: qsTr("Favorites") },
-        { key: "download", label: qsTr("Downloads") }
+        { key: "home", label: qsTr("Home"), icon: "home" },
+        { key: "album", label: qsTr("Albums"), icon: "grid" },
+        { key: "artist", label: qsTr("Artists"), icon: "user" },
+        { key: "playlist", label: qsTr("Playlists"), icon: "list" },
+        { key: "song", label: qsTr("Songs"), icon: "music_note" },
+        { key: "genre", label: qsTr("Genres"), icon: "sort" },
+        { key: "favorite", label: qsTr("Favorites"), icon: "favorite_outline" },
+        { key: "download", label: qsTr("Downloads"), icon: "download" }
     ]
     property string section: "album"
 
@@ -144,7 +144,7 @@ ApplicationWindow {
                 hoverEnabled: false
                 implicitWidth: sectionRow.implicitWidth + 24
                 implicitHeight: 44
-                onClicked: sectionMenu.popup(this, (width - sectionMenu.width) / 2, height)
+                onClicked: sectionSheet.open()
                 background: Rectangle { radius: 22; color: theme.text; opacity: sectionButton.pressed ? 0.1 : 0 }
                 contentItem: Item {
                     Row {
@@ -162,20 +162,6 @@ ApplicationWindow {
                             name: "chevron_down"
                             tint: theme.textDim
                             size: 18
-                        }
-                    }
-                }
-                Menu {
-                    id: sectionMenu
-                    objectName: "sectionMenu"
-                    Repeater {
-                        model: win.sections
-                        MenuItem {
-                            required property var modelData
-                            text: modelData.label
-                            checkable: true
-                            checked: win.section === modelData.key
-                            onTriggered: win.showSection(modelData.key)
                         }
                     }
                 }
@@ -339,6 +325,39 @@ ApplicationWindow {
             var cur = stack.currentItem
             if (!(cur && cur.album && cur.album.id === album.id))
                 win.openItem("album", album)
+        }
+    }
+
+    // The section picker ("Albums ⌄").
+    Sheet {
+        id: sectionSheet
+        objectName: "sectionSheet"
+        SheetHeading { text: qsTr("BROWSE") }
+        Repeater {
+            model: win.sections
+            SheetRow {
+                id: srow
+                required property var modelData
+                objectName: "section_" + modelData.key
+                readonly property bool current: win.section === modelData.key
+                iconName: modelData.icon
+                text: modelData.label
+                tint: current ? theme.accent : theme.text
+                onClicked: {
+                    sectionSheet.close()
+                    if (!current || stack.depth > 1)
+                        win.showSection(modelData.key)
+                }
+                Icon {
+                    anchors.right: parent.right
+                    anchors.rightMargin: 8
+                    anchors.verticalCenter: parent.verticalCenter
+                    visible: srow.current
+                    name: "check"
+                    tint: theme.accent
+                    size: 20
+                }
+            }
         }
     }
 

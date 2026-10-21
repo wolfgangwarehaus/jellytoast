@@ -1785,12 +1785,17 @@ jellytoast funcionará, pero las funciones de bandeja no estarán disponibles.</
         <translation type="obsolete">Ajustes</translation>
     </message>
     <message>
-        <location filename="../quick/qml/Main.qml" line="227"/>
+        <location filename="../quick/qml/Main.qml" line="213"/>
         <source>Offline — showing your downloads</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../quick/qml/Main.qml" line="359"/>
+        <location filename="../quick/qml/Main.qml" line="335"/>
+        <source>BROWSE</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../quick/qml/Main.qml" line="378"/>
         <source>Cast failed</source>
         <translation type="unfinished">Fallo al enviar</translation>
     </message>

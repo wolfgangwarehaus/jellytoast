@@ -127,8 +127,12 @@ def _open_settings(quick):
 
 
 def _section(quick, label):
+    """Albums ⌄ → the section sheet → the row labelled ``label``."""
+    key = quick.eval(f"win.sections.find(s => s.label === {label!r}).key")
     quick.tap("sectionButton")
-    quick.tap(f"text:{label}")
+    quick.wait_until(lambda: quick.eval("sectionSheet.opened"))
+    quick.tap(f"section_{key}")
+    quick.wait_until(lambda: not quick.eval("sectionSheet.visible"))
     quick.wait_idle()
 
 
