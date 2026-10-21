@@ -66,7 +66,17 @@ class LibraryModel(QAbstractListModel):
     URL the server answers directly — auth rides in the URL), ``letter``."""
 
     PAGE = 100
-    KINDS = ("album", "artist", "playlist", "song", "genre", "artistAlbums", "genreAlbums")
+    KINDS = (
+        "album",
+        "artist",
+        "playlist",
+        "song",
+        "genre",
+        "artistAlbums",
+        "genreAlbums",
+        "favAlbums",
+        "favSongs",
+    )
 
     IdRole = Qt.ItemDataRole.UserRole + 1
     NameRole = IdRole + 1
@@ -108,7 +118,7 @@ class LibraryModel(QAbstractListModel):
 
     def _subtitle(self, it: Dict) -> str:
         k = self._kind
-        if k in ("album", "artistAlbums", "genreAlbums"):
+        if k in ("album", "artistAlbums", "genreAlbums", "favAlbums"):
             return it.get("AlbumArtist") or ", ".join(
                 a.get("Name", "") for a in (it.get("AlbumArtists") or []) if isinstance(a, dict)
             )
@@ -118,7 +128,7 @@ class LibraryModel(QAbstractListModel):
         if k == "playlist":
             n = int(it.get("ChildCount") or 0)
             return f"{n} songs" if n != 1 else "1 song"
-        if k == "song":
+        if k in ("song", "favSongs"):
             artists = ", ".join(a for a in (it.get("Artists") or []) if isinstance(a, str))
             return " · ".join(
                 x for x in (artists or it.get("AlbumArtist", ""), it.get("Album", "")) if x
@@ -209,6 +219,11 @@ class LibraryModel(QAbstractListModel):
             resp = prov.get_items("", "Playlist", n, start, "SortName", "Ascending", True)
         elif k == "song":
             resp = prov.get_items("", "Audio", n, start, "SortName", "Ascending", True)
+        elif k in ("favAlbums", "favSongs"):
+            typ = "MusicAlbum" if k == "favAlbums" else "Audio"
+            resp = prov.get_items(
+                "", typ, n, start, "SortName", "Ascending", True, filters="IsFavorite"
+            )
         elif k == "artist":
             return list(prov.get_artists(n, start) or [])
         elif k == "genre":
@@ -239,7 +254,7 @@ class LibraryModel(QAbstractListModel):
             for it in items:
                 if kind == "genre":
                     continue
-                if kind == "song":
+                if kind in ("song", "favSongs"):
                     src = it.get("AlbumId") or it.get("Id", "")
                     it["_cover"] = prov.get_image_url(src, "Primary", 160) if src else ""
                 else:
@@ -314,7 +329,15 @@ class LibraryModel(QAbstractListModel):
             "year": str(it.get("ProductionYear") or ""),
             "cover": it.get("_cover", ""),
             "kind": self._kind,
+            "favorite": bool((it.get("UserData") or {}).get("IsFavorite")),
         }
+
+    @Slot(str, bool)
+    def markFavorite(self, item_id: str, on: bool) -> None:  # noqa: N802
+        """Reflect a favourite toggle in the loaded rows (menus read it)."""
+        for it in self._items:
+            if it.get("Id") == item_id:
+                it.setdefault("UserData", {})["IsFavorite"] = bool(on)
 
     def item(self, row: int) -> Dict:
         return self._items[row] if 0 <= row < len(self._items) else {}

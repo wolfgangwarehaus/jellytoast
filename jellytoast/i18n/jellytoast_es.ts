@@ -19,12 +19,17 @@
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../quick/actions.py" line="82"/>
+        <location filename="../quick/actions.py" line="83"/>
+        <source>Starting radio…</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../quick/actions.py" line="91"/>
         <source>Added to favorites</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../quick/actions.py" line="82"/>
+        <location filename="../quick/actions.py" line="91"/>
         <source>Removed from favorites</source>
         <translation type="unfinished"></translation>
     </message>
@@ -965,24 +970,39 @@ Esto libera el almacenamiento de inmediato. Tu biblioteca en el servidor no se v
 <context>
     <name>ItemMenu</name>
     <message>
-        <location filename="../quick/qml/ItemMenu.qml" line="21"/>
+        <location filename="../quick/qml/ItemMenu.qml" line="24"/>
         <source>Play</source>
         <translation type="unfinished">Reproducir</translation>
     </message>
     <message>
-        <location filename="../quick/qml/ItemMenu.qml" line="27"/>
+        <location filename="../quick/qml/ItemMenu.qml" line="30"/>
         <source>Shuffle</source>
         <translation type="unfinished">Aleatorio</translation>
     </message>
     <message>
-        <location filename="../quick/qml/ItemMenu.qml" line="33"/>
+        <location filename="../quick/qml/ItemMenu.qml" line="36"/>
+        <source>Start radio</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../quick/qml/ItemMenu.qml" line="42"/>
         <source>Play next</source>
         <translation type="unfinished">Reproducir a continuación</translation>
     </message>
     <message>
-        <location filename="../quick/qml/ItemMenu.qml" line="38"/>
+        <location filename="../quick/qml/ItemMenu.qml" line="49"/>
         <source>Add to queue</source>
         <translation type="unfinished">Añadir a la cola</translation>
+    </message>
+    <message>
+        <location filename="../quick/qml/ItemMenu.qml" line="56"/>
+        <source>Remove from favorites</source>
+        <translation type="unfinished">Quitar de favoritos</translation>
+    </message>
+    <message>
+        <location filename="../quick/qml/ItemMenu.qml" line="56"/>
+        <source>Add to favorites</source>
+        <translation type="unfinished"></translation>
     </message>
 </context>
 <context>
@@ -1220,12 +1240,17 @@ jellytoast funcionará, pero las funciones de bandeja no estarán disponibles.</
         <translation type="unfinished">Aquí no hay nada todavía</translation>
     </message>
     <message>
-        <location filename="../quick/qml/LibraryGridPage.qml" line="128"/>
+        <location filename="../quick/qml/LibraryGridPage.qml" line="129"/>
+        <source>Liked songs</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../quick/qml/LibraryGridPage.qml" line="143"/>
         <source>Play</source>
         <translation type="unfinished">Reproducir</translation>
     </message>
     <message>
-        <location filename="../quick/qml/LibraryGridPage.qml" line="133"/>
+        <location filename="../quick/qml/LibraryGridPage.qml" line="148"/>
         <source>Shuffle</source>
         <translation type="unfinished">Aleatorio</translation>
     </message>
@@ -1566,6 +1591,16 @@ jellytoast funcionará, pero las funciones de bandeja no estarán disponibles.</
         <location filename="../quick/qml/Main.qml" line="32"/>
         <source>Genres</source>
         <translation type="unfinished">Géneros</translation>
+    </message>
+    <message>
+        <location filename="../quick/qml/Main.qml" line="33"/>
+        <source>Favorites</source>
+        <translation type="unfinished">Favoritos</translation>
+    </message>
+    <message>
+        <location filename="../quick/qml/Main.qml" line="68"/>
+        <source>Liked songs</source>
+        <translation type="unfinished"></translation>
     </message>
 </context>
 <context>
@@ -2473,37 +2508,37 @@ Subsonic requiere permiso de administrador para crear / editar / eliminar.</tran
 <context>
     <name>Session</name>
     <message>
-        <location filename="../quick/session.py" line="76"/>
+        <location filename="../quick/session.py" line="77"/>
         <source>Signing in is off in the dev rig — it would replace your real login.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../quick/session.py" line="80"/>
+        <location filename="../quick/session.py" line="82"/>
         <source>Please fill in the server URL and username.</source>
         <translation type="unfinished">Completa la URL del servidor y el usuario.</translation>
     </message>
     <message>
-        <location filename="../quick/session.py" line="108"/>
+        <location filename="../quick/session.py" line="110"/>
         <source>Couldn&apos;t find a {0} server at that address.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../quick/session.py" line="129"/>
+        <location filename="../quick/session.py" line="131"/>
         <source>Couldn&apos;t reach the server. Check the URL and your network.</source>
         <translation type="unfinished">No se pudo conectar con el servidor. Comprueba la URL y tu red.</translation>
     </message>
     <message>
-        <location filename="../quick/session.py" line="131"/>
+        <location filename="../quick/session.py" line="133"/>
         <source>Wrong username or password.</source>
         <translation type="unfinished">Usuario o contraseña incorrectos.</translation>
     </message>
     <message>
-        <location filename="../quick/session.py" line="133"/>
+        <location filename="../quick/session.py" line="135"/>
         <source>Couldn&apos;t sign in: {0}</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../quick/session.py" line="154"/>
+        <location filename="../quick/session.py" line="157"/>
         <source>Signing out is off in the dev rig — it would clear your real login.</source>
         <translation type="unfinished"></translation>
     </message>
@@ -3896,18 +3931,18 @@ Ejecuta pywal (o wallust) una vez para que genere una paleta, y vuelve a activar
 <context>
     <name>SongsPage</name>
     <message>
-        <location filename="../quick/qml/SongsPage.qml" line="8"/>
+        <location filename="../quick/qml/SongsPage.qml" line="9"/>
         <source>Songs</source>
         <translation type="unfinished">Canciones</translation>
     </message>
     <message>
-        <location filename="../quick/qml/SongsPage.qml" line="37"/>
-        <location filename="../quick/qml/SongsPage.qml" line="58"/>
+        <location filename="../quick/qml/SongsPage.qml" line="38"/>
+        <location filename="../quick/qml/SongsPage.qml" line="60"/>
         <source>Added to queue</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../quick/qml/SongsPage.qml" line="58"/>
+        <location filename="../quick/qml/SongsPage.qml" line="60"/>
         <source>Playing next</source>
         <translation type="unfinished"></translation>
     </message>

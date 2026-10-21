@@ -588,9 +588,9 @@ class Settings:
     @property
     def quick_section(self) -> str:
         """Qt Quick phone UI: the library section it last showed (album |
-        artist | playlist | song | genre) — reopened at launch."""
+        artist | playlist | song | genre | favorite) — reopened at launch."""
         v = str(self._s.value("quick/section", "album") or "album")
-        return v if v in ("album", "artist", "playlist", "song", "genre") else "album"
+        return v if v in ("album", "artist", "playlist", "song", "genre", "favorite") else "album"
 
     @quick_section.setter
     def quick_section(self, v: str):

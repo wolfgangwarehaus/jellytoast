@@ -48,7 +48,7 @@ Item {
         reuseItems: true
         bottomMargin: 8
 
-        header: page.kind === "artistAlbums" ? artistHeader : null
+        header: page.kind === "artistAlbums" ? artistHeader : page.kind === "favAlbums" ? favHeader : null
 
         delegate: Item {
             id: cell
@@ -101,7 +101,8 @@ Item {
             TapHandler {
                 id: tap
                 onTapped: page.openItem(page.itemKind, cell.info())
-                onLongPressed: itemMenu.show(cell.info(), cell, point.position.x, point.position.y)
+                onLongPressed: itemMenu.show(Object.assign(cell.info(), { favorite: page.lib.get(cell.index).favorite }),
+                                             cell, point.position.x, point.position.y)
             }
         }
 
@@ -116,6 +117,20 @@ Item {
         }
     }
 
+    Component {
+        id: favHeader
+        Item {
+            width: grid.width
+            height: 64
+            PillButton {
+                objectName: "likedSongs"
+                anchors.centerIn: parent
+                iconName: "favorite_filled"
+                text: qsTr("Liked songs")
+                onClicked: page.openItem("likedSongs", {})
+            }
+        }
+    }
     Component {
         id: artistHeader
         Row {
@@ -146,5 +161,12 @@ Item {
         view: grid
     }
 
-    ItemMenu { id: itemMenu }
+    ItemMenu {
+        id: itemMenu
+        onFavoriteChanged: (id, on) => {
+            page.lib.markFavorite(id, on)
+            if (page.kind === "favAlbums" && !on)
+                page.lib.reload()
+        }
+    }
 }

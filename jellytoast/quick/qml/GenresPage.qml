@@ -39,6 +39,7 @@ Item {
                 elide: Text.ElideRight
             }
             onClicked: page.openItem("genre", { kind: "genre", id: gRow.itemId, name: gRow.name })
+            onPressAndHold: menu.show({ kind: "genre", id: gRow.itemId, name: gRow.name }, gRow, width / 2, height / 2)
         }
         footer: Item {
             width: list.width
@@ -46,4 +47,5 @@ Item {
             BusyIndicator { anchors.centerIn: parent; running: lib.loading; visible: running }
         }
     }
+    ItemMenu { id: menu }
 }

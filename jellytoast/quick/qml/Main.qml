@@ -29,7 +29,8 @@ ApplicationWindow {
         { key: "artist", label: qsTr("Artists") },
         { key: "playlist", label: qsTr("Playlists") },
         { key: "song", label: qsTr("Songs") },
-        { key: "genre", label: qsTr("Genres") }
+        { key: "genre", label: qsTr("Genres") },
+        { key: "favorite", label: qsTr("Favorites") }
     ]
     property string section: "album"
 
@@ -49,7 +50,8 @@ ApplicationWindow {
         else
             page = gridPage
         var props = key === "song" || key === "genre" ? {}
-            : { kind: key, title: sections.find(s => s.key === key).label, source: key === "album" ? albums : null }
+            : { kind: key === "favorite" ? "favAlbums" : key, title: sections.find(s => s.key === key).label,
+                source: key === "album" ? albums : null }
         stack.replace(null, page, props, StackView.Immediate)
     }
 
@@ -62,6 +64,8 @@ ApplicationWindow {
             stack.push(gridPage, { kind: "artistAlbums", parentId: item.id, title: item.name })
         else if (kind === "genre")
             stack.push(gridPage, { kind: "genreAlbums", parentId: item.id, title: item.name })
+        else if (kind === "likedSongs")
+            stack.push(songsPage, { kind: "favSongs", title: qsTr("Liked songs") })
     }
 
     function openSearch() {

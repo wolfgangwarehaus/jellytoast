@@ -333,3 +333,37 @@ def test_settings_change_quality_and_sign_out(quick, monkeypatch):
     quick.tap("text:OK")
     quick.wait_until(lambda: quick.state()["page"] == "SignInPage")
     assert ("server_logout",) in quick.provider.calls
+
+
+# ── M3: favourites, radio ──
+
+
+def test_favorites_section_and_liked_songs(quick):
+    _section(quick, "Favorites")
+    quick.wait_for("text:Album 010")
+    assert quick.find("text:Album 001") is None  # only every 10th is a favourite
+    quick.tap("likedSongs")
+    quick.wait_for("songList")
+    quick.wait_idle()
+    assert quick.state()["title"] == "Liked songs"
+    assert quick.find("text:Track 1 of Album 000") is not None
+    assert quick.find("text:Track 2 of Album 000") is None
+
+
+def test_long_press_start_radio_and_favorite(quick):
+    spy = _Spy("queue_play_now")
+    try:
+        quick.long_press("text:Album 003")
+        quick.tap("text:Start radio")
+        quick.wait_until(lambda: spy.got["queue_play_now"])
+    finally:
+        spy.close()
+    assert ("get_instant_mix", "al3") in quick.provider.calls
+    _items, _start, ctx = spy.got["queue_play_now"][-1]
+    assert ctx.source_id == "al3"
+
+    quick.long_press("text:Album 003")
+    quick.tap("text:Add to favorites")
+    quick.wait_until(lambda: ("toggle_favorite", "al3", True) in quick.provider.calls)
+    quick.long_press("text:Album 003")
+    assert quick.find("text:Remove from favorites") is not None

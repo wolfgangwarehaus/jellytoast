@@ -73,6 +73,15 @@ class Actions(QObject):
             on_error=lambda e: logger.warning("%s %s %s failed: %s", mode, kind, item_id, e),
         )
 
+    @Slot(str, str, str)
+    def startRadio(self, kind: str, item_id: str, name: str) -> None:  # noqa: N802
+        """Endless radio seeded from an album / artist / genre (same as the
+        Widgets "Start radio")."""
+        from jellytoast.ui_helpers import start_seed_radio
+
+        start_seed_radio(kind, item_id, name)
+        self.toast.emit(self.tr("Starting radio…"))
+
     @Slot(str, bool)
     def setFavorite(self, item_id: str, on: bool) -> None:  # noqa: N802
         from jellytoast.ui_helpers import toggle_favorite_async

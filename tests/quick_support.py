@@ -28,6 +28,7 @@ def _album(i: int) -> Dict[str, Any]:
         "AlbumArtists": [{"Id": f"ar{i % len(ARTISTS)}", "Name": artist}],
         "ProductionYear": 1990 + i % 30,
         "Genre": GENRES[i % len(GENRES)],
+        "UserData": {"IsFavorite": i % 10 == 0},
         "Type": "MusicAlbum",
     }
 
@@ -44,6 +45,7 @@ def _track(album: Dict[str, Any], n: int) -> Dict[str, Any]:
         "Album": album["Name"],
         "AlbumId": album["Id"],
         "Type": "Audio",
+        "UserData": {"IsFavorite": n == 1},
     }
 
 
@@ -84,6 +86,7 @@ class FakeProvider:
         sort_order="Ascending",
         recursive=True,
         genre_ids="",
+        filters="",
         **kw,
     ):
         self.calls.append(("get_items", item_types, start, limit))
@@ -95,6 +98,8 @@ class FakeProvider:
             pool = self.songs
         else:
             pool = []
+        if "IsFavorite" in (filters or ""):
+            pool = [x for x in pool if (x.get("UserData") or {}).get("IsFavorite")]
         page = pool[start : start + limit]
         return {"Items": [dict(a) for a in page], "TotalRecordCount": len(pool)}
 
@@ -127,6 +132,18 @@ class FakeProvider:
             "MusicAlbum": [a for a in self.albums if t in a["Name"].lower()][:albums],
             "Audio": [s for s in self.songs if t in s["Name"].lower()][:songs],
         }
+
+    def get_instant_mix(self, item_id, count=50):
+        self.calls.append(("get_instant_mix", item_id))
+        return self.songs[:10]
+
+    def get_similar_songs(self, item_id, count=50):
+        self.calls.append(("get_similar_songs", item_id))
+        return self.songs[:10]
+
+    def get_genre_radio(self, genre, count=50):
+        self.calls.append(("get_genre_radio", genre))
+        return self.songs[:10]
 
     def get_lyrics(self, item_id):
         self.calls.append(("get_lyrics", item_id))

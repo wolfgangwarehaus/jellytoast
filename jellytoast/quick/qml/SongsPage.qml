@@ -5,9 +5,10 @@ import Jellytoast
 
 Item {
     id: page
+    property string kind: "song"  // | "favSongs"
     property string title: qsTr("Songs")
     readonly property bool loading: lib.loading
-    LibraryModel { id: lib; kind: "song" }
+    LibraryModel { id: lib; kind: page.kind }
     Component.onCompleted: if (session.signedIn) lib.reload()
 
     ListView {
@@ -44,6 +45,7 @@ Item {
         }
     }
     AzRail {
+        visible: page.kind === "song"
         anchors.right: parent.right
         anchors.top: parent.top
         anchors.bottom: parent.bottom
