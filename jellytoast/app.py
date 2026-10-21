@@ -2474,6 +2474,13 @@ def main():
 
     _radio_state.init()
 
+    # Qt Quick phone front end (opt-in while it's being built — see
+    # dev/QT_QUICK_PLAN.md). Same core, settings and sign-in; no Widgets window.
+    from jellytoast import quick as _quick
+
+    if _quick.wanted():
+        sys.exit(_quick.run(app))
+
     win = JellytoastWindow(server_url)
     _boot_mark("main window constructed")
     # Stash the startup id so _reveal_window (called once the boot

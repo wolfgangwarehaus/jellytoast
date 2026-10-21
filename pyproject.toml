@@ -250,6 +250,8 @@ exclude = ["tests*", "docs*", "packaging*"]
 # via importlib.resources. The editable .ts sources ship too so a source
 # checkout can regenerate without the repo (dev/update_translations.sh).
 "jellytoast.i18n" = ["*.qm", "*.ts"]
+# Qt Quick phone front end screens (dev/QT_QUICK_PLAN.md).
+"jellytoast.quick" = ["qml/*.qml"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
