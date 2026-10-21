@@ -713,6 +713,22 @@ class JellyfinAPI:
                 strict=True,
             )
 
+    def remove_from_playlist(self, playlist_id: str, entry_ids: List[str]) -> None:
+        for i in range(0, len(entry_ids), 50):
+            ids = ",".join(entry_ids[i : i + 50])
+            self._delete(
+                f"/Playlists/{playlist_id}/Items?entryIds={ids}",
+                "playlist entries",
+                strict=True,
+            )
+
+    def rename_playlist(self, playlist_id: str, name: str) -> None:
+        # Jellyfin 10.9+: POST /Playlists/{id} updates name / users / public.
+        self._post(f"/Playlists/{playlist_id}", {"Name": name}, strict=True)
+
+    def delete_playlist(self, playlist_id: str) -> None:
+        self._delete(f"/Items/{playlist_id}", "playlist", strict=True)
+
     def create_playlist(self, name: str, item_ids: List[str]) -> str:
         resp = self._post(
             "/Playlists",

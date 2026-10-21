@@ -362,6 +362,17 @@ class JellyfinProvider(MediaProvider):
     def create_playlist(self, name: str, item_ids: List[str]) -> str:
         return self.api.create_playlist(name, item_ids)
 
+    def remove_from_playlist(self, playlist_id: str, entries: List[tuple]) -> None:
+        # Jellyfin removes by playlist entry id (unique per occurrence).
+        entry_ids = [str(item.get("PlaylistItemId") or "") for _pos, item in entries]
+        self.api.remove_from_playlist(playlist_id, [e for e in entry_ids if e])
+
+    def rename_playlist(self, playlist_id: str, name: str) -> None:
+        self.api.rename_playlist(playlist_id, name)
+
+    def delete_playlist(self, playlist_id: str) -> None:
+        self.api.delete_playlist(playlist_id)
+
     def get_genres(self) -> List[Dict[str, Any]]:
         return self.api.get_genres()
 

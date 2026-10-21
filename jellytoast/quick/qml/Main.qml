@@ -361,6 +361,21 @@ ApplicationWindow {
         }
     }
 
+    AddToPlaylistSheet { id: addToPlaylistSheet }
+    PlaylistDialogs {
+        id: playlistDialogs
+        // Deleting the playlist you're looking at: leave its page.
+        onDeleted: id => {
+            var cur = stack.currentItem
+            if (cur && cur.album && cur.album.id === id && stack.depth > 1)
+                stack.pop()
+        }
+    }
+    Connections {
+        target: playlists
+        function onToast(msg) { toast.show(msg) }
+    }
+
     OptionsSheet {
         id: optionsSheet
         onOpenSettings: stack.push(settingsPage)

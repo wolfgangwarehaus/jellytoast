@@ -117,6 +117,7 @@ class LibraryModel(QAbstractListModel):
 
         PlayerBus.get().offline_mode_changed.connect(self._on_offline_mode)
         PlayerBus.get().libraries_changed.connect(self._on_libraries_changed)
+        PlayerBus.get().playlists_changed.connect(self._on_playlists_changed)
         self._plan: List[str] = [""]
 
     # ── QAbstractListModel ──
@@ -377,6 +378,10 @@ class LibraryModel(QAbstractListModel):
     # Kinds the library picker scopes (the desktop reloads the same grids).
     SCOPED = ("album", "genreAlbums", "favAlbums", "song", "favSongs", "artist")
 
+    def _on_playlists_changed(self) -> None:
+        if _alive(self) and self._gen and self._kind == "playlist":
+            self.reload()
+
     def _on_libraries_changed(self) -> None:
         if _alive(self) and self._gen and self._kind in self.SCOPED:
             self.reload()
@@ -578,6 +583,9 @@ class TracksModel(QAbstractListModel):
         self._album_name = ""
         self._loading = False
         self._gen = 0
+        from jellytoast.player_state import PlayerBus
+
+        PlayerBus.get().playlists_changed.connect(self._on_playlists_changed)
 
     def rowCount(self, parent=_ROOT):  # noqa: N802
         return 0 if parent.isValid() else len(self._items)
@@ -697,6 +705,25 @@ class TracksModel(QAbstractListModel):
         from jellytoast.player_state import PlayerBus
 
         PlayerBus.get().queue_play_now.emit(list(self._items), max(0, row), self._context())
+
+    album_id = property(lambda self: self._album_id)
+
+    def take_row(self, row: int):
+        """Drop a row from the list (playlist removal shows at once);
+        returns ``(position, item)`` for the server call, or None."""
+        if not (0 <= row < len(self._items)):
+            return None
+        item = self._items[row]
+        self.beginRemoveRows(QModelIndex(), row, row)
+        del self._items[row]
+        self.endRemoveRows()
+        self.infoChanged.emit()
+        return (row, item)
+
+    def _on_playlists_changed(self) -> None:
+        # Another edit (or the server's answer to ours): show what's there.
+        if _alive(self) and self._kind == "playlist" and self._album_id:
+            self.load(self._album_id, self._album_name)
 
     @Slot(int, str)
     def queueRow(self, row: int, mode: str) -> None:  # noqa: N802

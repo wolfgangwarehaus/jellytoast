@@ -114,12 +114,13 @@ Item {
             subtitle: artist
             onClicked: tracks.play(index)
             onQueued: { tracks.queueRow(index, "end"); toast.show(qsTr("Added to queue")) }
-            onMenuRequested: (x, y) => menu.show({ kind: "track", row: index, name: name, artist: artist || page.album.artist || "", cover: page.album.cover || "" }, this, x, y)
+            onMenuRequested: (x, y) => menu.show({ kind: "track", id: trackId, row: index, name: name, artist: artist || page.album.artist || "", cover: page.album.cover || "" }, this, x, y)
         }
     }
 
     ItemMenu {
         id: menu
+        removeRow: page.kind === "playlist" ? (row => playlists.removeRow(tracks, row)) : null
         queueRow: (row, mode) => {
             tracks.queueRow(row, mode)
             toast.show(mode === "next" ? qsTr("Playing next") : qsTr("Added to queue"))

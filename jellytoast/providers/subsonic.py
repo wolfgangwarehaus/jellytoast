@@ -1030,6 +1030,20 @@ class SubsonicProvider(MediaProvider):
             self.add_to_playlist(pid, rest)
         return pid
 
+    def remove_from_playlist(self, playlist_id: str, entries: List[tuple]) -> None:
+        # updatePlaylist removes by position in the playlist (0-based).
+        positions = sorted({int(pos) for pos, _item in entries})
+        if positions:
+            self._request(
+                "updatePlaylist", {"playlistId": playlist_id, "songIndexToRemove": positions}
+            )
+
+    def rename_playlist(self, playlist_id: str, name: str) -> None:
+        self._request("updatePlaylist", {"playlistId": playlist_id, "name": name})
+
+    def delete_playlist(self, playlist_id: str) -> None:
+        self._request("deletePlaylist", {"id": playlist_id})
+
     def get_playlist_items(self, playlist_id: str) -> List[Dict[str, Any]]:
         try:
             resp = self._request("getPlaylist", {"id": playlist_id})

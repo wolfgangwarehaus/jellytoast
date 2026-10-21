@@ -239,3 +239,57 @@ def test_available_with_a_real_provider(qapp, monkeypatch):
     monkeypatch.setattr(playlist_actions, "_provider", lambda: p)
     monkeypatch.setattr(offline, "is_offline_mode", lambda: False)
     assert playlist_actions.available() is True
+
+
+# ── Playlist editing: remove songs / rename / delete ───────────────────────
+
+
+def test_subsonic_remove_rename_delete(monkeypatch):
+    p = _subsonic()
+    rec = _Recorder()
+    monkeypatch.setattr(p, "_request", rec)
+    # Removal is by position; the same song twice loses only the chosen copy.
+    p.remove_from_playlist("pl1", [(4, {"Id": "s9"}), (1, {"Id": "s9"}), (4, {"Id": "s9"})])
+    assert rec.calls[-1] == ("updatePlaylist", {"playlistId": "pl1", "songIndexToRemove": [1, 4]})
+    q = parse_qs(sub_mod._build_query(rec.calls[-1][1]))
+    assert q["songIndexToRemove"] == ["1", "4"]
+    p.rename_playlist("pl1", "Gym")
+    assert rec.calls[-1] == ("updatePlaylist", {"playlistId": "pl1", "name": "Gym"})
+    p.delete_playlist("pl1")
+    assert rec.calls[-1] == ("deletePlaylist", {"id": "pl1"})
+
+
+def test_subsonic_remove_nothing_sends_nothing(monkeypatch):
+    p = _subsonic()
+    rec = _Recorder()
+    monkeypatch.setattr(p, "_request", rec)
+    p.remove_from_playlist("pl1", [])
+    assert rec.calls == []
+
+
+def test_jellyfin_remove_rename_delete(monkeypatch):
+    from jellytoast.jellyfin_api import JellyfinAPI
+    from jellytoast.providers.jellyfin import JellyfinProvider
+
+    api = JellyfinAPI.__new__(JellyfinAPI)
+    api.user_id = "u1"
+    deletes, posts = [], []
+    monkeypatch.setattr(
+        api, "_delete", lambda path, what, *, strict=False: deletes.append((path, strict))
+    )
+    monkeypatch.setattr(
+        api,
+        "_post",
+        lambda path, payload=None, *, strict=False: posts.append((path, payload, strict)),
+    )
+    prov = JellyfinProvider.__new__(JellyfinProvider)
+    prov.api = api
+    # By playlist ENTRY id (unique per occurrence), not the song id.
+    prov.remove_from_playlist(
+        "p9", [(0, {"Id": "t1", "PlaylistItemId": "e1"}), (3, {"Id": "t1", "PlaylistItemId": "e4"})]
+    )
+    assert deletes[-1] == ("/Playlists/p9/Items?entryIds=e1,e4", True)
+    prov.rename_playlist("p9", "Gym")
+    assert posts[-1] == ("/Playlists/p9", {"Name": "Gym"}, True)
+    prov.delete_playlist("p9")
+    assert deletes[-1] == ("/Items/p9", True)

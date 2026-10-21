@@ -6,6 +6,8 @@ ItemDelegate {
     id: row
     property string iconName
     property color tint: theme.text
+    // Room kept free on the right (for a count or check the caller adds).
+    property int trailing: 0
     width: parent ? parent.width : 300
     height: visible ? 52 : 0
     focusPolicy: Qt.NoFocus
@@ -22,8 +24,10 @@ ItemDelegate {
         }
         Label {
             anchors.verticalCenter: parent.verticalCenter
+            width: row.availableWidth - 38 - row.trailing
             text: row.text
             color: row.tint
+            elide: Text.ElideRight
             font.pixelSize: 16
         }
     }

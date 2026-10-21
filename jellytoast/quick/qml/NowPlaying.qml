@@ -95,28 +95,8 @@ Rectangle {
             IconButton {
                 objectName: "npMore"
                 iconName: "more_vert"
-                enabled: player.albumId !== "" || player.artistId !== ""
-                onClicked: moreMenu.popup(this, width - moreMenu.width, height)
-                Menu {
-                    id: moreMenu
-                    MenuItem {
-                        text: qsTr("Go to artist")
-                        enabled: player.artistId !== ""
-                        onTriggered: {
-                            np.goToArtist({ id: player.artistId, name: player.artist })
-                            np.close()
-                        }
-                    }
-                    MenuItem {
-                        text: qsTr("Go to album")
-                        enabled: player.albumId !== ""
-                        onTriggered: {
-                            np.goToAlbum({ id: player.albumId, name: player.album, artist: player.artist,
-                                           year: "", cover: player.cover })
-                            np.close()
-                        }
-                    }
-                }
+                enabled: player.hasTrack
+                onClicked: npSheet.open()
             }
         }
 
@@ -341,6 +321,79 @@ Rectangle {
                 iconName: "queue"
                 tint: np.surface === "queue" ? theme.accent : theme.textDim
                 onClicked: np.toggleSurface("queue")
+            }
+        }
+    }
+
+    // ⋮ — what you can do with the playing song.
+    Sheet {
+        id: npSheet
+        objectName: "npSheet"
+        Row {
+            width: parent.width
+            height: 64
+            spacing: 14
+            Cover {
+                width: 56; height: 56
+                anchors.verticalCenter: parent.verticalCenter
+                radius: 8
+                pixels: 168
+                source: player.cover
+            }
+            Column {
+                anchors.verticalCenter: parent.verticalCenter
+                width: parent.width - 70
+                spacing: 2
+                Label {
+                    width: parent.width
+                    text: player.title
+                    color: theme.text
+                    elide: Text.ElideRight
+                    font.pixelSize: 17
+                    font.weight: Font.DemiBold
+                }
+                Label {
+                    width: parent.width
+                    text: player.artist
+                    color: theme.textDim
+                    elide: Text.ElideRight
+                    font.pixelSize: 13
+                }
+            }
+        }
+        Rectangle { width: parent.width; height: 1; color: theme.textFaint; opacity: 0.4 }
+        SheetRow {
+            objectName: "npAddToPlaylist"
+            iconName: "list"
+            text: qsTr("Add to playlist…")
+            visible: playlists.available && player.itemId !== ""
+            onClicked: {
+                npSheet.close()
+                addToPlaylistSheet.show({ kind: "track", id: player.itemId, name: player.title,
+                                          artist: player.artist, cover: player.cover })
+            }
+        }
+        SheetRow {
+            objectName: "npGoToArtist"
+            iconName: "user"
+            text: qsTr("Go to artist")
+            visible: player.artistId !== ""
+            onClicked: {
+                npSheet.close()
+                np.goToArtist({ id: player.artistId, name: player.artist })
+                np.close()
+            }
+        }
+        SheetRow {
+            objectName: "npGoToAlbum"
+            iconName: "grid"
+            text: qsTr("Go to album")
+            visible: player.albumId !== ""
+            onClicked: {
+                npSheet.close()
+                np.goToAlbum({ id: player.albumId, name: player.album, artist: player.artist,
+                               year: "", cover: player.cover })
+                np.close()
             }
         }
     }

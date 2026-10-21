@@ -10,6 +10,8 @@ Sheet {
     property var item: ({})
     // Row-level queueing for tracks (set by the list that owns the row).
     property var queueRow: null
+    // Set by a playlist's page: remove a song row from that playlist.
+    property var removeRow: null
     signal favoriteChanged(string id, bool on)
 
     // Same signature as the old popup menu: the anchor is no longer used.
@@ -107,6 +109,36 @@ Sheet {
             actions.setFavorite(menu.item.id, !menu.item.favorite)
             menu.favoriteChanged(menu.item.id, !menu.item.favorite)
         })
+    }
+    SheetRow {
+        objectName: "addToPlaylistRow"
+        iconName: "list"
+        text: qsTr("Add to playlist…")
+        visible: playlists.available && ["track", "album", "playlist", "artist"].indexOf(menu.item.kind) >= 0
+                 && (menu.item.id || "") !== ""
+        onClicked: menu.run(() => addToPlaylistSheet.show(menu.item))
+    }
+    SheetRow {
+        objectName: "removeFromPlaylistRow"
+        iconName: "win_close"
+        text: qsTr("Remove from playlist")
+        visible: menu.isTrack && menu.removeRow !== null && playlists.available
+        onClicked: menu.run(() => menu.removeRow(menu.item.row))
+    }
+    SheetRow {
+        objectName: "renamePlaylistRow"
+        iconName: "settings"
+        text: qsTr("Rename playlist")
+        visible: menu.item.kind === "playlist" && playlists.available
+        onClicked: menu.run(() => playlistDialogs.rename(menu.item))
+    }
+    SheetRow {
+        objectName: "deletePlaylistRow"
+        iconName: "win_close"
+        text: qsTr("Delete playlist")
+        visible: menu.item.kind === "playlist" && playlists.available
+        tint: "#e57373"
+        onClicked: menu.run(() => playlistDialogs.confirmDelete(menu.item))
     }
     SheetRow {
         iconName: "download"

@@ -46,6 +46,29 @@
     </message>
 </context>
 <context>
+    <name>AddToPlaylistSheet</name>
+    <message>
+        <location filename="../quick/qml/AddToPlaylistSheet.qml" line="21"/>
+        <source>ADD TO PLAYLIST</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../quick/qml/AddToPlaylistSheet.qml" line="36"/>
+        <source>New playlist…</source>
+        <translation type="unfinished">Nueva lista de reproducción…</translation>
+    </message>
+    <message>
+        <location filename="../quick/qml/AddToPlaylistSheet.qml" line="51"/>
+        <source>Playlist name</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../quick/qml/AddToPlaylistSheet.qml" line="63"/>
+        <source>Create</source>
+        <translation type="unfinished">Crear</translation>
+    </message>
+</context>
+<context>
     <name>AlbumPage</name>
     <message>
         <location filename="../quick/qml/AlbumPage.qml" line="82"/>
@@ -58,12 +81,12 @@
     </message>
     <message>
         <location filename="../quick/qml/AlbumPage.qml" line="116"/>
-        <location filename="../quick/qml/AlbumPage.qml" line="125"/>
+        <location filename="../quick/qml/AlbumPage.qml" line="126"/>
         <source>Added to queue</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../quick/qml/AlbumPage.qml" line="125"/>
+        <location filename="../quick/qml/AlbumPage.qml" line="126"/>
         <source>Playing next</source>
         <translation type="unfinished"></translation>
     </message>
@@ -1092,42 +1115,62 @@ Esto libera el almacenamiento de inmediato. Tu biblioteca en el servidor no se v
 <context>
     <name>ItemMenu</name>
     <message>
-        <location filename="../quick/qml/ItemMenu.qml" line="72"/>
+        <location filename="../quick/qml/ItemMenu.qml" line="74"/>
         <source>Play</source>
         <translation type="unfinished">Reproducir</translation>
     </message>
     <message>
-        <location filename="../quick/qml/ItemMenu.qml" line="78"/>
+        <location filename="../quick/qml/ItemMenu.qml" line="80"/>
         <source>Shuffle</source>
         <translation type="unfinished">Aleatorio</translation>
     </message>
     <message>
-        <location filename="../quick/qml/ItemMenu.qml" line="84"/>
+        <location filename="../quick/qml/ItemMenu.qml" line="86"/>
         <source>Start radio</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../quick/qml/ItemMenu.qml" line="90"/>
+        <location filename="../quick/qml/ItemMenu.qml" line="92"/>
         <source>Play next</source>
         <translation type="unfinished">Reproducir a continuación</translation>
     </message>
     <message>
-        <location filename="../quick/qml/ItemMenu.qml" line="97"/>
+        <location filename="../quick/qml/ItemMenu.qml" line="99"/>
         <source>Add to queue</source>
         <translation type="unfinished">Añadir a la cola</translation>
     </message>
     <message>
-        <location filename="../quick/qml/ItemMenu.qml" line="104"/>
+        <location filename="../quick/qml/ItemMenu.qml" line="106"/>
         <source>Remove from favorites</source>
         <translation type="unfinished">Quitar de favoritos</translation>
     </message>
     <message>
-        <location filename="../quick/qml/ItemMenu.qml" line="104"/>
+        <location filename="../quick/qml/ItemMenu.qml" line="106"/>
         <source>Add to favorites</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../quick/qml/ItemMenu.qml" line="113"/>
+        <location filename="../quick/qml/ItemMenu.qml" line="116"/>
+        <source>Add to playlist…</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../quick/qml/ItemMenu.qml" line="124"/>
+        <source>Remove from playlist</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../quick/qml/ItemMenu.qml" line="131"/>
+        <source>Rename playlist</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../quick/qml/ItemMenu.qml" line="138"/>
+        <source>Delete playlist</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../quick/qml/ItemMenu.qml" line="145"/>
         <source>Download</source>
         <translation type="unfinished">Descargar</translation>
     </message>
@@ -1794,7 +1837,7 @@ jellytoast funcionará, pero las funciones de bandeja no estarán disponibles.</
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../quick/qml/Main.qml" line="378"/>
+        <location filename="../quick/qml/Main.qml" line="393"/>
         <source>Cast failed</source>
         <translation type="unfinished">Fallo al enviar</translation>
     </message>
@@ -1807,47 +1850,52 @@ jellytoast funcionará, pero las funciones de bandeja no estarán disponibles.</
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../quick/qml/NowPlaying.qml" line="103"/>
+        <location filename="../quick/qml/NowPlaying.qml" line="368"/>
+        <source>Add to playlist…</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../quick/qml/NowPlaying.qml" line="379"/>
         <source>Go to artist</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../quick/qml/NowPlaying.qml" line="111"/>
+        <location filename="../quick/qml/NowPlaying.qml" line="390"/>
         <source>Go to album</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../quick/qml/NowPlaying.qml" line="204"/>
+        <location filename="../quick/qml/NowPlaying.qml" line="184"/>
         <source>Casting</source>
         <translation type="unfinished">Enviando</translation>
     </message>
     <message>
-        <location filename="../quick/qml/NowPlaying.qml" line="307"/>
+        <location filename="../quick/qml/NowPlaying.qml" line="287"/>
         <source>end of song</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../quick/qml/NowPlaying.qml" line="321"/>
+        <location filename="../quick/qml/NowPlaying.qml" line="301"/>
         <source>%1 minutes</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../quick/qml/NowPlaying.qml" line="322"/>
+        <location filename="../quick/qml/NowPlaying.qml" line="302"/>
         <source>1 hour</source>
         <translation type="unfinished">1 hora</translation>
     </message>
     <message>
-        <location filename="../quick/qml/NowPlaying.qml" line="322"/>
+        <location filename="../quick/qml/NowPlaying.qml" line="302"/>
         <source>1 h 30 min</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../quick/qml/NowPlaying.qml" line="327"/>
+        <location filename="../quick/qml/NowPlaying.qml" line="307"/>
         <source>After this song</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../quick/qml/NowPlaying.qml" line="331"/>
+        <location filename="../quick/qml/NowPlaying.qml" line="311"/>
         <source>Turn off timer</source>
         <translation type="unfinished"></translation>
     </message>
@@ -2656,6 +2704,82 @@ Revisa el PIN — la causa más común es una errata o un código caducado (el r
         <location filename="../playlist_actions.py" line="220"/>
         <source>Couldn&apos;t create {0}</source>
         <translation>No se pudo crear {0}</translation>
+    </message>
+</context>
+<context>
+    <name>PlaylistDialogs</name>
+    <message>
+        <location filename="../quick/qml/PlaylistDialogs.qml" line="29"/>
+        <source>Rename playlist</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../quick/qml/PlaylistDialogs.qml" line="50"/>
+        <source>Delete playlist?</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../quick/qml/PlaylistDialogs.qml" line="56"/>
+        <source>“%1” will be deleted. The songs stay in your library.</source>
+        <translation type="unfinished"></translation>
+    </message>
+</context>
+<context>
+    <name>Playlists</name>
+    <message>
+        <location filename="../quick/playlists.py" line="124"/>
+        <source>Nothing to add</source>
+        <translation type="unfinished">No hay nada que añadir</translation>
+    </message>
+    <message>
+        <location filename="../quick/playlists.py" line="131"/>
+        <source>Couldn&apos;t add to {0}</source>
+        <translation type="unfinished">No se pudo añadir a {0}</translation>
+    </message>
+    <message>
+        <location filename="../quick/playlists.py" line="152"/>
+        <source>Created {0}</source>
+        <translation type="unfinished">Se creó {0}</translation>
+    </message>
+    <message>
+        <location filename="../quick/playlists.py" line="157"/>
+        <source>Couldn&apos;t create {0}</source>
+        <translation type="unfinished">No se pudo crear {0}</translation>
+    </message>
+    <message>
+        <location filename="../quick/playlists.py" line="178"/>
+        <source>Removed from playlist</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../quick/playlists.py" line="180"/>
+        <source>Removed {0} songs from playlist</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../quick/playlists.py" line="185"/>
+        <source>Couldn&apos;t remove from playlist</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../quick/playlists.py" line="202"/>
+        <source>Renamed</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../quick/playlists.py" line="205"/>
+        <source>Couldn&apos;t rename the playlist</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../quick/playlists.py" line="218"/>
+        <source>Deleted {0}</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../quick/playlists.py" line="222"/>
+        <source>Couldn&apos;t delete {0}</source>
+        <translation type="unfinished"></translation>
     </message>
 </context>
 <context>

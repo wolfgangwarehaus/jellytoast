@@ -851,3 +851,80 @@ def test_artists_grid_or_list(quick):
         assert s.artist_view_mode == "grid"
     finally:
         s.artist_view_mode, s.library_view_mode = saved
+
+
+# ── playlists: add, create, remove, rename, delete ──
+
+
+def _sheet_row(quick, name):
+    quick.wait_for(name)
+    quick.tap(name)
+
+
+def test_add_album_to_existing_playlist(quick):
+    quick.long_press("text:Album 004")
+    _sheet_row(quick, "addToPlaylistRow")
+    quick.wait_for("text:Playlist 2")
+    quick.tap("text:Playlist 2")
+    quick.wait_until(lambda: any(c[0] == "add_to_playlist" for c in quick.provider.calls))
+    call = next(c for c in quick.provider.calls if c[0] == "add_to_playlist")
+    assert call[1] == "pl2" and len(call[2]) == 6  # the whole album
+    quick.wait_for("text:Added 6 songs to Playlist 2")
+
+
+def test_new_playlist_from_a_song(quick):
+    quick.tap("text:Album 001")
+    quick.wait_for("text:Track 2 of Album 001")
+    quick.long_press("text:Track 2 of Album 001")
+    _sheet_row(quick, "addToPlaylistRow")
+    _sheet_row(quick, "newPlaylistRow")
+    quick.get("newPlaylistName").setProperty("text", "Road trip")
+    quick.tap("createPlaylist")
+    quick.wait_until(lambda: any(c[0] == "create_playlist" for c in quick.provider.calls))
+    call = next(c for c in quick.provider.calls if c[0] == "create_playlist")
+    assert call[1] == "Road trip" and call[2] == ["al1-t2"]
+
+
+def test_remove_song_from_playlist_page(quick):
+    _section(quick, "Playlists")
+    quick.tap("text:Playlist 1")
+    quick.wait_for("trackList")
+    quick.wait_idle()
+    first = quick.find("text:Track")  # any track row
+    name = first.property("text")
+    quick.long_press(f"text:{name}")
+    _sheet_row(quick, "removeFromPlaylistRow")
+    quick.wait_until(lambda: any(c[0] == "remove_from_playlist" for c in quick.provider.calls))
+    call = next(c for c in quick.provider.calls if c[0] == "remove_from_playlist")
+    assert call[1] == "pl1" and len(call[2]) == 1
+    assert quick.find(f"text:{name}") is None or quick.find("text:Removed from playlist")
+
+
+def test_rename_and_delete_playlist(quick):
+    _section(quick, "Playlists")
+    quick.wait_for("text:Playlist 3")
+    quick.long_press("text:Playlist 3")
+    _sheet_row(quick, "renamePlaylistRow")
+    quick.wait_for("renameDialog")
+    quick.get("renameField").setProperty("text", "Gym")
+    quick.tap("text:Save")
+    quick.wait_until(lambda: ("rename_playlist", "pl3", "Gym") in quick.provider.calls)
+
+    quick.long_press("text:Playlist 0")
+    _sheet_row(quick, "deletePlaylistRow")
+    quick.wait_for("deletePlaylistDialog")
+    quick.tap("text:OK")
+    quick.wait_until(lambda: ("delete_playlist", "pl0") in quick.provider.calls)
+    quick.wait_until(lambda: quick.find("text:Playlist 0") is None)  # list refreshed
+
+
+def test_now_playing_add_to_playlist(quick):
+    quick.fake_now_playing("Song", "Someone", item_id="al3-t1", album_id="al3")
+    quick.wait_for("miniPlayer")
+    quick.tap("text:Someone")
+    quick.wait_until(lambda: quick.state()["nowPlaying"])
+    quick.tap("npMore")
+    _sheet_row(quick, "npAddToPlaylist")
+    quick.wait_for("text:Playlist 1")
+    quick.tap("text:Playlist 1")
+    quick.wait_until(lambda: ("add_to_playlist", "pl1", ["al3-t1"]) in quick.provider.calls)

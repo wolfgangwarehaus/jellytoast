@@ -105,7 +105,7 @@ Item {
             onMenuRequested: (x, y) => {
                 var it = results.get(index)
                 if (kind === "track")
-                    menu.show({ kind: "track", row: index, name: name, artist: subtitle, cover: cover }, this, x, y)
+                    menu.show({ kind: "track", id: itemId, row: index, name: name, artist: subtitle, cover: cover }, this, x, y)
                 else
                     menu.show(it, this, x, y)
             }

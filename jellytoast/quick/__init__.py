@@ -201,6 +201,7 @@ def build_engine(app, *, start_core: bool = True):
         TracksModel,
     )
     from jellytoast.quick.player import PlayerController
+    from jellytoast.quick.playlists import Playlists
     from jellytoast.quick.prefs import Prefs
     from jellytoast.quick.session import Session
     from jellytoast.quick.theme import Theme
@@ -227,6 +228,7 @@ def build_engine(app, *, start_core: bool = True):
         "session": Session(engine),
         "prefs": Prefs(engine),
         "libraries": Libraries(engine),
+        "playlists": Playlists(engine),
         "cast": Cast(None, engine),
         "player": PlayerController(engine),
         "theme": Theme(engine),

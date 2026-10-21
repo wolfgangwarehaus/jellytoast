@@ -54,6 +54,8 @@ class FakeProvider:
 
     is_authenticated = True
     kind = "jellyfin"
+    server_url = "http://fake"
+    supports_playlist_editing = True
     password = "secret"  # authenticate() accepts only this
 
     def __init__(self):
@@ -108,6 +110,31 @@ class FakeProvider:
             pool = [x for x in pool if (x.get("UserData") or {}).get("IsFavorite")]
         page = pool[start : start + limit]
         return {"Items": [dict(a) for a in page], "TotalRecordCount": len(pool)}
+
+    # ── playlist editing ──
+    def get_playlists(self):
+        return [dict(p) for p in self.playlists]
+
+    def add_to_playlist(self, playlist_id, item_ids):
+        self.calls.append(("add_to_playlist", playlist_id, list(item_ids)))
+
+    def create_playlist(self, name, item_ids):
+        self.calls.append(("create_playlist", name, list(item_ids)))
+        pid = f"pl{len(self.playlists)}"
+        self.playlists.append(
+            {"Id": pid, "Name": name, "Type": "Playlist", "ChildCount": len(item_ids)}
+        )
+        return pid
+
+    def remove_from_playlist(self, playlist_id, entries):
+        self.calls.append(("remove_from_playlist", playlist_id, [pos for pos, _it in entries]))
+
+    def rename_playlist(self, playlist_id, name):
+        self.calls.append(("rename_playlist", playlist_id, name))
+
+    def delete_playlist(self, playlist_id):
+        self.calls.append(("delete_playlist", playlist_id))
+        self.playlists = [p for p in self.playlists if p["Id"] != playlist_id]
 
     def get_libraries(self):
         return [

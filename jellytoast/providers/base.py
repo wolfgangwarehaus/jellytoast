@@ -257,6 +257,21 @@ class MediaProvider(ABC):
         on failure."""
         raise NotImplementedError
 
+    def remove_from_playlist(self, playlist_id: str, entries: List[tuple]) -> None:
+        """Remove songs from a playlist. ``entries`` are ``(position,
+        item)`` pairs from ``get_playlist_items`` — Subsonic removes by
+        position, Jellyfin by the item's ``PlaylistItemId`` — so the same
+        song added twice can lose just one copy. Raises on failure."""
+        raise NotImplementedError
+
+    def rename_playlist(self, playlist_id: str, name: str) -> None:
+        """Rename a playlist. Raises on failure."""
+        raise NotImplementedError
+
+    def delete_playlist(self, playlist_id: str) -> None:
+        """Delete a playlist (not its songs). Raises on failure."""
+        raise NotImplementedError
+
     @abstractmethod
     def get_genres(self) -> List[Dict[str, Any]]: ...
 
