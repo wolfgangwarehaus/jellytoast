@@ -53,6 +53,13 @@ hiddenimports = [
 if sys.platform.startswith("linux"):
     hiddenimports += ["dbus_next", "Xlib"]
 
+# Linux bundles (AppImage / deb) carry Qt Quick for the phone interface
+# (jellytoast/quick — opt-in on Plasma Mobile). Windows / macOS bundles
+# keep pruning it: no phone shell there, and it's ~20 MB.
+QUICK_UI = sys.platform.startswith("linux")
+if QUICK_UI:
+    hiddenimports += ["PySide6.QtQml", "PySide6.QtQuick", "PySide6.QtQuickControls2"]
+
 binaries = []
 if sys.platform == "win32":
     _libmpv = REPO_ROOT / "packaging" / "windows" / "libmpv" / "libmpv-2.dll"
@@ -102,8 +109,7 @@ a = Analysis(
         # Qt modules jellytoast never imports — keeps the bundle lean.
         "PySide6.QtWebEngineCore",
         "PySide6.QtWebEngineWidgets",
-        "PySide6.QtQuick",
-        "PySide6.QtQml",
+        *([] if QUICK_UI else ["PySide6.QtQuick", "PySide6.QtQml"]),
         "PySide6.Qt3DCore",
         "PySide6.QtCharts",
         "PySide6.QtDataVisualization",
@@ -265,10 +271,7 @@ _QT_DROP_BASENAMES = {
 _QT_DROP_STEMS = (
     "libQt6VirtualKeyboard",
     "Qt6VirtualKeyboard",
-    "libQt6Quick",
-    "Qt6Quick",
-    "libQt6Qml",
-    "Qt6Qml",
+    *(() if QUICK_UI else ("libQt6Quick", "Qt6Quick", "libQt6Qml", "Qt6Qml")),
     "libQt6Pdf",
     "Qt6Pdf",
     "libgtk-3",
@@ -289,6 +292,64 @@ if _qt_dropped:
     print(
         f"jellytoast.spec: pruned {len(_qt_dropped)} unused Qt binaries "
         "(virtual keyboard + its QML chain, GTK3 theme, QtPdf)"
+    )
+
+# --- Linux: keep only the QML the phone interface imports ------------------
+# PySide6's QtQml hook collects the whole qml/ tree — Quick3D, WebEngine,
+# Charts, Location, every Controls style … and the Qt libraries those
+# plugins link. jellytoast/quick/qml imports QtQuick, QtQuick.Controls (Basic
+# style), QtQuick.Layouts and QtQuick.Effects; keep those (+ what they load:
+# Templates, Controls/impl, Window, QtQml) and drop the rest.
+if QUICK_UI:
+    def _qml_rel(dest: str):
+        dest = dest.replace(os.sep, "/")
+        marker = "PySide6/Qt/qml/"
+        i = dest.find(marker)
+        return dest[i + len(marker):].split("/") if i >= 0 else None
+
+    def _qml_keep(parts) -> bool:
+        if parts[0] == "QtQml":
+            return len(parts) < 3 or parts[1] != "StateMachine"
+        if parts[0] != "QtQuick":
+            return False
+        if len(parts) == 2:  # QtQuick's own qmldir / plugin
+            return True
+        if parts[1] in ("Layouts", "Effects", "Templates", "Window"):
+            return True
+        if parts[1] == "Controls":
+            return len(parts) == 3 or parts[2] in ("Basic", "impl")
+        return False
+
+    def _qml_prunable(dest: str) -> bool:
+        parts = _qml_rel(dest)
+        return parts is not None and not _qml_keep(parts)
+
+    # Qt libraries only the pruned QML modules use.
+    _QML_ONLY_LIB_STEMS = tuple(
+        f"libQt6{m}"
+        for m in (
+            "Quick3D", "Charts", "Graphs", "DataVisualization", "Location",
+            "WebEngine", "WebView", "WebChannel", "WebSockets", "Positioning",
+            "Sensors", "Scxml", "StateMachine", "RemoteObjects", "TextToSpeech",
+            "3D", "QuickTest", "SpatialAudio", "Core5Compat", "QuickParticles",
+            "QuickTimeline", "QuickVectorImage", "QuickDialogs2", "QmlLocalStorage",
+            "QmlXmlListModel", "MultimediaQuick", "QuickControls2Material",
+            "QuickControls2Universal", "QuickControls2Imagine", "QuickControls2Fusion",
+            "QuickControls2FluentWinUI3", "QuickControls2Material", "LabsAnimation",
+            "LabsFolderListModel", "LabsQmlModels", "LabsSettings", "LabsSharedImage",
+            "LabsWavefrontMesh", "ShaderTools", "QmlDesignSupport", "QmlCompiler",
+        )
+    )
+
+    def _lib_prunable(dest: str) -> bool:
+        return os.path.basename(dest).startswith(_QML_ONLY_LIB_STEMS)
+
+    _n_before = len(a.binaries) + len(a.datas)
+    a.binaries = [b for b in a.binaries if not (_qml_prunable(b[0]) or _lib_prunable(b[0]))]
+    a.datas = [d for d in a.datas if not _qml_prunable(d[0])]
+    print(
+        f"jellytoast.spec: pruned {_n_before - len(a.binaries) - len(a.datas)} QML files "
+        "/ libraries the phone interface doesn't use"
     )
 
 # Qt ships a .qm per module per language. Keep only the languages jellytoast

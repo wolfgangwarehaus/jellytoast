@@ -41,8 +41,12 @@ could run.
   checkout: `JT_UI=quick python -m jellytoast` (sign in with the normal
   app first). Packaging: wheel ships `quick/qml/*.qml`; AUR `pyside6`
   already depends on `qt6-declarative`; flatpak's KDE runtime has QtQuick.
-  **Gap:** the PyInstaller spec (AppImage / deb / Windows / macOS) prunes
-  QtQuick + QtQml (~17 MB) — un-prune on Linux only, at M4.
+  **Packaging (2026-10-21):** the Linux PyInstaller bundle (AppImage /
+  deb) now keeps QtQuick + only the QML modules the UI imports (QtQml,
+  QtQuick, Controls Basic + impl, Templates, Layouts, Effects, Window) —
+  the full QML tree would have added ~290 MB; pruned, the bundle measured
+  289 MB locally. Windows / macOS still prune it. release.yml boots the
+  frozen bundle with JT_UI=quick and fails on a QML load error.
 - [ ] **M1 — shell:** StackView navigation + back, top bar (section dropdown,
   search, ⋮), mini player ↔ Now Playing (cover, seek, transport, surface
   toggles), album page (header + tracks + play).
@@ -96,6 +100,10 @@ could run.
   on the image-reader thread (it deadlocked against the GIL).
 - [ ] **M4 — switch:** default on Plasma Mobile; remove the Widgets phone
   layouts only once parity holds; then the metainfo "phone friendly" flag.
+  *Ready except the decision:* every install type can run it (pip / AUR /
+  flatpak / AppImage / deb); it's opt-in via Settings → Display → New
+  phone interface (beta). Flip the default once august has used it on the
+  phone for a while.
 
 ## Rig (dev + tests)
 

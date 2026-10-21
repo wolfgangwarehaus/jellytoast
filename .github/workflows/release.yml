@@ -73,6 +73,13 @@ jobs:
           # dies in well under 10s with a real exit code; surviving to
           # the timeout (124) means Qt + the bundle initialized.
           QT_QPA_PLATFORM=offscreen timeout 10 dist/jellytoast/jellytoast || [ $? -eq 124 ]
+          # The phone interface (Qt Quick) must load from the bundle too —
+          # it falls back to the classic window on failure, so check the log.
+          JT_UI=quick QT_QPA_PLATFORM=offscreen timeout 10 dist/jellytoast/jellytoast \
+            > quick-boot.log 2>&1 || [ $? -eq 124 ]
+          if grep -E "Qt Quick UI failed|failed to load component|is not installed" quick-boot.log; then
+            echo "::error::Qt Quick UI did not load from the frozen bundle"; exit 1
+          fi
       - name: Build .deb
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
