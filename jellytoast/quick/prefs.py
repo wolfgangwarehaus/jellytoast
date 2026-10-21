@@ -20,7 +20,9 @@ class Prefs(QObject):
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        PlayerBus.get().replaygain_changed.connect(lambda _m: self.changed.emit())
+        bus = PlayerBus.get()
+        bus.replaygain_changed.connect(lambda _m: self.changed.emit())
+        bus.offline_mode_changed.connect(lambda _on: self.changed.emit())
 
     # ── option lists ({label, value}) ──
     def _qualities(self):
@@ -78,6 +80,40 @@ class Prefs(QObject):
     @Slot(bool)
     def setMediaKeys(self, on: bool) -> None:  # noqa: N802
         _settings().media_integration_enabled = bool(on)  # applies next launch
+        self.changed.emit()
+
+    # ── offline ──
+    def _offline_mode(self) -> bool:
+        from jellytoast import offline
+
+        try:
+            return bool(offline.is_offline_mode())
+        except Exception:
+            return False
+
+    def _wifi_only(self) -> bool:
+        from jellytoast import offline
+
+        try:
+            return bool(offline.is_wifi_only())
+        except Exception:
+            return False
+
+    offlineMode = Property(bool, _offline_mode, notify=changed)
+    wifiOnly = Property(bool, _wifi_only, notify=changed)
+
+    @Slot(bool)
+    def setOfflineMode(self, on: bool) -> None:  # noqa: N802
+        from jellytoast import offline
+
+        offline.set_offline_mode(bool(on))
+        self.changed.emit()
+
+    @Slot(bool)
+    def setWifiOnly(self, on: bool) -> None:  # noqa: N802
+        from jellytoast import offline
+
+        offline.set_wifi_only(bool(on))
         self.changed.emit()
 
     # ── casting (opt-in per protocol) ──

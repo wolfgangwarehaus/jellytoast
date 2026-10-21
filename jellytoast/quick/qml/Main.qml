@@ -30,7 +30,8 @@ ApplicationWindow {
         { key: "playlist", label: qsTr("Playlists") },
         { key: "song", label: qsTr("Songs") },
         { key: "genre", label: qsTr("Genres") },
-        { key: "favorite", label: qsTr("Favorites") }
+        { key: "favorite", label: qsTr("Favorites") },
+        { key: "download", label: qsTr("Downloads") }
     ]
     property string section: "album"
 
@@ -43,13 +44,15 @@ ApplicationWindow {
         section = key
         player.section = key
         var page
-        if (key === "song")
+        if (key === "download")
+            page = downloadsPage
+        else if (key === "song")
             page = songsPage
         else if (key === "genre")
             page = genresPage
         else
             page = gridPage
-        var props = key === "song" || key === "genre" ? {}
+        var props = key === "song" || key === "genre" || key === "download" ? {}
             : { kind: key === "favorite" ? "favAlbums" : key, title: sections.find(s => s.key === key).label,
                 source: key === "album" ? albums : null }
         stack.replace(null, page, props, StackView.Immediate)
@@ -270,6 +273,10 @@ ApplicationWindow {
     Component {
         id: albumPage
         AlbumPage { }
+    }
+    Component {
+        id: downloadsPage
+        DownloadsPage { onOpenItem: (kind, item) => win.openItem(kind, item) }
     }
     Component {
         id: settingsPage

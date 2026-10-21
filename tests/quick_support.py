@@ -103,6 +103,14 @@ class FakeProvider:
         page = pool[start : start + limit]
         return {"Items": [dict(a) for a in page], "TotalRecordCount": len(pool)}
 
+    def get_item(self, item_id):
+        self.calls.append(("get_item", item_id))
+        for pool in (self.albums, self.artists, self.playlists):
+            for x in pool:
+                if x["Id"] == item_id:
+                    return dict(x)
+        return {}
+
     def get_album_tracks(self, album_id):
         self.calls.append(("get_album_tracks", album_id))
         album = next(a for a in self.albums if a["Id"] == album_id)

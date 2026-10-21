@@ -73,6 +73,28 @@ class Actions(QObject):
             on_error=lambda e: logger.warning("%s %s %s failed: %s", mode, kind, item_id, e),
         )
 
+    @Slot(str, str)
+    def download(self, item_id: str, name: str) -> None:
+        """Keep an album / playlist / artist / track offline (the same
+        planner + queue as the Widgets "Download")."""
+        from jellytoast import offline
+        from jellytoast.providers import get_provider
+
+        prov = get_provider()
+
+        def _go(item):
+            if not item:
+                return
+            offline.download(item)
+            self.toast.emit(self.tr("Downloading {0}").format(name or item.get("Name", "")))
+
+        async_io.run_async(
+            prov.get_item,
+            item_id,
+            on_result=_go,
+            on_error=lambda e: logger.warning("download %s failed: %s", item_id, e),
+        )
+
     @Slot(str, str, str)
     def startRadio(self, kind: str, item_id: str, name: str) -> None:  # noqa: N802
         """Endless radio seeded from an album / artist / genre (same as the

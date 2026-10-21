@@ -438,3 +438,105 @@ def test_cast_sheet_lists_devices_and_reports_failure(quick, monkeypatch):
     assert quick.find("text:Could not cast to Living Room TV") is not None
     # The failed hand-off resumed local playback.
     assert spy.got["stop_requested"] and spy.got["play_requested"]
+
+
+# ── M3: downloads ──
+
+
+class _FakeOffline:
+    """Stands in for jellytoast.offline's public API."""
+
+    def __init__(self):
+        self.rows = [
+            {
+                "item_id": "al7",
+                "kind": "album",
+                "state": "complete",
+                "name": "Album 007",
+                "metadata": {"Name": "Album 007", "AlbumArtist": "Air"},
+            },
+            {
+                "item_id": "pl1",
+                "kind": "playlist",
+                "state": "downloading",
+                "name": "Playlist 1",
+                "metadata": {"Name": "Playlist 1"},
+            },
+        ]
+        self.downloaded, self.removed, self.paused = [], [], False
+
+    def list_downloads(self, kind=None):
+        return [dict(r) for r in self.rows]
+
+    def item_size(self, item_id):
+        return 52_428_800 if item_id == "al7" else 0
+
+    def storage_usage(self):
+        return {"total": 52_428_800}
+
+    def is_paused(self):
+        return self.paused
+
+    def download(self, item):
+        self.downloaded.append(item["Id"])
+
+    def remove(self, item_id):
+        self.removed.append(item_id)
+
+    def pause(self):
+        self.paused = True
+        PlayerBus.get().download_queue_paused.emit()
+
+    def resume(self):
+        self.paused = False
+        PlayerBus.get().download_queue_resumed.emit()
+
+
+def _patch_offline(monkeypatch):
+    import jellytoast.offline as offline
+
+    fake = _FakeOffline()
+    for name in (
+        "list_downloads",
+        "item_size",
+        "storage_usage",
+        "is_paused",
+        "download",
+        "remove",
+        "pause",
+        "resume",
+    ):
+        monkeypatch.setattr(offline, name, getattr(fake, name))
+    return fake
+
+
+def test_long_press_download_album(quick, monkeypatch):
+    fake = _patch_offline(monkeypatch)
+    quick.long_press("text:Album 004")
+    quick.tap("text:Download")
+    quick.wait_until(lambda: fake.downloaded)
+    assert fake.downloaded == ["al4"]
+    assert quick.find("text:Downloading Album 004") is not None  # toast
+
+
+def test_downloads_page_progress_pause_and_remove(quick, monkeypatch):
+    fake = _patch_offline(monkeypatch)
+    _section(quick, "Downloads")
+    quick.wait_for("text:Album 007")
+    assert quick.find("text:50.0 MB on this device") is not None
+    assert quick.find("text:Air · 50.0 MB") is not None
+
+    # Live progress reaches the row; completion swaps the bar for the size.
+    PlayerBus.get().download_progress.emit("pl1", "downloading", 0.5)
+    from jellytoast.quick.rig import pump
+
+    pump(250)
+    quick.tap("pauseDownloads")
+    assert fake.paused and quick.find("text:Resume") is not None
+
+    row = quick.get("text:Playlist 1")
+    p = quick.point(row)
+    quick.drag((quick.window.width() - 30, p.y()), dx=-320, ms=250)
+    quick.wait_until(lambda: fake.removed)
+    assert fake.removed == ["pl1"]
+    assert quick.find("text:Playlist 1") is None

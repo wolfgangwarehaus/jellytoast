@@ -73,6 +73,13 @@ Item {
                     enabled: list.count > 0
                     onClicked: tracks.play(0)
                 }
+                IconButton {
+                    objectName: "downloadAlbum"
+                    anchors.verticalCenter: parent.verticalCenter
+                    iconName: "download"
+                    tint: theme.textDim
+                    onClicked: actions.download(page.album.id, page.album.name)
+                }
                 PillButton {
                     objectName: "shuffleAll"
                     iconName: "shuffle"

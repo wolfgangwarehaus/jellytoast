@@ -61,4 +61,10 @@ Menu {
             menu.favoriteChanged(menu.item.id, !menu.item.favorite)
         }
     }
+    MenuItem {
+        text: qsTr("Download")
+        visible: ["album", "playlist", "artist"].indexOf(menu.item.kind) >= 0
+        height: visible ? implicitHeight : 0
+        onTriggered: actions.download(menu.item.id, menu.item.name)
+    }
 }

@@ -76,8 +76,13 @@ could run.
   download quality, normalization, media controls, version); window-free
   services (offline / connectivity, keep-awake, now-playing notifications,
   scrobbling) + quit flushes; QML strings in the translation catalogs; last
-  section remembered. *Still to do:* downloads / offline UI, cast picker,
-  radio + smart mixes, favourites, theme picker, Quick Connect sign-in.
+  section remembered; Favorites section + Liked songs, Start radio,
+  favourite toggles; cast picker (Play on…, the Widgets hand-off code) +
+  per-protocol casting switches; Downloads section (progress, pause,
+  remove, storage), Download in menus / on album pages, offline mode +
+  Wi-Fi-only switches. *Still to do:* smart mixes, theme picker, Quick
+  Connect sign-in, sleep timer, offline browsing (library from downloads
+  when the server is unreachable).
 - [ ] **M4 — switch:** default on Plasma Mobile; remove the Widgets phone
   layouts only once parity holds; then the metainfo "phone friendly" flag.
 

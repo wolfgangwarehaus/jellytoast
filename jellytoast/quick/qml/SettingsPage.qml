@@ -133,6 +133,24 @@ Item {
                 font.pixelSize: 12
             }
 
+            Heading { text: qsTr("OFFLINE") }
+            SwitchRow {
+                objectName: "offlineModeSwitch"
+                Layout.fillWidth: true
+                Layout.leftMargin: 12; Layout.rightMargin: 12
+                text: qsTr("Offline mode — only play downloads")
+                checked: prefs.offlineMode
+                onToggled: prefs.setOfflineMode(checked)
+            }
+            SwitchRow {
+                objectName: "wifiOnlySwitch"
+                Layout.fillWidth: true
+                Layout.leftMargin: 12; Layout.rightMargin: 12
+                text: qsTr("Download on Wi-Fi only")
+                checked: prefs.wifiOnly
+                onToggled: prefs.setWifiOnly(checked)
+            }
+
             Heading { text: qsTr("CASTING") }
             Repeater {
                 model: prefs.castTypes

@@ -19,17 +19,22 @@
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../quick/actions.py" line="83"/>
+        <location filename="../quick/actions.py" line="89"/>
+        <source>Downloading {0}</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../quick/actions.py" line="105"/>
         <source>Starting radio…</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../quick/actions.py" line="91"/>
+        <location filename="../quick/actions.py" line="113"/>
         <source>Added to favorites</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../quick/actions.py" line="91"/>
+        <location filename="../quick/actions.py" line="113"/>
         <source>Removed from favorites</source>
         <translation type="unfinished"></translation>
     </message>
@@ -42,18 +47,18 @@
         <translation type="unfinished">Reproducir</translation>
     </message>
     <message>
-        <location filename="../quick/qml/AlbumPage.qml" line="79"/>
+        <location filename="../quick/qml/AlbumPage.qml" line="86"/>
         <source>Shuffle</source>
         <translation type="unfinished">Aleatorio</translation>
     </message>
     <message>
-        <location filename="../quick/qml/AlbumPage.qml" line="102"/>
-        <location filename="../quick/qml/AlbumPage.qml" line="111"/>
+        <location filename="../quick/qml/AlbumPage.qml" line="109"/>
+        <location filename="../quick/qml/AlbumPage.qml" line="118"/>
         <source>Added to queue</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../quick/qml/AlbumPage.qml" line="111"/>
+        <location filename="../quick/qml/AlbumPage.qml" line="118"/>
         <source>Playing next</source>
         <translation type="unfinished"></translation>
     </message>
@@ -143,7 +148,7 @@
 <context>
     <name>Cast</name>
     <message>
-        <location filename="../quick/cast.py" line="126"/>
+        <location filename="../quick/cast.py" line="129"/>
         <source>Pair {0} once from the desktop jellytoast app, then cast from here.</source>
         <translation type="unfinished"></translation>
     </message>
@@ -553,6 +558,44 @@ Haz clic derecho (o mantén pulsado) en un álbum, lista, artista o pista para d
         <location filename="../downloads_library_view.py" line="230"/>
         <source>Remove</source>
         <translation>Eliminar</translation>
+    </message>
+</context>
+<context>
+    <name>DownloadsPage</name>
+    <message>
+        <location filename="../quick/qml/DownloadsPage.qml" line="11"/>
+        <source>Downloads</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../quick/qml/DownloadsPage.qml" line="28"/>
+        <source>%1 on this device</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../quick/qml/DownloadsPage.qml" line="36"/>
+        <source>Resume</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../quick/qml/DownloadsPage.qml" line="36"/>
+        <source>Pause</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../quick/qml/DownloadsPage.qml" line="48"/>
+        <source>Nothing downloaded yet. Long-press an album or playlist and choose Download.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../quick/qml/DownloadsPage.qml" line="89"/>
+        <source>Remove download</source>
+        <translation type="unfinished">Eliminar descarga</translation>
+    </message>
+    <message>
+        <location filename="../quick/qml/DownloadsPage.qml" line="114"/>
+        <source>Download failed — will retry</source>
+        <translation type="unfinished"></translation>
     </message>
 </context>
 <context>
@@ -1039,6 +1082,11 @@ Esto libera el almacenamiento de inmediato. Tu biblioteca en el servidor no se v
         <location filename="../quick/qml/ItemMenu.qml" line="56"/>
         <source>Add to favorites</source>
         <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../quick/qml/ItemMenu.qml" line="65"/>
+        <source>Download</source>
+        <translation type="unfinished">Descargar</translation>
     </message>
 </context>
 <context>
@@ -1634,12 +1682,17 @@ jellytoast funcionará, pero las funciones de bandeja no estarán disponibles.</
         <translation type="unfinished">Favoritos</translation>
     </message>
     <message>
-        <location filename="../quick/qml/Main.qml" line="68"/>
+        <location filename="../quick/qml/Main.qml" line="34"/>
+        <source>Downloads</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../quick/qml/Main.qml" line="71"/>
         <source>Liked songs</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../quick/qml/Main.qml" line="318"/>
+        <location filename="../quick/qml/Main.qml" line="325"/>
         <source>Cast failed</source>
         <translation type="unfinished">Fallo al enviar</translation>
     </message>
@@ -2350,22 +2403,22 @@ Revisa el PIN — la causa más común es una errata o un código caducado (el r
 <context>
     <name>Prefs</name>
     <message>
-        <location filename="../quick/prefs.py" line="28"/>
+        <location filename="../quick/prefs.py" line="30"/>
         <source>Original</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../quick/prefs.py" line="34"/>
+        <location filename="../quick/prefs.py" line="36"/>
         <source>Off</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../quick/prefs.py" line="35"/>
+        <location filename="../quick/prefs.py" line="37"/>
         <source>Per song</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../quick/prefs.py" line="36"/>
+        <location filename="../quick/prefs.py" line="38"/>
         <source>Per album</source>
         <translation type="unfinished"></translation>
     </message>
@@ -3672,21 +3725,36 @@ Ejecuta pywal (o wallust) una vez para que genere una paleta, y vuelve a activar
     </message>
     <message>
         <location filename="../quick/qml/SettingsPage.qml" line="136"/>
+        <source>OFFLINE</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../quick/qml/SettingsPage.qml" line="141"/>
+        <source>Offline mode — only play downloads</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../quick/qml/SettingsPage.qml" line="149"/>
+        <source>Download on Wi-Fi only</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../quick/qml/SettingsPage.qml" line="154"/>
         <source>CASTING</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../quick/qml/SettingsPage.qml" line="150"/>
+        <location filename="../quick/qml/SettingsPage.qml" line="168"/>
         <source>ABOUT</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../quick/qml/SettingsPage.qml" line="167"/>
+        <location filename="../quick/qml/SettingsPage.qml" line="185"/>
         <source>Sign out?</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../quick/qml/SettingsPage.qml" line="173"/>
+        <location filename="../quick/qml/SettingsPage.qml" line="191"/>
         <source>Playback stops, the queue is cleared and pending downloads are cancelled.</source>
         <translation type="unfinished"></translation>
     </message>

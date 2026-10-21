@@ -136,6 +136,7 @@ def build_engine(app, *, start_core: bool = True):
     from jellytoast.quick.cast import Cast
     from jellytoast.quick.icons import IconProvider
     from jellytoast.quick.models import (
+        DownloadsModel,
         LibraryModel,
         LyricsModel,
         QueueModel,
@@ -185,6 +186,7 @@ def build_engine(app, *, start_core: bool = True):
     qmlRegisterType(TracksModel, "Jellytoast", 1, 0, "TracksModel")
     qmlRegisterType(LibraryModel, "Jellytoast", 1, 0, "LibraryModel")
     qmlRegisterType(SearchModel, "Jellytoast", 1, 0, "SearchModel")
+    qmlRegisterType(DownloadsModel, "Jellytoast", 1, 0, "DownloadsModel")
     engine = QQmlApplicationEngine()
     bridge = {
         "albums": LibraryModel(engine),

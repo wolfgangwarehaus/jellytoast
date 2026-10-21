@@ -882,3 +882,180 @@ class SearchModel(QAbstractListModel):
         (bus.queue_add_next if mode == "next" else bus.queue_add_end).emit(
             [self._rows[row]["_raw"]]
         )
+
+
+def _fmt_bytes(n: int) -> str:
+    n = float(max(0, int(n)))
+    for unit in ("B", "KB", "MB", "GB"):
+        if n < 1024 or unit == "GB":
+            return f"{n:.0f} {unit}" if unit in ("B", "KB") else f"{n:.1f} {unit}"
+        n /= 1024
+    return f"{n:.1f} GB"
+
+
+class DownloadsModel(QAbstractListModel):
+    """What the user asked to keep offline, newest first, with live state.
+    Roles: ``itemId``, ``name``, ``subtitle``, ``kind`` (album / playlist /
+    artist / track), ``state`` (pending / downloading / complete / failed /
+    stale), ``progress`` (0–1), ``size``, ``cover``."""
+
+    IdRole = Qt.ItemDataRole.UserRole + 1
+    NameRole = IdRole + 1
+    SubtitleRole = IdRole + 2
+    KindRole = IdRole + 3
+    StateRole = IdRole + 4
+    ProgressRole = IdRole + 5
+    SizeRole = IdRole + 6
+    CoverRole = IdRole + 7
+
+    statsChanged = Signal()
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        from jellytoast.player_state import PlayerBus
+
+        self._rows: List[Dict] = []
+        self._progress: Dict[str, float] = {}
+        self._paused = False
+        bus = PlayerBus.get()
+        bus.download_progress.connect(self._on_progress)
+        bus.download_queue_paused.connect(lambda: self._set_paused(True))
+        bus.download_queue_resumed.connect(lambda: self._set_paused(False))
+
+    def rowCount(self, parent=_ROOT):  # noqa: N802
+        return 0 if parent.isValid() else len(self._rows)
+
+    def roleNames(self):  # noqa: N802
+        return {
+            self.IdRole: QByteArray(b"itemId"),
+            self.NameRole: QByteArray(b"name"),
+            self.SubtitleRole: QByteArray(b"subtitle"),
+            self.KindRole: QByteArray(b"kind"),
+            self.StateRole: QByteArray(b"state"),
+            self.ProgressRole: QByteArray(b"progress"),
+            self.SizeRole: QByteArray(b"size"),
+            self.CoverRole: QByteArray(b"cover"),
+        }
+
+    def data(self, index, role=Qt.ItemDataRole.DisplayRole):
+        if not index.isValid() or not (0 <= index.row() < len(self._rows)):
+            return None
+        r = self._rows[index.row()]
+        item_id = r.get("item_id", "")
+        meta = r.get("metadata") or {}
+        if role == self.IdRole:
+            return item_id
+        if role in (self.NameRole, Qt.ItemDataRole.DisplayRole):
+            return r.get("name", "")
+        if role == self.SubtitleRole:
+            return meta.get("AlbumArtist") or ", ".join(
+                a for a in (meta.get("Artists") or []) if isinstance(a, str)
+            )
+        if role == self.KindRole:
+            return str(r.get("kind") or "")
+        if role == self.StateRole:
+            return str(r.get("state") or "")
+        if role == self.ProgressRole:
+            state = str(r.get("state") or "")
+            return 1.0 if state == "complete" else float(self._progress.get(item_id, 0.0))
+        if role == self.SizeRole:
+            return r.get("_size", "")
+        if role == self.CoverRole:
+            return r.get("_cover", "")
+        return None
+
+    def _set_paused(self, on: bool) -> None:
+        self._paused = on
+        self.statsChanged.emit()
+
+    paused = Property(bool, lambda self: self._paused, notify=statsChanged)
+    count = Property(int, lambda self: len(self._rows), notify=statsChanged)
+
+    def _usage(self) -> str:
+        try:
+            from jellytoast import offline
+
+            return _fmt_bytes(offline.storage_usage().get("total", 0))
+        except Exception:
+            return ""
+
+    storageUsed = Property(str, _usage, notify=statsChanged)
+
+    @Slot()
+    def reload(self) -> None:
+        from jellytoast import offline
+
+        try:
+            rows = offline.list_downloads()
+            self._paused = offline.is_paused()
+        except Exception as e:
+            logger.warning("downloads list failed: %s", e)
+            rows = []
+        try:
+            prov = _provider()
+        except Exception:
+            prov = None
+        for r in rows:
+            item_id = r.get("item_id", "")
+            meta = r.get("metadata") or {}
+            try:
+                r["_size"] = _fmt_bytes(offline.item_size(item_id))
+            except Exception:
+                r["_size"] = ""
+            src = meta.get("AlbumId") if r.get("kind") == "track" else item_id
+            try:
+                r["_cover"] = prov.get_image_url(src, "Primary", 160) if (prov and src) else ""
+            except Exception:
+                r["_cover"] = ""
+        self.beginResetModel()
+        self._rows = rows
+        self.endResetModel()
+        self.statsChanged.emit()
+
+    def _on_progress(self, item_id: str, state: str, fraction: float) -> None:
+        if not _alive(self):
+            return
+        self._progress[item_id] = float(fraction)
+        for i, r in enumerate(self._rows):
+            if r.get("item_id") == item_id:
+                r["state"] = str(state)
+                idx = self.index(i)
+                self.dataChanged.emit(idx, idx, [self.StateRole, self.ProgressRole])
+                if str(state) == "complete":
+                    self.statsChanged.emit()
+                return
+        if str(state) == "pending":  # a new request: show it
+            self.reload()
+
+    @Slot(int)
+    def remove(self, row: int) -> None:
+        if not (0 <= row < len(self._rows)):
+            return
+        from jellytoast import offline
+
+        offline.remove(self._rows[row].get("item_id", ""))
+        self.beginRemoveRows(QModelIndex(), row, row)
+        del self._rows[row]
+        self.endRemoveRows()
+        self.statsChanged.emit()
+
+    @Slot(int, result="QVariantMap")
+    def get(self, row: int) -> Dict:
+        if not (0 <= row < len(self._rows)):
+            return {}
+        r = self._rows[row]
+        meta = r.get("metadata") or {}
+        return {
+            "kind": str(r.get("kind") or ""),
+            "id": r.get("item_id", ""),
+            "name": r.get("name", ""),
+            "artist": meta.get("AlbumArtist", ""),
+            "year": str(meta.get("ProductionYear") or ""),
+            "cover": r.get("_cover", ""),
+        }
+
+    @Slot()
+    def togglePause(self) -> None:  # noqa: N802
+        from jellytoast import offline
+
+        (offline.resume if self._paused else offline.pause)()
