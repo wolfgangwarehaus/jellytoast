@@ -107,6 +107,19 @@ could run.
   reorder, internet radio, EQ / crossfade / scrobbling / lyrics size.
 - [ ] Remove the Widgets phone layouts — later, once the Quick UI has had
   a release or two in the wild.
+- [ ] **Phosh** (prep for the OnePlus 6T; verify on a real device):
+  - [ ] `platform_compat.is_mobile_shell()`: also true on Phosh
+    (`XDG_CURRENT_DESKTOP` contains `Phosh`) — today only Plasma Mobile's
+    `PLASMA_PLATFORM=phone…` / `QT_QUICK_CONTROLS_MOBILE` count, so Phosh
+    gets the desktop UI unless `JT_UI=quick`.
+  - [ ] `is_docked()` for Phosh: its docked mode (external display /
+    keyboard) — find where Phosh exposes it; today only `plasmamobilerc`.
+  - [ ] Squeekboard pops up for the Quick UI's text fields (Qt
+    text-input-v3) — search, sign-in, new playlist name.
+  - [ ] Media controls on the Phosh lock screen (MPRIS), notifications,
+    close-to-background behaviour.
+  - [ ] Packaging: postmarketOS / Nura OS (aarch64) — PySide6 with
+    QtQuick from the distro, or the Flatpak (KDE runtime) on Phosh.
 
 ## Rig (dev + tests)
 
