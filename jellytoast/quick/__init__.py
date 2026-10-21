@@ -22,6 +22,30 @@ def wanted() -> bool:
     return os.environ.get("JT_UI", "").strip().lower() == "quick"
 
 
+def _silence_play_reports() -> None:
+    """Dev rigs: don't tell the server about plays (no "now playing", no
+    play counts / scrobbles from test runs)."""
+    from jellytoast.providers import get_provider
+
+    prov = get_provider()
+    for name in ("report_playback_start", "report_playback_progress", "report_playback_stopped"):
+        setattr(prov, name, lambda *a, **k: None)
+    logger.warning("play reports to the server are OFF (JT_NO_PLAY_REPORTS=1)")
+
+
+def _apply_font(app) -> None:
+    """Settings → Display → Font, else the desktop app's built-in stack
+    (Inter → Noto Sans → sans-serif; the Widgets UI gets it from QSS)."""
+    from PySide6.QtGui import QFont
+
+    from jellytoast.settings import get_settings
+
+    fam = (get_settings().font_family or "").strip()
+    f = QFont(app.font())
+    f.setFamilies([fam] if fam else ["Inter", "Segoe UI", "Noto Sans", "sans-serif"])
+    app.setFont(f)
+
+
 def build_engine(app, *, start_core: bool = True):
     """Create the core + bridge objects and a loaded QQmlApplicationEngine.
     ``start_core=False`` skips mpv / MPRIS (tests)."""
@@ -30,8 +54,15 @@ def build_engine(app, *, start_core: bool = True):
 
     from jellytoast.player_state import PlayerBus
     from jellytoast.providers import get_provider
+    from jellytoast.quick.actions import Actions
     from jellytoast.quick.icons import IconProvider
-    from jellytoast.quick.models import AlbumsModel, TracksModel
+    from jellytoast.quick.models import (
+        LibraryModel,
+        LyricsModel,
+        QueueModel,
+        SearchModel,
+        TracksModel,
+    )
     from jellytoast.quick.player import PlayerController
     from jellytoast.quick.theme import Theme
 
@@ -44,6 +75,8 @@ def build_engine(app, *, start_core: bool = True):
         from jellytoast.settings import get_settings
 
         settings = get_settings()
+        if os.environ.get("JT_NO_PLAY_REPORTS") == "1":
+            _silence_play_reports()
         core["cast"] = CastManager()
         core["queue"] = QueueManager(app)
         mpv = MpvController()
@@ -61,13 +94,21 @@ def build_engine(app, *, start_core: bool = True):
     # Our own components + theme; never the platform style — Plasma exports
     # QT_QUICK_CONTROLS_STYLE=org.kde.breeze, which pip's PySide6 can't load.
     # JT_QUICK_STYLE overrides for experiments.
-    QQuickStyle.setStyle(os.environ.get("JT_QUICK_STYLE") or "Basic")
+    style = os.environ.get("JT_QUICK_STYLE") or "Basic"
+    if QQuickStyle.name() != style:  # once per process (a 2nd engine can't change it)
+        QQuickStyle.setStyle(style)
+    _apply_font(app)
     signed_in = bool(get_provider().is_authenticated)
 
     qmlRegisterType(TracksModel, "Jellytoast", 1, 0, "TracksModel")
+    qmlRegisterType(LibraryModel, "Jellytoast", 1, 0, "LibraryModel")
+    qmlRegisterType(SearchModel, "Jellytoast", 1, 0, "SearchModel")
     engine = QQmlApplicationEngine()
     bridge = {
-        "albums": AlbumsModel(engine),
+        "albums": LibraryModel(engine),
+        "queue": QueueModel(engine, queue=core.get("queue")),
+        "lyrics": LyricsModel(engine),
+        "actions": Actions(engine),
         "player": PlayerController(engine, queue=core.get("queue")),
         "theme": Theme(engine),
     }
@@ -83,11 +124,49 @@ def build_engine(app, *, start_core: bool = True):
     return engine
 
 
+def _start_bridge(app, engine) -> None:
+    """Dev-only eval socket (``JT_TEST_BRIDGE=1``) with the rig in scope —
+    see jellytoast/test_bridge.py and dev/qctl.py."""
+    from jellytoast.player_state import PlayerBus, get_now_playing
+    from jellytoast.providers import get_provider
+    from jellytoast.quick.rig import Rig, pump
+    from jellytoast.settings import get_settings
+    from jellytoast.test_bridge import TestBridge
+
+    rig = Rig(engine)
+    core, bridge = engine._jt_keep
+
+    def namespace():
+        return {
+            "app": app,
+            "engine": engine,
+            "rig": rig,
+            "win": rig.window,
+            "pump": pump,
+            "bus": PlayerBus.get(),
+            "get_now_playing": get_now_playing,
+            "get_provider": get_provider,
+            "get_settings": get_settings,
+            "qm": core.get("queue"),
+            "mpv": core.get("mpv"),
+            **bridge,
+        }
+
+    app._test_bridge = TestBridge(app, namespace)
+    app._test_bridge.start()
+
+
 def run(app) -> int:
     """Start the Qt Quick front end and run the event loop."""
     engine = build_engine(app)
     if not engine.rootObjects():
         logger.error("Qt Quick UI failed to load — see QML errors above")
         return 1
+    if os.environ.get("JT_TEST_BRIDGE") == "1":
+        _start_bridge(app, engine)
+    size = os.environ.get("JT_QUICK_SIZE", "")  # e.g. 402x874 — rig / desktop dev
+    if "x" in size:
+        w, h = (int(v) for v in size.lower().split("x", 1))
+        engine.rootObjects()[0].resize(w, h)
     app.setQuitOnLastWindowClosed(True)
     return app.exec()

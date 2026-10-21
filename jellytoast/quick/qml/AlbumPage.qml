@@ -1,15 +1,18 @@
-// One album: header (cover, title, artist, play / shuffle) + its tracks.
+// One album or playlist: header (cover, title, artist, play / shuffle) +
+// its tracks. Swipe a track left to queue it; long-press for the menu.
 import QtQuick
 import QtQuick.Controls
-import QtQuick.Layouts
 import Jellytoast
 
 Item {
     id: page
     property var album: ({})
+    property string kind: album.kind === "playlist" ? "playlist" : "album"
     property string title: ""
+    readonly property bool loading: tracks.loading
+    signal openItem(string kind, var item)
 
-    TracksModel { id: tracks }
+    TracksModel { id: tracks; kind: page.kind }
     Component.onCompleted: tracks.load(album.id, album.name)
 
     ListView {
@@ -23,7 +26,6 @@ Item {
         flickDeceleration: 2500
         pixelAligned: true
         bottomMargin: 12
-        ScrollIndicator.vertical: ScrollIndicator { }
 
         header: Column {
             width: list.width
@@ -36,13 +38,13 @@ Item {
                 width: Math.min(parent.width - 96, 320)
                 height: width
                 radius: 12
-                source: page.album.cover
+                source: page.album.cover || ""
             }
             Label {
                 width: parent.width - 32
                 anchors.horizontalCenter: parent.horizontalCenter
                 horizontalAlignment: Text.AlignHCenter
-                text: page.album.name
+                text: page.album.name || ""
                 color: theme.text
                 wrapMode: Text.WordWrap
                 maximumLineCount: 2
@@ -54,7 +56,8 @@ Item {
                 width: parent.width - 32
                 anchors.horizontalCenter: parent.horizontalCenter
                 horizontalAlignment: Text.AlignHCenter
-                text: [page.album.artist, page.album.year, (tracks ? tracks.summary : "")].filter(s => s).join(" · ")
+                text: [page.kind === "album" ? page.album.artist : "", page.album.year,
+                       (tracks ? tracks.summary : "")].filter(s => s).join(" · ")
                 color: theme.textDim
                 elide: Text.ElideRight
                 font.pixelSize: 13
@@ -63,6 +66,7 @@ Item {
                 anchors.horizontalCenter: parent.horizontalCenter
                 spacing: 12
                 PillButton {
+                    objectName: "playAll"
                     iconName: "play"
                     text: qsTr("Play")
                     filled: true
@@ -70,6 +74,7 @@ Item {
                     onClicked: tracks.play(0)
                 }
                 PillButton {
+                    objectName: "shuffleAll"
                     iconName: "shuffle"
                     text: qsTr("Shuffle")
                     enabled: list.count > 0
@@ -83,73 +88,27 @@ Item {
             }
         }
 
-        delegate: ItemDelegate {
-            id: row
+        delegate: TrackRow {
             required property int index
-            required property string trackId
+            required trackId
             required property string name
             required property string artist
-            required property int number
-            required property string length
-            readonly property bool current: trackId === player.itemId
-
+            required number
+            required length
             width: list.width
-            height: 56
-            focusPolicy: Qt.NoFocus
-            hoverEnabled: false
-            background: Rectangle {
-                color: theme.text
-                opacity: row.pressed ? 0.08 : 0
-            }
+            title: name
+            subtitle: artist
             onClicked: tracks.play(index)
+            onQueued: { tracks.queueRow(index, "end"); toast.show(qsTr("Added to queue")) }
+            onMenuRequested: (x, y) => menu.show({ kind: "track", row: index, name: name }, this, x, y)
+        }
+    }
 
-            contentItem: RowLayout {
-                spacing: 12
-                Item {
-                    Layout.preferredWidth: 28
-                    Layout.fillHeight: true
-                    Label {
-                        anchors.centerIn: parent
-                        visible: !row.current
-                        text: row.number > 0 ? row.number : ""
-                        color: theme.textDim
-                        font.pixelSize: 13
-                        font.features: { "tnum": 1 }
-                    }
-                    Icon {
-                        anchors.centerIn: parent
-                        visible: row.current
-                        name: player.playing ? "volume" : "pause"
-                        tint: theme.accent
-                        size: 18
-                    }
-                }
-                ColumnLayout {
-                    Layout.fillWidth: true
-                    spacing: 1
-                    Label {
-                        Layout.fillWidth: true
-                        text: row.name
-                        color: row.current ? theme.accent : theme.text
-                        elide: Text.ElideRight
-                        font.pixelSize: 15
-                    }
-                    Label {
-                        Layout.fillWidth: true
-                        visible: row.artist !== ""
-                        text: row.artist
-                        color: theme.textDim
-                        elide: Text.ElideRight
-                        font.pixelSize: 12
-                    }
-                }
-                Label {
-                    text: row.length
-                    color: theme.textDim
-                    font.pixelSize: 13
-                    font.features: { "tnum": 1 }
-                }
-            }
+    ItemMenu {
+        id: menu
+        queueRow: (row, mode) => {
+            tracks.queueRow(row, mode)
+            toast.show(mode === "next" ? qsTr("Playing next") : qsTr("Added to queue"))
         }
     }
 }

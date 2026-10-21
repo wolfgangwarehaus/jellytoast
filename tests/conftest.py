@@ -576,3 +576,7 @@ def clean_theme_settings():
     _wipe()
     yield
     _wipe()
+
+
+# Qt Quick front end fixtures (fake library + Rig) — tests/quick_support.py.
+from tests.quick_support import fake_provider, quick  # noqa: E402, F401

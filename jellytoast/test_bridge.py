@@ -42,8 +42,12 @@ logger = logging.getLogger(__name__)
 
 def socket_name() -> str:
     """The per-user local-socket name. Shared by server and client so
-    Qt resolves both to the same on-disk socket path."""
-    return f"jellytoast-test-bridge-{getpass.getuser()}"
+    Qt resolves both to the same on-disk socket path. ``JT_BRIDGE_SOCKET``
+    picks another name so two bridged instances (e.g. the desktop app and
+    the Qt Quick rig) can run side by side."""
+    import os
+
+    return os.environ.get("JT_BRIDGE_SOCKET") or f"jellytoast-test-bridge-{getpass.getuser()}"
 
 
 def _coerce(value):

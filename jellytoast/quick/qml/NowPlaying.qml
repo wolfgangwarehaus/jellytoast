@@ -7,7 +7,9 @@ Rectangle {
     id: np
     objectName: "nowPlaying"
     property bool shown: false
+    property string surface: "cover"  // | "lyrics" | "queue"
     signal goToAlbum(var album)
+    signal goToArtist(var artist)
 
     color: theme.background
     y: shown ? dragOffset : parent.height
@@ -21,6 +23,7 @@ Rectangle {
 
     function open() { dragOffset = 0; shown = true }
     function close() { shown = false; dragOffset = 0 }
+    function toggleSurface(s) { surface = surface === s ? "cover" : s }
 
     // Swallow taps so nothing underneath reacts.
     MouseArea { anchors.fill: parent }
@@ -28,6 +31,7 @@ Rectangle {
     DragHandler {
         id: drag
         target: null
+        enabled: np.surface === "cover"
         xAxis.enabled: false
         onTranslationChanged: np.dragOffset = Math.max(0, translation.y)
         onActiveChanged: {
@@ -81,13 +85,23 @@ Rectangle {
                 }
             }
             IconButton {
+                objectName: "npMore"
                 iconName: "more_vert"
-                enabled: player.albumId !== ""
+                enabled: player.albumId !== "" || player.artistId !== ""
                 onClicked: moreMenu.popup(this, width - moreMenu.width, height)
                 Menu {
                     id: moreMenu
                     MenuItem {
+                        text: qsTr("Go to artist")
+                        enabled: player.artistId !== ""
+                        onTriggered: {
+                            np.goToArtist({ id: player.artistId, name: player.artist })
+                            np.close()
+                        }
+                    }
+                    MenuItem {
                         text: qsTr("Go to album")
+                        enabled: player.albumId !== ""
                         onTriggered: {
                             np.goToAlbum({ id: player.albumId, name: player.album, artist: player.artist,
                                            year: "", cover: player.cover })
@@ -98,8 +112,9 @@ Rectangle {
             }
         }
 
-        // ── cover: as big as fits, square, never resized by text ──
+        // ── surface: cover, or lyrics / queue in its place; never resized by text ──
         Item {
+            id: surfaceBox
             Layout.fillWidth: true
             Layout.fillHeight: true
             Cover {
@@ -113,6 +128,25 @@ Rectangle {
                 pixels: 1024
                 source: player.bigCover
                 fallback: player.cover
+                opacity: np.surface === "cover" ? 1 : 0
+                visible: opacity > 0
+                Behavior on opacity { NumberAnimation { duration: 180 } }
+            }
+            LyricsView {
+                anchors.fill: parent
+                active: np.surface === "lyrics" && np.shown
+                opacity: np.surface === "lyrics" ? 1 : 0
+                visible: opacity > 0
+                Behavior on opacity { NumberAnimation { duration: 180 } }
+            }
+            QueueView {
+                anchors.fill: parent
+                anchors.leftMargin: -np.side + 4
+                anchors.rightMargin: -np.side + 4
+                active: np.surface === "queue" && np.shown
+                opacity: np.surface === "queue" ? 1 : 0
+                visible: opacity > 0
+                Behavior on opacity { NumberAnimation { duration: 180 } }
             }
         }
 
@@ -153,6 +187,7 @@ Rectangle {
         }
 
         SeekBar {
+            objectName: "seekBar"
             Layout.fillWidth: true
             Layout.topMargin: 12
             position: player.position
@@ -212,6 +247,27 @@ Rectangle {
                 iconName: player.repeat === "one" ? "repeat_one" : "repeat"
                 tint: player.repeat !== "off" ? theme.accent : theme.textDim
                 onClicked: player.cycleRepeat()
+            }
+        }
+
+        // ── surface toggles ──
+        RowLayout {
+            Layout.fillWidth: true
+            Layout.preferredHeight: 48
+            Layout.leftMargin: -12
+            Layout.rightMargin: -12
+            IconButton {
+                objectName: "lyricsToggle"
+                iconName: "lyrics"
+                tint: np.surface === "lyrics" ? theme.accent : theme.textDim
+                onClicked: np.toggleSurface("lyrics")
+            }
+            Item { Layout.fillWidth: true }
+            IconButton {
+                objectName: "queueToggle"
+                iconName: "queue"
+                tint: np.surface === "queue" ? theme.accent : theme.textDim
+                onClicked: np.toggleSurface("queue")
             }
         }
     }

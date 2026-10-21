@@ -1,6 +1,7 @@
 // jellytoast — Qt Quick phone front end (see dev/QT_QUICK_PLAN.md).
-// Context properties from jellytoast/quick: `albums` (AlbumsModel),
-// `player` (PlayerController), `theme` (Theme), `signedIn` (bool).
+// Context properties from jellytoast/quick: `albums` (LibraryModel),
+// `player` (PlayerController), `queue` (QueueModel), `lyrics` (LyricsModel),
+// `actions` (Actions), `theme` (Theme), `signedIn` (bool).
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
@@ -17,17 +18,59 @@ ApplicationWindow {
     palette.text: theme.text
     palette.window: theme.surface
     palette.base: theme.surface
+    palette.light: theme.surface
+    palette.mid: theme.textFaint
     palette.highlight: theme.accent
     palette.highlightedText: theme.onAccent
 
-    function openAlbum(album) {
-        stack.push(albumPage, { album: album })
+    // ── sections ──
+    readonly property var sections: [
+        { key: "album", label: qsTr("Albums") },
+        { key: "artist", label: qsTr("Artists") },
+        { key: "playlist", label: qsTr("Playlists") },
+        { key: "song", label: qsTr("Songs") },
+        { key: "genre", label: qsTr("Genres") }
+    ]
+    property string section: "album"
+
+    function showSection(key) {
+        section = key
+        nowPlaying.close()
+        var page
+        if (key === "song")
+            page = songsPage
+        else if (key === "genre")
+            page = genresPage
+        else
+            page = gridPage
+        var props = key === "song" || key === "genre" ? {}
+            : { kind: key, title: sections.find(s => s.key === key).label, source: key === "album" ? albums : null }
+        stack.replace(null, page, props, StackView.Immediate)
     }
 
-    // Back: Now Playing first, then the page stack. (Esc / Back key / button.)
+    // Where tapping an item goes: albums / playlists → track list,
+    // artists → their albums, genres → their albums.
+    function openItem(kind, item) {
+        if (kind === "album" || kind === "playlist")
+            stack.push(albumPage, { album: Object.assign({ kind: kind }, item) })
+        else if (kind === "artist")
+            stack.push(gridPage, { kind: "artistAlbums", parentId: item.id, title: item.name })
+        else if (kind === "genre")
+            stack.push(gridPage, { kind: "genreAlbums", parentId: item.id, title: item.name })
+    }
+
+    function openSearch() {
+        if (!(stack.currentItem && stack.currentItem.objectName === "searchPage"))
+            stack.push(searchPage)
+    }
+
+    // Back: Now Playing first, then the page stack. (Esc / Back key / button / edge swipe.)
     function back() {
         if (nowPlaying.shown) {
-            nowPlaying.close()
+            if (nowPlaying.surface !== "cover")
+                nowPlaying.surface = "cover"
+            else
+                nowPlaying.close()
             return true
         }
         if (stack.depth > 1) {
@@ -41,6 +84,10 @@ ApplicationWindow {
         sequences: [StandardKey.Back, "Esc", "Back"]
         onActivated: win.back()
     }
+    Shortcut {
+        sequences: [StandardKey.Find]
+        onActivated: win.openSearch()
+    }
 
     ColumnLayout {
         anchors.fill: parent
@@ -48,25 +95,85 @@ ApplicationWindow {
 
         Item {
             id: topBar
+            objectName: "topBar"
             Layout.fillWidth: true
             Layout.preferredHeight: 52
+            readonly property bool root: stack.depth <= 1
+
             IconButton {
+                objectName: "backButton"
                 anchors.left: parent.left
                 anchors.leftMargin: 4
                 anchors.verticalCenter: parent.verticalCenter
                 iconName: "back"
-                visible: stack.depth > 1
+                visible: !topBar.root
                 onClicked: win.back()
+            }
+            // Root: the section title is the section picker.
+            AbstractButton {
+                id: sectionButton
+                objectName: "sectionButton"
+                anchors.centerIn: parent
+                visible: topBar.root
+                focusPolicy: Qt.NoFocus
+                hoverEnabled: false
+                implicitWidth: sectionRow.implicitWidth + 24
+                implicitHeight: 44
+                onClicked: sectionMenu.popup(this, (width - sectionMenu.width) / 2, height)
+                background: Rectangle { radius: 22; color: theme.text; opacity: sectionButton.pressed ? 0.1 : 0 }
+                contentItem: Item {
+                    Row {
+                        id: sectionRow
+                        anchors.centerIn: parent
+                        spacing: 6
+                        Label {
+                            text: stack.currentItem ? stack.currentItem.title : ""
+                            color: theme.text
+                            font.pixelSize: 18
+                            font.weight: Font.DemiBold
+                        }
+                        Icon {
+                            anchors.verticalCenter: parent.verticalCenter
+                            name: "chevron_down"
+                            tint: theme.textDim
+                            size: 18
+                        }
+                    }
+                }
+                Menu {
+                    id: sectionMenu
+                    objectName: "sectionMenu"
+                    Repeater {
+                        model: win.sections
+                        MenuItem {
+                            required property var modelData
+                            text: modelData.label
+                            checkable: true
+                            checked: win.section === modelData.key
+                            onTriggered: win.showSection(modelData.key)
+                        }
+                    }
+                }
             }
             Label {
                 anchors.centerIn: parent
                 width: parent.width - 120
+                visible: !topBar.root
                 horizontalAlignment: Text.AlignHCenter
                 text: stack.currentItem ? stack.currentItem.title : ""
                 color: theme.text
                 elide: Text.ElideRight
                 font.pixelSize: 18
                 font.weight: Font.DemiBold
+            }
+            IconButton {
+                objectName: "searchButton"
+                anchors.right: parent.right
+                anchors.rightMargin: 4
+                anchors.verticalCenter: parent.verticalCenter
+                iconName: "search"
+                visible: signedIn && !(stack.currentItem && stack.currentItem.objectName === "searchPage")
+                onClicked: win.openSearch()
             }
         }
 
@@ -76,9 +183,7 @@ ApplicationWindow {
             Layout.fillWidth: true
             Layout.fillHeight: true
             clip: true
-            initialItem: AlbumsPage {
-                onOpenAlbum: album => win.openAlbum(album)
-            }
+            Component.onCompleted: win.showSection("album")
 
             pushEnter: Transition {
                 ParallelAnimation {
@@ -98,6 +203,21 @@ ApplicationWindow {
                     NumberAnimation { property: "opacity"; from: 1; to: 0; duration: 200 }
                 }
             }
+
+            // Back gesture: drag in from the left edge.
+            Item {
+                id: edge
+                objectName: "edgeSwipe"
+                z: 100
+                width: 16
+                height: parent.height
+                visible: stack.depth > 1
+                DragHandler {
+                    target: null
+                    yAxis.enabled: false
+                    onActiveChanged: if (!active && centroid.position.x - centroid.pressPosition.x > 80) win.back()
+                }
+            }
         }
 
         MiniPlayer {
@@ -108,8 +228,27 @@ ApplicationWindow {
     }
 
     Component {
+        id: gridPage
+        LibraryGridPage { onOpenItem: (kind, item) => win.openItem(kind, item) }
+    }
+    Component {
+        id: songsPage
+        SongsPage { }
+    }
+    Component {
+        id: genresPage
+        GenresPage { onOpenItem: (kind, item) => win.openItem(kind, item) }
+    }
+    Component {
         id: albumPage
         AlbumPage { }
+    }
+    Component {
+        id: searchPage
+        SearchPage {
+            objectName: "searchPage"
+            onOpenItem: (kind, item) => win.openItem(kind, item)
+        }
     }
 
     NowPlaying {
@@ -117,10 +256,49 @@ ApplicationWindow {
         width: win.width
         height: win.height
         z: 10
+        onGoToArtist: artist => {
+            var cur = stack.currentItem
+            if (!(cur && cur.kind === "artistAlbums" && cur.parentId === artist.id))
+                win.openItem("artist", artist)
+        }
         onGoToAlbum: album => {
             var cur = stack.currentItem
             if (!(cur && cur.album && cur.album.id === album.id))
-                win.openAlbum(album)
+                win.openItem("album", album)
         }
+    }
+
+    // Short confirmations ("Added to queue").
+    Rectangle {
+        id: toast
+        objectName: "toast"
+        property alias text: toastLabel.text
+        function show(msg) {
+            text = msg
+            opacity = 1
+            toastTimer.restart()
+        }
+        z: 20
+        anchors.horizontalCenter: parent.horizontalCenter
+        y: parent.height - 76 - 64 - (nowPlaying.shown ? 0 : 0)
+        width: toastLabel.implicitWidth + 32
+        height: 40
+        radius: 20
+        color: theme.text
+        opacity: 0
+        visible: opacity > 0
+        Behavior on opacity { NumberAnimation { duration: 180 } }
+        Label {
+            id: toastLabel
+            anchors.centerIn: parent
+            color: theme.background
+            font.pixelSize: 14
+            font.weight: Font.Medium
+        }
+        Timer { id: toastTimer; interval: 1800; onTriggered: toast.opacity = 0 }
+    }
+    Connections {
+        target: actions
+        function onToast(msg) { toast.show(msg) }
     }
 }

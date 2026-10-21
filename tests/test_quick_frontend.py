@@ -172,3 +172,44 @@ def test_icon_provider_renders_tinted_glyph(qapp):
         if img.pixelColor(x, y).alpha() > 200
     ]
     assert reds and all(c.red() > 200 and c.green() < 60 for c in reds)
+
+
+def test_reload_with_view_attached_fetches_page_once(qapp, prov, monkeypatch):
+    """endResetModel() makes a view call fetchMore() re-entrantly; reload()
+    must not then fetch the same page again (duplicate albums)."""
+    pending = []
+    monkeypatch.setattr(
+        qm.async_io,
+        "run_async",
+        lambda fn, *a, on_result=None, on_error=None: pending.append((fn, on_result)),
+    )
+    m = qm.AlbumsModel()
+    m.modelReset.connect(lambda: m.fetchMore())  # what GridView does
+    m.reload()
+    assert len(pending) == 1
+    fn, done = pending.pop()
+    done(fn())
+    assert m.rowCount() == 100
+
+
+def test_seek_letter_pages_until_found(qapp, monkeypatch):
+    """A–Z scrubber: a letter past the loaded rows pages more in, then answers."""
+    names = [f"A{i:03d}" for i in range(150)] + [f"M{i:03d}" for i in range(20)]
+    p = MagicMock()
+    p.get_items.side_effect = lambda *a, **k: {
+        "Items": [{"Id": n, "Name": n} for n in names[a[3] : a[3] + a[2]]]
+    }
+    p.get_image_url.return_value = ""
+    monkeypatch.setattr(qm, "_provider", lambda: p)
+    monkeypatch.setattr(
+        qm.async_io, "run_async", lambda fn, *a, on_result=None, on_error=None: on_result(fn(*a))
+    )
+    m = qm.LibraryModel(kind="album")
+    found = []
+    m.letterFound.connect(lambda letter, row: found.append((letter, row)))
+    m.reload()
+    assert m.rowCount() == 100
+    m.seekLetter("M")
+    assert found == [("M", 150)] and m.rowCount() == 170
+    m.seekLetter("Z")  # past the end → last row
+    assert found[-1] == ("Z", 169)

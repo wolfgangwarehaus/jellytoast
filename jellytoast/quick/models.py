@@ -31,35 +31,65 @@ COVER_PX = 512
 _ROOT = QModelIndex()  # the (invalid) root index — a shared default arg
 
 
+def _alive(obj) -> bool:
+    """False once QML has destroyed the model (its page was popped or
+    replaced) — late async results must then be dropped, not applied."""
+    import shiboken6
+
+    return shiboken6.isValid(obj)
+
+
 def _provider():
     from jellytoast.providers import get_provider
 
     return get_provider()
 
 
-class AlbumsModel(QAbstractListModel):
-    """The library's albums, A–Z, loaded a page at a time.
+def _letter(name: str) -> str:
+    """A–Z bucket for a sort name: first letter, ``#`` for anything else
+    (digits, punctuation, non-Latin)."""
+    for ch in name or "":
+        if ch.isalnum():
+            up = ch.upper()
+            return up if "A" <= up <= "Z" else "#"
+    return "#"
 
-    Roles: ``albumId``, ``name``, ``artist``, ``year``, ``cover`` (an image
-    URL the server answers directly — auth rides in the URL)."""
+
+class LibraryModel(QAbstractListModel):
+    """One library section, A–Z, loaded a page at a time.
+
+    ``kind``: ``album`` | ``artist`` | ``playlist`` | ``song`` | ``genre`` |
+    ``artistAlbums`` (needs ``parentId``) | ``genreAlbums`` (needs
+    ``parentId``). Set ``kind`` / ``parentId`` then ``reload()``.
+
+    Roles: ``itemId``, ``name``, ``subtitle``, ``year``, ``cover`` (an image
+    URL the server answers directly — auth rides in the URL), ``letter``."""
 
     PAGE = 100
+    KINDS = ("album", "artist", "playlist", "song", "genre", "artistAlbums", "genreAlbums")
 
     IdRole = Qt.ItemDataRole.UserRole + 1
     NameRole = IdRole + 1
-    ArtistRole = IdRole + 2
+    ArtistRole = IdRole + 2  # role name "subtitle"; "artist" kept for albums
     YearRole = IdRole + 3
     CoverRole = IdRole + 4
+    LetterRole = IdRole + 5
+    SubtitleRole = IdRole + 6
 
     loadingChanged = Signal()
     countChanged = Signal()
+    kindChanged = Signal()
+    letterFound = Signal(str, int)  # letter, row — answer to seekLetter()
 
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, kind: str = "album"):
         super().__init__(parent)
         self._items: List[Dict] = []
         self._loading = False
         self._done = False
         self._gen = 0
+        self._kind = kind
+        self._parent_id = ""
+        self._seek: str = ""
 
     # ── QAbstractListModel ──
     def rowCount(self, parent=_ROOT):  # noqa: N802
@@ -67,12 +97,33 @@ class AlbumsModel(QAbstractListModel):
 
     def roleNames(self):  # noqa: N802
         return {
-            self.IdRole: QByteArray(b"albumId"),
+            self.IdRole: QByteArray(b"itemId"),
             self.NameRole: QByteArray(b"name"),
             self.ArtistRole: QByteArray(b"artist"),
+            self.SubtitleRole: QByteArray(b"subtitle"),
             self.YearRole: QByteArray(b"year"),
             self.CoverRole: QByteArray(b"cover"),
+            self.LetterRole: QByteArray(b"letter"),
         }
+
+    def _subtitle(self, it: Dict) -> str:
+        k = self._kind
+        if k in ("album", "artistAlbums", "genreAlbums"):
+            return it.get("AlbumArtist") or ", ".join(
+                a.get("Name", "") for a in (it.get("AlbumArtists") or []) if isinstance(a, dict)
+            )
+        if k == "artist":
+            n = int(it.get("ChildCount") or it.get("AlbumCount") or 0)
+            return f"{n} albums" if n != 1 else "1 album" if n else ""
+        if k == "playlist":
+            n = int(it.get("ChildCount") or 0)
+            return f"{n} songs" if n != 1 else "1 song"
+        if k == "song":
+            artists = ", ".join(a for a in (it.get("Artists") or []) if isinstance(a, str))
+            return " · ".join(
+                x for x in (artists or it.get("AlbumArtist", ""), it.get("Album", "")) if x
+            )
+        return ""
 
     def data(self, index, role=Qt.ItemDataRole.DisplayRole):
         if not index.isValid() or not (0 <= index.row() < len(self._items)):
@@ -82,14 +133,14 @@ class AlbumsModel(QAbstractListModel):
             return it.get("Id", "")
         if role in (self.NameRole, Qt.ItemDataRole.DisplayRole):
             return it.get("Name", "")
-        if role == self.ArtistRole:
-            return it.get("AlbumArtist") or ", ".join(
-                a.get("Name", "") for a in (it.get("AlbumArtists") or []) if isinstance(a, dict)
-            )
+        if role in (self.ArtistRole, self.SubtitleRole):
+            return self._subtitle(it)
         if role == self.YearRole:
             return str(it.get("ProductionYear") or "")
         if role == self.CoverRole:
             return it.get("_cover", "")
+        if role == self.LetterRole:
+            return _letter(it.get("SortName") or it.get("Name", ""))
         return None
 
     # ── QML API ──
@@ -103,19 +154,76 @@ class AlbumsModel(QAbstractListModel):
 
     count = Property(int, _get_count, notify=countChanged)
 
+    def _get_kind(self) -> str:
+        return self._kind
+
+    def _set_kind(self, k: str) -> None:
+        if k != self._kind:
+            self._kind = k
+            self.kindChanged.emit()
+
+    kind = Property(str, _get_kind, _set_kind, notify=kindChanged)
+
+    def _get_parent_id(self) -> str:
+        return self._parent_id
+
+    def _set_parent_id(self, v: str) -> None:
+        if v != self._parent_id:
+            self._parent_id = v
+            self.kindChanged.emit()
+
+    parentId = Property(str, _get_parent_id, _set_parent_id, notify=kindChanged)
+
+    def _get_complete(self) -> bool:
+        return self._done
+
+    complete = Property(bool, _get_complete, notify=loadingChanged)
+
     @Slot()
     def reload(self):
+        # State first: endResetModel() makes an attached view call
+        # fetchMore() synchronously — it must see the fresh state, and we
+        # must not start a second fetch for the same page after it.
         self._gen += 1
+        self._done = False
+        self._loading = False
+        self._seek = ""
         self.beginResetModel()
         self._items = []
         self.endResetModel()
         self.countChanged.emit()
-        self._done = False
-        self._loading = False
-        self.fetchMore(QModelIndex())
+        self.fetchMore(QModelIndex())  # no-op if the view already asked
 
     def canFetchMore(self, parent=_ROOT):  # noqa: N802
         return not parent.isValid() and not self._done and not self._loading
+
+    def _fetch_page(self, prov, start: int) -> List[Dict]:
+        k, pid, n = self._kind, self._parent_id, self.PAGE
+        if k == "album":
+            resp = prov.get_items("", "MusicAlbum", n, start, "SortName", "Ascending", True)
+        elif k == "genreAlbums":
+            resp = prov.get_items(
+                "", "MusicAlbum", n, start, "SortName", "Ascending", True, genre_ids=pid
+            )
+        elif k == "playlist":
+            resp = prov.get_items("", "Playlist", n, start, "SortName", "Ascending", True)
+        elif k == "song":
+            resp = prov.get_items("", "Audio", n, start, "SortName", "Ascending", True)
+        elif k == "artist":
+            return list(prov.get_artists(n, start) or [])
+        elif k == "genre":
+            return list(prov.get_genres() or []) if start == 0 else []
+        elif k == "artistAlbums":
+            items = list(prov.get_artist_albums(pid) or []) if start == 0 else []
+            # Newest first, like an artist page everywhere else.
+            items.sort(key=lambda it: -(int(it.get("ProductionYear") or 0)))
+            return items
+        else:
+            raise ValueError(f"unknown library kind {k!r}")
+        return (resp or {}).get("Items") or []
+
+    def _single_shot(self) -> bool:
+        return self._kind in ("genre", "artistAlbums")
 
     def fetchMore(self, parent=_ROOT):  # noqa: N802
         if not self.canFetchMore(parent):
@@ -124,12 +232,18 @@ class AlbumsModel(QAbstractListModel):
         self.loadingChanged.emit()
         gen, start = self._gen, len(self._items)
         prov = _provider()
+        kind = self._kind
 
         def _fetch():
-            resp = prov.get_items("", "MusicAlbum", self.PAGE, start, "SortName", "Ascending", True)
-            items = (resp or {}).get("Items") or []
+            items = self._fetch_page(prov, start)
             for it in items:
-                it["_cover"] = prov.get_image_url(it.get("Id", ""), "Primary", COVER_PX)
+                if kind == "genre":
+                    continue
+                if kind == "song":
+                    src = it.get("AlbumId") or it.get("Id", "")
+                    it["_cover"] = prov.get_image_url(src, "Primary", 160) if src else ""
+                else:
+                    it["_cover"] = prov.get_image_url(it.get("Id", ""), "Primary", COVER_PX)
             return items
 
         run_async = async_io.run_async  # resolved at call time (tests patch it)
@@ -140,10 +254,12 @@ class AlbumsModel(QAbstractListModel):
         )
 
     def _landed(self, gen: int, items: List[Dict]) -> None:
+        if not _alive(self):
+            return
         if gen != self._gen:
             return
         self._loading = False
-        if len(items) < self.PAGE:
+        if len(items) < self.PAGE or self._single_shot():
             self._done = True
         if items:
             first = len(self._items)
@@ -152,16 +268,85 @@ class AlbumsModel(QAbstractListModel):
             self.endInsertRows()
             self.countChanged.emit()
         self.loadingChanged.emit()
+        if self._seek:
+            self.seekLetter(self._seek)
 
     def _failed(self, gen: int, e) -> None:
+        if not _alive(self):
+            return
         if gen != self._gen:
             return
-        logger.warning("albums page failed: %s", e)
+        logger.warning("%s page failed: %s", self._kind, e)
         self._loading = False
+        self._seek = ""
         self.loadingChanged.emit()
+
+    @Slot(str)
+    def seekLetter(self, letter: str) -> None:  # noqa: N802
+        """Find the first row at or after ``letter`` (A–Z scrubber), paging
+        in more of the library if it isn't loaded yet. Answers through
+        ``letterFound``."""
+        order = "#ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+        want = order.index(letter) if letter in order else 0
+        for row, it in enumerate(self._items):
+            have = _letter(it.get("SortName") or it.get("Name", ""))
+            if order.index(have) >= want:
+                self._seek = ""
+                self.letterFound.emit(letter, row)
+                return
+        if self._done:
+            self._seek = ""
+            self.letterFound.emit(letter, max(0, len(self._items) - 1))
+            return
+        self._seek = letter
+        self.fetchMore()
+
+    @Slot(int, result="QVariantMap")
+    def get(self, row: int) -> Dict:
+        """One row's fields for QML (id, name, subtitle, year, cover)."""
+        if not (0 <= row < len(self._items)):
+            return {}
+        it = self._items[row]
+        return {
+            "id": it.get("Id", ""),
+            "name": it.get("Name", ""),
+            "artist": self._subtitle(it),
+            "year": str(it.get("ProductionYear") or ""),
+            "cover": it.get("_cover", ""),
+            "kind": self._kind,
+        }
 
     def item(self, row: int) -> Dict:
         return self._items[row] if 0 <= row < len(self._items) else {}
+
+    def items(self) -> List[Dict]:
+        return list(self._items)
+
+    @Slot(int, str)
+    def queueRow(self, row: int, mode: str) -> None:  # noqa: N802
+        """Songs section: ``next`` / ``end`` one loaded song."""
+        if not (0 <= row < len(self._items)):
+            return
+        from jellytoast.player_state import PlayerBus
+
+        bus = PlayerBus.get()
+        (bus.queue_add_next if mode == "next" else bus.queue_add_end).emit([self._items[row]])
+
+    @Slot(int)
+    def playFrom(self, row: int) -> None:  # noqa: N802
+        """Songs section: play the loaded songs from ``row``."""
+        if not self._items:
+            return
+        from jellytoast.player_state import PlayerBus, QueueContext, QueueKind
+
+        PlayerBus.get().queue_play_now.emit(
+            list(self._items),
+            max(0, row),
+            QueueContext(kind=QueueKind.MANUAL, source_label="Songs"),
+        )
+
+
+AlbumsModel = LibraryModel  # M0 name
 
 
 def _fmt_ms(ms: int) -> str:
@@ -187,9 +372,11 @@ class TracksModel(QAbstractListModel):
 
     loadingChanged = Signal()
     infoChanged = Signal()
+    kindChanged = Signal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
+        self._kind = "album"  # | "playlist"
         self._items: List[Dict] = []
         self._album_id = ""
         self._album_name = ""
@@ -219,6 +406,8 @@ class TracksModel(QAbstractListModel):
             return it.get("Name", "")
         if role == self.ArtistRole:
             artists = ", ".join(a for a in (it.get("Artists") or []) if isinstance(a, str))
+            if self._kind == "playlist":
+                return artists or it.get("AlbumArtist", "")
             return "" if artists == (it.get("AlbumArtist") or "") else artists
         if role == self.NumberRole:
             return int(it.get("IndexNumber") or 0)
@@ -243,6 +432,16 @@ class TracksModel(QAbstractListModel):
 
     summary = Property(str, _get_summary, notify=infoChanged)
 
+    def _get_kind(self) -> str:
+        return self._kind
+
+    def _set_kind(self, k: str) -> None:
+        if k != self._kind:
+            self._kind = k
+            self.kindChanged.emit()
+
+    kind = Property(str, _get_kind, _set_kind, notify=kindChanged)
+
     @Slot(str, str)
     def load(self, album_id: str, album_name: str = "") -> None:
         self._gen += 1
@@ -255,14 +454,17 @@ class TracksModel(QAbstractListModel):
         self._loading = True
         self.loadingChanged.emit()
         prov = _provider()
+        fetch = prov.get_playlist_items if self._kind == "playlist" else prov.get_album_tracks
         async_io.run_async(
-            prov.get_album_tracks,
+            fetch,
             album_id,
             on_result=lambda items, g=gen: self._landed(g, items),
             on_error=lambda e, g=gen: self._landed(g, [], e),
         )
 
     def _landed(self, gen: int, items, err=None) -> None:
+        if not _alive(self):
+            return
         if gen != self._gen:
             return
         if err is not None:
@@ -277,9 +479,8 @@ class TracksModel(QAbstractListModel):
     def _context(self):
         from jellytoast.player_state import QueueContext, QueueKind
 
-        return QueueContext(
-            kind=QueueKind.ALBUM, source_id=self._album_id, source_label=self._album_name
-        )
+        kind = QueueKind.PLAYLIST if self._kind == "playlist" else QueueKind.ALBUM
+        return QueueContext(kind=kind, source_id=self._album_id, source_label=self._album_name)
 
     @Slot(int)
     def play(self, row: int) -> None:
@@ -288,6 +489,16 @@ class TracksModel(QAbstractListModel):
         from jellytoast.player_state import PlayerBus
 
         PlayerBus.get().queue_play_now.emit(list(self._items), max(0, row), self._context())
+
+    @Slot(int, str)
+    def queueRow(self, row: int, mode: str) -> None:  # noqa: N802
+        """Long-press / swipe on a row: ``next`` (play next) or ``end``."""
+        if not (0 <= row < len(self._items)):
+            return
+        from jellytoast.player_state import PlayerBus
+
+        bus = PlayerBus.get()
+        (bus.queue_add_next if mode == "next" else bus.queue_add_end).emit([self._items[row]])
 
     @Slot()
     def shuffle(self) -> None:
@@ -301,4 +512,350 @@ class TracksModel(QAbstractListModel):
         bus.shuffle_changed.emit(True)
         bus.queue_play_now.emit(
             list(self._items), random.randrange(len(self._items)), self._context()
+        )
+
+
+class QueueModel(QAbstractListModel):
+    """The play queue, in play order, mirrored from ``queue_changed``.
+    Roles: ``trackId``, ``name``, ``artist``, ``cover``, ``current``."""
+
+    IdRole = Qt.ItemDataRole.UserRole + 1
+    NameRole = IdRole + 1
+    ArtistRole = IdRole + 2
+    CoverRole = IdRole + 3
+    CurrentRole = IdRole + 4
+
+    currentChanged = Signal()
+
+    def __init__(self, parent=None, queue=None):
+        super().__init__(parent)
+        from jellytoast.player_state import PlayerBus
+
+        self._items: List[Dict] = list(getattr(queue, "queue", []) or [])
+        self._current = int(getattr(queue, "current_index", -1) if queue is not None else -1)
+        self._covers: Dict[str, str] = {}
+        self._bus = PlayerBus.get()
+        self._bus.queue_changed.connect(self._on_queue)
+
+    def _on_queue(self, items, index) -> None:
+        self.beginResetModel()
+        self._items = list(items or [])
+        self._current = int(index)
+        self.endResetModel()
+        self.currentChanged.emit()
+
+    def rowCount(self, parent=_ROOT):  # noqa: N802
+        return 0 if parent.isValid() else len(self._items)
+
+    def roleNames(self):  # noqa: N802
+        return {
+            self.IdRole: QByteArray(b"trackId"),
+            self.NameRole: QByteArray(b"name"),
+            self.ArtistRole: QByteArray(b"artist"),
+            self.CoverRole: QByteArray(b"cover"),
+            self.CurrentRole: QByteArray(b"current"),
+        }
+
+    def _cover(self, it: Dict) -> str:
+        src = it.get("AlbumId") or it.get("Id", "")
+        if not src:
+            return ""
+        if src not in self._covers:
+            try:
+                self._covers[src] = _provider().get_image_url(src, "Primary", 160) or ""
+            except Exception:
+                self._covers[src] = ""
+        return self._covers[src]
+
+    def data(self, index, role=Qt.ItemDataRole.DisplayRole):
+        if not index.isValid() or not (0 <= index.row() < len(self._items)):
+            return None
+        it = self._items[index.row()]
+        if role == self.IdRole:
+            return it.get("Id", "")
+        if role in (self.NameRole, Qt.ItemDataRole.DisplayRole):
+            return it.get("Name", "")
+        if role == self.ArtistRole:
+            return ", ".join(a for a in (it.get("Artists") or []) if isinstance(a, str)) or it.get(
+                "AlbumArtist", ""
+            )
+        if role == self.CoverRole:
+            return self._cover(it)
+        if role == self.CurrentRole:
+            return index.row() == self._current
+        return None
+
+    current = Property(int, lambda self: self._current, notify=currentChanged)
+
+    @Slot(int)
+    def jump(self, row: int) -> None:
+        self._bus.track_jumped.emit(int(row))
+
+    @Slot(int)
+    def remove(self, row: int) -> None:
+        self._bus.queue_remove_at.emit(int(row))
+
+    @Slot(int, int)
+    def move(self, src: int, dst: int) -> None:
+        if src != dst:
+            self._bus.queue_move_item.emit(int(src), int(dst))
+
+
+class LyricsModel(QAbstractListModel):
+    """Lyrics for the playing track. ``synced`` when lines carry times;
+    ``lineAt(ms)`` gives the line to highlight. Roles: ``line``, ``start``
+    (ms)."""
+
+    TextRole = Qt.ItemDataRole.UserRole + 1
+    StartRole = TextRole + 1
+
+    stateChanged = Signal()
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._lines: List[Dict] = []
+        self._item_id = ""
+        self._loading = False
+        self._gen = 0
+
+    def rowCount(self, parent=_ROOT):  # noqa: N802
+        return 0 if parent.isValid() else len(self._lines)
+
+    def roleNames(self):  # noqa: N802
+        return {self.TextRole: QByteArray(b"line"), self.StartRole: QByteArray(b"start")}
+
+    def data(self, index, role=Qt.ItemDataRole.DisplayRole):
+        if not index.isValid() or not (0 <= index.row() < len(self._lines)):
+            return None
+        ln = self._lines[index.row()]
+        if role in (self.TextRole, Qt.ItemDataRole.DisplayRole):
+            return ln.get("Text", "")
+        if role == self.StartRole:
+            return int(ln.get("Start") or 0) // 10_000
+        return None
+
+    synced = Property(
+        bool,
+        lambda self: any(int(ln.get("Start") or 0) > 0 for ln in self._lines),
+        notify=stateChanged,
+    )
+    loading = Property(bool, lambda self: self._loading, notify=stateChanged)
+    itemId = Property(str, lambda self: self._item_id, notify=stateChanged)
+
+    @Slot(int, result=int)
+    def lineAt(self, ms: int) -> int:  # noqa: N802
+        best = -1
+        for i, ln in enumerate(self._lines):
+            if int(ln.get("Start") or 0) // 10_000 <= ms:
+                best = i
+            else:
+                break
+        return best
+
+    @Slot(str)
+    def load(self, item_id: str) -> None:
+        if item_id == self._item_id and (self._lines or self._loading):
+            return
+        self._gen += 1
+        gen = self._gen
+        self._item_id = item_id
+        self.beginResetModel()
+        self._lines = []
+        self.endResetModel()
+        self._loading = bool(item_id)
+        self.stateChanged.emit()
+        if not item_id:
+            return
+        prov = _provider()
+        async_io.run_async(
+            prov.get_lyrics,
+            item_id,
+            on_result=lambda r, g=gen: self._landed(g, r),
+            on_error=lambda e, g=gen: self._landed(g, None),
+        )
+
+    def _landed(self, gen: int, result) -> None:
+        if not _alive(self):
+            return
+        if gen != self._gen:
+            return
+        lines = [ln for ln in ((result or {}).get("Lyrics") or []) if isinstance(ln, dict)]
+        self.beginResetModel()
+        self._lines = lines
+        self.endResetModel()
+        self._loading = False
+        self.stateChanged.emit()
+
+
+class SearchModel(QAbstractListModel):
+    """Search-as-you-type over artists, albums and songs (one
+    ``search_all`` per settled query). Roles: ``section``, ``kind``
+    (``artist`` | ``album`` | ``track``), ``itemId``, ``name``, ``subtitle``,
+    ``cover``, ``year``."""
+
+    DEBOUNCE_MS = 250
+    _SECTIONS = (
+        ("MusicArtist", "artist", "Artists"),
+        ("MusicAlbum", "album", "Albums"),
+        ("Audio", "track", "Songs"),
+    )
+
+    SectionRole = Qt.ItemDataRole.UserRole + 1
+    KindRole = SectionRole + 1
+    IdRole = SectionRole + 2
+    NameRole = SectionRole + 3
+    SubtitleRole = SectionRole + 4
+    CoverRole = SectionRole + 5
+    YearRole = SectionRole + 6
+
+    stateChanged = Signal()
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        from PySide6.QtCore import QTimer
+
+        self._rows: List[Dict] = []
+        self._query = ""
+        self._loading = False
+        self._gen = 0
+        self._timer = QTimer(self)
+        self._timer.setSingleShot(True)
+        self._timer.setInterval(self.DEBOUNCE_MS)
+        self._timer.timeout.connect(self._run)
+
+    def rowCount(self, parent=_ROOT):  # noqa: N802
+        return 0 if parent.isValid() else len(self._rows)
+
+    def roleNames(self):  # noqa: N802
+        return {
+            self.SectionRole: QByteArray(b"section"),
+            self.KindRole: QByteArray(b"kind"),
+            self.IdRole: QByteArray(b"itemId"),
+            self.NameRole: QByteArray(b"name"),
+            self.SubtitleRole: QByteArray(b"subtitle"),
+            self.CoverRole: QByteArray(b"cover"),
+            self.YearRole: QByteArray(b"year"),
+        }
+
+    def data(self, index, role=Qt.ItemDataRole.DisplayRole):
+        if not index.isValid() or not (0 <= index.row() < len(self._rows)):
+            return None
+        r = self._rows[index.row()]
+        key = {
+            self.SectionRole: "section",
+            self.KindRole: "kind",
+            self.IdRole: "id",
+            self.NameRole: "name",
+            Qt.ItemDataRole.DisplayRole: "name",
+            self.SubtitleRole: "subtitle",
+            self.CoverRole: "cover",
+            self.YearRole: "year",
+        }.get(role)
+        return r.get(key, "") if key else None
+
+    def _get_query(self) -> str:
+        return self._query
+
+    def _set_query(self, q: str) -> None:
+        if q == self._query:
+            return
+        self._query = q
+        self.stateChanged.emit()
+        if q.strip():
+            self._timer.start()
+        else:
+            self._timer.stop()
+            self._gen += 1
+            self._set_rows([])
+
+    query = Property(str, _get_query, _set_query, notify=stateChanged)
+    loading = Property(bool, lambda self: self._loading, notify=stateChanged)
+    count = Property(int, lambda self: len(self._rows), notify=stateChanged)
+
+    def _set_rows(self, rows: List[Dict]) -> None:
+        self.beginResetModel()
+        self._rows = rows
+        self.endResetModel()
+        self._loading = False
+        self.stateChanged.emit()
+
+    def _run(self) -> None:
+        self._gen += 1
+        gen, term = self._gen, self._query.strip()
+        self._loading = True
+        self.stateChanged.emit()
+        prov = _provider()
+
+        def _fetch():
+            found = prov.search_all(term, songs=20, albums=14, artists=10) or {}
+            rows: List[Dict] = []
+            for typ, kind, label in self._SECTIONS:
+                for it in found.get(typ) or []:
+                    if kind == "track":
+                        src = it.get("AlbumId") or it.get("Id", "")
+                        artists = ", ".join(
+                            a for a in (it.get("Artists") or []) if isinstance(a, str)
+                        )
+                        sub = " · ".join(
+                            x
+                            for x in (artists or it.get("AlbumArtist", ""), it.get("Album", ""))
+                            if x
+                        )
+                        px = 132
+                    elif kind == "album":
+                        src, sub, px = it.get("Id", ""), it.get("AlbumArtist", ""), 256
+                    else:
+                        src, sub, px = it.get("Id", ""), "", 256
+                    rows.append(
+                        {
+                            "section": label,
+                            "kind": kind,
+                            "id": it.get("Id", ""),
+                            "name": it.get("Name", ""),
+                            "subtitle": sub,
+                            "year": str(it.get("ProductionYear") or ""),
+                            "cover": prov.get_image_url(src, "Primary", px) if src else "",
+                            "_raw": it,
+                        }
+                    )
+            return rows
+
+        async_io.run_async(
+            _fetch,
+            on_result=lambda rows, g=gen: _alive(self) and g == self._gen and self._set_rows(rows),
+            on_error=lambda e, g=gen: (
+                _alive(self)
+                and g == self._gen
+                and (logger.warning("search %r failed: %s", term, e) or self._set_rows([]))
+            ),
+        )
+
+    @Slot(int, result="QVariantMap")
+    def get(self, row: int) -> Dict:
+        if not (0 <= row < len(self._rows)):
+            return {}
+        return {k: v for k, v in self._rows[row].items() if not k.startswith("_")}
+
+    @Slot(int)
+    def play(self, row: int) -> None:
+        """A song result: play it (just that song)."""
+        if not (0 <= row < len(self._rows)) or self._rows[row]["kind"] != "track":
+            return
+        from jellytoast.player_state import PlayerBus, QueueContext, QueueKind
+
+        PlayerBus.get().queue_play_now.emit(
+            [self._rows[row]["_raw"]],
+            0,
+            QueueContext(kind=QueueKind.SEARCH, source_label=self._query),
+        )
+
+    @Slot(int, str)
+    def queueRow(self, row: int, mode: str) -> None:  # noqa: N802
+        if not (0 <= row < len(self._rows)) or self._rows[row]["kind"] != "track":
+            return
+        from jellytoast.player_state import PlayerBus
+
+        bus = PlayerBus.get()
+        (bus.queue_add_next if mode == "next" else bus.queue_add_end).emit(
+            [self._rows[row]["_raw"]]
         )

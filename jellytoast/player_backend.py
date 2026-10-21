@@ -546,6 +546,14 @@ class MpvController(_CastTransportMixin, QObject):
                 audio_format="s16",
                 audio_samplerate=48000,
             )
+        # Silent real-time playback (JT_AUDIO_NULL=1) — mpv's null output keeps
+        # wall-clock pacing (unlike the PCM sink, which decodes as fast as it
+        # can), so positions, track ends and the queue behave exactly as with
+        # speakers. Dev / test rigs only (dev/quick_rig.sh).
+        if os.environ.get("JT_AUDIO_NULL") == "1":
+            kwargs.pop("audio_device", None)
+            kwargs.pop("audio_exclusive", None)
+            kwargs["ao"] = "null"
         # Layered open fallback — the constructor must never leave the
         # app without audio:
         #  1. A pinned device can vanish (USB DAC unplugged, stale

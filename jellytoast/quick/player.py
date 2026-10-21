@@ -116,6 +116,14 @@ class PlayerController(QObject):
         raw = get_now_playing().raw or {}
         return str(raw.get("AlbumId") or "")
 
+    def _artist_id(self) -> str:
+        raw = get_now_playing().raw or {}
+        for key in ("AlbumArtists", "ArtistItems"):
+            for a in raw.get(key) or []:
+                if isinstance(a, dict) and a.get("Id"):
+                    return str(a["Id"])
+        return ""
+
     def _has_track(self) -> bool:
         return bool(get_now_playing().item_id)
 
@@ -126,6 +134,7 @@ class PlayerController(QObject):
     itemId = Property(str, lambda self: get_now_playing().item_id or "", notify=changed)
     album = Property(str, lambda self: get_now_playing().album or "", notify=changed)
     albumId = Property(str, _album_id, notify=changed)
+    artistId = Property(str, _artist_id, notify=changed)
     bigCover = Property(str, _big_cover, notify=changed)
     favorite = Property(bool, lambda self: bool(get_now_playing().is_favorite), notify=changed)
     repeat = Property(str, lambda self: self._repeat, notify=modesChanged)

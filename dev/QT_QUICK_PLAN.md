@@ -59,10 +59,40 @@ could run.
 - [ ] **M2 — library:** artists, playlists, songs, genres, search, queue,
   lyrics, A–Z scrubber, swipe gestures, long-press menus (incl. Add to
   playlist).
+  *Done 2026-10-21:* section dropdown (Albums / Artists / Playlists / Songs /
+  Genres) on one `LibraryModel`; artist page (their albums, Play / Shuffle);
+  playlist + album track pages; songs list; genre → albums; search as you
+  type (artists / albums / songs); Now Playing lyrics (synced follow, tap a
+  line to seek) and queue (tap to jump, swipe to remove) in place of the
+  cover; A–Z rail (pages in more of the library to reach a letter);
+  swipe a track left → queue; long-press → Play / Shuffle / Play next / Add
+  to queue; edge-swipe back; toasts. *Left for M2.5:* Add to playlist
+  (held with #238), Go to artist, favourites list, smart mixes / radio,
+  remembering the last section.
 - [ ] **M3 — the rest:** sign-in, phone Settings, downloads / offline, cast
   picker, radio, smart mixes, theming parity.
 - [ ] **M4 — switch:** default on Plasma Mobile; remove the Widgets phone
   layouts only once parity holds; then the metainfo "phone friendly" flag.
+
+## Rig (dev + tests)
+
+- **Live:** `dev/quick_rig.sh start` (offscreen GPU, silent, copied
+  profile; `--window` for a real window, `--isolated` for signed-out,
+  `--audible` / `--report` to opt into sound / server play reports), then
+  `dev/qctl.py`:
+  `state` (page / sheet / player / models), `tree` (on-screen items with
+  names, text, geometry), `tap albumGrid|text:Play|x,y`, `long`, `drag T DX DY`,
+  `swipe up [T]`, `edge`, `key esc`, `type`, `wait T`, `idle`, `shot [path]`,
+  `fake-np` (fill Now Playing without playing), `js EXPR` (QML scope:
+  ids, context properties), `py EXPR` (rig, player, albums, bus, qm, mpv…).
+- **Tests:** the `quick` fixture (tests/quick_support.py) loads the real
+  QML over a fake 150-album library; drive it with the same `Rig` API.
+  Give interactive items an `objectName` so tests and qctl can find them.
+- Rig waits out StackView transitions before input (StackView drops
+  input while busy). Hold one window wrapper (PySide invalidates the
+  contentItem wrapper when its window wrapper is collected). Fixture
+  teardown really deletes the window (a dead window can keep the mouse
+  grab).
 
 ## Notes / risks
 
