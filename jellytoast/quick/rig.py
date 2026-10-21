@@ -503,8 +503,10 @@ class Rig:
 
         ctx = QQmlEngine.contextForObject(self.window) or self.engine.rootContext()
         expr = QQmlExpression(ctx, self.window, js)
-        value, error = expr.evaluate()
-        if error:
+        result = expr.evaluate()
+        # PySide returns (value, value_is_undefined); errors are separate.
+        value = result[0] if isinstance(result, tuple) else result
+        if expr.hasError():
             raise RigError(expr.error().toString())
         if isinstance(value, QObject):
             return repr(value)

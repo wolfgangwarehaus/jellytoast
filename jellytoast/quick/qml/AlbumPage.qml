@@ -107,7 +107,7 @@ Item {
             subtitle: artist
             onClicked: tracks.play(index)
             onQueued: { tracks.queueRow(index, "end"); toast.show(qsTr("Added to queue")) }
-            onMenuRequested: (x, y) => menu.show({ kind: "track", row: index, name: name }, this, x, y)
+            onMenuRequested: (x, y) => menu.show({ kind: "track", row: index, name: name, artist: artist || page.album.artist || "", cover: page.album.cover || "" }, this, x, y)
         }
     }
 

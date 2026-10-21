@@ -201,84 +201,7 @@ ApplicationWindow {
                 anchors.verticalCenter: parent.verticalCenter
                 iconName: "more_vert"
                 visible: session.signedIn
-                onClicked: moreMenu.popup(moreButton, moreButton.width - moreMenu.width, moreButton.height)
-                Menu {
-                    id: moreMenu
-                    objectName: "moreMenu"
-                    Menu {
-                        id: librariesMenu
-                        title: qsTr("Libraries")
-                        enabled: libraries.multiple
-                        MenuItem {
-                            text: qsTr("All libraries")
-                            checkable: true
-                            checked: libraries.allSelected
-                            onTriggered: libraries.selectAll()
-                        }
-                        MenuSeparator { }
-                        Repeater {
-                            model: libraries.items
-                            MenuItem {
-                                required property var modelData
-                                text: modelData.name
-                                checkable: true
-                                checked: modelData.checked
-                                onTriggered: libraries.toggle(modelData.id)
-                            }
-                        }
-                    }
-                    Menu {
-                        id: sortMenu
-                        objectName: "sortMenu"
-                        title: qsTr("Sort")
-                        enabled: moreButton.albumGrid
-                        Repeater {
-                            model: [
-                                { key: "SortName", label: qsTr("Name") },
-                                { key: "AlbumArtist,SortName", label: qsTr("Album artist") },
-                                { key: "PremiereDate,SortName", label: qsTr("Release date") },
-                                { key: "DateCreated,SortName", label: qsTr("Date added") },
-                                { key: "DatePlayed,SortName", label: qsTr("Recently played") }
-                            ]
-                            MenuItem {
-                                required property var modelData
-                                text: modelData.label
-                                checkable: true
-                                checked: moreButton.albumGrid && moreButton.lib.sortBy === modelData.key
-                                onTriggered: moreButton.lib.setSort(modelData.key, moreButton.lib.sortDescending)
-                            }
-                        }
-                        MenuSeparator { }
-                        MenuItem {
-                            text: qsTr("Ascending")
-                            checkable: true
-                            checked: moreButton.albumGrid && !moreButton.lib.sortDescending
-                            onTriggered: moreButton.lib.setSort(moreButton.lib.sortBy, false)
-                        }
-                        MenuItem {
-                            text: qsTr("Descending")
-                            checkable: true
-                            checked: moreButton.albumGrid && moreButton.lib.sortDescending
-                            onTriggered: moreButton.lib.setSort(moreButton.lib.sortBy, true)
-                        }
-                    }
-                    MenuItem {
-                        objectName: "viewToggle"
-                        text: prefs.viewMode === "list" ? qsTr("Show as grid") : qsTr("Show as list")
-                        enabled: moreButton.albumGrid
-                        onTriggered: prefs.setViewMode(prefs.viewMode === "list" ? "grid" : "list")
-                    }
-                    MenuItem {
-                        text: qsTr("Shuffle all")
-                        onTriggered: actions.shuffleLibrary()
-                    }
-                    MenuSeparator { }
-                    MenuItem {
-                        objectName: "settingsItem"
-                        text: qsTr("Settings")
-                        onTriggered: stack.push(settingsPage)
-                    }
-                }
+                onClicked: optionsSheet.show(lib)
             }
             IconButton {
                 id: searchButton
@@ -419,6 +342,10 @@ ApplicationWindow {
         }
     }
 
+    OptionsSheet {
+        id: optionsSheet
+        onOpenSettings: stack.push(settingsPage)
+    }
     CastSheet {
         id: castSheet
         onOpenSettings: { nowPlaying.close(); stack.push(settingsPage) }

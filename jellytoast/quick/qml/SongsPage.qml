@@ -36,7 +36,7 @@ Item {
             showCover: true
             onClicked: lib.playFrom(index)
             onQueued: { lib.queueRow(index, "end"); toast.show(qsTr("Added to queue")) }
-            onMenuRequested: (x, y) => menu.show({ kind: "track", row: index, name: name }, this, x, y)
+            onMenuRequested: (x, y) => menu.show({ kind: "track", row: index, name: name, artist: subtitle, cover: cover }, this, x, y)
         }
         footer: Item {
             width: list.width

@@ -1093,42 +1093,42 @@ Esto libera el almacenamiento de inmediato. Tu biblioteca en el servidor no se v
 <context>
     <name>ItemMenu</name>
     <message>
-        <location filename="../quick/qml/ItemMenu.qml" line="24"/>
+        <location filename="../quick/qml/ItemMenu.qml" line="72"/>
         <source>Play</source>
         <translation type="unfinished">Reproducir</translation>
     </message>
     <message>
-        <location filename="../quick/qml/ItemMenu.qml" line="30"/>
+        <location filename="../quick/qml/ItemMenu.qml" line="78"/>
         <source>Shuffle</source>
         <translation type="unfinished">Aleatorio</translation>
     </message>
     <message>
-        <location filename="../quick/qml/ItemMenu.qml" line="36"/>
+        <location filename="../quick/qml/ItemMenu.qml" line="84"/>
         <source>Start radio</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../quick/qml/ItemMenu.qml" line="42"/>
+        <location filename="../quick/qml/ItemMenu.qml" line="90"/>
         <source>Play next</source>
         <translation type="unfinished">Reproducir a continuación</translation>
     </message>
     <message>
-        <location filename="../quick/qml/ItemMenu.qml" line="49"/>
+        <location filename="../quick/qml/ItemMenu.qml" line="97"/>
         <source>Add to queue</source>
         <translation type="unfinished">Añadir a la cola</translation>
     </message>
     <message>
-        <location filename="../quick/qml/ItemMenu.qml" line="56"/>
+        <location filename="../quick/qml/ItemMenu.qml" line="104"/>
         <source>Remove from favorites</source>
         <translation type="unfinished">Quitar de favoritos</translation>
     </message>
     <message>
-        <location filename="../quick/qml/ItemMenu.qml" line="56"/>
+        <location filename="../quick/qml/ItemMenu.qml" line="104"/>
         <source>Add to favorites</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../quick/qml/ItemMenu.qml" line="65"/>
+        <location filename="../quick/qml/ItemMenu.qml" line="113"/>
         <source>Download</source>
         <translation type="unfinished">Descargar</translation>
     </message>
@@ -1741,82 +1741,56 @@ jellytoast funcionará, pero las funciones de bandeja no estarán disponibles.</
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../quick/qml/Main.qml" line="210"/>
-        <source>Libraries</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <location filename="../quick/qml/Main.qml" line="213"/>
         <source>All libraries</source>
-        <translation type="unfinished">Todas las bibliotecas</translation>
+        <translation type="obsolete">Todas las bibliotecas</translation>
     </message>
     <message>
-        <location filename="../quick/qml/Main.qml" line="233"/>
         <source>Sort</source>
-        <translation type="unfinished">Ordenar</translation>
+        <translation type="obsolete">Ordenar</translation>
     </message>
     <message>
-        <location filename="../quick/qml/Main.qml" line="237"/>
         <source>Name</source>
-        <translation type="unfinished">Nombre</translation>
+        <translation type="obsolete">Nombre</translation>
     </message>
     <message>
-        <location filename="../quick/qml/Main.qml" line="238"/>
         <source>Album artist</source>
-        <translation type="unfinished">Artista del álbum</translation>
+        <translation type="obsolete">Artista del álbum</translation>
     </message>
     <message>
-        <location filename="../quick/qml/Main.qml" line="239"/>
-        <source>Release date</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <location filename="../quick/qml/Main.qml" line="240"/>
-        <source>Date added</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <location filename="../quick/qml/Main.qml" line="241"/>
         <source>Recently played</source>
-        <translation type="unfinished">Escuchado recientemente</translation>
+        <translation type="obsolete">Escuchado recientemente</translation>
     </message>
     <message>
-        <location filename="../quick/qml/Main.qml" line="253"/>
         <source>Ascending</source>
-        <translation type="unfinished">Ascendente</translation>
+        <translation type="obsolete">Ascendente</translation>
     </message>
     <message>
-        <location filename="../quick/qml/Main.qml" line="259"/>
         <source>Descending</source>
-        <translation type="unfinished">Descendente</translation>
+        <translation type="obsolete">Descendente</translation>
     </message>
     <message>
-        <location filename="../quick/qml/Main.qml" line="267"/>
         <source>Show as grid</source>
-        <translation type="unfinished">Ver como cuadrícula</translation>
+        <translation type="obsolete">Ver como cuadrícula</translation>
     </message>
     <message>
-        <location filename="../quick/qml/Main.qml" line="267"/>
         <source>Show as list</source>
-        <translation type="unfinished">Ver como lista</translation>
+        <translation type="obsolete">Ver como lista</translation>
     </message>
     <message>
-        <location filename="../quick/qml/Main.qml" line="272"/>
         <source>Shuffle all</source>
-        <translation type="unfinished">Reproducir todo aleatorio</translation>
+        <translation type="obsolete">Reproducir todo aleatorio</translation>
     </message>
     <message>
-        <location filename="../quick/qml/Main.qml" line="278"/>
         <source>Settings</source>
-        <translation type="unfinished">Ajustes</translation>
+        <translation type="obsolete">Ajustes</translation>
     </message>
     <message>
-        <location filename="../quick/qml/Main.qml" line="304"/>
+        <location filename="../quick/qml/Main.qml" line="227"/>
         <source>Offline — showing your downloads</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../quick/qml/Main.qml" line="432"/>
+        <location filename="../quick/qml/Main.qml" line="359"/>
         <source>Cast failed</source>
         <translation type="unfinished">Fallo al enviar</translation>
     </message>
@@ -2420,6 +2394,84 @@ jellytoast funcionará, pero las funciones de bandeja no estarán disponibles.</
         <location filename="../offline_banner.py" line="180"/>
         <source>No connection</source>
         <translation>Sin conexión</translation>
+    </message>
+</context>
+<context>
+    <name>OptionsSheet</name>
+    <message>
+        <location filename="../quick/qml/OptionsSheet.qml" line="20"/>
+        <source>LIBRARIES</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../quick/qml/OptionsSheet.qml" line="29"/>
+        <source>All</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../quick/qml/OptionsSheet.qml" line="45"/>
+        <source>SORT BY</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../quick/qml/OptionsSheet.qml" line="54"/>
+        <source>Name</source>
+        <translation type="unfinished">Nombre</translation>
+    </message>
+    <message>
+        <location filename="../quick/qml/OptionsSheet.qml" line="55"/>
+        <source>Album artist</source>
+        <translation type="unfinished">Artista del álbum</translation>
+    </message>
+    <message>
+        <location filename="../quick/qml/OptionsSheet.qml" line="56"/>
+        <source>Release date</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../quick/qml/OptionsSheet.qml" line="57"/>
+        <source>Date added</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../quick/qml/OptionsSheet.qml" line="58"/>
+        <source>Recently played</source>
+        <translation type="unfinished">Escuchado recientemente</translation>
+    </message>
+    <message>
+        <location filename="../quick/qml/OptionsSheet.qml" line="73"/>
+        <source>Ascending</source>
+        <translation type="unfinished">Ascendente</translation>
+    </message>
+    <message>
+        <location filename="../quick/qml/OptionsSheet.qml" line="80"/>
+        <source>Descending</source>
+        <translation type="unfinished">Descendente</translation>
+    </message>
+    <message>
+        <location filename="../quick/qml/OptionsSheet.qml" line="88"/>
+        <source>VIEW</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../quick/qml/OptionsSheet.qml" line="96"/>
+        <source>Grid</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../quick/qml/OptionsSheet.qml" line="103"/>
+        <source>List</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../quick/qml/OptionsSheet.qml" line="116"/>
+        <source>Shuffle all</source>
+        <translation type="unfinished">Reproducir todo aleatorio</translation>
+    </message>
+    <message>
+        <location filename="../quick/qml/OptionsSheet.qml" line="122"/>
+        <source>Settings</source>
+        <translation type="unfinished">Ajustes</translation>
     </message>
 </context>
 <context>
