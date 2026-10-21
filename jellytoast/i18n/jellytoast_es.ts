@@ -1362,22 +1362,22 @@ jellytoast funcionará, pero las funciones de bandeja no estarán disponibles.</
         <translation type="unfinished">Álbumes</translation>
     </message>
     <message>
-        <location filename="../quick/qml/LibraryGridPage.qml" line="31"/>
+        <location filename="../quick/qml/LibraryGridPage.qml" line="32"/>
         <source>Nothing here yet</source>
         <translation type="unfinished">Aquí no hay nada todavía</translation>
     </message>
     <message>
-        <location filename="../quick/qml/LibraryGridPage.qml" line="131"/>
+        <location filename="../quick/qml/LibraryGridPage.qml" line="132"/>
         <source>Liked songs</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../quick/qml/LibraryGridPage.qml" line="145"/>
+        <location filename="../quick/qml/LibraryGridPage.qml" line="146"/>
         <source>Play</source>
         <translation type="unfinished">Reproducir</translation>
     </message>
     <message>
-        <location filename="../quick/qml/LibraryGridPage.qml" line="150"/>
+        <location filename="../quick/qml/LibraryGridPage.qml" line="151"/>
         <source>Shuffle</source>
         <translation type="unfinished">Aleatorio</translation>
     </message>
@@ -2403,64 +2403,64 @@ jellytoast funcionará, pero las funciones de bandeja no estarán disponibles.</
 <context>
     <name>OptionsSheet</name>
     <message>
-        <location filename="../quick/qml/OptionsSheet.qml" line="38"/>
+        <location filename="../quick/qml/OptionsSheet.qml" line="42"/>
         <source>All</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../quick/qml/OptionsSheet.qml" line="19"/>
-        <location filename="../quick/qml/OptionsSheet.qml" line="22"/>
-        <location filename="../quick/qml/OptionsSheet.qml" line="46"/>
+        <location filename="../quick/qml/OptionsSheet.qml" line="23"/>
+        <location filename="../quick/qml/OptionsSheet.qml" line="26"/>
+        <location filename="../quick/qml/OptionsSheet.qml" line="50"/>
         <source>Name</source>
         <translation type="unfinished">Nombre</translation>
     </message>
     <message>
-        <location filename="../quick/qml/OptionsSheet.qml" line="20"/>
+        <location filename="../quick/qml/OptionsSheet.qml" line="24"/>
         <source>Release year</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../quick/qml/OptionsSheet.qml" line="23"/>
+        <location filename="../quick/qml/OptionsSheet.qml" line="27"/>
         <source>Album artist</source>
         <translation type="unfinished">Artista del álbum</translation>
     </message>
     <message>
-        <location filename="../quick/qml/OptionsSheet.qml" line="24"/>
+        <location filename="../quick/qml/OptionsSheet.qml" line="28"/>
         <source>Release date</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../quick/qml/OptionsSheet.qml" line="25"/>
+        <location filename="../quick/qml/OptionsSheet.qml" line="29"/>
         <source>Date added</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../quick/qml/OptionsSheet.qml" line="26"/>
+        <location filename="../quick/qml/OptionsSheet.qml" line="30"/>
         <source>Recently played</source>
         <translation type="unfinished">Escuchado recientemente</translation>
     </message>
     <message>
-        <location filename="../quick/qml/OptionsSheet.qml" line="40"/>
+        <location filename="../quick/qml/OptionsSheet.qml" line="44"/>
         <source>%1 libraries</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../quick/qml/OptionsSheet.qml" line="129"/>
+        <location filename="../quick/qml/OptionsSheet.qml" line="133"/>
         <source>Library</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../quick/qml/OptionsSheet.qml" line="139"/>
+        <location filename="../quick/qml/OptionsSheet.qml" line="143"/>
         <source>All libraries</source>
         <translation type="unfinished">Todas las bibliotecas</translation>
     </message>
     <message>
-        <location filename="../quick/qml/OptionsSheet.qml" line="163"/>
+        <location filename="../quick/qml/OptionsSheet.qml" line="167"/>
         <source>Sort by</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../quick/qml/OptionsSheet.qml" line="207"/>
+        <location filename="../quick/qml/OptionsSheet.qml" line="211"/>
         <source>View</source>
         <translation type="unfinished">Ver</translation>
     </message>
@@ -2473,12 +2473,12 @@ jellytoast funcionará, pero las funciones de bandeja no estarán disponibles.</
         <translation type="obsolete">Descendente</translation>
     </message>
     <message>
-        <location filename="../quick/qml/OptionsSheet.qml" line="255"/>
+        <location filename="../quick/qml/OptionsSheet.qml" line="259"/>
         <source>Shuffle all</source>
         <translation type="unfinished">Reproducir todo aleatorio</translation>
     </message>
     <message>
-        <location filename="../quick/qml/OptionsSheet.qml" line="261"/>
+        <location filename="../quick/qml/OptionsSheet.qml" line="265"/>
         <source>Settings</source>
         <translation type="unfinished">Ajustes</translation>
     </message>

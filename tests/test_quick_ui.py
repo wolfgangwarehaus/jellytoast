@@ -825,3 +825,29 @@ def test_artist_page_album_sort(quick):
         assert (s.artist_album_sort, s.artist_album_sort_desc) == ("name", True)
     finally:
         s.artist_album_sort, s.artist_album_sort_desc = saved
+
+
+def test_artists_grid_or_list(quick):
+    from jellytoast.settings import get_settings
+
+    s = get_settings()
+    saved = (s.artist_view_mode, s.library_view_mode)
+    try:
+        s.artist_view_mode, s.library_view_mode = "grid", "grid"
+        _section(quick, "Artists")
+        quick.wait_for("text:Caribou")
+        _options(quick, "view_list")
+        _close_options(quick)
+        quick.wait_for("libraryList")
+        assert s.artist_view_mode == "list" and s.library_view_mode == "grid"  # its own
+        quick.tap("text:Caribou")
+        quick.wait_idle()
+        assert quick.state()["title"] == "Caribou"
+        quick.key("esc")
+        quick.wait_idle()
+        _options(quick, "view_grid")
+        _close_options(quick)
+        quick.wait_for("libraryGrid")
+        assert s.artist_view_mode == "grid"
+    finally:
+        s.artist_view_mode, s.library_view_mode = saved

@@ -103,7 +103,10 @@ class Covers(QObject):
         except Exception as e:
             logger.debug("cover %s failed: %s", key, e)
             self._landed(key, None)
-        return False
+        # A memory-cache hit answers synchronously, inside the call above —
+        # report that, or the caller would overwrite "ready" with False
+        # after `ready` already fired.
+        return key in self._pix
 
     @staticmethod
     def _parse(key: str):

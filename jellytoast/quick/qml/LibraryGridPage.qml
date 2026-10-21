@@ -12,7 +12,8 @@ Item {
     readonly property var lib: source ? source : own
     readonly property bool loading: lib.loading
     // Albums can show as a list too (⋮ → Show as list; the desktop setting).
-    readonly property bool listMode: prefs.viewMode === "list" && lib.sortable
+    readonly property bool listMode: kind === "artist" ? prefs.artistViewMode === "list"
+                                                       : prefs.viewMode === "list" && lib.sortable
     readonly property bool round: kind === "artist"
     readonly property bool scrubbable: (kind === "album" || kind === "artist") && session.signedIn
     signal openItem(string kind, var item)
@@ -193,7 +194,7 @@ Item {
                 Cover {
                     width: 52; height: 52
                     anchors.verticalCenter: parent.verticalCenter
-                    radius: 6
+                    radius: page.round ? width / 2 : 6
                     pixels: 156
                     source: lrow.cover
                 }

@@ -9,6 +9,10 @@ Sheet {
     objectName: "optionsSheet"
     property var lib: null  // the page's LibraryModel (null when not a library page)
     readonly property bool albumGrid: lib !== null && lib.sortable
+    readonly property bool artists: lib !== null && lib.kind === "artist"
+    // Which grid / list setting the View toggle drives.
+    readonly property bool listView: artists ? prefs.artistViewMode === "list" : prefs.viewMode === "list"
+    function setView(mode) { artists ? prefs.setArtistViewMode(mode) : prefs.setViewMode(mode) }
     property string expanded: ""  // "" | "libraries" | "sort"
     signal openSettings()
 
@@ -198,8 +202,8 @@ Sheet {
     // ── View: grid / list ──
     Item {
         width: parent.width
-        height: sheet.albumGrid ? 52 : 0
-        visible: sheet.albumGrid
+        height: sheet.albumGrid || sheet.artists ? 52 : 0
+        visible: sheet.albumGrid || sheet.artists
         Label {
             anchors.left: parent.left
             anchors.leftMargin: 4
@@ -225,12 +229,12 @@ Sheet {
                         id: seg
                         required property var modelData
                         objectName: "view_" + modelData.mode
-                        readonly property bool on: (prefs.viewMode === "list") === (modelData.mode === "list")
+                        readonly property bool on: sheet.listView === (modelData.mode === "list")
                         width: 44
                         height: 34
                         focusPolicy: Qt.NoFocus
                         hoverEnabled: false
-                        onClicked: prefs.setViewMode(modelData.mode)
+                        onClicked: sheet.setView(modelData.mode)
                         background: Rectangle { radius: 17; color: seg.on ? theme.accent : "transparent" }
                         contentItem: Item {
                             Icon {

@@ -142,6 +142,14 @@ class Prefs(QObject):
         _settings().library_view_mode = "list" if mode == "list" else "grid"
         self.changed.emit()
 
+    # The Artists section has its own grid / list choice.
+    artistViewMode = Property(str, lambda self: _settings().artist_view_mode, notify=changed)
+
+    @Slot(str)
+    def setArtistViewMode(self, mode: str) -> None:  # noqa: N802
+        _settings().artist_view_mode = mode
+        self.changed.emit()
+
     # ── offline ──
     def _offline_mode(self) -> bool:
         from jellytoast import offline

@@ -596,6 +596,16 @@ class Settings:
         self._s.setValue("display/phone_ui_quick", bool(v))
 
     @property
+    def artist_view_mode(self) -> str:
+        """Artists section (phone UI): "grid" (round photos) or "list"."""
+        v = str(self._s.value("quick/artist_view_mode", "grid") or "grid")
+        return v if v in ("grid", "list") else "grid"
+
+    @artist_view_mode.setter
+    def artist_view_mode(self, v: str):
+        self._s.setValue("quick/artist_view_mode", "list" if v == "list" else "grid")
+
+    @property
     def artist_album_sort(self) -> str:
         """Artist pages (phone UI): order of an artist's albums — "year"
         (release year) or "name"."""

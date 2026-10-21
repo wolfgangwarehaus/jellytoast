@@ -306,3 +306,25 @@ def test_cancel_deferred_image_only_touches_parked_requests(qapp):
     finally:
         u._deferred_normal.pop(cache_key, None)
         u._inflight_subscribers.pop(cache_key, None)
+
+
+def test_covers_request_reports_a_synchronous_cache_hit(qapp, monkeypatch):
+    """The image pipeline answers a memory-cache hit inside the call — the
+    request must then report ready, not overwrite it with False."""
+    from PySide6.QtGui import QPixmap
+
+    import jellytoast.ui_helpers as u
+    from jellytoast.quick.covers import Covers
+
+    pix = QPixmap(8, 8)
+    pix.fill(0)
+    monkeypatch.setattr(u, "load_image_async", lambda key, url, w, h, cb, **kw: cb(pix))
+    monkeypatch.setattr(
+        "jellytoast.providers.get_provider",
+        lambda: type("P", (), {"get_image_url": lambda self, *a: "http://x"})(),
+    )
+    c = Covers()
+    fired = []
+    c.ready.connect(fired.append)
+    assert c.request("al1/156/78") is True
+    assert fired == ["al1/156/78"] and c.cached("al1/156/78")

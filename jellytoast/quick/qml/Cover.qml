@@ -22,8 +22,14 @@ Item {
         readonly property int rpx: root.width > 0 ? Math.round(root.radius * px / root.width) : 0
         readonly property bool isCover: String(want).startsWith("image://cover/")
         // Wait for layout (width) so the first request already has the radius.
-        readonly property string key: isCover && root.width > 0
-                                      ? String(want).substring(14) + "/" + rpx : ""
+        // image://cover/<id>/<px> — the id, at THIS cover's own size (a list
+        // row needs a smaller image than a grid tile of the same album).
+        readonly property string itemId: {
+            var rest = String(want).substring(14)
+            return rest.substring(0, rest.lastIndexOf("/"))
+        }
+        readonly property string key: isCover && root.width > 0 && itemId !== ""
+                                      ? itemId + "/" + px + "/" + rpx : ""
         property bool ready: false
         function refresh() { ready = key !== "" && covers.request(key) }
         // Already loaded → show at once. Otherwise ask only if this tile is
