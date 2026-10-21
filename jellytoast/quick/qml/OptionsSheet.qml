@@ -12,7 +12,13 @@ Sheet {
     property string expanded: ""  // "" | "libraries" | "sort"
     signal openSettings()
 
-    readonly property var sorts: [
+    // An artist's own page sorts its albums by name or year; the library
+    // grids have the full set.
+    readonly property bool artistPage: lib !== null && lib.kind === "artistAlbums"
+    readonly property var sorts: artistPage ? [
+        { key: "SortName", label: qsTr("Name") },
+        { key: "PremiereDate", label: qsTr("Release year") }
+    ] : [
         { key: "SortName", label: qsTr("Name") },
         { key: "AlbumArtist,SortName", label: qsTr("Album artist") },
         { key: "PremiereDate,SortName", label: qsTr("Release date") },

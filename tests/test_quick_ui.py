@@ -797,3 +797,31 @@ def test_library_picker_scopes_the_grid(quick):
     _options(quick, "libraryRow", "libAll")
     _close_options(quick)
     quick.wait_for("text:Album 001")
+
+
+def test_artist_page_album_sort(quick):
+    from jellytoast.settings import get_settings
+
+    s = get_settings()
+    saved = (s.artist_album_sort, s.artist_album_sort_desc)
+    try:
+        s.artist_album_sort, s.artist_album_sort_desc = "year", True
+        _section(quick, "Artists")
+        quick.tap("text:Caribou")  # albums 3, 9, 15 … — years 1990 + n % 30
+        quick.wait_for("text:Album 0")
+        quick.wait_idle()
+
+        def first():
+            return quick.eval("stack.currentItem.lib.get(0).name")
+
+        assert first() == "Album 027"  # newest first (2017), ties by name
+        _options(quick, "sortDirection")  # oldest first
+        quick.wait_until(lambda: first() == "Album 003")  # 1993
+        _options(quick, "sortRow", "text:Name")
+        quick.wait_until(lambda: first() == "Album 003")  # name, A → Z
+        _options(quick, "sortDirection")
+        quick.wait_until(lambda: first() == "Album 147")  # name, Z → A
+        _close_options(quick)
+        assert (s.artist_album_sort, s.artist_album_sort_desc) == ("name", True)
+    finally:
+        s.artist_album_sort, s.artist_album_sort_desc = saved

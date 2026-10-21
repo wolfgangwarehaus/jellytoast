@@ -596,6 +596,26 @@ class Settings:
         self._s.setValue("display/phone_ui_quick", bool(v))
 
     @property
+    def artist_album_sort(self) -> str:
+        """Artist pages (phone UI): order of an artist's albums — "year"
+        (release year) or "name"."""
+        v = str(self._s.value("quick/artist_album_sort", "year") or "year")
+        return v if v in ("year", "name") else "year"
+
+    @artist_album_sort.setter
+    def artist_album_sort(self, v: str):
+        self._s.setValue("quick/artist_album_sort", "name" if v == "name" else "year")
+
+    @property
+    def artist_album_sort_desc(self) -> bool:
+        """Artist pages: descending order (default: newest first)."""
+        return self._s.value("quick/artist_album_sort_desc", True, type=bool)
+
+    @artist_album_sort_desc.setter
+    def artist_album_sort_desc(self, v: bool):
+        self._s.setValue("quick/artist_album_sort_desc", bool(v))
+
+    @property
     def quick_section(self) -> str:
         """Qt Quick phone UI: the library section it last showed (album |
         artist | playlist | song | genre | favorite) — reopened at launch."""

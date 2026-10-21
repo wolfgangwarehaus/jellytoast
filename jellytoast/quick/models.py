@@ -209,6 +209,9 @@ class LibraryModel(QAbstractListModel):
         from jellytoast.settings import get_settings
 
         st = get_settings()
+        if self._kind == "artistAlbums":  # its own choice, sorted on the device
+            by = "SortName" if st.artist_album_sort == "name" else "PremiereDate"
+            return by, "Descending" if st.artist_album_sort_desc else "Ascending"
         by = st.library_sort_by or "SortName"
         order = "Descending" if (st.library_sort_order or "") == "descending" else "Ascending"
         return by, order
@@ -223,7 +226,27 @@ class LibraryModel(QAbstractListModel):
 
     sortBy = Property(str, _get_sort_by, notify=sortChanged)
     sortDescending = Property(bool, _get_sort_desc, notify=sortChanged)
-    sortable = Property(bool, lambda self: self._kind in self.SORTABLE, notify=kindChanged)
+    sortable = Property(
+        bool,
+        lambda self: self._kind in self.SORTABLE or self._kind == "artistAlbums",
+        notify=kindChanged,
+    )
+
+    def _sort_artist_albums(self, items: List[Dict]) -> List[Dict]:
+        """An artist's albums in the chosen order (name ignores a leading
+        "The"; same-year albums fall back to name)."""
+        from jellytoast.sort_utils import article_stripped_key
+
+        by, order = self._sort()
+        desc = order == "Descending"
+
+        def name(it):
+            return article_stripped_key(str(it.get("SortName") or it.get("Name") or ""))
+
+        if by == "SortName":
+            return sorted(items, key=name, reverse=desc)
+        by_name = sorted(items, key=name)
+        return sorted(by_name, key=lambda it: int(it.get("ProductionYear") or 0), reverse=desc)
 
     @Slot(str, bool)
     def setSort(self, sort_by: str, descending: bool) -> None:  # noqa: N802
@@ -231,6 +254,15 @@ class LibraryModel(QAbstractListModel):
         from jellytoast.settings import get_settings
 
         st = get_settings()
+        if self._kind == "artistAlbums":
+            # Everything's already here — re-order in place, no refetch.
+            st.artist_album_sort = "name" if sort_by.startswith("SortName") else "year"
+            st.artist_album_sort_desc = bool(descending)
+            self.sortChanged.emit()
+            self.beginResetModel()
+            self._items = self._sort_artist_albums(self._items)
+            self.endResetModel()
+            return
         st.library_sort_by = sort_by or "SortName"
         st.library_sort_order = "descending" if descending else "ascending"
         self.sortChanged.emit()
@@ -275,7 +307,8 @@ class LibraryModel(QAbstractListModel):
         if self._offline:
             from jellytoast.quick import offline_lib
 
-            return offline_lib.items(k, pid) if start == 0 else []
+            items = offline_lib.items(k, pid) if start == 0 else []
+            return self._sort_artist_albums(items) if k == "artistAlbums" else items
         by, order = self._sort() if k in self.SORTABLE else ("SortName", "Ascending")
         if k in self.SCOPED and len(self._plan) > 1:
             return self._fetch_union(prov, k, pid, by, order) if start == 0 else []
@@ -304,9 +337,7 @@ class LibraryModel(QAbstractListModel):
             return list(prov.get_genres() or []) if start == 0 else []
         elif k == "artistAlbums":
             items = list(prov.get_artist_albums(pid) or []) if start == 0 else []
-            # Newest first, like an artist page everywhere else.
-            items.sort(key=lambda it: -(int(it.get("ProductionYear") or 0)))
-            return items
+            return self._sort_artist_albums(items)
         else:
             raise ValueError(f"unknown library kind {k!r}")
         return (resp or {}).get("Items") or []
