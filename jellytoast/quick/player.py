@@ -40,6 +40,12 @@ class PlayerController(QObject):
         b.shuffle_changed.connect(self._on_shuffle)
         b.queue_context_changed.connect(self._on_context)
         b.favorite_toggled.connect(self._on_favorite)
+        # Internet radio: the live song (ICY title + looked-up art) replaces
+        # the station's own title / cover.
+        from jellytoast import radio_state
+
+        self._radio = radio_state.current()
+        b.radio_state_changed.connect(self._on_radio)
         # Sleep timer (owned by the player backend; we mirror the countdown).
         from PySide6.QtCore import QTimer
 
@@ -92,6 +98,16 @@ class PlayerController(QObject):
     def _on_duration(self, ms: int) -> None:
         self._duration = int(ms)
         self.positionChanged.emit()
+
+    def _on_radio(self, state) -> None:
+        self._radio = state
+        self.changed.emit()
+
+    def _live(self) -> bool:
+        return self._radio is not None
+
+    def _station(self) -> str:
+        return getattr(self._radio, "station_name", "") or ""
 
     def _on_streaming_info(self, codec: str, kbps: int) -> None:
         self._codec, self._kbps = codec or "", int(kbps or 0)
@@ -176,9 +192,15 @@ class PlayerController(QObject):
 
     # ── properties ──
     def _title(self) -> str:
+        r = self._radio
+        if r is not None:
+            return r.song_title or r.station_name or get_now_playing().title or ""
         return get_now_playing().title or ""
 
     def _artist(self) -> str:
+        r = self._radio
+        if r is not None:
+            return r.song_artist or (r.station_name if r.song_title else "")
         return get_now_playing().subtitle or ""
 
     def _art_id(self) -> str:
@@ -190,12 +212,16 @@ class PlayerController(QObject):
     def _cover(self) -> str:
         from jellytoast.quick.covers import cover_source
 
+        if self._radio is not None:
+            return self._radio.art_url or self._radio.station_logo_url or ""
         art = self._art_id()
         return cover_source(art, 160) if art else (get_now_playing().thumb_url or "")
 
     def _big_cover(self) -> str:
         from jellytoast.quick.covers import cover_source
 
+        if self._radio is not None:
+            return self._radio.art_url or self._radio.station_logo_url or ""
         art = self._art_id()
         return cover_source(art, 1024) if art else (get_now_playing().thumb_url or "")
 
@@ -259,6 +285,9 @@ class PlayerController(QObject):
     section = Property(str, _get_section, _set_section, notify=sectionChanged)
 
     formatLine = Property(str, _format_line, notify=formatChanged)
+    # Internet radio is playing: no seek bar, a LIVE badge; station name.
+    live = Property(bool, _live, notify=changed)
+    station = Property(str, _station, notify=changed)
 
     # Seconds left on the sleep timer; -1 = off, 0 = "after this track".
     sleepLeft = Property(int, _sleep_left, notify=sleepChanged)

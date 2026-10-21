@@ -953,3 +953,56 @@ def test_queue_drag_to_reorder(quick):
     finally:
         spy.close()
     assert spy.got["queue_move_item"][-1] == (1, 3)
+
+
+# ── internet radio ──
+
+
+def test_radio_play_add_remove(quick):
+    from jellytoast.player_state import QueueKind
+
+    _section(quick, "Radio")
+    quick.wait_for("text:KEXP")
+    spy = _Spy("queue_play_now")
+    try:
+        quick.tap("text:KEXP")
+        quick.wait_until(lambda: spy.got["queue_play_now"])
+    finally:
+        spy.close()
+    items, _i, ctx = spy.got["queue_play_now"][-1]
+    assert (
+        ctx.kind == QueueKind.INTERNET_RADIO
+        and items[0]["streamUrl"] == "https://kexp.example/stream"
+    )
+
+    quick.tap("browsePopular")
+    quick.wait_for("popularSheet")
+    from jellytoast.radio_presets import POPULAR_STATIONS
+
+    first = POPULAR_STATIONS[0]["name"]
+    quick.tap(f"text:{first}")
+    quick.wait_until(lambda: any(c[0] == "create_station" for c in quick.provider.calls))
+    quick.wait_for(f"text:{first}")  # now in your list
+
+    quick.long_press("text:KEXP")
+    quick.tap("removeStation")
+    quick.wait_until(lambda: ("delete_station", "r1") in quick.provider.calls)
+    quick.wait_until(lambda: quick.find("text:KEXP") is None)
+
+
+def test_now_playing_shows_live_radio(quick):
+    from jellytoast import radio_state
+    from jellytoast.player_state import QueueContext, QueueKind
+
+    radio_state.init()
+    quick.fake_now_playing("KEXP", "", item_id="r1")
+    PlayerBus.get().queue_context_changed.emit(
+        QueueContext(kind=QueueKind.INTERNET_RADIO, source_id="r1", source_label="KEXP")
+    )
+    quick.wait_for("miniPlayer")
+    quick.tap("miniPlayer")
+    quick.wait_until(lambda: quick.state()["nowPlaying"])
+    quick.wait_for("liveBadge")
+    assert quick.find("seekBar") is None
+    PlayerBus.get().queue_context_changed.emit(QueueContext())  # back to music
+    quick.wait_until(lambda: quick.find("liveBadge") is None)

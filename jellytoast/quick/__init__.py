@@ -197,6 +197,7 @@ def build_engine(app, *, start_core: bool = True):
         LibraryModel,
         LyricsModel,
         QueueModel,
+        RadioModel,
         SearchModel,
         TracksModel,
     )
@@ -219,6 +220,7 @@ def build_engine(app, *, start_core: bool = True):
     qmlRegisterType(LibraryModel, "Jellytoast", 1, 0, "LibraryModel")
     qmlRegisterType(SearchModel, "Jellytoast", 1, 0, "SearchModel")
     qmlRegisterType(DownloadsModel, "Jellytoast", 1, 0, "DownloadsModel")
+    qmlRegisterType(RadioModel, "Jellytoast", 1, 0, "RadioModel")
     engine = QQmlApplicationEngine()
     bridge = {
         "albums": LibraryModel(engine),

@@ -32,6 +32,7 @@ ApplicationWindow {
         { key: "song", label: qsTr("Songs"), icon: "music_note" },
         { key: "genre", label: qsTr("Genres"), icon: "sort" },
         { key: "favorite", label: qsTr("Favorites"), icon: "favorite_outline" },
+        { key: "radio", label: qsTr("Radio"), icon: "volume" },
         { key: "download", label: qsTr("Downloads"), icon: "download" }
     ]
     property string section: "album"
@@ -47,6 +48,8 @@ ApplicationWindow {
         var page
         if (key === "home")
             page = homePage
+        else if (key === "radio")
+            page = radioPage
         else if (key === "download")
             page = downloadsPage
         else if (key === "song")
@@ -55,7 +58,7 @@ ApplicationWindow {
             page = genresPage
         else
             page = gridPage
-        var props = ["song", "genre", "download", "home"].indexOf(key) >= 0 ? {}
+        var props = ["song", "genre", "download", "home", "radio"].indexOf(key) >= 0 ? {}
             : { kind: key === "favorite" ? "favAlbums" : key, title: sections.find(s => s.key === key).label,
                 source: key === "album" ? albums : null }
         stack.replace(null, page, props, StackView.Immediate)
@@ -285,6 +288,10 @@ ApplicationWindow {
     Component {
         id: albumPage
         AlbumPage { }
+    }
+    Component {
+        id: radioPage
+        RadioPage { }
     }
     Component {
         id: homePage

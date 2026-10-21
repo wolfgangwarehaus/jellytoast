@@ -147,6 +147,9 @@ Rectangle {
             Layout.topMargin: 8
             IconButton {
                 iconName: player.favorite ? "favorite_filled" : "favorite_outline"
+                // Nothing to favourite on a radio stream (keeps its space).
+                opacity: player.live ? 0 : 1
+                enabled: !player.live
                 tint: player.favorite ? theme.accent : theme.text
                 onClicked: player.toggleFavorite()
             }
@@ -186,8 +189,36 @@ Rectangle {
             font.pixelSize: 12
         }
 
+        // Live radio has nothing to seek: a LIVE badge in the bar's place
+        // (same height, so the cover never moves).
+        Item {
+            objectName: "liveBadge"
+            Layout.fillWidth: true
+            Layout.preferredHeight: 48
+            Layout.topMargin: 6
+            visible: player.live
+            Rectangle {
+                anchors.centerIn: parent
+                width: liveLabel.implicitWidth + 24
+                height: 26
+                radius: 13
+                color: "transparent"
+                border.width: 1
+                border.color: theme.accent
+                Label {
+                    id: liveLabel
+                    anchors.centerIn: parent
+                    text: "● " + qsTr("LIVE")
+                    color: theme.accent
+                    font.pixelSize: 12
+                    font.weight: Font.Bold
+                    font.letterSpacing: 1
+                }
+            }
+        }
         SeekBar {
             objectName: "seekBar"
+            visible: !player.live
             Layout.fillWidth: true
             Layout.topMargin: 6
             position: player.position

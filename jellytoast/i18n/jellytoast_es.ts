@@ -1774,11 +1774,16 @@ jellytoast funcionará, pero las funciones de bandeja no estarán disponibles.</
     </message>
     <message>
         <location filename="../quick/qml/Main.qml" line="35"/>
+        <source>Radio</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../quick/qml/Main.qml" line="36"/>
         <source>Downloads</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../quick/qml/Main.qml" line="74"/>
+        <location filename="../quick/qml/Main.qml" line="77"/>
         <source>Liked songs</source>
         <translation type="unfinished"></translation>
     </message>
@@ -1827,17 +1832,17 @@ jellytoast funcionará, pero las funciones de bandeja no estarán disponibles.</
         <translation type="obsolete">Ajustes</translation>
     </message>
     <message>
-        <location filename="../quick/qml/Main.qml" line="213"/>
+        <location filename="../quick/qml/Main.qml" line="216"/>
         <source>Offline — showing your downloads</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../quick/qml/Main.qml" line="335"/>
+        <location filename="../quick/qml/Main.qml" line="342"/>
         <source>BROWSE</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../quick/qml/Main.qml" line="393"/>
+        <location filename="../quick/qml/Main.qml" line="400"/>
         <source>Cast failed</source>
         <translation type="unfinished">Fallo al enviar</translation>
     </message>
@@ -1850,52 +1855,57 @@ jellytoast funcionará, pero las funciones de bandeja no estarán disponibles.</
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../quick/qml/NowPlaying.qml" line="368"/>
+        <location filename="../quick/qml/NowPlaying.qml" line="399"/>
         <source>Add to playlist…</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../quick/qml/NowPlaying.qml" line="379"/>
+        <location filename="../quick/qml/NowPlaying.qml" line="410"/>
         <source>Go to artist</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../quick/qml/NowPlaying.qml" line="390"/>
+        <location filename="../quick/qml/NowPlaying.qml" line="421"/>
         <source>Go to album</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../quick/qml/NowPlaying.qml" line="184"/>
+        <location filename="../quick/qml/NowPlaying.qml" line="187"/>
         <source>Casting</source>
         <translation type="unfinished">Enviando</translation>
     </message>
     <message>
-        <location filename="../quick/qml/NowPlaying.qml" line="287"/>
+        <location filename="../quick/qml/NowPlaying.qml" line="211"/>
+        <source>LIVE</source>
+        <translation type="unfinished">EN VIVO</translation>
+    </message>
+    <message>
+        <location filename="../quick/qml/NowPlaying.qml" line="318"/>
         <source>end of song</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../quick/qml/NowPlaying.qml" line="301"/>
+        <location filename="../quick/qml/NowPlaying.qml" line="332"/>
         <source>%1 minutes</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../quick/qml/NowPlaying.qml" line="302"/>
+        <location filename="../quick/qml/NowPlaying.qml" line="333"/>
         <source>1 hour</source>
         <translation type="unfinished">1 hora</translation>
     </message>
     <message>
-        <location filename="../quick/qml/NowPlaying.qml" line="302"/>
+        <location filename="../quick/qml/NowPlaying.qml" line="333"/>
         <source>1 h 30 min</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../quick/qml/NowPlaying.qml" line="307"/>
+        <location filename="../quick/qml/NowPlaying.qml" line="338"/>
         <source>After this song</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../quick/qml/NowPlaying.qml" line="311"/>
+        <location filename="../quick/qml/NowPlaying.qml" line="342"/>
         <source>Turn off timer</source>
         <translation type="unfinished"></translation>
     </message>
@@ -2603,37 +2613,37 @@ Revisa el PIN — la causa más común es una errata o un código caducado (el r
 <context>
     <name>PlayerController</name>
     <message>
-        <location filename="../quick/player.py" line="101"/>
+        <location filename="../quick/player.py" line="117"/>
         <source>device</source>
         <translation type="unfinished">dispositivo</translation>
     </message>
     <message>
-        <location filename="../quick/player.py" line="113"/>
+        <location filename="../quick/player.py" line="129"/>
         <source>Casting to {0}</source>
         <translation type="unfinished">Enviando a {0}</translation>
     </message>
     <message>
-        <location filename="../quick/player.py" line="120"/>
+        <location filename="../quick/player.py" line="136"/>
         <source>Local playback</source>
         <translation type="unfinished">Reproducción local</translation>
     </message>
     <message>
-        <location filename="../quick/player.py" line="120"/>
+        <location filename="../quick/player.py" line="136"/>
         <source>Streaming</source>
         <translation type="unfinished">Transmitiendo</translation>
     </message>
     <message>
-        <location filename="../quick/player.py" line="122"/>
+        <location filename="../quick/player.py" line="138"/>
         <source>Bit Perfect</source>
         <translation type="unfinished">Bit Perfect</translation>
     </message>
     <message>
-        <location filename="../quick/player.py" line="124"/>
+        <location filename="../quick/player.py" line="140"/>
         <source>Normalized</source>
         <translation type="unfinished">Normalizado</translation>
     </message>
     <message>
-        <location filename="../quick/player.py" line="128"/>
+        <location filename="../quick/player.py" line="144"/>
         <source>{0} kbps</source>
         <translation type="unfinished">{0} kbps</translation>
     </message>
@@ -2831,13 +2841,95 @@ Revisa el PIN — la causa más común es una errata o un código caducado (el r
 <context>
     <name>QueueView</name>
     <message>
-        <location filename="../quick/qml/QueueView.qml" line="16"/>
+        <location filename="../quick/qml/QueueView.qml" line="17"/>
         <source>The queue is empty</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../quick/qml/QueueView.qml" line="51"/>
+        <location filename="../quick/qml/QueueView.qml" line="74"/>
         <source>Remove</source>
+        <translation type="unfinished"></translation>
+    </message>
+</context>
+<context>
+    <name>RadioModel</name>
+    <message>
+        <location filename="../quick/models.py" line="1421"/>
+        <source>This server doesn&apos;t support radio stations.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../quick/models.py" line="1424"/>
+        <source>Only a server admin can change radio stations.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../quick/models.py" line="1428"/>
+        <source>Couldn&apos;t add the station: {0}</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../quick/models.py" line="1429"/>
+        <source>Couldn&apos;t remove the station: {0}</source>
+        <translation type="unfinished"></translation>
+    </message>
+</context>
+<context>
+    <name>RadioPage</name>
+    <message>
+        <location filename="../quick/qml/RadioPage.qml" line="10"/>
+        <source>Radio</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../quick/qml/RadioPage.qml" line="28"/>
+        <source>Browse popular</source>
+        <translation type="unfinished">Explorar populares</translation>
+    </message>
+    <message>
+        <location filename="../quick/qml/RadioPage.qml" line="34"/>
+        <location filename="../quick/qml/RadioPage.qml" line="192"/>
+        <source>Add station</source>
+        <translation type="unfinished">Añadir emisora</translation>
+    </message>
+    <message>
+        <location filename="../quick/qml/RadioPage.qml" line="46"/>
+        <source>No stations yet. Browse popular ones or add a stream address.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../quick/qml/RadioPage.qml" line="114"/>
+        <source>LIVE</source>
+        <translation type="unfinished">EN VIVO</translation>
+    </message>
+    <message>
+        <location filename="../quick/qml/RadioPage.qml" line="140"/>
+        <source>Play</source>
+        <translation type="unfinished">Reproducir</translation>
+    </message>
+    <message>
+        <location filename="../quick/qml/RadioPage.qml" line="147"/>
+        <source>Remove station</source>
+        <translation type="unfinished">Eliminar emisora</translation>
+    </message>
+    <message>
+        <location filename="../quick/qml/RadioPage.qml" line="158"/>
+        <source>POPULAR STATIONS</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../quick/qml/RadioPage.qml" line="177"/>
+        <source>Adding %1</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../quick/qml/RadioPage.qml" line="202"/>
+        <source>Name</source>
+        <translation type="unfinished">Nombre</translation>
+    </message>
+    <message>
+        <location filename="../quick/qml/RadioPage.qml" line="209"/>
+        <source>Stream address (http…)</source>
         <translation type="unfinished"></translation>
     </message>
 </context>

@@ -136,6 +136,37 @@ class FakeProvider:
         self.calls.append(("delete_playlist", playlist_id))
         self.playlists = [p for p in self.playlists if p["Id"] != playlist_id]
 
+    # ── internet radio ──
+    stations = None
+
+    def get_internet_radio_stations(self):
+        if self.stations is None:
+            self.stations = [
+                {
+                    "id": "r1",
+                    "name": "KEXP",
+                    "streamUrl": "https://kexp.example/stream",
+                    "homePageUrl": "https://kexp.org",
+                },
+            ]
+        return [dict(s) for s in self.stations]
+
+    def create_internet_radio_station(self, name, stream_url, home_page_url=None):
+        self.calls.append(("create_station", name, stream_url))
+        self.get_internet_radio_stations()
+        st = {
+            "id": f"r{len(self.stations) + 1}",
+            "name": name,
+            "streamUrl": stream_url,
+            "homePageUrl": home_page_url or "",
+        }
+        self.stations.append(st)
+        return st
+
+    def delete_internet_radio_station(self, station_id):
+        self.calls.append(("delete_station", station_id))
+        self.stations = [s for s in self.stations if s["id"] != station_id]
+
     def get_libraries(self):
         return [
             {"Id": "libA", "Name": "Music", "CollectionType": "music"},

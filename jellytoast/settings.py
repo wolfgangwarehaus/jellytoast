@@ -297,9 +297,7 @@ class Settings:
         stored = self._s.value("server/token", "", type=str)
         blob_decrypted = _decrypt_token(stored) if stored else ""
         if kr and blob_decrypted and kr != blob_decrypted:
-            logger.warning(
-                "dual-store divergence — keyring stale, rewriting from encrypted blob"
-            )
+            logger.warning("dual-store divergence — keyring stale, rewriting from encrypted blob")
             _keyring_set_token(blob_decrypted)
             # Refresh in case the keyring write succeeded — if it
             # failed again we still return the blob's value below.
@@ -630,7 +628,22 @@ class Settings:
         """Qt Quick phone UI: the library section it last showed (album |
         artist | playlist | song | genre | favorite) — reopened at launch."""
         v = str(self._s.value("quick/section", "album") or "album")
-        return v if v in ("home", "album", "artist", "playlist", "song", "genre", "favorite", "download") else "album"
+        return (
+            v
+            if v
+            in (
+                "home",
+                "album",
+                "artist",
+                "playlist",
+                "song",
+                "genre",
+                "favorite",
+                "radio",
+                "download",
+            )
+            else "album"
+        )
 
     @quick_section.setter
     def quick_section(self, v: str):
@@ -1033,9 +1046,7 @@ class Settings:
 
     @audio_output_device.setter
     def audio_output_device(self, v: str):
-        self._s.setValue(
-            "playback/audio_output_device", (v or "auto").strip() or "auto"
-        )
+        self._s.setValue("playback/audio_output_device", (v or "auto").strip() or "auto")
 
     # ── Crossfade ──────────────────────────────────────────────────────────
     # Two-instance ping-pong crossfade. Gated on the ``crossfade_enabled``
@@ -1516,9 +1527,7 @@ class Settings:
                     "name": name.strip(),
                     "rules": rules,
                     "created_at": str(entry.get("created_at") or ""),
-                    "schema_version": self._coerce_schema_version(
-                        entry.get("schema_version")
-                    ),
+                    "schema_version": self._coerce_schema_version(entry.get("schema_version")),
                 }
             )
         return out
@@ -2095,8 +2104,7 @@ class Settings:
                 )
             else:
                 logger.warning(
-                    "radio/stations: dropping malformed entry "
-                    "(missing id/name/streamUrl)"
+                    "radio/stations: dropping malformed entry (missing id/name/streamUrl)"
                 )
         return out
 

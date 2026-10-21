@@ -1276,3 +1276,178 @@ class DownloadsModel(QAbstractListModel):
         from jellytoast import offline
 
         (offline.resume if self._paused else offline.pause)()
+
+
+class RadioModel(QAbstractListModel):
+    """Your internet radio stations (the server's list). Roles: ``itemId``,
+    ``name``, ``subtitle`` (homepage host), ``cover`` (logo URL), ``streamUrl``.
+    ``play(row)`` installs the same single-item INTERNET_RADIO queue as the
+    desktop Radio view; add / remove go through the provider (on Navidrome,
+    admin-only — the error comes back as ``failed``)."""
+
+    IdRole = Qt.ItemDataRole.UserRole + 1
+    NameRole = IdRole + 1
+    SubtitleRole = IdRole + 2
+    CoverRole = IdRole + 3
+    StreamRole = IdRole + 4
+
+    stateChanged = Signal()
+    failed = Signal(str)
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._rows: List[Dict] = []
+        self._loading = False
+
+    def rowCount(self, parent=_ROOT):  # noqa: N802
+        return 0 if parent.isValid() else len(self._rows)
+
+    def roleNames(self):  # noqa: N802
+        return {
+            self.IdRole: QByteArray(b"itemId"),
+            self.NameRole: QByteArray(b"name"),
+            self.SubtitleRole: QByteArray(b"subtitle"),
+            self.CoverRole: QByteArray(b"cover"),
+            self.StreamRole: QByteArray(b"streamUrl"),
+        }
+
+    @staticmethod
+    def _logo(st: Dict) -> str:
+        from jellytoast.radio_presets import logo_url_for_stream
+
+        return logo_url_for_stream(st.get("streamUrl") or "") or str(st.get("logoUrl") or "")
+
+    def data(self, index, role=Qt.ItemDataRole.DisplayRole):
+        if not index.isValid() or not (0 <= index.row() < len(self._rows)):
+            return None
+        st = self._rows[index.row()]
+        if role == self.IdRole:
+            return str(st.get("id") or "")
+        if role in (self.NameRole, Qt.ItemDataRole.DisplayRole):
+            return str(st.get("name") or "")
+        if role == self.SubtitleRole:
+            from urllib.parse import urlparse
+
+            home = str(st.get("homePageUrl") or "")
+            return urlparse(home).netloc or urlparse(str(st.get("streamUrl") or "")).netloc
+        if role == self.CoverRole:
+            return self._logo(st)
+        if role == self.StreamRole:
+            return str(st.get("streamUrl") or "")
+        return None
+
+    loading = Property(bool, lambda self: self._loading, notify=stateChanged)
+    count = Property(int, lambda self: len(self._rows), notify=stateChanged)
+
+    def _set_rows(self, rows) -> None:
+        if not _alive(self):
+            return
+        self.beginResetModel()
+        self._rows = [r for r in (rows or []) if isinstance(r, dict)]
+        self.endResetModel()
+        self._loading = False
+        self.stateChanged.emit()
+
+    @Slot()
+    def reload(self) -> None:
+        self._loading = True
+        self.stateChanged.emit()
+        prov = _provider()
+
+        def _fail(e):
+            logger.warning("radio stations failed: %s", e)
+            self._set_rows([])
+
+        async_io.run_async(
+            prov.get_internet_radio_stations, on_result=self._set_rows, on_error=_fail
+        )
+
+    @Slot(int)
+    def play(self, row: int) -> None:
+        if not (0 <= row < len(self._rows)):
+            return
+        play_station(self._rows[row])
+
+    @Slot(str, str, str)
+    def add(self, name: str, stream_url: str, home_url: str = "") -> None:
+        name, stream_url = (name or "").strip(), (stream_url or "").strip()
+        if not name or not stream_url:
+            return
+        prov = _provider()
+        async_io.run_async(
+            prov.create_internet_radio_station,
+            name,
+            stream_url,
+            home_url or None,
+            on_result=lambda _st: self.reload(),
+            on_error=lambda e: self.failed.emit(_radio_error(e, "add")),
+        )
+
+    @Slot(int)
+    def remove(self, row: int) -> None:
+        if not (0 <= row < len(self._rows)):
+            return
+        sid = str(self._rows[row].get("id") or "")
+        prov = _provider()
+        async_io.run_async(
+            prov.delete_internet_radio_station,
+            sid,
+            on_result=lambda _r: self.reload(),
+            on_error=lambda e: self.failed.emit(_radio_error(e, "remove")),
+        )
+
+    @Slot(result="QVariantList")
+    def popular(self) -> List[Dict]:
+        """The curated stations (radio_presets), for Browse popular."""
+        from jellytoast.radio_presets import POPULAR_STATIONS
+
+        have = {str(r.get("streamUrl") or "") for r in self._rows}
+        return [
+            {
+                "name": p["name"],
+                "streamUrl": p["streamUrl"],
+                "homePageUrl": p.get("homePageUrl", ""),
+                "logo": p.get("logoUrl", ""),
+                "description": p.get("description", ""),
+                "category": p.get("category", ""),
+                "added": p["streamUrl"] in have,
+            }
+            for p in POPULAR_STATIONS
+        ]
+
+
+def _radio_error(e, verb: str) -> str:
+    from PySide6.QtCore import QCoreApplication
+
+    if isinstance(e, NotImplementedError):
+        return QCoreApplication.translate(
+            "RadioModel", "This server doesn't support radio stations."
+        )
+    msg = str(e)
+    if "50" in msg or "authoriz" in msg.lower() or "permission" in msg.lower():
+        return QCoreApplication.translate(
+            "RadioModel", "Only a server admin can change radio stations."
+        )
+    if verb == "add":
+        return QCoreApplication.translate("RadioModel", "Couldn't add the station: {0}").format(msg)
+    return QCoreApplication.translate("RadioModel", "Couldn't remove the station: {0}").format(msg)
+
+
+def play_station(st: Dict) -> None:
+    """Play an internet radio station — the desktop Radio view's queue
+    shape: one item with the stream inline, INTERNET_RADIO context."""
+    from jellytoast.player_state import PlayerBus, QueueContext, QueueKind
+
+    stream = str(st.get("streamUrl") or "")
+    if not stream:
+        return
+    sid = str(st.get("id") or "")
+    name = str(st.get("name") or "Radio")
+    item = {"Id": sid, "Name": name, "Type": "Audio", "streamUrl": stream, "RunTimeTicks": 0}
+    ctx = QueueContext(
+        kind=QueueKind.INTERNET_RADIO,
+        source_id=sid,
+        source_label=name,
+        source_icon=RadioModel._logo(st),
+    )
+    PlayerBus.get().queue_play_now.emit([item], 0, ctx)
