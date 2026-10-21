@@ -168,7 +168,7 @@ class LibraryModel(QAbstractListModel):
         if role == self.CoverRole:
             return it.get("_cover", "")
         if role == self.LetterRole:
-            return _letter(it.get("SortName") or it.get("Name", ""))
+            return self._letter_key(it)
         return None
 
     # ── QML API ──
@@ -422,16 +422,32 @@ class LibraryModel(QAbstractListModel):
         self._seek = ""
         self.loadingChanged.emit()
 
+    def _letter_key(self, it: Dict) -> str:
+        """The A–Z bucket of a row in the current order: the album artist
+        when sorted by it, else the (sort) name."""
+        if self._kind in self.SORTABLE and self._sort()[0].startswith("AlbumArtist"):
+            return _letter(it.get("AlbumArtist") or "")
+        return _letter(it.get("SortName") or it.get("Name", ""))
+
+    def _get_scrubbable(self) -> bool:
+        """Whether an A–Z rail means something in the current order."""
+        if self._kind in self.SORTABLE:
+            return self._sort()[0].split(",")[0] in ("SortName", "AlbumArtist")
+        return self._kind in ("artist", "song")
+
+    scrubbable = Property(bool, _get_scrubbable, notify=sortChanged)
+
     @Slot(str)
     def seekLetter(self, letter: str) -> None:  # noqa: N802
-        """Find the first row at or after ``letter`` (A–Z scrubber), paging
-        in more of the library if it isn't loaded yet. Answers through
-        ``letterFound``."""
+        """Find the first row at ``letter`` (A–Z scrubber) — in either sort
+        direction — paging in more of the library if it isn't loaded yet.
+        Answers through ``letterFound``."""
         order = "#ABCDEFGHIJKLMNOPQRSTUVWXYZ"
         want = order.index(letter) if letter in order else 0
+        desc = self._kind in self.SORTABLE and self._sort()[1] == "Descending"
         for row, it in enumerate(self._items):
-            have = _letter(it.get("SortName") or it.get("Name", ""))
-            if order.index(have) >= want:
+            have = order.index(self._letter_key(it))
+            if (have <= want) if desc else (have >= want):
                 self._seek = ""
                 self.letterFound.emit(letter, row)
                 return

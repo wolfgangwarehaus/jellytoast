@@ -231,8 +231,8 @@ Item {
         anchors.top: parent.top
         anchors.bottom: parent.bottom
         anchors.margins: 4
-        // Letters only mean something in name order, A → Z.
-        visible: page.scrubbable && page.lib.sortBy === "SortName" && !page.lib.sortDescending
+        // Letters mean something in name / album-artist order (not dates).
+        visible: page.scrubbable && page.lib.scrubbable
         model: page.lib
         view: page.listMode ? rows : grid
     }

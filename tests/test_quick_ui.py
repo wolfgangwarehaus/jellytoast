@@ -737,16 +737,19 @@ def test_album_sort_menu(quick):
     saved = (s.library_sort_by, s.library_sort_order)
     try:
         assert quick.find("azRail", visible=False) is not None
-        _options(quick, "text:Date added")
+        _options(quick, "sortRow", "text:Date added")
         quick.wait_until(
             lambda: ("MusicAlbum", "DateCreated,SortName", "Ascending") in quick.provider.sorts
         )
         assert s.library_sort_by == "DateCreated,SortName"  # shared with the desktop library
-        _options(quick, "sortDescending")
+        _options(quick, "sortDirection")
         _close_options(quick)
         quick.wait_for("text:Album 149")  # the fake reverses on Descending
         assert s.library_sort_order == "descending"
-        assert not quick.find("azRail", visible=False).isVisible()  # letters only for Name A→Z
+        assert not quick.find("azRail", visible=False).isVisible()  # no letters for dates
+        _options(quick, "sortRow", "text:Album artist")
+        _close_options(quick)
+        quick.wait_until(lambda: quick.find("azRail", visible=False).isVisible())
     finally:
         s.library_sort_by, s.library_sort_order = saved
 
@@ -757,7 +760,7 @@ def test_more_menu_list_view_and_shuffle(quick):
     s = get_settings()
     saved = s.library_view_mode
     try:
-        _options(quick, "viewList")
+        _options(quick, "view_list")
         _close_options(quick)
         quick.wait_for("libraryList")
         assert s.library_view_mode == "list"
@@ -766,7 +769,7 @@ def test_more_menu_list_view_and_shuffle(quick):
         quick.wait_for("trackList")
         quick.key("esc")
         quick.wait_idle()
-        _options(quick, "viewGrid")
+        _options(quick, "view_grid")
         _close_options(quick)
         quick.wait_for("albumGrid")
         spy = _Spy("queue_play_now")
@@ -785,12 +788,12 @@ def test_library_picker_scopes_the_grid(quick):
     libs = quick.engine.rootContext().contextProperty("libraries")
     libs.refresh()
     quick.wait_until(lambda: libs.property("multiple"))
-    _options(quick, "text:Vinyl rips")  # untick → only "Music" (libA, even albums)
+    _options(quick, "libraryRow", "text:Vinyl rips")  # untick → only "Music" (libA, even albums)
     _close_options(quick)
     quick.wait_until(lambda: _ls.selected_ids() == ["libA"])
     quick.wait_for("text:Album 002")
     quick.wait_idle()
     assert quick.find("text:Album 001") is None
-    _options(quick, "libAll")
+    _options(quick, "libraryRow", "libAll")
     _close_options(quick)
     quick.wait_for("text:Album 001")

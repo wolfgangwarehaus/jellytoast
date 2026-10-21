@@ -251,3 +251,39 @@ def test_broken_qml_starts_nothing_and_falls_back(qapp, monkeypatch, tmp_path):
     monkeypatch.setattr(quick, "_start_core", lambda app, core: started.append(1))
     assert quick.run(qapp) is None
     assert started == []
+
+
+def test_seek_letter_by_album_artist_both_directions(qapp, monkeypatch):
+    """A–Z rail in album-artist order jumps by the artist's letter, also Z→A."""
+    from jellytoast.settings import get_settings
+
+    artists = ["Air", "Björk", "Caribou", "Daft Punk", "Four Tet"]
+    rows = [{"Id": f"a{i}", "Name": f"Z{i}", "AlbumArtist": artists[i // 4]} for i in range(20)]
+    s = get_settings()
+    saved = (s.library_sort_by, s.library_sort_order)
+    p = MagicMock()
+    p.get_items.side_effect = lambda *a, **k: {
+        "Items": [dict(r) for r in (rows if a[5] == "Ascending" else rows[::-1])][
+            a[3] : a[3] + a[2]
+        ]
+    }
+    monkeypatch.setattr(qm, "_provider", lambda: p)
+    monkeypatch.setattr(
+        qm.async_io, "run_async", lambda fn, *a, on_result=None, on_error=None: on_result(fn(*a))
+    )
+    try:
+        s.library_sort_by, s.library_sort_order = "AlbumArtist,SortName", "ascending"
+        m = qm.LibraryModel(kind="album")
+        found = []
+        m.letterFound.connect(lambda letter, row: found.append((letter, row)))
+        m.reload()
+        assert m.scrubbable
+        m.seekLetter("D")
+        assert found[-1] == ("D", 12)  # Daft Punk's first album
+        m.setSort("AlbumArtist,SortName", True)  # Z → A
+        m.seekLetter("C")
+        assert found[-1] == ("C", 8)  # Z→A: Four Tet 0–3, Daft Punk 4–7, Caribou from 8
+        m.setSort("DateCreated,SortName", False)
+        assert not m.scrubbable
+    finally:
+        s.library_sort_by, s.library_sort_order = saved

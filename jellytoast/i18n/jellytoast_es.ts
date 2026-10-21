@@ -48,23 +48,22 @@
 <context>
     <name>AlbumPage</name>
     <message>
-        <location filename="../quick/qml/AlbumPage.qml" line="71"/>
+        <location filename="../quick/qml/AlbumPage.qml" line="82"/>
         <source>Play</source>
         <translation type="unfinished">Reproducir</translation>
     </message>
     <message>
-        <location filename="../quick/qml/AlbumPage.qml" line="86"/>
         <source>Shuffle</source>
-        <translation type="unfinished">Aleatorio</translation>
+        <translation type="obsolete">Aleatorio</translation>
     </message>
     <message>
-        <location filename="../quick/qml/AlbumPage.qml" line="109"/>
-        <location filename="../quick/qml/AlbumPage.qml" line="118"/>
+        <location filename="../quick/qml/AlbumPage.qml" line="116"/>
+        <location filename="../quick/qml/AlbumPage.qml" line="125"/>
         <source>Added to queue</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../quick/qml/AlbumPage.qml" line="118"/>
+        <location filename="../quick/qml/AlbumPage.qml" line="125"/>
         <source>Playing next</source>
         <translation type="unfinished"></translation>
     </message>
@@ -2404,77 +2403,76 @@ jellytoast funcionará, pero las funciones de bandeja no estarán disponibles.</
 <context>
     <name>OptionsSheet</name>
     <message>
-        <location filename="../quick/qml/OptionsSheet.qml" line="20"/>
-        <source>LIBRARIES</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <location filename="../quick/qml/OptionsSheet.qml" line="29"/>
+        <location filename="../quick/qml/OptionsSheet.qml" line="32"/>
         <source>All</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../quick/qml/OptionsSheet.qml" line="45"/>
-        <source>SORT BY</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <location filename="../quick/qml/OptionsSheet.qml" line="54"/>
+        <location filename="../quick/qml/OptionsSheet.qml" line="16"/>
+        <location filename="../quick/qml/OptionsSheet.qml" line="40"/>
         <source>Name</source>
         <translation type="unfinished">Nombre</translation>
     </message>
     <message>
-        <location filename="../quick/qml/OptionsSheet.qml" line="55"/>
+        <location filename="../quick/qml/OptionsSheet.qml" line="17"/>
         <source>Album artist</source>
         <translation type="unfinished">Artista del álbum</translation>
     </message>
     <message>
-        <location filename="../quick/qml/OptionsSheet.qml" line="56"/>
+        <location filename="../quick/qml/OptionsSheet.qml" line="18"/>
         <source>Release date</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../quick/qml/OptionsSheet.qml" line="57"/>
+        <location filename="../quick/qml/OptionsSheet.qml" line="19"/>
         <source>Date added</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../quick/qml/OptionsSheet.qml" line="58"/>
+        <location filename="../quick/qml/OptionsSheet.qml" line="20"/>
         <source>Recently played</source>
         <translation type="unfinished">Escuchado recientemente</translation>
     </message>
     <message>
-        <location filename="../quick/qml/OptionsSheet.qml" line="73"/>
+        <location filename="../quick/qml/OptionsSheet.qml" line="34"/>
+        <source>%1 libraries</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../quick/qml/OptionsSheet.qml" line="123"/>
+        <source>Library</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../quick/qml/OptionsSheet.qml" line="133"/>
+        <source>All libraries</source>
+        <translation type="unfinished">Todas las bibliotecas</translation>
+    </message>
+    <message>
+        <location filename="../quick/qml/OptionsSheet.qml" line="157"/>
+        <source>Sort by</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../quick/qml/OptionsSheet.qml" line="201"/>
+        <source>View</source>
+        <translation type="unfinished">Ver</translation>
+    </message>
+    <message>
         <source>Ascending</source>
-        <translation type="unfinished">Ascendente</translation>
+        <translation type="obsolete">Ascendente</translation>
     </message>
     <message>
-        <location filename="../quick/qml/OptionsSheet.qml" line="80"/>
         <source>Descending</source>
-        <translation type="unfinished">Descendente</translation>
+        <translation type="obsolete">Descendente</translation>
     </message>
     <message>
-        <location filename="../quick/qml/OptionsSheet.qml" line="88"/>
-        <source>VIEW</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <location filename="../quick/qml/OptionsSheet.qml" line="96"/>
-        <source>Grid</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <location filename="../quick/qml/OptionsSheet.qml" line="103"/>
-        <source>List</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <location filename="../quick/qml/OptionsSheet.qml" line="116"/>
+        <location filename="../quick/qml/OptionsSheet.qml" line="249"/>
         <source>Shuffle all</source>
         <translation type="unfinished">Reproducir todo aleatorio</translation>
     </message>
     <message>
-        <location filename="../quick/qml/OptionsSheet.qml" line="122"/>
+        <location filename="../quick/qml/OptionsSheet.qml" line="255"/>
         <source>Settings</source>
         <translation type="unfinished">Ajustes</translation>
     </message>
