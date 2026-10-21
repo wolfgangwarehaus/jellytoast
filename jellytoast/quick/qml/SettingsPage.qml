@@ -92,6 +92,25 @@ Item {
                 onClicked: confirm.open()
             }
 
+            Heading { text: qsTr("LOOK") }
+            ChoiceRow {
+                objectName: "themeRow"
+                Layout.leftMargin: 12; Layout.rightMargin: 12
+                label: qsTr("Theme")
+                options: prefs.themes
+                value: prefs.theme
+                onPicked: v => prefs.setTheme(v)
+            }
+            ChoiceRow {
+                objectName: "themeModeRow"
+                visible: prefs.themeHasModes
+                Layout.leftMargin: 12; Layout.rightMargin: 12
+                label: qsTr("Appearance")
+                options: prefs.themeModes
+                value: prefs.themeMode
+                onPicked: v => prefs.setThemeMode(v)
+            }
+
             Heading { text: qsTr("PLAYBACK") }
             ChoiceRow {
                 objectName: "qualityRow"

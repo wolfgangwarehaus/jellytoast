@@ -82,6 +82,55 @@ class Prefs(QObject):
         _settings().media_integration_enabled = bool(on)  # applies next launch
         self.changed.emit()
 
+    # ── theme ──
+    def _themes(self):
+        from jellytoast.theme_presets import THEME_FAMILIES
+
+        out = [{"label": "jellytoast", "value": "jellytoast"}]
+        out += [{"label": fam.label, "value": key} for key, fam in THEME_FAMILIES.items()]
+        return out
+
+    def _modes(self):
+        return [
+            {"label": self.tr("Dark"), "value": "dark"},
+            {"label": self.tr("Light"), "value": "light"},
+            {"label": self.tr("Follow the system"), "value": "auto"},
+        ]
+
+    themes = Property("QVariantList", _themes, constant=True)
+    themeModes = Property("QVariantList", _modes, constant=True)
+
+    def _theme(self) -> str:
+        return _settings().theme_family or "jellytoast"
+
+    def _theme_mode(self) -> str:
+        return _settings().theme_mode or "dark"
+
+    def _theme_has_modes(self) -> bool:
+        from jellytoast.theme_presets import family_has_both
+
+        return bool(family_has_both(self._theme()))
+
+    theme = Property(str, _theme, notify=changed)
+    themeMode = Property(str, _theme_mode, notify=changed)
+    themeHasModes = Property(bool, _theme_has_modes, notify=changed)
+
+    @Slot(str)
+    def setTheme(self, family: str) -> None:  # noqa: N802
+        from jellytoast.theme_presets import apply_theme_family
+
+        st = _settings()
+        apply_theme_family(family, st.theme_mode or "dark", bool(st.frosted))
+        self.changed.emit()
+
+    @Slot(str)
+    def setThemeMode(self, mode: str) -> None:  # noqa: N802
+        from jellytoast.theme_presets import apply_theme_family
+
+        st = _settings()
+        apply_theme_family(st.theme_family or "jellytoast", mode, bool(st.frosted))
+        self.changed.emit()
+
     # ── offline ──
     def _offline_mode(self) -> bool:
         from jellytoast import offline

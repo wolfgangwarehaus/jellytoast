@@ -641,3 +641,32 @@ def test_offline_mode_shows_downloads_only(quick, monkeypatch):
     state["on"] = False
     PlayerBus.get().offline_mode_changed.emit(False)
     quick.wait_until(lambda: quick.find("offlineBanner") is None)
+
+
+def test_theme_switch_recolours_live(quick):
+    from jellytoast.settings import get_settings
+    from jellytoast.theme_presets import THEME_FAMILIES, apply_theme_family
+
+    s = get_settings()
+    saved = (s.theme_family or "jellytoast", s.theme_mode or "dark", bool(s.frosted))
+    try:
+        before = quick.eval("theme.background.toString()")
+        quick.tap("settingsButton")
+        quick.wait_for("settingsPage")
+        quick.wait_idle()
+        quick.tap("themeModeRow")
+        quick.tap("text:Light")
+        assert s.theme_mode == "light"
+        quick.wait_until(lambda: quick.eval("theme.background.toString()") != before)
+        labels = [f.label for f in THEME_FAMILIES.values()]
+        fam_key, fam = next(
+            (k, f)
+            for k, f in THEME_FAMILIES.items()
+            if not any(o != f.label and o.startswith(f.label) for o in labels)
+            and not any(f.label != o and f.label in o for o in labels)
+        )
+        quick.tap("themeRow")
+        quick.tap(f"text:{fam.label}")
+        assert s.theme_family == fam_key
+    finally:
+        apply_theme_family(*saved)

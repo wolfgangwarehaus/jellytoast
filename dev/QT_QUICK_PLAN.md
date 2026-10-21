@@ -89,7 +89,8 @@ could run.
   the downloads, with an "Offline — showing your downloads" banner.
   Covers go through the app's image cache (`image://cover/<id>/<px>`), so
   they persist across launches and show offline.
-  *Still to do:* smart mixes, theme picker, Quick Connect sign-in.
+  Theme picker (family + Dark / Light / Follow the system, live).
+  *Still to do:* smart mixes, Quick Connect sign-in.
 - [ ] **M4 — switch:** default on Plasma Mobile; remove the Widgets phone
   layouts only once parity holds; then the metainfo "phone friendly" flag.
 

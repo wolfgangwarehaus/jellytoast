@@ -311,7 +311,7 @@ firewalld:
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../quick/qml/CastSheet.qml" line="122"/>
+        <location filename="../quick/qml/CastSheet.qml" line="125"/>
         <source>No speakers or TVs found on this network.</source>
         <translation type="unfinished"></translation>
     </message>
@@ -2500,6 +2500,21 @@ Revisa el PIN — la causa más común es una errata o un código caducado (el r
         <source>Per album</source>
         <translation type="unfinished"></translation>
     </message>
+    <message>
+        <location filename="../quick/prefs.py" line="95"/>
+        <source>Dark</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../quick/prefs.py" line="96"/>
+        <source>Light</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../quick/prefs.py" line="97"/>
+        <source>Follow the system</source>
+        <translation type="unfinished"></translation>
+    </message>
 </context>
 <context>
     <name>QueueManager</name>
@@ -3778,86 +3793,101 @@ Ejecuta pywal (o wallust) una vez para que genere una paleta, y vuelve a activar
     </message>
     <message>
         <location filename="../quick/qml/SettingsPage.qml" line="95"/>
-        <source>PLAYBACK</source>
+        <source>LOOK</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
         <location filename="../quick/qml/SettingsPage.qml" line="99"/>
+        <source>Theme</source>
+        <translation type="unfinished">Tema</translation>
+    </message>
+    <message>
+        <location filename="../quick/qml/SettingsPage.qml" line="108"/>
+        <source>Appearance</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../quick/qml/SettingsPage.qml" line="114"/>
+        <source>PLAYBACK</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../quick/qml/SettingsPage.qml" line="118"/>
         <source>Streaming quality</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../quick/qml/SettingsPage.qml" line="107"/>
+        <location filename="../quick/qml/SettingsPage.qml" line="126"/>
         <source>Download quality</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../quick/qml/SettingsPage.qml" line="115"/>
+        <location filename="../quick/qml/SettingsPage.qml" line="134"/>
         <source>Normalization</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../quick/qml/SettingsPage.qml" line="124"/>
+        <location filename="../quick/qml/SettingsPage.qml" line="143"/>
         <source>Lock screen &amp; media controls</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../quick/qml/SettingsPage.qml" line="131"/>
+        <location filename="../quick/qml/SettingsPage.qml" line="150"/>
         <source>Takes effect next time jellytoast starts.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../quick/qml/SettingsPage.qml" line="136"/>
+        <location filename="../quick/qml/SettingsPage.qml" line="155"/>
         <source>OFFLINE</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../quick/qml/SettingsPage.qml" line="141"/>
+        <location filename="../quick/qml/SettingsPage.qml" line="160"/>
         <source>Offline mode — only play downloads</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../quick/qml/SettingsPage.qml" line="149"/>
+        <location filename="../quick/qml/SettingsPage.qml" line="168"/>
         <source>Download on Wi-Fi only</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../quick/qml/SettingsPage.qml" line="154"/>
+        <location filename="../quick/qml/SettingsPage.qml" line="173"/>
         <source>CASTING</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../quick/qml/SettingsPage.qml" line="168"/>
+        <location filename="../quick/qml/SettingsPage.qml" line="187"/>
         <source>INTERFACE</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../quick/qml/SettingsPage.qml" line="173"/>
+        <location filename="../quick/qml/SettingsPage.qml" line="192"/>
         <source>This is the new phone interface (beta). You can go back to the classic one any time.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../quick/qml/SettingsPage.qml" line="181"/>
+        <location filename="../quick/qml/SettingsPage.qml" line="200"/>
         <source>Use the classic interface</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../quick/qml/SettingsPage.qml" line="184"/>
+        <location filename="../quick/qml/SettingsPage.qml" line="203"/>
         <source>Restart jellytoast to switch</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../quick/qml/SettingsPage.qml" line="188"/>
+        <location filename="../quick/qml/SettingsPage.qml" line="207"/>
         <source>ABOUT</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../quick/qml/SettingsPage.qml" line="205"/>
+        <location filename="../quick/qml/SettingsPage.qml" line="224"/>
         <source>Sign out?</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../quick/qml/SettingsPage.qml" line="211"/>
+        <location filename="../quick/qml/SettingsPage.qml" line="230"/>
         <source>Playback stops, the queue is cleared and pending downloads are cancelled.</source>
         <translation type="unfinished"></translation>
     </message>

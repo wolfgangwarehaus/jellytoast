@@ -58,13 +58,19 @@ class _CoverResponse(QQuickImageResponse):
             self._failed(str(e))
 
     def _done(self, pix) -> None:
-        self._img = pix.toImage() if pix is not None and not pix.isNull() else QImage()
-        if self._img.isNull():
-            self._error = "empty image"
+        if pix is None or pix.isNull():
+            self._failed("empty image")
+            return
+        self._img = pix.toImage()
         self._finish()
 
     def _failed(self, err: str = "") -> None:
-        self._error = err or "cover unavailable"
+        # No art (offline and never cached, or the item has none): hand
+        # back a transparent pixel instead of an error — the Cover's
+        # placeholder shows through, without a QML warning per tile.
+        logger.debug("cover unavailable: %s", err)
+        self._img = QImage(1, 1, QImage.Format.Format_ARGB32_Premultiplied)
+        self._img.fill(0)
         self._finish()
 
     def _finish(self) -> None:
