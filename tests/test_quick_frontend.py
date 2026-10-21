@@ -215,29 +215,26 @@ def test_seek_letter_pages_until_found(qapp, monkeypatch):
     assert found[-1] == ("Z", 169)
 
 
-def test_front_end_choice(monkeypatch):
-    """JT_UI forces a front end; otherwise the beta setting, on a phone only."""
+def test_front_end_choice(monkeypatch, isolated_settings):
+    """JT_UI forces a front end; otherwise a phone gets the Quick UI by
+    default (the classic one if turned off); a desktop / docked never."""
     from jellytoast import quick, touch
-    from jellytoast.settings import get_settings
 
-    s = get_settings()
-    saved = s.phone_ui_quick
-    try:
-        monkeypatch.setenv("JT_UI", "quick")
-        assert quick.wanted()
-        monkeypatch.setenv("JT_UI", "widgets")
-        s.phone_ui_quick = True
-        assert not quick.wanted()
-        monkeypatch.delenv("JT_UI")
-        monkeypatch.setattr(touch, "phone_ui", lambda: True)
-        assert quick.wanted()
-        s.phone_ui_quick = False
-        assert not quick.wanted()
-        s.phone_ui_quick = True
-        monkeypatch.setattr(touch, "phone_ui", lambda: False)  # desktop / docked
-        assert not quick.wanted()
-    finally:
-        s.phone_ui_quick = saved
+    s = isolated_settings
+    monkeypatch.setattr(quick, "available", lambda: True)
+    monkeypatch.setenv("JT_UI", "quick")
+    assert quick.wanted()
+    monkeypatch.setenv("JT_UI", "widgets")
+    assert not quick.wanted()
+    monkeypatch.delenv("JT_UI")
+    monkeypatch.setattr(touch, "phone_ui", lambda: True)
+    assert s.phone_ui_quick  # never set → on
+    assert quick.wanted()
+    s.phone_ui_quick = False  # "Use the classic interface"
+    assert not quick.wanted()
+    s.phone_ui_quick = True
+    monkeypatch.setattr(touch, "phone_ui", lambda: False)  # desktop / docked
+    assert not quick.wanted()
 
 
 def test_broken_qml_starts_nothing_and_falls_back(qapp, monkeypatch, tmp_path):

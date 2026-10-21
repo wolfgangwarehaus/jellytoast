@@ -15,8 +15,8 @@ could run.
 ## Architecture
 
 - **One app, two front ends.** Desktop keeps the Widgets UI. A phone shell
-  (`touch.phone_ui()`) gets the Qt Quick UI — opt-in with `JT_UI=quick` while
-  it's being built, default on Plasma Mobile at M4. Same process model,
+  (`touch.phone_ui()`) gets the Qt Quick UI — the default on Plasma Mobile since
+  M4 (`JT_UI=quick|widgets` forces either). Same process model,
   settings, sign-in and cache as the Widgets app.
 - **Shared core, unchanged:** providers / Jellyfin API, `QueueManager`,
   `MpvController`, `PlayerBus`, settings, offline, cast, media controls,
@@ -98,12 +98,15 @@ could run.
   played, Favorites, random rails); Jellyfin Quick Connect sign-in.
   Covers: `Covers.request` + a synchronous pixmap provider — never Python
   on the image-reader thread (it deadlocked against the GIL).
-- [ ] **M4 — switch:** default on Plasma Mobile; remove the Widgets phone
-  layouts only once parity holds; then the metainfo "phone friendly" flag.
-  *Ready except the decision:* every install type can run it (pip / AUR /
-  flatpak / AppImage / deb); it's opt-in via Settings → Display → New
-  phone interface (beta). Flip the default once august has used it on the
-  phone for a while.
+- [x] **M4 — switch:** default on Plasma Mobile (undocked) —
+  `settings.phone_ui_quick` defaults on; off via the Quick Settings "Use
+  the classic interface" or the desktop Settings → Display "Phone
+  interface". Metainfo: `<supports><control>touch</control>` and
+  `display_length ≥ 360` (was ≥ 768, which hid it from phones). Parity
+  gaps closed first: add to playlist + playlist editing, queue drag
+  reorder, internet radio, EQ / crossfade / scrobbling / lyrics size.
+- [ ] Remove the Widgets phone layouts — later, once the Quick UI has had
+  a release or two in the wild.
 
 ## Rig (dev + tests)
 

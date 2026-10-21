@@ -585,9 +585,10 @@ class Settings:
 
     @property
     def phone_ui_quick(self) -> bool:
-        """Use the new Qt Quick interface on a phone shell (Plasma Mobile,
-        undocked) — beta, opt-in; read at launch."""
-        return self._s.value("display/phone_ui_quick", False, type=bool)
+        """Use the Qt Quick phone interface on a phone shell (Plasma Mobile,
+        undocked) — the default there; off = the classic Widgets window.
+        Read at launch."""
+        return self._s.value("display/phone_ui_quick", True, type=bool)
 
     @phone_ui_quick.setter
     def phone_ui_quick(self, v: bool):

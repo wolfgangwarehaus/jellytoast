@@ -334,7 +334,7 @@ class _DisplayPageMixin:
         _tt_row.addStretch(1)
         v.addLayout(_tt_row)
 
-        # Plasma Mobile: opt into the Qt Quick phone front end (beta) —
+        # Plasma Mobile: the Qt Quick phone front end (on by default) —
         # read at launch (jellytoast.quick.wanted), so restart-required.
         from jellytoast import quick as _quick
         from jellytoast.platform_compat import is_mobile_shell
@@ -342,7 +342,7 @@ class _DisplayPageMixin:
         if is_mobile_shell() and _quick.available():
             self._phone_quick_check = QCheckBox(
                 QCoreApplication.translate(
-                    "SettingsDialog", "New phone interface (beta) — restart to apply"
+                    "SettingsDialog", "Phone interface — restart to apply"
                 )
             )
             self._phone_quick_check.setChecked(self.s.phone_ui_quick)

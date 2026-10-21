@@ -165,7 +165,11 @@
     <control>pointing</control>
   </recommends>
 
+  <supports>
+    <control>touch</control>
+  </supports>
+
   <requires>
-    <display_length compare="ge">768</display_length>
+    <display_length compare="ge">360</display_length>
   </requires>
 </component>

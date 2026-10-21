@@ -12,11 +12,13 @@ developer-facing history lives in [`docs/CHANGELOG.md`](docs/CHANGELOG.md).
      should stand alone: the Store "What's new" shows just the title (+ first
      sentence in --detail mode). -->
 
-- **New phone interface (beta).** On Plasma Mobile, turn on **Settings →
-  Display → New phone interface** and restart: a rebuilt touch-first app
-  with smoother scrolling, swipe gestures, a Home page, search, lyrics, the
-  queue, downloads and casting. You can switch back any time from its
-  Settings.
+- **New phone interface.** On Plasma Mobile jellytoast now opens a rebuilt
+  touch-first app: smoother scrolling, swipe gestures, a Home page, search,
+  lyrics, the queue (drag to reorder), playlists you can edit, internet
+  radio, downloads, casting, EQ, crossfade and Last.fm / ListenBrainz. Prefer
+  the old one? **Settings → Use the classic interface** and restart.
+- **Listed as phone-friendly.** Software centres now show jellytoast as
+  working on touch screens and phones.
 - **Add songs to playlists.** Right-click (or long-press) a song, an album or
   a playlist and pick **Add to playlist** — any of your Navidrome / Jellyfin
   playlists, or **New playlist…** to start one. Also in the ⋮ menu on the
