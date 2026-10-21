@@ -141,6 +141,14 @@ class FakeProvider:
             "Audio": [s for s in self.songs if t in s["Name"].lower()][:songs],
         }
 
+    def get_latest_media(self, library_id="", limit=16):
+        self.calls.append(("get_latest_media", limit))
+        return [dict(a) for a in self.albums[-limit:]][::-1]
+
+    def get_random_audio_items(self, parent_id, limit=500):
+        self.calls.append(("get_random_audio_items", limit))
+        return [dict(t) for t in self.songs[:limit]]
+
     def get_instant_mix(self, item_id, count=50):
         self.calls.append(("get_instant_mix", item_id))
         return self.songs[:10]
@@ -171,6 +179,23 @@ class FakeProvider:
         self.calls.append(("authenticate", server_url, username))
         if password != self.password:
             raise RuntimeError("401 Unauthorized")
+        self.is_authenticated = True
+
+    qc_polls_until_approved = 2
+
+    def quick_connect_available(self, server_url):
+        return True
+
+    def quick_connect_start(self, server_url):
+        self.calls.append(("qc_start", server_url))
+        return ("s3cret", "482915")
+
+    def quick_connect_approved(self, server_url, secret):
+        self.qc_polls_until_approved -= 1
+        return self.qc_polls_until_approved <= 0
+
+    def quick_connect_finish(self, server_url, secret):
+        self.calls.append(("qc_finish", secret))
         self.is_authenticated = True
 
     def server_logout(self):

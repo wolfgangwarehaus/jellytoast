@@ -189,7 +189,7 @@ def build_engine(app, *, start_core: bool = True):
     from jellytoast.providers import get_provider
     from jellytoast.quick.actions import Actions
     from jellytoast.quick.cast import Cast
-    from jellytoast.quick.covers import CoverProvider
+    from jellytoast.quick.covers import CoverPixmapProvider, Covers
     from jellytoast.quick.icons import IconProvider
     from jellytoast.quick.models import (
         DownloadsModel,
@@ -228,9 +228,10 @@ def build_engine(app, *, start_core: bool = True):
         "cast": Cast(None, engine),
         "player": PlayerController(engine),
         "theme": Theme(engine),
+        "covers": Covers(engine),
     }
     engine.addImageProvider("icon", IconProvider())
-    engine.addImageProvider("cover", CoverProvider())
+    engine.addImageProvider("coverpx", CoverPixmapProvider(bridge["covers"]))
     ctx = engine.rootContext()
     for name, obj in bridge.items():
         ctx.setContextProperty(name, obj)

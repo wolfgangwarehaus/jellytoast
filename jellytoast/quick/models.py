@@ -77,7 +77,18 @@ class LibraryModel(QAbstractListModel):
         "genreAlbums",
         "favAlbums",
         "favSongs",
+        # Home rails
+        "latest",
+        "recent",
+        "frequent",
+        "random",
     )
+    RAIL = 20  # albums per Home rail
+    _RAILS = {
+        "recent": ("DatePlayed,SortName", "Descending", "IsPlayed"),
+        "frequent": ("PlayCount,SortName", "Descending", "IsPlayed"),
+        "random": ("Random", "Ascending", ""),
+    }
 
     IdRole = Qt.ItemDataRole.UserRole + 1
     NameRole = IdRole + 1
@@ -123,7 +134,7 @@ class LibraryModel(QAbstractListModel):
 
     def _subtitle(self, it: Dict) -> str:
         k = self._kind
-        if k in ("album", "artistAlbums", "genreAlbums", "favAlbums"):
+        if k in ("album", "artistAlbums", "genreAlbums", "favAlbums") or k in self._HOME:
             return it.get("AlbumArtist") or ", ".join(
                 a.get("Name", "") for a in (it.get("AlbumArtists") or []) if isinstance(a, dict)
             )
@@ -231,6 +242,13 @@ class LibraryModel(QAbstractListModel):
             resp = prov.get_items("", "Playlist", n, start, "SortName", "Ascending", True)
         elif k == "song":
             resp = prov.get_items("", "Audio", n, start, "SortName", "Ascending", True)
+        elif k == "latest":
+            return list(prov.get_latest_media("", self.RAIL) or []) if start == 0 else []
+        elif k in self._RAILS:
+            sort_by, order, filters = self._RAILS[k]
+            resp = prov.get_items(
+                "", "MusicAlbum", self.RAIL, start, sort_by, order, True, "", filters
+            )
         elif k in ("favAlbums", "favSongs"):
             typ = "MusicAlbum" if k == "favAlbums" else "Audio"
             resp = prov.get_items(
@@ -249,8 +267,10 @@ class LibraryModel(QAbstractListModel):
             raise ValueError(f"unknown library kind {k!r}")
         return (resp or {}).get("Items") or []
 
+    _HOME = ("latest", "recent", "frequent", "random")
+
     def _single_shot(self) -> bool:
-        return self._offline or self._kind in ("genre", "artistAlbums")
+        return self._offline or self._kind in ("genre", "artistAlbums") or self._kind in self._HOME
 
     def _on_offline_mode(self, on: bool) -> None:
         """Re-load from the new source — but an AUTOMATIC flip (a server

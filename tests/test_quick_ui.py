@@ -654,9 +654,12 @@ def test_theme_switch_recolours_live(quick):
         quick.tap("settingsButton")
         quick.wait_for("settingsPage")
         quick.wait_idle()
+        # Switch to whichever luminance isn't current (another test may
+        # have left it on light).
+        target = "dark" if (s.theme_mode or "dark") == "light" else "light"
         quick.tap("themeModeRow")
-        quick.tap("text:Light")
-        assert s.theme_mode == "light"
+        quick.tap("text:" + target.capitalize())
+        assert s.theme_mode == target
         quick.wait_until(lambda: quick.eval("theme.background.toString()") != before)
         labels = [f.label for f in THEME_FAMILIES.values()]
         fam_key, fam = next(
@@ -670,3 +673,36 @@ def test_theme_switch_recolours_live(quick):
         assert s.theme_family == fam_key
     finally:
         apply_theme_family(*saved)
+
+
+def test_home_rails_and_shuffle_library(quick):
+    from jellytoast.player_state import QueueKind
+
+    _section(quick, "Home")
+    quick.wait_for("rail_latest")
+    quick.wait_for("text:Album 149")  # newest first
+    assert quick.find("rail_favAlbums") is not None
+    spy = _Spy("queue_play_now")
+    try:
+        quick.tap("shuffleLibrary")
+        quick.wait_until(lambda: spy.got["queue_play_now"])
+    finally:
+        spy.close()
+    items, _start, ctx = spy.got["queue_play_now"][-1]
+    assert ctx.kind == QueueKind.SHUFFLE and len(items) == 90
+    quick.tap("text:Album 149")
+    quick.wait_for("trackList")
+    assert quick.state()["page"] == "AlbumPage"
+
+
+def test_quick_connect_sign_in(qapp, fake_provider, monkeypatch, request):
+    from jellytoast.quick.session import Session
+
+    _signed_out(qapp, fake_provider, monkeypatch)
+    monkeypatch.setattr(Session, "QC_POLL_MS", 400)  # code stays up ~0.8 s
+    quick = request.getfixturevalue("quick")
+    quick.get("serverField").setProperty("text", "jf.example")
+    quick.tap("quickConnectButton")
+    quick.wait_for("text:482915")
+    quick.wait_until(lambda: quick.state()["page"] == "LibraryGridPage", timeout=5)
+    assert ("qc_finish", "s3cret") in fake_provider.calls

@@ -37,14 +37,27 @@ class Session(QObject):
     signedInNow = Signal()  # a sign-in just completed (reload the library)
     signedOutNow = Signal()
 
+    QC_POLL_MS = 3000
+    QC_TIMEOUT_S = 300
+
     def __init__(self, parent=None):
         super().__init__(parent)
+        from PySide6.QtCore import QTimer
+
         from jellytoast.providers import get_provider
 
         self._signed_in = bool(get_provider().is_authenticated)
         self._busy = False
         self._error = ""
         self._gen = 0
+        # Quick Connect (Jellyfin): show a code, poll until approved.
+        self._qc_code = ""
+        self._qc_server = self._qc_secret = ""
+        self._qc_deadline = 0.0
+        self._qc_inflight = False
+        self._qc_timer = QTimer(self)
+        self._qc_timer.setInterval(self.QC_POLL_MS)
+        self._qc_timer.timeout.connect(self._qc_poll)
 
     # ── properties ──
     signedIn = Property(bool, lambda self: self._signed_in, notify=changed)
@@ -62,7 +75,10 @@ class Session(QObject):
     )
     username = Property(str, lambda self: self._settings().username or "", notify=changed)
 
+    quickConnectCode = Property(str, lambda self: self._qc_code, notify=changed)
+
     def _fail(self, msg: str) -> None:
+        self._qc_stop()
         self._busy = False
         self._error = msg
         self.changed.emit()
@@ -113,15 +129,7 @@ class Session(QObject):
                 )
                 return
             settings.server_is_navidrome = "navidrome" in (product or "").lower()
-            try:
-                from jellytoast.scrobble import refresh_server_scrobble_flags
-
-                refresh_server_scrobble_flags()
-            except Exception as e:
-                logger.warning("scrobble flag refresh failed: %s", e)
-            self._busy, self._error, self._signed_in = False, "", True
-            self.changed.emit()
-            self.signedInNow.emit()
+            self._signed_in_ok()
 
         def _err(e):
             if gen != self._gen:
@@ -136,6 +144,129 @@ class Session(QObject):
             self._fail(msg)
 
         async_io.run_async(_go, on_result=_done, on_error=_err)
+
+    def _signed_in_ok(self) -> None:
+        try:
+            from jellytoast.scrobble import refresh_server_scrobble_flags
+
+            refresh_server_scrobble_flags()
+        except Exception as e:
+            logger.warning("scrobble flag refresh failed: %s", e)
+        self._qc_stop()
+        self._busy, self._error, self._signed_in = False, "", True
+        self.changed.emit()
+        self.signedInNow.emit()
+
+    # ── Quick Connect (Jellyfin) ──
+    @Slot(str)
+    def quickConnect(self, url: str) -> None:  # noqa: N802
+        """Ask the server for a code to approve from a signed-in device."""
+        if self._busy:
+            return
+        if _rig():
+            self._fail(
+                self.tr("Signing in is off in the dev rig — it would replace your real login.")
+            )
+            return
+        server = _normalized(url)
+        if not server:
+            self._fail(self.tr("Please fill in the server URL."))
+            return
+        from jellytoast.providers import get_provider, reset_provider
+
+        if get_provider().kind != "jellyfin":
+            self._settings().provider_kind = "jellyfin"
+            reset_provider()
+        prov = get_provider()
+        self._gen += 1
+        gen = self._gen
+        self._busy, self._error = True, ""
+        self.changed.emit()
+
+        def _start():
+            if prov.probe(server) is None:
+                raise LookupError("not-jellyfin")
+            if not prov.quick_connect_available(server):
+                raise PermissionError("quick-connect-off")
+            return prov.quick_connect_start(server)
+
+        def _started(result):
+            if gen != self._gen:
+                return
+            import time
+
+            self._qc_secret, self._qc_code = result
+            self._qc_server = server
+            self._qc_deadline = time.monotonic() + self.QC_TIMEOUT_S
+            self._qc_inflight = False
+            self._qc_timer.start()
+            self.changed.emit()
+
+        async_io.run_async(
+            _start, on_result=_started, on_error=lambda e, g=gen: self._qc_failed(g, e)
+        )
+
+    def _qc_poll(self) -> None:
+        import time
+
+        if self._qc_inflight:
+            return
+        gen = self._gen
+        if time.monotonic() > self._qc_deadline:
+            self._qc_failed(gen, TimeoutError())
+            return
+        from jellytoast.providers import get_provider
+
+        prov = get_provider()
+        self._qc_inflight = True
+
+        def _polled(ok):
+            if gen != self._gen:
+                return
+            self._qc_inflight = False
+            if not ok:
+                return
+            self._qc_timer.stop()
+            async_io.run_async(
+                prov.quick_connect_finish,
+                self._qc_server,
+                self._qc_secret,
+                on_result=lambda _r, g=gen: g == self._gen and self._signed_in_ok(),
+                on_error=lambda e, g=gen: self._qc_failed(g, e),
+            )
+
+        async_io.run_async(
+            prov.quick_connect_approved,
+            self._qc_server,
+            self._qc_secret,
+            on_result=_polled,
+            on_error=lambda e, g=gen: self._qc_failed(g, e),
+        )
+
+    def _qc_failed(self, gen: int, err) -> None:
+        if gen != self._gen:
+            return
+        if isinstance(err, TimeoutError):
+            msg = self.tr("The code expired. Try again.")
+        elif isinstance(err, LookupError):
+            msg = self.tr("Couldn't find a Jellyfin server at that address.")
+        elif isinstance(err, PermissionError):
+            msg = self.tr("Quick Connect is turned off on this server.")
+        else:
+            msg = self.tr("Quick Connect failed: {0}").format(str(err) or err.__class__.__name__)
+        self._fail(msg)
+
+    def _qc_stop(self) -> None:
+        self._qc_timer.stop()
+        self._qc_code = self._qc_server = self._qc_secret = ""
+        self._qc_inflight = False
+
+    @Slot()
+    def cancelQuickConnect(self) -> None:  # noqa: N802
+        self._gen += 1
+        self._qc_stop()
+        self._busy = False
+        self.changed.emit()
 
     @Slot(str, result="QVariantMap")
     def demo(self, kind: str) -> dict:  # noqa: N802

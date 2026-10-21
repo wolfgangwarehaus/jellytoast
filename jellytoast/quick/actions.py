@@ -95,6 +95,28 @@ class Actions(QObject):
             on_error=lambda e: logger.warning("download %s failed: %s", item_id, e),
         )
 
+    @Slot()
+    def shuffleLibrary(self) -> None:  # noqa: N802
+        """Shuffle across the whole library (random songs)."""
+        from jellytoast.providers import get_provider
+
+        prov = get_provider()
+
+        def _go(tracks):
+            if not tracks:
+                self.toast.emit(self.tr("Nothing to play"))
+                return
+            ctx = QueueContext(kind=QueueKind.SHUFFLE, source_label=self.tr("Your library"))
+            PlayerBus.get().queue_play_now.emit(list(tracks), 0, ctx)
+
+        async_io.run_async(
+            prov.get_random_audio_items,
+            "",
+            200,
+            on_result=_go,
+            on_error=lambda e: logger.warning("shuffle library failed: %s", e),
+        )
+
     @Slot(str, str, str)
     def startRadio(self, kind: str, item_id: str, name: str) -> None:  # noqa: N802
         """Endless radio seeded from an album / artist / genre (same as the

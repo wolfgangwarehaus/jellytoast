@@ -62,6 +62,12 @@ def items(kind: str, parent_id: str = "") -> List[Dict]:
         return _by_name([a for a in _complete("album") if _fav(a)])
     if kind == "favSongs":
         return _by_name([t for t in _complete("track") if _fav(t)])
+    if kind in ("latest", "recent", "frequent", "random"):
+        import random
+
+        albums = _complete("album")
+        random.shuffle(albums)
+        return albums[:20]
     if kind == "genre":
         names = set()
         for a in _complete("album"):

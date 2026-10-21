@@ -110,6 +110,46 @@ Item {
                 onClicked: page.submit()
             }
             PillButton {
+                objectName: "quickConnectButton"
+                Layout.fillWidth: true
+                visible: page.kind === "jellyfin" && session.quickConnectCode === ""
+                enabled: !session.busy
+                text: qsTr("Use Quick Connect")
+                onClicked: session.quickConnect(server.text)
+            }
+            // Quick Connect: the code to approve elsewhere.
+            ColumnLayout {
+                Layout.fillWidth: true
+                visible: session.quickConnectCode !== ""
+                spacing: 8
+                Label {
+                    Layout.fillWidth: true
+                    wrapMode: Text.WordWrap
+                    color: theme.textDim
+                    text: qsTr("On a device that's already signed in to Jellyfin, open Quick Connect and enter:")
+                }
+                Label {
+                    objectName: "quickConnectCode"
+                    Layout.alignment: Qt.AlignHCenter
+                    text: session.quickConnectCode
+                    color: theme.text
+                    font.pixelSize: 40
+                    font.weight: Font.Bold
+                    font.letterSpacing: 6
+                }
+                Label {
+                    Layout.alignment: Qt.AlignHCenter
+                    color: theme.textDim
+                    font.pixelSize: 13
+                    text: qsTr("Waiting for approval…")
+                }
+                PillButton {
+                    Layout.alignment: Qt.AlignHCenter
+                    text: qsTr("Cancel")
+                    onClicked: session.cancelQuickConnect()
+                }
+            }
+            PillButton {
                 objectName: "demoButton"
                 Layout.fillWidth: true
                 enabled: !session.busy

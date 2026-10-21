@@ -69,7 +69,7 @@ could run.
   to queue; edge-swipe back; toasts. *Left for M2.5:* Add to playlist
   (held with #238), Go to artist, favourites list, smart mixes / radio,
   remembering the last section.
-- [ ] **M3 — the rest:** sign-in, phone Settings, downloads / offline, cast
+- [x] **M3 — the rest:** sign-in, phone Settings, downloads / offline, cast
   picker, radio, smart mixes, theming parity.
   *Started 2026-10-21:* sign in (Jellyfin / Navidrome, demo server,
   readable errors) and sign out; Settings page (account, streaming /
@@ -90,7 +90,10 @@ could run.
   Covers go through the app's image cache (`image://cover/<id>/<px>`), so
   they persist across launches and show offline.
   Theme picker (family + Dark / Light / Follow the system, live).
-  *Still to do:* smart mixes, Quick Connect sign-in.
+  Home section (Shuffle my library + Recently added / played, Most
+  played, Favorites, random rails); Jellyfin Quick Connect sign-in.
+  Covers: `Covers.request` + a synchronous pixmap provider — never Python
+  on the image-reader thread (it deadlocked against the GIL).
 - [ ] **M4 — switch:** default on Plasma Mobile; remove the Widgets phone
   layouts only once parity holds; then the metainfo "phone friendly" flag.
 

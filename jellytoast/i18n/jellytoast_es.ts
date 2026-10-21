@@ -5,6 +5,7 @@
     <name>Actions</name>
     <message>
         <location filename="../quick/actions.py" line="50"/>
+        <location filename="../quick/actions.py" line="107"/>
         <source>Nothing to play</source>
         <translation type="unfinished"></translation>
     </message>
@@ -24,17 +25,22 @@
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../quick/actions.py" line="105"/>
+        <location filename="../quick/actions.py" line="109"/>
+        <source>Your library</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../quick/actions.py" line="127"/>
         <source>Starting radio…</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../quick/actions.py" line="113"/>
+        <location filename="../quick/actions.py" line="135"/>
         <source>Added to favorites</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../quick/actions.py" line="113"/>
+        <location filename="../quick/actions.py" line="135"/>
         <source>Removed from favorites</source>
         <translation type="unfinished"></translation>
     </message>
@@ -1019,6 +1025,44 @@ Esto libera el almacenamiento de inmediato. Tu biblioteca en el servidor no se v
     </message>
 </context>
 <context>
+    <name>HomePage</name>
+    <message>
+        <location filename="../quick/qml/HomePage.qml" line="10"/>
+        <source>Home</source>
+        <translation type="unfinished">Inicio</translation>
+    </message>
+    <message>
+        <location filename="../quick/qml/HomePage.qml" line="34"/>
+        <source>Shuffle my library</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../quick/qml/HomePage.qml" line="40"/>
+        <source>Recently added</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../quick/qml/HomePage.qml" line="41"/>
+        <source>Recently played</source>
+        <translation type="unfinished">Escuchado recientemente</translation>
+    </message>
+    <message>
+        <location filename="../quick/qml/HomePage.qml" line="42"/>
+        <source>Most played</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../quick/qml/HomePage.qml" line="43"/>
+        <source>Favorites</source>
+        <translation type="unfinished">Favoritos</translation>
+    </message>
+    <message>
+        <location filename="../quick/qml/HomePage.qml" line="44"/>
+        <source>Something different</source>
+        <translation type="unfinished"></translation>
+    </message>
+</context>
+<context>
     <name>Hotkeys</name>
     <message>
         <location filename="../hotkeys.py" line="107"/>
@@ -1653,51 +1697,56 @@ jellytoast funcionará, pero las funciones de bandeja no estarán disponibles.</
     <name>Main</name>
     <message>
         <location filename="../quick/qml/Main.qml" line="28"/>
+        <source>Home</source>
+        <translation type="unfinished">Inicio</translation>
+    </message>
+    <message>
+        <location filename="../quick/qml/Main.qml" line="29"/>
         <source>Albums</source>
         <translation type="unfinished">Álbumes</translation>
     </message>
     <message>
-        <location filename="../quick/qml/Main.qml" line="29"/>
+        <location filename="../quick/qml/Main.qml" line="30"/>
         <source>Artists</source>
         <translation type="unfinished">Artistas</translation>
     </message>
     <message>
-        <location filename="../quick/qml/Main.qml" line="30"/>
+        <location filename="../quick/qml/Main.qml" line="31"/>
         <source>Playlists</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../quick/qml/Main.qml" line="31"/>
+        <location filename="../quick/qml/Main.qml" line="32"/>
         <source>Songs</source>
         <translation type="unfinished">Canciones</translation>
     </message>
     <message>
-        <location filename="../quick/qml/Main.qml" line="32"/>
+        <location filename="../quick/qml/Main.qml" line="33"/>
         <source>Genres</source>
         <translation type="unfinished">Géneros</translation>
     </message>
     <message>
-        <location filename="../quick/qml/Main.qml" line="33"/>
+        <location filename="../quick/qml/Main.qml" line="34"/>
         <source>Favorites</source>
         <translation type="unfinished">Favoritos</translation>
     </message>
     <message>
-        <location filename="../quick/qml/Main.qml" line="34"/>
+        <location filename="../quick/qml/Main.qml" line="35"/>
         <source>Downloads</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../quick/qml/Main.qml" line="71"/>
+        <location filename="../quick/qml/Main.qml" line="74"/>
         <source>Liked songs</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../quick/qml/Main.qml" line="219"/>
+        <location filename="../quick/qml/Main.qml" line="222"/>
         <source>Offline — showing your downloads</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../quick/qml/Main.qml" line="339"/>
+        <location filename="../quick/qml/Main.qml" line="346"/>
         <source>Cast failed</source>
         <translation type="unfinished">Fallo al enviar</translation>
     </message>
@@ -2695,37 +2744,63 @@ Subsonic requiere permiso de administrador para crear / editar / eliminar.</tran
 <context>
     <name>Session</name>
     <message>
-        <location filename="../quick/session.py" line="77"/>
+        <location filename="../quick/session.py" line="93"/>
+        <location filename="../quick/session.py" line="167"/>
         <source>Signing in is off in the dev rig — it would replace your real login.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../quick/session.py" line="82"/>
+        <location filename="../quick/session.py" line="98"/>
         <source>Please fill in the server URL and username.</source>
         <translation type="unfinished">Completa la URL del servidor y el usuario.</translation>
     </message>
     <message>
-        <location filename="../quick/session.py" line="110"/>
+        <location filename="../quick/session.py" line="126"/>
         <source>Couldn&apos;t find a {0} server at that address.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../quick/session.py" line="131"/>
+        <location filename="../quick/session.py" line="139"/>
         <source>Couldn&apos;t reach the server. Check the URL and your network.</source>
         <translation type="unfinished">No se pudo conectar con el servidor. Comprueba la URL y tu red.</translation>
     </message>
     <message>
-        <location filename="../quick/session.py" line="133"/>
+        <location filename="../quick/session.py" line="141"/>
         <source>Wrong username or password.</source>
         <translation type="unfinished">Usuario o contraseña incorrectos.</translation>
     </message>
     <message>
-        <location filename="../quick/session.py" line="135"/>
+        <location filename="../quick/session.py" line="143"/>
         <source>Couldn&apos;t sign in: {0}</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../quick/session.py" line="157"/>
+        <location filename="../quick/session.py" line="171"/>
+        <source>Please fill in the server URL.</source>
+        <translation type="unfinished">Completa la URL del servidor.</translation>
+    </message>
+    <message>
+        <location filename="../quick/session.py" line="246"/>
+        <source>The code expired. Try again.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../quick/session.py" line="248"/>
+        <source>Couldn&apos;t find a Jellyfin server at that address.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../quick/session.py" line="250"/>
+        <source>Quick Connect is turned off on this server.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../quick/session.py" line="252"/>
+        <source>Quick Connect failed: {0}</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../quick/session.py" line="284"/>
         <source>Signing out is off in the dev rig — it would clear your real login.</source>
         <translation type="unfinished"></translation>
     </message>
@@ -3931,12 +4006,32 @@ Ejecuta pywal (o wallust) una vez para que genere una paleta, y vuelve a activar
         <translation type="unfinished">Iniciando sesión…</translation>
     </message>
     <message>
-        <location filename="../quick/qml/SignInPage.qml" line="116"/>
-        <source>Try a demo server</source>
+        <location filename="../quick/qml/SignInPage.qml" line="117"/>
+        <source>Use Quick Connect</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
         <location filename="../quick/qml/SignInPage.qml" line="129"/>
+        <source>On a device that&apos;s already signed in to Jellyfin, open Quick Connect and enter:</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../quick/qml/SignInPage.qml" line="144"/>
+        <source>Waiting for approval…</source>
+        <translation type="unfinished">Esperando la aprobación…</translation>
+    </message>
+    <message>
+        <location filename="../quick/qml/SignInPage.qml" line="148"/>
+        <source>Cancel</source>
+        <translation type="unfinished">Cancelar</translation>
+    </message>
+    <message>
+        <location filename="../quick/qml/SignInPage.qml" line="156"/>
+        <source>Try a demo server</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../quick/qml/SignInPage.qml" line="169"/>
         <source>The demo is a public server run by the Jellyfin / Navidrome projects.</source>
         <translation type="unfinished"></translation>
     </message>

@@ -25,6 +25,7 @@ ApplicationWindow {
 
     // ── sections ──
     readonly property var sections: [
+        { key: "home", label: qsTr("Home") },
         { key: "album", label: qsTr("Albums") },
         { key: "artist", label: qsTr("Artists") },
         { key: "playlist", label: qsTr("Playlists") },
@@ -44,7 +45,9 @@ ApplicationWindow {
         section = key
         player.section = key
         var page
-        if (key === "download")
+        if (key === "home")
+            page = homePage
+        else if (key === "download")
             page = downloadsPage
         else if (key === "song")
             page = songsPage
@@ -52,7 +55,7 @@ ApplicationWindow {
             page = genresPage
         else
             page = gridPage
-        var props = key === "song" || key === "genre" || key === "download" ? {}
+        var props = ["song", "genre", "download", "home"].indexOf(key) >= 0 ? {}
             : { kind: key === "favorite" ? "favAlbums" : key, title: sections.find(s => s.key === key).label,
                 source: key === "album" ? albums : null }
         stack.replace(null, page, props, StackView.Immediate)
@@ -287,6 +290,10 @@ ApplicationWindow {
     Component {
         id: albumPage
         AlbumPage { }
+    }
+    Component {
+        id: homePage
+        HomePage { onOpenItem: (kind, item) => win.openItem(kind, item) }
     }
     Component {
         id: downloadsPage
