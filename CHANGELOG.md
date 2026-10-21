@@ -12,6 +12,11 @@ developer-facing history lives in [`docs/CHANGELOG.md`](docs/CHANGELOG.md).
      should stand alone: the Store "What's new" shows just the title (+ first
      sentence in --detail mode). -->
 
+- **New phone interface (beta).** On Plasma Mobile, turn on **Settings →
+  Display → New phone interface** and restart: a rebuilt touch-first app
+  with smoother scrolling, swipe gestures, a Home page, search, lyrics, the
+  queue, downloads and casting. You can switch back any time from its
+  Settings.
 - **Add songs to playlists.** Right-click (or long-press) a song, an album or
   a playlist and pick **Add to playlist** — any of your Navidrome / Jellyfin
   playlists, or **New playlist…** to start one. Also in the ⋮ menu on the
