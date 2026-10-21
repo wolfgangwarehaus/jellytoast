@@ -235,6 +235,7 @@ Item {
         visible: page.scrubbable && page.lib.scrubbable
         model: page.lib
         view: page.listMode ? rows : grid
+        reversed: page.lib.sortable && page.lib.sortDescending
     }
 
     ItemMenu {

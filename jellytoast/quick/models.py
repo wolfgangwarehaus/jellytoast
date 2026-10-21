@@ -47,13 +47,13 @@ def _provider():
 
 
 def _letter(name: str) -> str:
-    """A–Z bucket for a sort name: first letter, ``#`` for anything else
-    (digits, punctuation, non-Latin)."""
-    for ch in name or "":
-        if ch.isalnum():
-            up = ch.upper()
-            return up if "A" <= up <= "Z" else "#"
-    return "#"
+    """A–Z bucket for a name, the way the server sorts it: leading article
+    dropped ("The Antlers" → A), accents folded ("Ásgeir" → A); ``#`` for
+    digits, punctuation and non-Latin."""
+    from jellytoast.sort_utils import first_letter
+
+    up = first_letter(name or "")
+    return up if len(up) == 1 and "A" <= up <= "Z" else "#"
 
 
 class LibraryModel(QAbstractListModel):
