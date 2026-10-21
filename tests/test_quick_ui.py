@@ -108,6 +108,18 @@ class _Spy:
             getattr(self.bus, n).disconnect(slot)
 
 
+def _open_settings(quick):
+    quick.tap("moreButton")
+    quick.tap("settingsItem")
+
+
+def _more(quick, *path):
+    """⋮ → each label in turn (sub-menus open on tap)."""
+    quick.tap("moreButton")
+    for label in path:
+        quick.tap(f"text:{label}")
+
+
 def _section(quick, label):
     quick.tap("sectionButton")
     quick.tap(f"text:{label}")
@@ -314,7 +326,7 @@ def test_settings_change_quality_and_sign_out(quick, monkeypatch):
     from jellytoast.settings import get_settings
 
     monkeypatch.setattr("jellytoast.providers.reset_provider", lambda: None)
-    quick.tap("settingsButton")
+    _open_settings(quick)
     quick.wait_for("settingsPage")
     quick.wait_idle()
     quick.tap("qualityRow")
@@ -651,7 +663,7 @@ def test_theme_switch_recolours_live(quick):
     saved = (s.theme_family or "jellytoast", s.theme_mode or "dark", bool(s.frosted))
     try:
         before = quick.eval("theme.background.toString()")
-        quick.tap("settingsButton")
+        _open_settings(quick)
         quick.wait_for("settingsPage")
         quick.wait_idle()
         # Switch to whichever luminance isn't current (another test may
@@ -715,18 +727,55 @@ def test_album_sort_menu(quick):
     saved = (s.library_sort_by, s.library_sort_order)
     try:
         assert quick.find("azRail", visible=False) is not None
-        quick.tap("sortButton")
-        quick.tap("text:Date added")
+        _more(quick, "Sort", "Date added")
         quick.wait_until(
             lambda: ("MusicAlbum", "DateCreated,SortName", "Ascending") in quick.provider.sorts
         )
         assert s.library_sort_by == "DateCreated,SortName"  # shared with the desktop library
-        quick.tap("sortButton")
-        quick.tap("text:Descending")
+        _more(quick, "Sort", "Descending")
         quick.wait_for("text:Album 149")  # the fake reverses on Descending
         assert s.library_sort_order == "descending"
         assert not quick.find("azRail", visible=False).isVisible()  # letters only for Name A→Z
-        _section(quick, "Artists")
-        assert quick.find("sortButton") is None  # albums only
     finally:
         s.library_sort_by, s.library_sort_order = saved
+
+
+def test_more_menu_list_view_and_shuffle(quick):
+    from jellytoast.settings import get_settings
+
+    s = get_settings()
+    saved = s.library_view_mode
+    try:
+        _more(quick, "Show as list")
+        quick.wait_for("libraryList")
+        assert s.library_view_mode == "list"
+        quick.wait_for("text:Album 000")
+        quick.tap("text:Album 000")
+        quick.wait_for("trackList")
+        quick.key("esc")
+        quick.wait_idle()
+        _more(quick, "Show as grid")
+        quick.wait_for("albumGrid")
+        spy = _Spy("queue_play_now")
+        try:
+            _more(quick, "Shuffle all")
+            quick.wait_until(lambda: spy.got["queue_play_now"])
+        finally:
+            spy.close()
+    finally:
+        s.library_view_mode = saved
+
+
+def test_library_picker_scopes_the_grid(quick):
+    from jellytoast import library_selection as _ls
+
+    libs = quick.engine.rootContext().contextProperty("libraries")
+    libs.refresh()
+    quick.wait_until(lambda: libs.property("multiple"))
+    _more(quick, "Libraries", "Vinyl rips")  # untick → only "Music" (libA, even albums)
+    quick.wait_until(lambda: _ls.selected_ids() == ["libA"])
+    quick.wait_for("text:Album 002")
+    quick.wait_idle()
+    assert quick.find("text:Album 001") is None
+    _more(quick, "Libraries", "All libraries")
+    quick.wait_for("text:Album 001")

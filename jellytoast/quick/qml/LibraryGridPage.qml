@@ -11,6 +11,8 @@ Item {
     property var source: null           // a ready LibraryModel (Albums uses the shared one)
     readonly property var lib: source ? source : own
     readonly property bool loading: lib.loading
+    // Albums can show as a list too (⋮ → Show as list; the desktop setting).
+    readonly property bool listMode: prefs.viewMode === "list" && lib.sortable
     readonly property bool round: kind === "artist"
     readonly property bool scrubbable: (kind === "album" || kind === "artist") && session.signedIn
     signal openItem(string kind, var item)
@@ -35,9 +37,9 @@ Item {
         anchors.fill: parent
         anchors.leftMargin: page.gutter
         anchors.rightMargin: page.gutter
-        visible: session.signedIn
+        visible: session.signedIn && !page.listMode
         clip: true
-        model: session.signedIn ? page.lib : null
+        model: visible ? page.lib : null
         cellWidth: width / page.columns
         cellHeight: cellWidth + (page.round ? 34 : 46)
         cacheBuffer: cellHeight * 4
@@ -151,6 +153,79 @@ Item {
         }
     }
 
+    ListView {
+        id: rows
+        objectName: "libraryList"
+        anchors.fill: parent
+        visible: session.signedIn && page.listMode
+        clip: true
+        model: visible ? page.lib : null
+        boundsBehavior: Flickable.DragOverBounds
+        maximumFlickVelocity: 8000
+        flickDeceleration: 2500
+        pixelAligned: true
+        reuseItems: true
+        cacheBuffer: 600
+        delegate: ItemDelegate {
+            id: lrow
+            required property int index
+            required property string itemId
+            required property string name
+            required property string subtitle
+            required property string year
+            required property string cover
+            width: rows.width
+            height: 68
+            focusPolicy: Qt.NoFocus
+            hoverEnabled: false
+            leftPadding: 12
+            rightPadding: 16
+            background: Rectangle { color: theme.text; opacity: lrow.pressed ? 0.08 : 0 }
+            function info() {
+                return { kind: page.itemKind, id: lrow.itemId, name: lrow.name, artist: lrow.subtitle,
+                         year: lrow.year, cover: lrow.cover }
+            }
+            onClicked: page.openItem(page.itemKind, lrow.info())
+            onPressAndHold: itemMenu.show(Object.assign(lrow.info(), { favorite: page.lib.get(lrow.index).favorite }),
+                                          lrow, width / 2, height / 2)
+            contentItem: Row {
+                spacing: 12
+                Cover {
+                    width: 52; height: 52
+                    anchors.verticalCenter: parent.verticalCenter
+                    radius: 6
+                    pixels: 156
+                    source: lrow.cover
+                }
+                Column {
+                    anchors.verticalCenter: parent.verticalCenter
+                    width: lrow.availableWidth - 64
+                    spacing: 2
+                    Label {
+                        width: parent.width
+                        text: lrow.name
+                        color: theme.text
+                        elide: Text.ElideRight
+                        font.pixelSize: 15
+                        font.weight: Font.Medium
+                    }
+                    Label {
+                        width: parent.width
+                        text: [lrow.subtitle, lrow.year].filter(s => s).join(" · ")
+                        color: theme.textDim
+                        elide: Text.ElideRight
+                        font.pixelSize: 12
+                    }
+                }
+            }
+        }
+        footer: Item {
+            width: rows.width
+            height: page.lib.loading ? 56 : 0
+            BusyIndicator { anchors.centerIn: parent; running: page.lib.loading; visible: running }
+        }
+    }
+
     AzRail {
         anchors.right: parent.right
         anchors.top: parent.top
@@ -159,7 +234,7 @@ Item {
         // Letters only mean something in name order, A → Z.
         visible: page.scrubbable && page.lib.sortBy === "SortName" && !page.lib.sortDescending
         model: page.lib
-        view: grid
+        view: page.listMode ? rows : grid
     }
 
     ItemMenu {

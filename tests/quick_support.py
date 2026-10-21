@@ -94,6 +94,8 @@ class FakeProvider:
         self.sorts.append((item_types, sort_by, sort_order))
         if item_types == "MusicAlbum":
             pool = [a for a in self.albums if not genre_ids or a["Genre"] == genre_ids]
+            if parent_id in ("libA", "libB"):  # two music libraries: even / odd albums
+                pool = [a for a in pool if (int(a["Id"][2:]) % 2 == 0) == (parent_id == "libA")]
         elif item_types == "Playlist":
             pool = self.playlists
         elif item_types == "Audio":
@@ -106,6 +108,12 @@ class FakeProvider:
             pool = [x for x in pool if (x.get("UserData") or {}).get("IsFavorite")]
         page = pool[start : start + limit]
         return {"Items": [dict(a) for a in page], "TotalRecordCount": len(pool)}
+
+    def get_libraries(self):
+        return [
+            {"Id": "libA", "Name": "Music", "CollectionType": "music"},
+            {"Id": "libB", "Name": "Vinyl rips", "CollectionType": "music"},
+        ]
 
     def get_item(self, item_id):
         self.calls.append(("get_item", item_id))
@@ -236,6 +244,9 @@ def quick(qapp, fake_provider):
     settings = get_settings()
     saved_section = settings.quick_section
     settings.quick_section = "album"  # every test starts on Albums
+    from jellytoast import library_selection as _ls
+
+    _ls.reset_after_server_change()  # module state: no libraries known, 'all'
     saved_np = get_now_playing()
     set_now_playing(NowPlaying())  # global — never inherit another test's track
     engine = quick_ui.build_engine(qapp, start_core=False)
@@ -259,4 +270,5 @@ def quick(qapp, fake_provider):
     QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
     QCoreApplication.processEvents()
     set_now_playing(saved_np)
+    _ls.reset_after_server_change()
     settings.quick_section = saved_section

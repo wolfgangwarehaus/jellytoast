@@ -131,6 +131,17 @@ class Prefs(QObject):
         apply_theme_family(st.theme_family or "jellytoast", mode, bool(st.frosted))
         self.changed.emit()
 
+    # ── library view (grid / list), shared with the desktop library ──
+    def _view_mode(self) -> str:
+        return _settings().library_view_mode or "grid"
+
+    viewMode = Property(str, _view_mode, notify=changed)
+
+    @Slot(str)
+    def setViewMode(self, mode: str) -> None:  # noqa: N802
+        _settings().library_view_mode = "list" if mode == "list" else "grid"
+        self.changed.emit()
+
     # ── offline ──
     def _offline_mode(self) -> bool:
         from jellytoast import offline

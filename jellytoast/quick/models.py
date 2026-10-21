@@ -116,6 +116,8 @@ class LibraryModel(QAbstractListModel):
         from jellytoast.player_state import PlayerBus
 
         PlayerBus.get().offline_mode_changed.connect(self._on_offline_mode)
+        PlayerBus.get().libraries_changed.connect(self._on_libraries_changed)
+        self._plan: List[str] = [""]
 
     # ── QAbstractListModel ──
     def rowCount(self, parent=_ROOT):  # noqa: N802
@@ -251,6 +253,14 @@ class LibraryModel(QAbstractListModel):
         from jellytoast.quick import offline_lib
 
         self._offline = offline_lib.active()
+        self._plan = [""]
+        if self._kind in self.SCOPED and not self._offline:
+            try:
+                from jellytoast import library_selection as _ls
+
+                self._plan = _ls.fetch_plan(_provider()) or [""]
+            except Exception as e:
+                logger.debug("library plan unavailable: %s", e)
         self.beginResetModel()
         self._items = []
         self.endResetModel()
@@ -267,14 +277,17 @@ class LibraryModel(QAbstractListModel):
 
             return offline_lib.items(k, pid) if start == 0 else []
         by, order = self._sort() if k in self.SORTABLE else ("SortName", "Ascending")
+        if k in self.SCOPED and len(self._plan) > 1:
+            return self._fetch_union(prov, k, pid, by, order) if start == 0 else []
+        lib = self._plan[0] if k in self.SCOPED else ""
         if k == "album":
-            resp = prov.get_items("", "MusicAlbum", n, start, by, order, True)
+            resp = prov.get_items(lib, "MusicAlbum", n, start, by, order, True)
         elif k == "genreAlbums":
-            resp = prov.get_items("", "MusicAlbum", n, start, by, order, True, genre_ids=pid)
+            resp = prov.get_items(lib, "MusicAlbum", n, start, by, order, True, genre_ids=pid)
         elif k == "playlist":
             resp = prov.get_items("", "Playlist", n, start, "SortName", "Ascending", True)
         elif k == "song":
-            resp = prov.get_items("", "Audio", n, start, "SortName", "Ascending", True)
+            resp = prov.get_items(lib, "Audio", n, start, "SortName", "Ascending", True)
         elif k == "latest":
             return list(prov.get_latest_media("", self.RAIL) or []) if start == 0 else []
         elif k in self._RAILS:
@@ -284,9 +297,9 @@ class LibraryModel(QAbstractListModel):
             )
         elif k in ("favAlbums", "favSongs"):
             typ = "MusicAlbum" if k == "favAlbums" else "Audio"
-            resp = prov.get_items("", typ, n, start, by, order, True, filters="IsFavorite")
+            resp = prov.get_items(lib, typ, n, start, by, order, True, filters="IsFavorite")
         elif k == "artist":
-            return list(prov.get_artists(n, start) or [])
+            return list(prov.get_artists(n, start, parent_id=lib) or [])
         elif k == "genre":
             return list(prov.get_genres() or []) if start == 0 else []
         elif k == "artistAlbums":
@@ -300,8 +313,42 @@ class LibraryModel(QAbstractListModel):
 
     _HOME = ("latest", "recent", "frequent", "random")
 
+    def _fetch_union(self, prov, k, pid, by, order) -> List[Dict]:
+        """Several libraries selected: drain each and merge in sort order
+        (the desktop grids' ``library_selection.fetch_union``)."""
+        from jellytoast import library_selection as _ls
+
+        typ = "Audio" if k in ("song", "favSongs") else "MusicAlbum"
+        filters = "IsFavorite" if k in ("favAlbums", "favSongs") else ""
+        genre = pid if k == "genreAlbums" else ""
+
+        def page(parent: str, offset: int, count: int) -> List[Dict]:
+            if k == "artist":
+                return list(prov.get_artists(count, offset, parent_id=parent) or [])
+            resp = prov.get_items(
+                parent, typ, count, offset, by, order, True, genre_ids=genre, filters=filters
+            )
+            return (resp or {}).get("Items") or []
+
+        sort_by = "SortName" if k == "artist" else by
+        return _ls.fetch_union(
+            page,
+            self._plan,
+            sort_key=_ls.union_sort_key(sort_by),
+            reverse=order == "Descending" and k != "artist",
+        )
+
     def _single_shot(self) -> bool:
+        if self._kind in self.SCOPED and len(self._plan) > 1:
+            return True
         return self._offline or self._kind in ("genre", "artistAlbums") or self._kind in self._HOME
+
+    # Kinds the library picker scopes (the desktop reloads the same grids).
+    SCOPED = ("album", "genreAlbums", "favAlbums", "song", "favSongs", "artist")
+
+    def _on_libraries_changed(self) -> None:
+        if _alive(self) and self._gen and self._kind in self.SCOPED:
+            self.reload()
 
     def _on_offline_mode(self, on: bool) -> None:
         """Re-load from the new source — but an AUTOMATIC flip (a server

@@ -191,6 +191,7 @@ def build_engine(app, *, start_core: bool = True):
     from jellytoast.quick.cast import Cast
     from jellytoast.quick.covers import CoverPixmapProvider, Covers
     from jellytoast.quick.icons import IconProvider
+    from jellytoast.quick.libraries import Libraries
     from jellytoast.quick.models import (
         DownloadsModel,
         LibraryModel,
@@ -225,6 +226,7 @@ def build_engine(app, *, start_core: bool = True):
         "actions": Actions(engine),
         "session": Session(engine),
         "prefs": Prefs(engine),
+        "libraries": Libraries(engine),
         "cast": Cast(None, engine),
         "player": PlayerController(engine),
         "theme": Theme(engine),

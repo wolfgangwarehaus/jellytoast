@@ -102,6 +102,7 @@ ApplicationWindow {
     Connections {
         target: session
         function onSignedInNow() {
+            libraries.refresh()
             albums.reload()
             win.showSection(player.section)
         }
@@ -124,15 +125,6 @@ ApplicationWindow {
             Layout.preferredHeight: 52
             readonly property bool root: stack.depth <= 1
 
-            IconButton {
-                objectName: "settingsButton"
-                anchors.left: parent.left
-                anchors.leftMargin: 4
-                anchors.verticalCenter: parent.verticalCenter
-                iconName: "settings"
-                visible: topBar.root && session.signedIn
-                onClicked: stack.push(settingsPage)
-            }
             IconButton {
                 objectName: "backButton"
                 anchors.left: parent.left
@@ -200,45 +192,91 @@ ApplicationWindow {
                 font.weight: Font.DemiBold
             }
             IconButton {
-                id: sortButton
-                objectName: "sortButton"
+                id: moreButton
+                objectName: "moreButton"
+                // The page on screen's library model, if it has one.
                 readonly property var lib: stack.currentItem && stack.currentItem.lib ? stack.currentItem.lib : null
+                readonly property bool albumGrid: lib !== null && lib.sortable
                 anchors.right: searchButton.left
                 anchors.verticalCenter: parent.verticalCenter
-                iconName: "sort"
-                visible: session.signedIn && lib !== null && lib.sortable
-                onClicked: sortMenu.popup(sortButton, sortButton.width - sortMenu.width, sortButton.height)
+                iconName: "more_vert"
+                visible: session.signedIn
+                onClicked: moreMenu.popup(moreButton, moreButton.width - moreMenu.width, moreButton.height)
                 Menu {
-                    id: sortMenu
-                    objectName: "sortMenu"
-                    Repeater {
-                        model: [
-                            { key: "SortName", label: qsTr("Name") },
-                            { key: "AlbumArtist,SortName", label: qsTr("Album artist") },
-                            { key: "PremiereDate,SortName", label: qsTr("Release date") },
-                            { key: "DateCreated,SortName", label: qsTr("Date added") },
-                            { key: "DatePlayed,SortName", label: qsTr("Recently played") }
-                        ]
+                    id: moreMenu
+                    objectName: "moreMenu"
+                    Menu {
+                        id: librariesMenu
+                        title: qsTr("Libraries")
+                        enabled: libraries.multiple
                         MenuItem {
-                            required property var modelData
-                            text: modelData.label
+                            text: qsTr("All libraries")
                             checkable: true
-                            checked: sortButton.lib !== null && sortButton.lib.sortBy === modelData.key
-                            onTriggered: sortButton.lib.setSort(modelData.key, sortButton.lib.sortDescending)
+                            checked: libraries.allSelected
+                            onTriggered: libraries.selectAll()
                         }
+                        MenuSeparator { }
+                        Repeater {
+                            model: libraries.items
+                            MenuItem {
+                                required property var modelData
+                                text: modelData.name
+                                checkable: true
+                                checked: modelData.checked
+                                onTriggered: libraries.toggle(modelData.id)
+                            }
+                        }
+                    }
+                    Menu {
+                        id: sortMenu
+                        objectName: "sortMenu"
+                        title: qsTr("Sort")
+                        enabled: moreButton.albumGrid
+                        Repeater {
+                            model: [
+                                { key: "SortName", label: qsTr("Name") },
+                                { key: "AlbumArtist,SortName", label: qsTr("Album artist") },
+                                { key: "PremiereDate,SortName", label: qsTr("Release date") },
+                                { key: "DateCreated,SortName", label: qsTr("Date added") },
+                                { key: "DatePlayed,SortName", label: qsTr("Recently played") }
+                            ]
+                            MenuItem {
+                                required property var modelData
+                                text: modelData.label
+                                checkable: true
+                                checked: moreButton.albumGrid && moreButton.lib.sortBy === modelData.key
+                                onTriggered: moreButton.lib.setSort(modelData.key, moreButton.lib.sortDescending)
+                            }
+                        }
+                        MenuSeparator { }
+                        MenuItem {
+                            text: qsTr("Ascending")
+                            checkable: true
+                            checked: moreButton.albumGrid && !moreButton.lib.sortDescending
+                            onTriggered: moreButton.lib.setSort(moreButton.lib.sortBy, false)
+                        }
+                        MenuItem {
+                            text: qsTr("Descending")
+                            checkable: true
+                            checked: moreButton.albumGrid && moreButton.lib.sortDescending
+                            onTriggered: moreButton.lib.setSort(moreButton.lib.sortBy, true)
+                        }
+                    }
+                    MenuItem {
+                        objectName: "viewToggle"
+                        text: prefs.viewMode === "list" ? qsTr("Show as grid") : qsTr("Show as list")
+                        enabled: moreButton.albumGrid
+                        onTriggered: prefs.setViewMode(prefs.viewMode === "list" ? "grid" : "list")
+                    }
+                    MenuItem {
+                        text: qsTr("Shuffle all")
+                        onTriggered: actions.shuffleLibrary()
                     }
                     MenuSeparator { }
                     MenuItem {
-                        text: qsTr("Ascending")
-                        checkable: true
-                        checked: sortButton.lib !== null && !sortButton.lib.sortDescending
-                        onTriggered: sortButton.lib.setSort(sortButton.lib.sortBy, false)
-                    }
-                    MenuItem {
-                        text: qsTr("Descending")
-                        checkable: true
-                        checked: sortButton.lib !== null && sortButton.lib.sortDescending
-                        onTriggered: sortButton.lib.setSort(sortButton.lib.sortBy, true)
+                        objectName: "settingsItem"
+                        text: qsTr("Settings")
+                        onTriggered: stack.push(settingsPage)
                     }
                 }
             }
@@ -275,7 +313,11 @@ ApplicationWindow {
             Layout.fillWidth: true
             Layout.fillHeight: true
             clip: true
-            Component.onCompleted: win.showSection(player.section)
+            Component.onCompleted: {
+                if (session.signedIn)
+                    libraries.refresh()
+                win.showSection(player.section)
+            }
 
             pushEnter: Transition {
                 ParallelAnimation {
