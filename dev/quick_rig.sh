@@ -57,7 +57,10 @@ start)
     fi
     env=(
         JT_UI=quick JT_TEST_BRIDGE=1 JT_BRIDGE_SOCKET="$SOCK" JT_INSTANCE_KEY=jt-quick-rig
-        JT_QUICK_SIZE="$size" TMPDIR="$RIG/tmp"
+        JT_QUICK_SIZE="$size" TMPDIR="$RIG/tmp" JT_RIG=1
+        # Never the real keyring: it holds ONE token shared by every profile.
+        # The copied profile still signs in from its encrypted settings copy.
+        PYTHON_KEYRING_BACKEND=keyring.backends.null.Keyring
         XDG_CONFIG_HOME="$home/.config" XDG_CACHE_HOME="$home/.cache" XDG_DATA_HOME="$home/.local/share"
     )
     [ "$audible" = 1 ] || env+=(JT_AUDIO_NULL=1)

@@ -8,7 +8,7 @@ AbstractButton {
     property bool filled: false
     focusPolicy: Qt.NoFocus
     hoverEnabled: false
-    implicitWidth: Math.max(120, content.implicitWidth + 40)
+    implicitWidth: Math.max(96, content.implicitWidth + 40)
     implicitHeight: 44
 
     background: Rectangle {
@@ -25,6 +25,7 @@ AbstractButton {
             spacing: 8
             Icon {
                 anchors.verticalCenter: parent.verticalCenter
+                visible: root.iconName !== ""
                 name: root.iconName
                 size: 18
                 tint: root.filled ? theme.onAccent : theme.text

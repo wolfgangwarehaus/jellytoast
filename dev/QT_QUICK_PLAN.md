@@ -71,13 +71,20 @@ could run.
   remembering the last section.
 - [ ] **M3 — the rest:** sign-in, phone Settings, downloads / offline, cast
   picker, radio, smart mixes, theming parity.
+  *Started 2026-10-21:* sign in (Jellyfin / Navidrome, demo server,
+  readable errors) and sign out; Settings page (account, streaming /
+  download quality, normalization, media controls, version); window-free
+  services (offline / connectivity, keep-awake, now-playing notifications,
+  scrobbling) + quit flushes; QML strings in the translation catalogs; last
+  section remembered. *Still to do:* downloads / offline UI, cast picker,
+  radio + smart mixes, favourites, theme picker, Quick Connect sign-in.
 - [ ] **M4 — switch:** default on Plasma Mobile; remove the Widgets phone
   layouts only once parity holds; then the metainfo "phone friendly" flag.
 
 ## Rig (dev + tests)
 
 - **Live:** `dev/quick_rig.sh start` (offscreen GPU, silent, copied
-  profile; `--window` for a real window, `--isolated` for signed-out,
+  profile on the null keyring — sign in / out there only touches the copy; `--window` for a real window, `--isolated` for signed-out,
   `--audible` / `--report` to opt into sound / server play reports), then
   `dev/qctl.py`:
   `state` (page / sheet / player / models), `tree` (on-screen items with

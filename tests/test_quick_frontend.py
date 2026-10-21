@@ -67,7 +67,7 @@ def test_qml_loads_offscreen(qapp, monkeypatch):
     roots = engine.rootObjects()
     assert roots, "Main.qml failed to load"
     win = roots[0]
-    assert win.findChild(object, "albumGrid") is not None
+    assert win.findChild(object, "signInPage") is not None  # signed out → sign in
     win.close()
     engine.deleteLater()
 

@@ -51,6 +51,8 @@ class FakeProvider:
     """The slice of the provider API the Quick UI uses. Records calls."""
 
     is_authenticated = True
+    kind = "jellyfin"
+    password = "secret"  # authenticate() accepts only this
 
     def __init__(self):
         self.albums = [_album(i) for i in range(N_ALBUMS)]
@@ -132,6 +134,25 @@ class FakeProvider:
             "Lyrics": [{"Text": f"Line {i}", "Start": i * 5_000 * 10_000} for i in range(1, 30)]
         }
 
+    def probe(self, server_url):
+        self.calls.append(("probe", server_url))
+        if "nothing-here" in server_url:
+            return None
+        from types import SimpleNamespace
+
+        return SimpleNamespace(product_name="Fakefin")
+
+    def authenticate(self, server_url, username, password):
+        self.calls.append(("authenticate", server_url, username))
+        if password != self.password:
+            raise RuntimeError("401 Unauthorized")
+        self.is_authenticated = True
+
+    def server_logout(self):
+        self.calls.append(("server_logout",))
+        self.is_authenticated = False
+        return True
+
     def get_image_url(self, item_id, kind="Primary", size=0, *a, **k):
         return ""  # no network: covers fall back to the surface colour
 
@@ -167,8 +188,11 @@ def quick(qapp, fake_provider):
     rig = Rig(engine)
     rig.provider = fake_provider
     rig.window.resize(402, 874)
-    engine._jt_keep[1]["albums"].reload()
-    rig.wait_until(lambda: rig.engine.rootContext().contextProperty("albums").property("count") > 0)
+    if fake_provider.is_authenticated:
+        engine._jt_keep[1]["albums"].reload()
+        rig.wait_until(
+            lambda: rig.engine.rootContext().contextProperty("albums").property("count") > 0
+        )
     rig.wait_idle()
     yield rig
     # Really destroy the window + engine: a closed-but-alive window can keep

@@ -260,3 +260,76 @@ def test_section_is_remembered(quick):
 
     _section(quick, "Playlists")
     assert get_settings().quick_section == "playlist"
+
+
+# ── M3: sign in / out ──
+
+
+def _signed_out(qapp, fake_provider, monkeypatch):
+    """A `quick` rig that starts signed out."""
+    fake_provider.is_authenticated = False
+    monkeypatch.setattr("jellytoast.providers.reset_provider", lambda: None)
+    from jellytoast.scrobble import server_scrobble_detect  # noqa: F401 — import before patching
+
+    monkeypatch.setattr("jellytoast.scrobble.refresh_server_scrobble_flags", lambda: None)
+
+
+def test_sign_in_flow(qapp, fake_provider, monkeypatch, request):
+    _signed_out(qapp, fake_provider, monkeypatch)
+    quick = request.getfixturevalue("quick")
+    assert quick.state()["page"] == "SignInPage"
+    assert quick.find("sectionButton") is None and quick.find("searchButton") is None
+
+    quick.tap("serverField")
+    quick.eval("stack.currentItem")  # page is up
+    quick.get("serverField").setProperty("text", "music.example")
+    quick.get("userField").setProperty("text", "august")
+    quick.get("passwordField").setProperty("text", "wrong")
+    quick.tap("signInButton")
+    quick.wait_until(lambda: quick.prop("signInError", "text"))
+    assert "password" in quick.prop("signInError", "text").lower()
+    assert ("probe", "http://music.example") in fake_provider.calls
+
+    quick.get("passwordField").setProperty("text", "secret")
+    quick.tap("signInButton")
+    quick.wait_until(lambda: quick.state()["page"] == "LibraryGridPage")
+    quick.wait_for("text:Album 000")
+
+
+def test_rig_without_null_keyring_refuses_sign_in(qapp, fake_provider, monkeypatch, request):
+    _signed_out(qapp, fake_provider, monkeypatch)
+    monkeypatch.setenv("JT_RIG", "1")
+    monkeypatch.setenv("PYTHON_KEYRING_BACKEND", "keyring.backends.SecretService.Keyring")
+    quick = request.getfixturevalue("quick")
+    quick.get("serverField").setProperty("text", "music.example")
+    quick.get("userField").setProperty("text", "august")
+    quick.get("passwordField").setProperty("text", "secret")
+    quick.tap("signInButton")
+    quick.wait_until(lambda: quick.prop("signInError", "text"))
+    assert "dev rig" in quick.prop("signInError", "text")
+    assert not any(c[0] == "authenticate" for c in fake_provider.calls)
+
+
+def test_settings_change_quality_and_sign_out(quick, monkeypatch):
+    from jellytoast.settings import get_settings
+
+    monkeypatch.setattr("jellytoast.providers.reset_provider", lambda: None)
+    quick.tap("settingsButton")
+    quick.wait_for("settingsPage")
+    quick.wait_idle()
+    quick.tap("qualityRow")
+    quick.tap("text:192 kbps")
+    assert get_settings().audio_quality == "192"
+    spy = _Spy("replaygain_changed")
+    try:
+        quick.tap("normalizationRow")
+        quick.tap("text:Per album")
+    finally:
+        spy.close()
+    assert spy.got["replaygain_changed"][-1] == ("album",)
+
+    quick.tap("signOutButton")
+    quick.wait_for("signOutDialog")
+    quick.tap("text:OK")
+    quick.wait_until(lambda: quick.state()["page"] == "SignInPage")
+    assert ("server_logout",) in quick.provider.calls

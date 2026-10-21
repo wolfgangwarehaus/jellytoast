@@ -142,6 +142,8 @@ def build_engine(app, *, start_core: bool = True):
         TracksModel,
     )
     from jellytoast.quick.player import PlayerController
+    from jellytoast.quick.prefs import Prefs
+    from jellytoast.quick.session import Session
     from jellytoast.quick.theme import Theme
 
     core = {}
@@ -188,6 +190,8 @@ def build_engine(app, *, start_core: bool = True):
         "queue": QueueModel(engine, queue=core.get("queue")),
         "lyrics": LyricsModel(engine),
         "actions": Actions(engine),
+        "session": Session(engine),
+        "prefs": Prefs(engine),
         "player": PlayerController(engine, queue=core.get("queue")),
         "theme": Theme(engine),
     }
@@ -195,7 +199,6 @@ def build_engine(app, *, start_core: bool = True):
     ctx = engine.rootContext()
     for name, obj in bridge.items():
         ctx.setContextProperty(name, obj)
-    ctx.setContextProperty("signedIn", signed_in)
     engine._jt_keep = (core, bridge)  # keep Python wrappers alive with the engine
     engine.load(str(QML_DIR / "Main.qml"))
     if signed_in and start_core:

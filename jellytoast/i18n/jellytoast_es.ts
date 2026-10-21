@@ -1215,22 +1215,17 @@ jellytoast funcionará, pero las funciones de bandeja no estarán disponibles.</
         <translation type="unfinished">Álbumes</translation>
     </message>
     <message>
-        <location filename="../quick/qml/LibraryGridPage.qml" line="32"/>
-        <source>Sign in with the regular jellytoast app first, then relaunch.</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <location filename="../quick/qml/LibraryGridPage.qml" line="38"/>
+        <location filename="../quick/qml/LibraryGridPage.qml" line="29"/>
         <source>Nothing here yet</source>
         <translation type="unfinished">Aquí no hay nada todavía</translation>
     </message>
     <message>
-        <location filename="../quick/qml/LibraryGridPage.qml" line="137"/>
+        <location filename="../quick/qml/LibraryGridPage.qml" line="128"/>
         <source>Play</source>
         <translation type="unfinished">Reproducir</translation>
     </message>
     <message>
-        <location filename="../quick/qml/LibraryGridPage.qml" line="142"/>
+        <location filename="../quick/qml/LibraryGridPage.qml" line="133"/>
         <source>Shuffle</source>
         <translation type="unfinished">Aleatorio</translation>
     </message>
@@ -2277,6 +2272,29 @@ Revisa el PIN — la causa más común es una errata o un código caducado (el r
     </message>
 </context>
 <context>
+    <name>Prefs</name>
+    <message>
+        <location filename="../quick/prefs.py" line="28"/>
+        <source>Original</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../quick/prefs.py" line="34"/>
+        <source>Off</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../quick/prefs.py" line="35"/>
+        <source>Per song</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../quick/prefs.py" line="36"/>
+        <source>Per album</source>
+        <translation type="unfinished"></translation>
+    </message>
+</context>
+<context>
     <name>QueueManager</name>
     <message>
         <location filename="../queue_manager.py" line="718"/>
@@ -2450,6 +2468,44 @@ Subsonic requiere permiso de administrador para crear / editar / eliminar.</tran
         <location filename="../search_view.py" line="775"/>
         <source>No results for &quot;{0}&quot;</source>
         <translation>Sin resultados para «{0}»</translation>
+    </message>
+</context>
+<context>
+    <name>Session</name>
+    <message>
+        <location filename="../quick/session.py" line="76"/>
+        <source>Signing in is off in the dev rig — it would replace your real login.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../quick/session.py" line="80"/>
+        <source>Please fill in the server URL and username.</source>
+        <translation type="unfinished">Completa la URL del servidor y el usuario.</translation>
+    </message>
+    <message>
+        <location filename="../quick/session.py" line="108"/>
+        <source>Couldn&apos;t find a {0} server at that address.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../quick/session.py" line="129"/>
+        <source>Couldn&apos;t reach the server. Check the URL and your network.</source>
+        <translation type="unfinished">No se pudo conectar con el servidor. Comprueba la URL y tu red.</translation>
+    </message>
+    <message>
+        <location filename="../quick/session.py" line="131"/>
+        <source>Wrong username or password.</source>
+        <translation type="unfinished">Usuario o contraseña incorrectos.</translation>
+    </message>
+    <message>
+        <location filename="../quick/session.py" line="133"/>
+        <source>Couldn&apos;t sign in: {0}</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../quick/session.py" line="154"/>
+        <source>Signing out is off in the dev rig — it would clear your real login.</source>
+        <translation type="unfinished"></translation>
     </message>
 </context>
 <context>
@@ -3489,6 +3545,118 @@ Ejecuta pywal (o wallust) una vez para que genere una paleta, y vuelve a activar
         <location filename="../settings_page_display.py" line="1250"/>
         <source>Your desktop didn&apos;t report an accent colour — this works on KDE Plasma and GNOME 47+.</source>
         <translation>Tu escritorio no informó de un color de acento — esto funciona en KDE Plasma y GNOME 47+.</translation>
+    </message>
+</context>
+<context>
+    <name>SettingsPage</name>
+    <message>
+        <location filename="../quick/qml/SettingsPage.qml" line="9"/>
+        <source>Settings</source>
+        <translation type="unfinished">Ajustes</translation>
+    </message>
+    <message>
+        <location filename="../quick/qml/SettingsPage.qml" line="70"/>
+        <source>ACCOUNT</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../quick/qml/SettingsPage.qml" line="91"/>
+        <source>Sign out</source>
+        <translation type="unfinished">Cerrar sesión</translation>
+    </message>
+    <message>
+        <location filename="../quick/qml/SettingsPage.qml" line="95"/>
+        <source>PLAYBACK</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../quick/qml/SettingsPage.qml" line="99"/>
+        <source>Streaming quality</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../quick/qml/SettingsPage.qml" line="107"/>
+        <source>Download quality</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../quick/qml/SettingsPage.qml" line="115"/>
+        <source>Normalization</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../quick/qml/SettingsPage.qml" line="126"/>
+        <source>Lock screen &amp; media controls</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../quick/qml/SettingsPage.qml" line="142"/>
+        <source>Takes effect next time jellytoast starts.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../quick/qml/SettingsPage.qml" line="147"/>
+        <source>ABOUT</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../quick/qml/SettingsPage.qml" line="164"/>
+        <source>Sign out?</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../quick/qml/SettingsPage.qml" line="170"/>
+        <source>Playback stops, the queue is cleared and pending downloads are cancelled.</source>
+        <translation type="unfinished"></translation>
+    </message>
+</context>
+<context>
+    <name>SignInPage</name>
+    <message>
+        <location filename="../quick/qml/SignInPage.qml" line="9"/>
+        <location filename="../quick/qml/SignInPage.qml" line="109"/>
+        <source>Sign in</source>
+        <translation type="unfinished">Iniciar sesión</translation>
+    </message>
+    <message>
+        <location filename="../quick/qml/SignInPage.qml" line="40"/>
+        <source>Connect to your music server</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../quick/qml/SignInPage.qml" line="51"/>
+        <source>Navidrome / Subsonic</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../quick/qml/SignInPage.qml" line="75"/>
+        <source>Server address, e.g. music.example.com</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../quick/qml/SignInPage.qml" line="82"/>
+        <source>Username</source>
+        <translation type="unfinished">Usuario</translation>
+    </message>
+    <message>
+        <location filename="../quick/qml/SignInPage.qml" line="89"/>
+        <source>Password</source>
+        <translation type="unfinished">Contraseña</translation>
+    </message>
+    <message>
+        <location filename="../quick/qml/SignInPage.qml" line="109"/>
+        <source>Signing in…</source>
+        <translation type="unfinished">Iniciando sesión…</translation>
+    </message>
+    <message>
+        <location filename="../quick/qml/SignInPage.qml" line="116"/>
+        <source>Try a demo server</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../quick/qml/SignInPage.qml" line="129"/>
+        <source>The demo is a public server run by the Jellyfin / Navidrome projects.</source>
+        <translation type="unfinished"></translation>
     </message>
 </context>
 <context>

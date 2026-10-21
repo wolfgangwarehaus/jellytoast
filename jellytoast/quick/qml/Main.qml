@@ -1,7 +1,7 @@
 // jellytoast — Qt Quick phone front end (see dev/QT_QUICK_PLAN.md).
 // Context properties from jellytoast/quick: `albums` (LibraryModel),
 // `player` (PlayerController), `queue` (QueueModel), `lyrics` (LyricsModel),
-// `actions` (Actions), `theme` (Theme), `signedIn` (bool).
+// `actions` (Actions), `theme` (Theme), `session` (Session).
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
@@ -34,9 +34,13 @@ ApplicationWindow {
     property string section: "album"
 
     function showSection(key) {
+        nowPlaying.close()
+        if (!session.signedIn) {
+            stack.replace(null, signInPage, {}, StackView.Immediate)
+            return
+        }
         section = key
         player.section = key
-        nowPlaying.close()
         var page
         if (key === "song")
             page = songsPage
@@ -85,6 +89,15 @@ ApplicationWindow {
         sequences: [StandardKey.Back, "Esc", "Back"]
         onActivated: win.back()
     }
+    Connections {
+        target: session
+        function onSignedInNow() {
+            albums.reload()
+            win.showSection(player.section)
+        }
+        function onSignedOutNow() { win.showSection(win.section) }
+    }
+
     Shortcut {
         sequences: [StandardKey.Find]
         onActivated: win.openSearch()
@@ -102,6 +115,15 @@ ApplicationWindow {
             readonly property bool root: stack.depth <= 1
 
             IconButton {
+                objectName: "settingsButton"
+                anchors.left: parent.left
+                anchors.leftMargin: 4
+                anchors.verticalCenter: parent.verticalCenter
+                iconName: "settings"
+                visible: topBar.root && session.signedIn
+                onClicked: stack.push(settingsPage)
+            }
+            IconButton {
                 objectName: "backButton"
                 anchors.left: parent.left
                 anchors.leftMargin: 4
@@ -115,7 +137,7 @@ ApplicationWindow {
                 id: sectionButton
                 objectName: "sectionButton"
                 anchors.centerIn: parent
-                visible: topBar.root
+                visible: topBar.root && session.signedIn
                 focusPolicy: Qt.NoFocus
                 hoverEnabled: false
                 implicitWidth: sectionRow.implicitWidth + 24
@@ -159,7 +181,7 @@ ApplicationWindow {
             Label {
                 anchors.centerIn: parent
                 width: parent.width - 120
-                visible: !topBar.root
+                visible: !topBar.root || !session.signedIn
                 horizontalAlignment: Text.AlignHCenter
                 text: stack.currentItem ? stack.currentItem.title : ""
                 color: theme.text
@@ -173,7 +195,8 @@ ApplicationWindow {
                 anchors.rightMargin: 4
                 anchors.verticalCenter: parent.verticalCenter
                 iconName: "search"
-                visible: signedIn && !(stack.currentItem && stack.currentItem.objectName === "searchPage")
+                visible: session.signedIn && !(stack.currentItem
+                         && ["searchPage", "settingsPage"].indexOf(stack.currentItem.objectName) >= 0)
                 onClicked: win.openSearch()
             }
         }
@@ -243,6 +266,14 @@ ApplicationWindow {
     Component {
         id: albumPage
         AlbumPage { }
+    }
+    Component {
+        id: settingsPage
+        SettingsPage { }
+    }
+    Component {
+        id: signInPage
+        SignInPage { }
     }
     Component {
         id: searchPage

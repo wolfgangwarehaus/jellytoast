@@ -8,14 +8,14 @@ Item {
     property string title: qsTr("Songs")
     readonly property bool loading: lib.loading
     LibraryModel { id: lib; kind: "song" }
-    Component.onCompleted: if (signedIn) lib.reload()
+    Component.onCompleted: if (session.signedIn) lib.reload()
 
     ListView {
         id: list
         objectName: "songList"
         anchors.fill: parent
         clip: true
-        model: signedIn ? lib : null
+        model: session.signedIn ? lib : null
         boundsBehavior: Flickable.DragOverBounds
         maximumFlickVelocity: 8000
         flickDeceleration: 2500

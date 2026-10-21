@@ -12,7 +12,7 @@ Item {
     readonly property var lib: source ? source : own
     readonly property bool loading: lib.loading
     readonly property bool round: kind === "artist"
-    readonly property bool scrubbable: (kind === "album" || kind === "artist") && signedIn
+    readonly property bool scrubbable: (kind === "album" || kind === "artist") && session.signedIn
     signal openItem(string kind, var item)
 
     readonly property int gutter: 12
@@ -20,20 +20,11 @@ Item {
     readonly property string itemKind: kind === "artist" ? "artist" : kind === "playlist" ? "playlist" : "album"
 
     LibraryModel { id: own; kind: page.kind; parentId: page.parentId }
-    Component.onCompleted: if (!source && signedIn) own.reload()
+    Component.onCompleted: if (!source && session.signedIn) own.reload()
 
     Label {
         anchors.centerIn: parent
-        width: parent.width - 2 * page.gutter
-        visible: !signedIn
-        wrapMode: Text.WordWrap
-        horizontalAlignment: Text.AlignHCenter
-        color: theme.textDim
-        text: qsTr("Sign in with the regular jellytoast app first, then relaunch.")
-    }
-    Label {
-        anchors.centerIn: parent
-        visible: signedIn && !page.lib.loading && page.lib.count === 0
+        visible: session.signedIn && !page.lib.loading && page.lib.count === 0
         color: theme.textDim
         text: qsTr("Nothing here yet")
     }
@@ -44,9 +35,9 @@ Item {
         anchors.fill: parent
         anchors.leftMargin: page.gutter
         anchors.rightMargin: page.gutter
-        visible: signedIn
+        visible: session.signedIn
         clip: true
-        model: signedIn ? page.lib : null
+        model: session.signedIn ? page.lib : null
         cellWidth: width / page.columns
         cellHeight: cellWidth + (page.round ? 34 : 46)
         cacheBuffer: cellHeight * 4

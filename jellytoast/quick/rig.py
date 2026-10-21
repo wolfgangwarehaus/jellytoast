@@ -120,6 +120,14 @@ class Rig:
                 return it.objectName() == target
 
         hits = [it for it in self.items() if match(it)]
+        if not hits and not target.startswith("text:"):
+            # Popups (Menu, Dialog) aren't items — find the open one by name
+            # and stand in its content item.
+            for obj in self.window.findChildren(QObject, target):
+                if obj.inherits("QQuickPopup") and obj.property("opened"):
+                    content = obj.property("contentItem")
+                    if content is not None:
+                        hits.append(content)
         if visible:
             shown = [it for it in hits if self._on_screen(it)]
             hits = shown or [it for it in hits if self._shown(it)]
