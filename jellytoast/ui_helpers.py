@@ -205,10 +205,14 @@ def frosted_fallback_active() -> bool:
     paint the faux-frost backdrop (``jellytoast/blur/_faux_frost.py``). Shared
     by the main window and mini player so they fall back identically. (The main
     window additionally suppresses it under the JT_OPAQUE override.)"""
-    from jellytoast import blur
+    from jellytoast import blur, touch
     from jellytoast.theme import get_active_theme
 
     if not get_active_theme().blur:
+        return False
+    # A phone gets a plain body (august: no grain / texture there); it is
+    # already opaque on a mobile shell (theme.body_color_for).
+    if touch.phone_ui():
         return False
     return blur.status() is not blur.BlurStatus.ACTIVE
 

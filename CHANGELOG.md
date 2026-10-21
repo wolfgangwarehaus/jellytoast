@@ -16,6 +16,9 @@ developer-facing history lives in [`docs/CHANGELOG.md`](docs/CHANGELOG.md).
   a playlist and pick **Add to playlist** — any of your Navidrome / Jellyfin
   playlists, or **New playlist…** to start one. Also in the ⋮ menu on the
   phone's Now Playing.
+- **Plain background on phones.** The frosted theme's grainy "glass"
+  texture (used when real blur isn't available) is gone on a phone — just a
+  clean, solid background.
 - **Tidier menus on phones.** The view menu at the top is solid instead of
   see-through, and the top-bar buttons never get a purple outline on a phone
   (on desktop it only shows while you're using the keyboard).

@@ -837,3 +837,14 @@ def test_phone_popups_are_fully_opaque(monkeypatch):
     monkeypatch.setattr(pc, "is_mobile_shell", lambda: False)
     if not ui_helpers.IS_MACOS:
         assert ui_helpers._popup_fill_opaque_on_macos("rgba(67, 67, 67, 0.65)").endswith("0.65)")
+
+
+def test_phone_body_is_plain_not_faux_frost(monkeypatch):
+    """No grain / frosted texture on a phone: plain body fill."""
+    from jellytoast import blur, touch, ui_helpers
+
+    monkeypatch.setattr(blur, "status", lambda: blur.BlurStatus.UNSUPPORTED)
+    monkeypatch.setattr(pc, "is_mobile_shell", lambda: True)
+    monkeypatch.setattr(pc, "is_docked", lambda: False)
+    monkeypatch.setattr(touch, "_hover_shell", (-1e9, True))
+    assert ui_helpers.frosted_fallback_active() is False
