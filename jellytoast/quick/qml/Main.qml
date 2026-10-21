@@ -183,10 +183,12 @@ ApplicationWindow {
                 // The page on screen's library model, if it has one.
                 readonly property var lib: stack.currentItem && stack.currentItem.lib ? stack.currentItem.lib : null
                 readonly property bool albumGrid: lib !== null && lib.sortable
-                anchors.right: searchButton.left
+                // Top-left on the section pages; deeper pages put Back there.
+                anchors.left: parent.left
+                anchors.leftMargin: 4
                 anchors.verticalCenter: parent.verticalCenter
                 iconName: "more_vert"
-                visible: session.signedIn
+                visible: session.signedIn && topBar.root
                 onClicked: optionsSheet.show(lib)
             }
             IconButton {
