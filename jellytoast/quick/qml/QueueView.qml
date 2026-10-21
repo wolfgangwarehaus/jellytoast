@@ -1,4 +1,5 @@
-// Up next: the play queue. Tap to jump; swipe left to remove.
+// Up next: the play queue. Tap to jump; swipe left to remove; drag the ≡
+// handle to move a song.
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
@@ -15,15 +16,33 @@ Item {
         color: theme.textDim
         text: qsTr("The queue is empty")
     }
+    // Drag-to-reorder state (one row at a time).
+    property int dragFrom: -1
+    property int dragTo: -1
+
     ListView {
         id: list
+        objectName: "queueList"
         anchors.fill: parent
+        interactive: root.dragFrom < 0
         clip: true
         model: queue
         boundsBehavior: Flickable.DragAndOvershootBounds
         maximumFlickVelocity: theme.scrollMaxVelocity
         flickDeceleration: theme.scrollDeceleration
         pressDelay: 100  // a scroll that starts at once never "presses" the item under it
+        // Where a dragged song will land.
+        Rectangle {
+            objectName: "dropLine"
+            visible: root.dragFrom >= 0 && root.dragTo !== root.dragFrom
+            z: 20
+            x: 12
+            width: list.width - 24
+            height: 3
+            radius: 1.5
+            color: theme.accent
+            y: (root.dragTo > root.dragFrom ? root.dragTo + 1 : root.dragTo) * 60 - 1
+        }
         delegate: SwipeDelegate {
             id: qrow
             required property int index
@@ -34,6 +53,10 @@ Item {
             width: list.width
             height: 60
             padding: 0
+            readonly property bool lifted: root.dragFrom === index
+            z: lifted ? 10 : 0
+            transform: Translate { y: qrow.lifted ? handleArea.dy : 0 }
+            swipe.enabled: root.dragFrom < 0
             focusPolicy: Qt.NoFocus
             hoverEnabled: false
             opacity: index < queue.current ? 0.5 : 1
@@ -80,6 +103,55 @@ Item {
                     tint: theme.accent
                     size: 18
                 }
+                // Drag handle: hold and drag to move this song.
+                Item {
+                    objectName: "dragHandle"
+                    Layout.preferredWidth: 44
+                    Layout.fillHeight: true
+                    Icon {
+                        anchors.centerIn: parent
+                        name: "menu"
+                        tint: qrow.lifted ? theme.accent : theme.textDim
+                        size: 20
+                    }
+                    MouseArea {
+                        id: handleArea
+                        anchors.fill: parent
+                        preventStealing: true
+                        property real startY: 0
+                        property real dy: 0
+                        onPressed: mouse => {
+                            startY = mapToItem(list, mouse.x, mouse.y).y
+                            dy = 0
+                            root.dragFrom = qrow.index
+                            root.dragTo = qrow.index
+                        }
+                        onPositionChanged: mouse => {
+                            if (root.dragFrom < 0)
+                                return
+                            dy = mapToItem(list, mouse.x, mouse.y).y - startY
+                            root.dragTo = Math.max(0, Math.min(list.count - 1,
+                                                               qrow.index + Math.round(dy / qrow.height)))
+                        }
+                        onReleased: {
+                            var from = root.dragFrom, to = root.dragTo
+                            root.dragFrom = -1
+                            root.dragTo = -1
+                            dy = 0
+                            if (from >= 0 && to >= 0 && to !== from)
+                                queue.move(from, to)
+                        }
+                        onCanceled: { root.dragFrom = -1; root.dragTo = -1; dy = 0 }
+                    }
+                }
+            }
+            Rectangle {  // lifted look
+                anchors.fill: parent
+                visible: qrow.lifted
+                color: "transparent"
+                border.color: theme.accent
+                border.width: 1
+                radius: 6
             }
         }
     }

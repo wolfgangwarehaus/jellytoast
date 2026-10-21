@@ -928,3 +928,28 @@ def test_now_playing_add_to_playlist(quick):
     quick.wait_for("text:Playlist 1")
     quick.tap("text:Playlist 1")
     quick.wait_until(lambda: ("add_to_playlist", "pl1", ["al3-t1"]) in quick.provider.calls)
+
+
+def test_queue_drag_to_reorder(quick):
+    quick.fake_now_playing("Song", "Someone", item_id="al4-t1")
+    PlayerBus.get().queue_changed.emit(quick.provider.get_album_tracks("al4"), 0)
+    quick.wait_for("miniPlayer")
+    quick.tap("text:Someone")
+    quick.wait_until(lambda: quick.state()["nowPlaying"])
+    quick.tap("queueToggle")
+    quick.wait_for("text:Track 2 of Album 004")
+    quick.wait_still("text:Track 2 of Album 004")
+    spy = _Spy("queue_move_item")
+    try:
+        row = quick.get("text:Track 2 of Album 004")
+        handles = [
+            h for h in quick.items() if h.objectName() == "dragHandle" and quick._on_screen(h)
+        ]
+        # the handle on the same row as "Track 2"
+        ry = quick.point(row).y()
+        handle = min(handles, key=lambda h: abs(quick.point(h).y() - ry))
+        quick.drag(handle, dy=2 * 60 + 5, ms=400, hold_end=100)  # two rows down
+        quick.wait_until(lambda: spy.got["queue_move_item"])
+    finally:
+        spy.close()
+    assert spy.got["queue_move_item"][-1] == (1, 3)
