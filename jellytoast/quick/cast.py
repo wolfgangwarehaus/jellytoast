@@ -54,7 +54,15 @@ class Cast(_CastDispatcherMixin, QObject):
             for d in self._devices
         ]
 
-    available = Property(bool, lambda self: self.cast_manager is not None, constant=True)
+    available = Property(bool, lambda self: self.cast_manager is not None, notify=changed)
+
+    def attach(self, cast_manager) -> None:
+        """Pick up the cast manager once the core is running."""
+        self.cast_manager = cast_manager
+        active = getattr(cast_manager, "active_cast", None)
+        self._active = getattr(active, "name", "") or ""
+        self.changed.emit()
+
     devices = Property("QVariantList", _get_devices, notify=changed)
     scanning = Property(bool, lambda self: self._scanning, notify=changed)
     active = Property(str, lambda self: self._active, notify=changed)

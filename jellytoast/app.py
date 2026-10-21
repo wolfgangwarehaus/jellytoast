@@ -2479,7 +2479,11 @@ def main():
     from jellytoast import quick as _quick
 
     if _quick.wanted():
-        sys.exit(_quick.run(app))
+        _rc = _quick.run(app)
+        if _rc is not None:
+            sys.exit(_rc)
+        # The Quick UI couldn't load (e.g. a build without QtQuick) — fall
+        # through to the classic window rather than leave nothing on screen.
 
     win = JellytoastWindow(server_url)
     _boot_mark("main window constructed")

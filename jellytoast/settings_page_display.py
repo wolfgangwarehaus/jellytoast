@@ -306,9 +306,10 @@ class _DisplayPageMixin:
         lang_row.addWidget(self._language_combo)
         lang_hint = QLabel(QCoreApplication.translate("SettingsDialog", "(needs restart)"))
         lang_hint.setStyleSheet(f"color: {TEXT_FAINT}; {type_qss(TYPE_CAPTION)}")
+        from jellytoast import quick as _quick
         from jellytoast.platform_compat import is_mobile_shell
 
-        if is_mobile_shell():
+        if is_mobile_shell() and _quick.available():
             # No room beside the combo at phone width — the hint goes below.
             lang_row.addStretch(1)
             v.addLayout(lang_row)
@@ -335,9 +336,10 @@ class _DisplayPageMixin:
 
         # Plasma Mobile: opt into the Qt Quick phone front end (beta) —
         # read at launch (jellytoast.quick.wanted), so restart-required.
+        from jellytoast import quick as _quick
         from jellytoast.platform_compat import is_mobile_shell
 
-        if is_mobile_shell():
+        if is_mobile_shell() and _quick.available():
             self._phone_quick_check = QCheckBox(
                 QCoreApplication.translate(
                     "SettingsDialog", "New phone interface (beta) — restart to apply"

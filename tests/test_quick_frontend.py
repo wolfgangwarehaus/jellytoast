@@ -238,3 +238,16 @@ def test_front_end_choice(monkeypatch):
         assert not quick.wanted()
     finally:
         s.phone_ui_quick = saved
+
+
+def test_broken_qml_starts_nothing_and_falls_back(qapp, monkeypatch, tmp_path):
+    """A Quick UI that can't load must not have started mpv / media
+    controls / scrobbling — app.main then builds the classic window."""
+    from jellytoast import quick
+
+    (tmp_path / "Main.qml").write_text("import QtQuick\nThisIsNotAType {}\n")
+    monkeypatch.setattr(quick, "QML_DIR", tmp_path)
+    started = []
+    monkeypatch.setattr(quick, "_start_core", lambda app, core: started.append(1))
+    assert quick.run(qapp) is None
+    assert started == []

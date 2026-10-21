@@ -560,6 +560,11 @@ class QueueModel(QAbstractListModel):
         self._bus = PlayerBus.get()
         self._bus.queue_changed.connect(self._on_queue)
 
+    def attach(self, queue) -> None:
+        """Pick up the current queue once the core is running."""
+        if queue is not None:
+            self._on_queue(list(queue.queue or []), int(queue.current_index))
+
     def _on_queue(self, items, index) -> None:
         self.beginResetModel()
         self._items = list(items or [])

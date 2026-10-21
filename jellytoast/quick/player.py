@@ -85,6 +85,17 @@ class PlayerController(QObject):
         self._duration = int(ms)
         self.positionChanged.emit()
 
+    def attach_queue(self, queue) -> None:
+        """Pick up the queue's state once the core is running."""
+        if queue is None:
+            return
+        self._repeat = str(getattr(getattr(queue, "repeat_mode", None), "value", "off") or "off")
+        self._shuffle = bool(getattr(queue, "shuffle_enabled", False))
+        self._source = getattr(getattr(queue, "context", None), "source_label", "") or ""
+        self.modesChanged.emit()
+        self.contextChanged.emit()
+        self.changed.emit()
+
     def _on_sleep_started(self, seconds: int) -> None:
         import time
 
