@@ -166,6 +166,20 @@ class Rig:
                 except RuntimeError:
                     continue
             if not busy:
+                # Popups (menus, sheets, dialogs) slide / fade in and out —
+                # `opened` only turns true once the enter transition ends.
+                for obj in self.window.findChildren(QObject):
+                    try:
+                        if (
+                            obj.inherits("QQuickPopup")
+                            and obj.property("visible")
+                            and not obj.property("opened")
+                        ):
+                            busy = True
+                            break
+                    except RuntimeError:
+                        continue
+            if not busy:
                 return
             pump(30)
 
@@ -442,6 +456,7 @@ class Rig:
         np = get_now_playing()
         np.item_id, np.title, np.subtitle, np.album = item_id, title, artist, album
         np.image_id, np.thumb_url, np.duration = "", cover, duration_ms
+        np.position = position_ms
         np.raw = {"AlbumId": album_id} if album_id else {}
         player = self.engine.rootContext().contextProperty("player")
         player._duration, player._position, player._playing = duration_ms, position_ms, playing

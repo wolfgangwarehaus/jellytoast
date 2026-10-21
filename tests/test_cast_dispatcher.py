@@ -63,7 +63,14 @@ def _dispatch_stub():
         playback_started=_Emit(),
         cast_started=_Emit(),
     )
-    return SimpleNamespace(bus=bus, cast_manager=None)
+    failed = []
+    return SimpleNamespace(
+        bus=bus,
+        cast_manager=None,
+        failed=failed,
+        _cast_failed_ui=lambda dev: failed.append(dev),
+        _run_airplay_pairing=lambda dev: "",
+    )
 
 
 def test_failed_cast_resumes_local_playback(qapp, monkeypatch):
@@ -95,6 +102,7 @@ def test_failed_cast_resumes_local_playback(qapp, monkeypatch):
     assert len(stub.bus.play_requested.calls) == 1, "failed cast must resume local"
     assert stub.bus.play_requested.calls[0][0] is np
     assert stub.bus.cast_started.calls == []
+    assert stub.failed == [dev], "the failure is shown to the user"
 
 
 def test_successful_cast_does_not_resume_local(qapp, monkeypatch):

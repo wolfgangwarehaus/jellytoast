@@ -80,6 +80,29 @@ class Prefs(QObject):
         _settings().media_integration_enabled = bool(on)  # applies next launch
         self.changed.emit()
 
+    # ── casting (opt-in per protocol) ──
+    _CAST = (
+        ("chromecast", "Chromecast / Google Cast"),
+        ("airplay", "AirPlay"),
+        ("dlna", "DLNA / UPnP"),
+        ("sonos", "Sonos"),
+    )
+
+    def _cast_types(self):
+        st = _settings()
+        return [
+            {"key": k, "label": label, "on": bool(getattr(st, f"cast_{k}_enabled"))}
+            for k, label in self._CAST
+        ]
+
+    castTypes = Property("QVariantList", _cast_types, notify=changed)
+
+    @Slot(str, bool)
+    def setCastType(self, key: str, on: bool) -> None:  # noqa: N802
+        if key in dict(self._CAST):
+            setattr(_settings(), f"cast_{key}_enabled", bool(on))
+            self.changed.emit()
+
     @Slot(result=str)
     def version(self) -> str:
         try:

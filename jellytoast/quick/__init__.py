@@ -133,6 +133,7 @@ def build_engine(app, *, start_core: bool = True):
     from jellytoast.player_state import PlayerBus
     from jellytoast.providers import get_provider
     from jellytoast.quick.actions import Actions
+    from jellytoast.quick.cast import Cast
     from jellytoast.quick.icons import IconProvider
     from jellytoast.quick.models import (
         LibraryModel,
@@ -192,6 +193,7 @@ def build_engine(app, *, start_core: bool = True):
         "actions": Actions(engine),
         "session": Session(engine),
         "prefs": Prefs(engine),
+        "cast": Cast(core.get("cast"), engine),
         "player": PlayerController(engine, queue=core.get("queue")),
         "theme": Theme(engine),
     }

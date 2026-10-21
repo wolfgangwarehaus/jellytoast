@@ -367,3 +367,74 @@ def test_long_press_start_radio_and_favorite(quick):
     quick.wait_until(lambda: ("toggle_favorite", "al3", True) in quick.provider.calls)
     quick.long_press("text:Album 003")
     assert quick.find("text:Remove from favorites") is not None
+
+
+# ── M3: cast picker ──
+
+
+class _FakeCastManager:
+    def __init__(self):
+        from types import SimpleNamespace
+
+        from jellytoast.cast_manager import CastType
+
+        self.devices = [
+            SimpleNamespace(
+                name="Living Room TV", uuid="tv1", device_type=CastType.DLNA, cast_object=None
+            ),
+            SimpleNamespace(
+                name="Kitchen", uuid="k1", device_type=CastType.CHROMECAST, cast_object=None
+            ),
+        ]
+        self._on_update = None
+        self.active_cast = None
+        self.last_cast_failure = None
+        self.started = []
+
+    def set_devices_callback(self, cb):
+        self._on_update = cb
+
+    def get_all_devices(self):
+        return list(self.devices)
+
+    def discover_all(self):
+        if self._on_update:
+            self._on_update(self.get_all_devices())
+
+    def start_track(self, dev, np, *, provider, resume_seconds, on_done):
+        self.started.append((dev.name, resume_seconds))
+        on_done(False)  # the TV refused
+
+    def stop_cast(self):
+        self.active_cast = None
+
+
+def test_cast_sheet_lists_devices_and_reports_failure(quick, monkeypatch):
+    from jellytoast.quick.cast import Cast
+    from jellytoast.settings import get_settings
+
+    monkeypatch.setattr(get_settings(), "cast_dlna_enabled", True, raising=False)
+    cm = _FakeCastManager()
+    cast = Cast(cm, quick.engine)
+    quick.engine.rootContext().setContextProperty("cast", cast)
+
+    quick.fake_now_playing("Song", "Someone", position_ms=30_000)
+    from jellytoast.player_state import get_now_playing
+
+    get_now_playing().stream_url = "http://server/stream"
+    spy = _Spy("stop_requested", "play_requested")
+    try:
+        quick.wait_for("miniPlayer")
+        quick.tap("text:Someone")
+        quick.wait_until(lambda: quick.state()["nowPlaying"])
+        quick.tap("castButton")
+        quick.wait_for("text:Living Room TV")
+        assert quick.find("text:Kitchen") is not None
+        quick.tap("text:Living Room TV")
+        quick.wait_for("castFailed")
+    finally:
+        spy.close()
+    assert cm.started == [("Living Room TV", 30.0)]
+    assert quick.find("text:Could not cast to Living Room TV") is not None
+    # The failed hand-off resumed local playback.
+    assert spy.got["stop_requested"] and spy.got["play_requested"]

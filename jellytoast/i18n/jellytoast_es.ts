@@ -141,6 +141,14 @@
     </message>
 </context>
 <context>
+    <name>Cast</name>
+    <message>
+        <location filename="../quick/cast.py" line="126"/>
+        <source>Pair {0} once from the desktop jellytoast app, then cast from here.</source>
+        <translation type="unfinished"></translation>
+    </message>
+</context>
+<context>
     <name>CastDialog</name>
     <message>
         <location filename="../cast_dialog.py" line="530"/>
@@ -265,7 +273,7 @@ firewalld:
         <translation>No se encontró «{0}» en la red ahora mismo. Abre el menú de envío para volver a buscar.</translation>
     </message>
     <message>
-        <location filename="../cast_dispatcher.py" line="299"/>
+        <location filename="../cast_dispatcher.py" line="258"/>
         <source>Cast failed</source>
         <translation>Fallo al enviar</translation>
     </message>
@@ -273,6 +281,34 @@ firewalld:
         <location filename="../cast_dispatcher.py" line="43"/>
         <source>Could not cast to {0}.</source>
         <translation>No se pudo enviar a {0}.</translation>
+    </message>
+</context>
+<context>
+    <name>CastSheet</name>
+    <message>
+        <location filename="../quick/qml/CastSheet.qml" line="43"/>
+        <source>Play on</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../quick/qml/CastSheet.qml" line="64"/>
+        <source>Turn on the kinds of speakers and TVs you use in Settings → Casting.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../quick/qml/CastSheet.qml" line="68"/>
+        <source>Open Settings</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../quick/qml/CastSheet.qml" line="101"/>
+        <source>This device</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../quick/qml/CastSheet.qml" line="122"/>
+        <source>No speakers or TVs found on this network.</source>
+        <translation type="unfinished"></translation>
     </message>
 </context>
 <context>
@@ -1602,21 +1638,26 @@ jellytoast funcionará, pero las funciones de bandeja no estarán disponibles.</
         <source>Liked songs</source>
         <translation type="unfinished"></translation>
     </message>
+    <message>
+        <location filename="../quick/qml/Main.qml" line="318"/>
+        <source>Cast failed</source>
+        <translation type="unfinished">Fallo al enviar</translation>
+    </message>
 </context>
 <context>
     <name>NowPlaying</name>
     <message>
-        <location filename="../quick/qml/NowPlaying.qml" line="72"/>
+        <location filename="../quick/qml/NowPlaying.qml" line="73"/>
         <source>PLAYING FROM</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../quick/qml/NowPlaying.qml" line="95"/>
+        <location filename="../quick/qml/NowPlaying.qml" line="103"/>
         <source>Go to artist</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../quick/qml/NowPlaying.qml" line="103"/>
+        <location filename="../quick/qml/NowPlaying.qml" line="111"/>
         <source>Go to album</source>
         <translation type="unfinished"></translation>
     </message>
@@ -3620,27 +3661,32 @@ Ejecuta pywal (o wallust) una vez para que genere una paleta, y vuelve a activar
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../quick/qml/SettingsPage.qml" line="126"/>
+        <location filename="../quick/qml/SettingsPage.qml" line="124"/>
         <source>Lock screen &amp; media controls</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../quick/qml/SettingsPage.qml" line="142"/>
+        <location filename="../quick/qml/SettingsPage.qml" line="131"/>
         <source>Takes effect next time jellytoast starts.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../quick/qml/SettingsPage.qml" line="147"/>
+        <location filename="../quick/qml/SettingsPage.qml" line="136"/>
+        <source>CASTING</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../quick/qml/SettingsPage.qml" line="150"/>
         <source>ABOUT</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../quick/qml/SettingsPage.qml" line="164"/>
+        <location filename="../quick/qml/SettingsPage.qml" line="167"/>
         <source>Sign out?</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../quick/qml/SettingsPage.qml" line="170"/>
+        <location filename="../quick/qml/SettingsPage.qml" line="173"/>
         <source>Playback stops, the queue is cleared and pending downloads are cancelled.</source>
         <translation type="unfinished"></translation>
     </message>

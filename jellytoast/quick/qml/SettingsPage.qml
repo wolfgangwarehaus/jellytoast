@@ -117,24 +117,13 @@ Item {
                 value: prefs.normalization
                 onPicked: v => prefs.setNormalization(v)
             }
-            SwitchDelegate {
+            SwitchRow {
                 objectName: "mediaKeysSwitch"
                 Layout.fillWidth: true
                 Layout.leftMargin: 12; Layout.rightMargin: 12
-                focusPolicy: Qt.NoFocus
-                hoverEnabled: false
                 text: qsTr("Lock screen & media controls")
                 checked: prefs.mediaKeys
                 onToggled: prefs.setMediaKeys(checked)
-                contentItem: Label {
-                    leftPadding: 4
-                    rightPadding: parent.indicator.width + 8
-                    text: parent.text
-                    color: theme.text
-                    font.pixelSize: 16
-                    wrapMode: Text.WordWrap
-                    verticalAlignment: Text.AlignVCenter
-                }
             }
             Label {
                 Layout.fillWidth: true
@@ -142,6 +131,20 @@ Item {
                 text: qsTr("Takes effect next time jellytoast starts.")
                 color: theme.textDim
                 font.pixelSize: 12
+            }
+
+            Heading { text: qsTr("CASTING") }
+            Repeater {
+                model: prefs.castTypes
+                SwitchRow {
+                    required property var modelData
+                    objectName: "cast_" + modelData.key
+                    Layout.fillWidth: true
+                    Layout.leftMargin: 12; Layout.rightMargin: 12
+                    text: modelData.label
+                    checked: modelData.on
+                    onToggled: prefs.setCastType(modelData.key, checked)
+                }
             }
 
             Heading { text: qsTr("ABOUT") }

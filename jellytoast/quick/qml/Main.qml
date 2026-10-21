@@ -292,6 +292,7 @@ ApplicationWindow {
         width: win.width
         height: win.height
         z: 10
+        onOpenCast: castSheet.open()
         onGoToArtist: artist => {
             var cur = stack.currentItem
             if (!(cur && cur.kind === "artistAlbums" && cur.parentId === artist.id))
@@ -302,6 +303,32 @@ ApplicationWindow {
             if (!(cur && cur.album && cur.album.id === album.id))
                 win.openItem("album", album)
         }
+    }
+
+    CastSheet {
+        id: castSheet
+        onOpenSettings: { nowPlaying.close(); stack.push(settingsPage) }
+    }
+    Dialog {
+        id: castFailed
+        objectName: "castFailed"
+        anchors.centerIn: parent
+        width: Math.min(parent.width - 32, 420)
+        modal: true
+        title: qsTr("Cast failed")
+        standardButtons: Dialog.Ok
+        property alias text: castFailedText.text
+        Label {
+            id: castFailedText
+            width: castFailed.availableWidth
+            wrapMode: Text.WordWrap
+            color: theme.text
+            textFormat: Text.PlainText
+        }
+    }
+    Connections {
+        target: cast
+        function onFailed(msg) { castFailed.text = msg; castFailed.open() }
     }
 
     // Short confirmations ("Added to queue").

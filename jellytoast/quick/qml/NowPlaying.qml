@@ -10,6 +10,7 @@ Rectangle {
     property string surface: "cover"  // | "lyrics" | "queue"
     signal goToAlbum(var album)
     signal goToArtist(var artist)
+    signal openCast()
 
     color: theme.background
     y: shown ? dragOffset : parent.height
@@ -83,6 +84,13 @@ Rectangle {
                     font.pixelSize: 13
                     font.weight: Font.Medium
                 }
+            }
+            IconButton {
+                objectName: "castButton"
+                iconName: "cast"
+                tint: cast.active !== "" ? theme.accent : theme.text
+                visible: cast.available
+                onClicked: np.openCast()
             }
             IconButton {
                 objectName: "npMore"

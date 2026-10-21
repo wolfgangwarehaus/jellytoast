@@ -249,6 +249,24 @@ class _CastDispatcherMixin:
         timer.timeout.connect(_poll)
         timer.start()
 
+    def _cast_failed_ui(self, dev) -> None:
+        """Tell the user a cast attempt failed (a front end may override)."""
+        from jellytoast.frosted_dialog import frosted_warning
+
+        frosted_warning(
+            self,
+            QCoreApplication.translate("CastDispatcher", "Cast failed"),
+            _cast_failure_text(self.cast_manager, dev),
+            icon_name="cast",
+        )
+
+    def _run_airplay_pairing(self, ap2_dev) -> str:
+        """Pair an AirPlay 2 receiver; returns the stored credentials, or ""
+        if cancelled / failed (a front end may override)."""
+        from jellytoast.airplay_pairing import PairingDialog
+
+        return PairingDialog.run(self, ap2_dev)
+
     def _cast_to_device(self, dev):
         """Cast to a specific CastDevice — shared by the cast dialog's
         pick and the cast button's right-click quick menu."""
@@ -292,14 +310,7 @@ class _CastDispatcherMixin:
                         pass
                     self.bus.playback_started.emit(_np)
             else:
-                from jellytoast.frosted_dialog import frosted_warning
-
-                frosted_warning(
-                    self,
-                    QCoreApplication.translate("CastDispatcher", "Cast failed"),
-                    _cast_failure_text(self.cast_manager, _dev),
-                    icon_name="cast",
-                )
+                self._cast_failed_ui(_dev)
                 # We stopped local mpv up front (stop_requested at the top of
                 # _cast_to_device) before attempting the cast. On failure the
                 # success-path restore never runs, so the track is left dead
@@ -387,11 +398,9 @@ class _CastDispatcherMixin:
                 and dev.cast_object.requires_pairing
                 and not _ap2.get_stored_credentials(dev.cast_object.identifier)
             ):
-                from jellytoast.airplay_pairing import PairingDialog
-
                 ap2_dev: _ap2.AirPlay2Device = dev.cast_object  # type: ignore[assignment]
                 _ap2_dbg(f"launching pairing dialog for {ap2_dev.name!r}")
-                creds = PairingDialog.run(self, ap2_dev)
+                creds = self._run_airplay_pairing(ap2_dev)
                 _ap2_dbg(f"pairing dialog returned: creds_len={len(creds)}")
                 if not creds:
                     # User cancelled or pairing failed — resume the local
