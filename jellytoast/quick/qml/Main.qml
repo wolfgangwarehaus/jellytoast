@@ -1,7 +1,6 @@
-// jellytoast — Qt Quick phone front end, M0 proof (see dev/QT_QUICK_PLAN.md).
-// Albums grid + mini player over the shared core. Context properties from
-// jellytoast/quick: `albums` (AlbumsModel), `player` (PlayerController),
-// `theme` (Theme), `signedIn` (bool).
+// jellytoast — Qt Quick phone front end (see dev/QT_QUICK_PLAN.md).
+// Context properties from jellytoast/quick: `albums` (AlbumsModel),
+// `player` (PlayerController), `theme` (Theme), `signedIn` (bool).
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
@@ -15,177 +14,113 @@ ApplicationWindow {
     color: theme.background
     palette.buttonText: theme.text
     palette.windowText: theme.text
+    palette.text: theme.text
+    palette.window: theme.surface
+    palette.base: theme.surface
+    palette.highlight: theme.accent
+    palette.highlightedText: theme.onAccent
 
-    readonly property int gutter: 12
-    readonly property int columns: Math.max(2, Math.floor(width / 200))
+    function openAlbum(album) {
+        stack.push(albumPage, { album: album })
+    }
 
-    header: Item {
-        height: 52
-        Label {
-            anchors.centerIn: parent
-            text: qsTr("Albums")
-            color: theme.text
-            font.pixelSize: 18
-            font.weight: Font.DemiBold
+    // Back: Now Playing first, then the page stack. (Esc / Back key / button.)
+    function back() {
+        if (nowPlaying.shown) {
+            nowPlaying.close()
+            return true
         }
+        if (stack.depth > 1) {
+            stack.pop()
+            return true
+        }
+        return false
     }
 
-    Label {
-        anchors.centerIn: parent
-        width: parent.width - 2 * win.gutter
-        visible: !signedIn
-        wrapMode: Text.WordWrap
-        horizontalAlignment: Text.AlignHCenter
-        color: theme.textDim
-        text: qsTr("Sign in with the regular jellytoast app first, then relaunch.")
+    Shortcut {
+        sequences: [StandardKey.Back, "Esc", "Back"]
+        onActivated: win.back()
     }
 
-    GridView {
-        id: grid
-        objectName: "albumGrid"
+    ColumnLayout {
         anchors.fill: parent
-        anchors.leftMargin: win.gutter
-        anchors.rightMargin: win.gutter
-        visible: signedIn
-        clip: true
-        model: signedIn ? albums : null
-        cellWidth: width / win.columns
-        cellHeight: cellWidth + 46
-        cacheBuffer: cellHeight * 4
-        boundsBehavior: Flickable.DragOverBounds
-        maximumFlickVelocity: 8000
-        flickDeceleration: 2500
-        pixelAligned: true
-        reuseItems: true
-        bottomMargin: 8
+        spacing: 0
 
-        ScrollIndicator.vertical: ScrollIndicator { }
-
-        delegate: Item {
-            id: cell
-            required property string albumId
-            required property string name
-            required property string artist
-            required property string cover
-            width: grid.cellWidth
-            height: grid.cellHeight
-
-            Column {
-                anchors.fill: parent
-                anchors.margins: 6
-                spacing: 4
-
-                Rectangle {
-                    width: parent.width
-                    height: width
-                    radius: 8
-                    color: theme.surface
-                    clip: true
-                    Image {
-                        anchors.fill: parent
-                        source: cell.cover
-                        sourceSize.width: 512
-                        sourceSize.height: 512
-                        fillMode: Image.PreserveAspectCrop
-                        asynchronous: true
-                        cache: true
-                        opacity: status === Image.Ready ? 1 : 0
-                        Behavior on opacity { NumberAnimation { duration: 140 } }
-                    }
-                }
-                Label {
-                    width: parent.width
-                    text: cell.name
-                    color: theme.text
-                    elide: Text.ElideRight
-                    font.pixelSize: 14
-                    font.weight: Font.Medium
-                }
-                Label {
-                    width: parent.width
-                    text: cell.artist
-                    color: theme.textDim
-                    elide: Text.ElideRight
-                    font.pixelSize: 12
-                }
+        Item {
+            id: topBar
+            Layout.fillWidth: true
+            Layout.preferredHeight: 52
+            IconButton {
+                anchors.left: parent.left
+                anchors.leftMargin: 4
+                anchors.verticalCenter: parent.verticalCenter
+                iconName: "back"
+                visible: stack.depth > 1
+                onClicked: win.back()
             }
-
-            TapHandler {
-                onTapped: player.playAlbum(cell.albumId, cell.name)
+            Label {
+                anchors.centerIn: parent
+                width: parent.width - 120
+                horizontalAlignment: Text.AlignHCenter
+                text: stack.currentItem ? stack.currentItem.title : ""
+                color: theme.text
+                elide: Text.ElideRight
+                font.pixelSize: 18
+                font.weight: Font.DemiBold
             }
         }
 
-        footer: Item {
-            width: grid.width
-            height: albums.loading ? 56 : 0
-            BusyIndicator {
-                anchors.centerIn: parent
-                running: albums.loading
-                visible: running
+        StackView {
+            id: stack
+            objectName: "stack"
+            Layout.fillWidth: true
+            Layout.fillHeight: true
+            clip: true
+            initialItem: AlbumsPage {
+                onOpenAlbum: album => win.openAlbum(album)
             }
+
+            pushEnter: Transition {
+                ParallelAnimation {
+                    NumberAnimation { property: "x"; from: stack.width * 0.3; to: 0; duration: 220; easing.type: Easing.OutCubic }
+                    NumberAnimation { property: "opacity"; from: 0; to: 1; duration: 160 }
+                }
+            }
+            pushExit: Transition {
+                NumberAnimation { property: "opacity"; from: 1; to: 0; duration: 160 }
+            }
+            popEnter: Transition {
+                NumberAnimation { property: "opacity"; from: 0; to: 1; duration: 160 }
+            }
+            popExit: Transition {
+                ParallelAnimation {
+                    NumberAnimation { property: "x"; from: 0; to: stack.width * 0.3; duration: 200; easing.type: Easing.InCubic }
+                    NumberAnimation { property: "opacity"; from: 1; to: 0; duration: 200 }
+                }
+            }
+        }
+
+        MiniPlayer {
+            Layout.fillWidth: true
+            Layout.preferredHeight: height
+            onOpen: nowPlaying.open()
         }
     }
 
-    footer: Rectangle {
-        id: mini
-        objectName: "miniPlayer"
-        height: player.hasTrack ? 72 : 0
-        visible: player.hasTrack
-        color: theme.surface
+    Component {
+        id: albumPage
+        AlbumPage { }
+    }
 
-        Rectangle {  // progress hairline
-            anchors.top: parent.top
-            height: 2
-            width: player.duration > 0 ? parent.width * player.position / player.duration : 0
-            color: theme.accent
-        }
-
-        RowLayout {
-            anchors.fill: parent
-            anchors.leftMargin: win.gutter
-            anchors.rightMargin: win.gutter
-            spacing: 12
-
-            Image {
-                Layout.preferredWidth: 52
-                Layout.preferredHeight: 52
-                source: player.cover
-                sourceSize.width: 156
-                sourceSize.height: 156
-                fillMode: Image.PreserveAspectCrop
-                asynchronous: true
-            }
-            ColumnLayout {
-                Layout.fillWidth: true
-                spacing: 2
-                Label {
-                    Layout.fillWidth: true
-                    text: player.title
-                    color: theme.text
-                    elide: Text.ElideRight
-                    font.pixelSize: 15
-                    font.weight: Font.Medium
-                }
-                Label {
-                    Layout.fillWidth: true
-                    text: player.artist
-                    color: theme.textDim
-                    elide: Text.ElideRight
-                    font.pixelSize: 13
-                }
-            }
-            ToolButton {
-                focusPolicy: Qt.NoFocus
-                text: player.playing ? "⏸" : "▶"
-                font.pixelSize: 22
-                onClicked: player.playPause()
-            }
-            ToolButton {
-                focusPolicy: Qt.NoFocus
-                text: "⏭"
-                font.pixelSize: 22
-                onClicked: player.next()
-            }
+    NowPlaying {
+        id: nowPlaying
+        width: win.width
+        height: win.height
+        z: 10
+        onGoToAlbum: album => {
+            var cur = stack.currentItem
+            if (!(cur && cur.album && cur.album.id === album.id))
+                win.openAlbum(album)
         }
     }
 }

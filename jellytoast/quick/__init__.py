@@ -25,12 +25,13 @@ def wanted() -> bool:
 def build_engine(app, *, start_core: bool = True):
     """Create the core + bridge objects and a loaded QQmlApplicationEngine.
     ``start_core=False`` skips mpv / MPRIS (tests)."""
-    from PySide6.QtQml import QQmlApplicationEngine
+    from PySide6.QtQml import QQmlApplicationEngine, qmlRegisterType
     from PySide6.QtQuickControls2 import QQuickStyle
 
     from jellytoast.player_state import PlayerBus
     from jellytoast.providers import get_provider
-    from jellytoast.quick.models import AlbumsModel
+    from jellytoast.quick.icons import IconProvider
+    from jellytoast.quick.models import AlbumsModel, TracksModel
     from jellytoast.quick.player import PlayerController
     from jellytoast.quick.theme import Theme
 
@@ -63,12 +64,14 @@ def build_engine(app, *, start_core: bool = True):
     QQuickStyle.setStyle(os.environ.get("JT_QUICK_STYLE") or "Basic")
     signed_in = bool(get_provider().is_authenticated)
 
+    qmlRegisterType(TracksModel, "Jellytoast", 1, 0, "TracksModel")
     engine = QQmlApplicationEngine()
     bridge = {
         "albums": AlbumsModel(engine),
-        "player": PlayerController(engine),
+        "player": PlayerController(engine, queue=core.get("queue")),
         "theme": Theme(engine),
     }
+    engine.addImageProvider("icon", IconProvider())
     ctx = engine.rootContext()
     for name, obj in bridge.items():
         ctx.setContextProperty(name, obj)

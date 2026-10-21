@@ -30,13 +30,14 @@ could run.
 
 ## Milestones
 
-- [ ] **M0 — proof** (first session): `JT_UI=quick` opens a Qt Quick window
+- [x] **M0 — proof** (first session): `JT_UI=quick` opens a Qt Quick window
   with the real Albums grid (covers, titles, artists, paged loading) and a
   mini player (cover, title / artist, play / pause / next) driving the real
   player. Tap an album to play it. **Exit criterion: august feels the
   scrolling on the phone and judges it worth continuing.** Also prove the
   QML modules package (PyInstaller spec, flatpak, AUR deps).
-  *Built 2026-10-20 — awaiting august's on-phone verdict.* Run from a
+  *Built 2026-10-20; august: "definitely could be an improvement in native
+  feel and snappiness" → continue.* Run from a
   checkout: `JT_UI=quick python -m jellytoast` (sign in with the normal
   app first). Packaging: wheel ships `quick/qml/*.qml`; AUR `pyside6`
   already depends on `qt6-declarative`; flatpak's KDE runtime has QtQuick.
@@ -45,6 +46,16 @@ could run.
 - [ ] **M1 — shell:** StackView navigation + back, top bar (section dropdown,
   search, ⋮), mini player ↔ Now Playing (cover, seek, transport, surface
   toggles), album page (header + tracks + play).
+  *Done 2026-10-20:* StackView + back (button / Esc / Back key), album page
+  (cover, Play / Shuffle, tracks, now-playing row), mini player (tap or
+  swipe up) → Now Playing sheet (big cover, heart, seek, shuffle / prev /
+  play / next / repeat, ⋮ → Go to album, drag down to close), app icon set
+  via `image://icon/<name>/<rrggbb>`, rounded covers (square on the
+  software renderer). *Moved to M2* with the sections they need: section
+  dropdown, search, queue / lyrics toggles, format line.
+  Offscreen screenshots need the GPU path:
+  `QSG_RHI_BACKEND=opengl QT_QUICK_BACKEND=rhi` at scale 1 (2× garbles
+  the readback).
 - [ ] **M2 — library:** artists, playlists, songs, genres, search, queue,
   lyrics, A–Z scrubber, swipe gestures, long-press menus (incl. Add to
   playlist).

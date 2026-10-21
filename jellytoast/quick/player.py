@@ -20,13 +20,24 @@ class PlayerController(QObject):
     changed = Signal()  # title / artist / cover / playing
     positionChanged = Signal()
 
-    def __init__(self, parent=None):
+    modesChanged = Signal()  # repeat / shuffle
+    contextChanged = Signal()
+
+    def __init__(self, parent=None, queue=None):
         super().__init__(parent)
         self._bus = PlayerBus.get()
         self._playing = False
         self._position = 0
         self._duration = 0
+        self._repeat = str(getattr(getattr(queue, "repeat_mode", None), "value", "off") or "off")
+        self._shuffle = bool(getattr(queue, "shuffle_enabled", False))
+        ctx = getattr(queue, "context", None)
+        self._source = getattr(ctx, "source_label", "") or ""
         b = self._bus
+        b.repeat_changed.connect(self._on_repeat)
+        b.shuffle_changed.connect(self._on_shuffle)
+        b.queue_context_changed.connect(self._on_context)
+        b.favorite_toggled.connect(self._on_favorite)
         b.playback_started.connect(self._on_started)
         b.playback_restored.connect(self._on_restored)
         b.playback_paused.connect(lambda: self._set_playing(False))
@@ -63,6 +74,22 @@ class PlayerController(QObject):
         self._duration = int(ms)
         self.positionChanged.emit()
 
+    def _on_repeat(self, mode: str) -> None:
+        self._repeat = mode
+        self.modesChanged.emit()
+
+    def _on_shuffle(self, on: bool) -> None:
+        self._shuffle = bool(on)
+        self.modesChanged.emit()
+
+    def _on_context(self, ctx) -> None:
+        self._source = getattr(ctx, "source_label", "") or ""
+        self.contextChanged.emit()
+
+    def _on_favorite(self, item_id: str, _fav: bool) -> None:
+        if item_id == get_now_playing().item_id:
+            self.changed.emit()
+
     # ── properties ──
     def _title(self) -> str:
         return get_now_playing().title or ""
@@ -73,6 +100,22 @@ class PlayerController(QObject):
     def _cover(self) -> str:
         return get_now_playing().thumb_url or ""
 
+    def _big_cover(self) -> str:
+        np = get_now_playing()
+        image_id = np.image_id or np.item_id
+        if not image_id:
+            return ""
+        from jellytoast.providers import get_provider
+
+        try:
+            return get_provider().get_image_url(image_id, "Primary", 1024) or np.thumb_url or ""
+        except Exception:
+            return np.thumb_url or ""
+
+    def _album_id(self) -> str:
+        raw = get_now_playing().raw or {}
+        return str(raw.get("AlbumId") or "")
+
     def _has_track(self) -> bool:
         return bool(get_now_playing().item_id)
 
@@ -80,6 +123,14 @@ class PlayerController(QObject):
     artist = Property(str, _artist, notify=changed)
     cover = Property(str, _cover, notify=changed)
     hasTrack = Property(bool, _has_track, notify=changed)
+    itemId = Property(str, lambda self: get_now_playing().item_id or "", notify=changed)
+    album = Property(str, lambda self: get_now_playing().album or "", notify=changed)
+    albumId = Property(str, _album_id, notify=changed)
+    bigCover = Property(str, _big_cover, notify=changed)
+    favorite = Property(bool, lambda self: bool(get_now_playing().is_favorite), notify=changed)
+    repeat = Property(str, lambda self: self._repeat, notify=modesChanged)
+    shuffle = Property(bool, lambda self: self._shuffle, notify=modesChanged)
+    source = Property(str, lambda self: self._source, notify=contextChanged)
     playing = Property(bool, lambda self: self._playing, notify=changed)
     position = Property(int, lambda self: self._position, notify=positionChanged)
     duration = Property(int, lambda self: self._duration, notify=positionChanged)
@@ -96,6 +147,34 @@ class PlayerController(QObject):
     @Slot()
     def previous(self) -> None:
         self._bus.prev_track.emit()
+
+    @Slot(int)
+    def seek(self, ms: int) -> None:
+        self._position = int(ms)
+        self.positionChanged.emit()
+        self._bus.seek_requested.emit(int(ms))
+
+    @Slot()
+    def toggleFavorite(self) -> None:  # noqa: N802
+        np = get_now_playing()
+        if not np.item_id:
+            return
+        from jellytoast.ui_helpers import toggle_favorite_async
+
+        new_state = not np.is_favorite
+        toggle_favorite_async(np.item_id, new_state)
+        np.is_favorite = new_state
+        self._bus.favorite_toggled.emit(np.item_id, new_state)
+
+    @Slot()
+    def cycleRepeat(self) -> None:  # noqa: N802
+        order = ["off", "all", "one"]
+        nxt = order[(order.index(self._repeat) + 1) % 3] if self._repeat in order else "all"
+        self._bus.repeat_changed.emit(nxt)
+
+    @Slot()
+    def toggleShuffle(self) -> None:  # noqa: N802
+        self._bus.shuffle_changed.emit(not self._shuffle)
 
     @Slot(str, str)
     def playAlbum(self, album_id: str, name: str) -> None:  # noqa: N802

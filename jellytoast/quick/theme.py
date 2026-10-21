@@ -30,9 +30,17 @@ class Theme(QObject):
         r, g, b, _a = _u.body_color_tuple("main")
         return QColor(r, g, b)  # opaque on a phone
 
+    def _on_accent(self) -> QColor:
+        """Text / icon colour that reads on an accent fill."""
+        c = _qcolor(_u.ACCENT)
+        lum = 0.2126 * c.redF() + 0.7152 * c.greenF() + 0.0722 * c.blueF()
+        return QColor("#111111") if lum > 0.6 else QColor("#ffffff")
+
     background = Property(QColor, _bg, notify=changed)
     text = Property(QColor, lambda self: _qcolor(_u.TEXT), notify=changed)
     textDim = Property(QColor, lambda self: _qcolor(_u.TEXT_DIM), notify=changed)
     textFaint = Property(QColor, lambda self: _qcolor(_u.TEXT_FAINT), notify=changed)
     accent = Property(QColor, lambda self: _qcolor(_u.ACCENT), notify=changed)
+    onAccent = Property(QColor, _on_accent, notify=changed)
+    groove = Property(QColor, lambda self: _qcolor(_u.SLIDER_GROOVE), notify=changed)
     surface = Property(QColor, lambda self: _qcolor(_u.POPUP_OPAQUE_FILL), notify=changed)
