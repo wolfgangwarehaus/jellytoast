@@ -113,6 +113,16 @@ class LibraryModel(QAbstractListModel):
         self._parent_id = ""
         self._seek: str = ""
         self._offline = False
+        # A first page that failed (server not reachable yet — say the app
+        # started before the network was up): retry on a backoff instead of
+        # sitting on "Nothing here yet".
+        self._error = False
+        self._retries = 0
+        from PySide6.QtCore import QTimer
+
+        self._retry_timer = QTimer(self)
+        self._retry_timer.setSingleShot(True)
+        self._retry_timer.timeout.connect(self._auto_retry)
         from jellytoast.player_state import PlayerBus
 
         PlayerBus.get().offline_mode_changed.connect(self._on_offline_mode)
@@ -177,6 +187,17 @@ class LibraryModel(QAbstractListModel):
         return self._loading
 
     loading = Property(bool, _get_loading, notify=loadingChanged)
+    # The list couldn't load (and has nothing to show): offer "Try again".
+    error = Property(bool, lambda self: self._error, notify=loadingChanged)
+
+    @Slot()
+    def retry(self) -> None:
+        self._retries = 0
+        self.reload()
+
+    def _auto_retry(self) -> None:
+        if _alive(self) and self._error:
+            self.reload()
 
     def _get_count(self) -> int:
         return len(self._items)
@@ -436,6 +457,8 @@ class LibraryModel(QAbstractListModel):
         if gen != self._gen:
             return
         self._loading = False
+        self._error = False
+        self._retries = 0
         if len(items) < self.PAGE or self._single_shot():
             self._done = True
         if items:
@@ -456,6 +479,11 @@ class LibraryModel(QAbstractListModel):
         logger.warning("%s page failed: %s", self._kind, e)
         self._loading = False
         self._seek = ""
+        if not self._items:
+            self._error = True
+            # 2 s, 4 s, 8 s … then every 60 s while it stays unreachable.
+            self._retry_timer.start(min(60_000, 2000 * 2 ** min(self._retries, 5)))
+            self._retries += 1
         self.loadingChanged.emit()
 
     def _letter_key(self, it: Dict) -> str:

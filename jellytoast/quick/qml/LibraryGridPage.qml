@@ -27,9 +27,27 @@ Item {
 
     Label {
         anchors.centerIn: parent
-        visible: session.signedIn && !page.lib.loading && page.lib.count === 0
+        visible: session.signedIn && !page.lib.loading && page.lib.count === 0 && !page.lib.error
         color: theme.textDim
         text: qsTr("Nothing here yet")
+    }
+    // Couldn't reach the server (it keeps retrying on its own too).
+    Column {
+        objectName: "loadError"
+        anchors.centerIn: parent
+        spacing: 14
+        visible: session.signedIn && page.lib.error && page.lib.count === 0
+        Label {
+            anchors.horizontalCenter: parent.horizontalCenter
+            color: theme.textDim
+            text: qsTr("Couldn't reach the server")
+        }
+        PillButton {
+            objectName: "retryButton"
+            anchors.horizontalCenter: parent.horizontalCenter
+            text: qsTr("Try again")
+            onClicked: page.lib.retry()
+        }
     }
 
     GridView {

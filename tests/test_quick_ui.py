@@ -1080,3 +1080,25 @@ def test_scrobbling_connect(quick, monkeypatch):
     finally:
         (s.lastfm_session_key, s.lastfm_username, s.lastfm_enabled,
          s.listenbrainz_token, s.listenbrainz_username, s.listenbrainz_enabled) = saved
+
+
+def test_albums_that_fail_to_load_retry(quick, monkeypatch):
+    """Started before the network was up: the first page fails → "Couldn't
+    reach the server" + Try again (and an automatic retry), not an empty
+    "Nothing here yet" forever."""
+    albums = quick.engine.rootContext().contextProperty("albums")
+    real = quick.provider.get_items
+
+    def down(*a, **k):
+        raise ConnectionError("network is unreachable")
+
+    monkeypatch.setattr(quick.provider, "get_items", down)
+    albums.reload()
+    quick.wait_until(lambda: albums.property("error"))
+    assert albums.property("count") == 0
+    assert quick.find("retryButton") is not None
+    assert albums._retry_timer.isActive()  # retries on its own too
+    monkeypatch.setattr(quick.provider, "get_items", real)
+    quick.tap("retryButton")
+    quick.wait_until(lambda: albums.property("count") > 0)
+    assert not albums.property("error")

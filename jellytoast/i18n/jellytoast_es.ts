@@ -1410,17 +1410,27 @@ jellytoast funcionará, pero las funciones de bandeja no estarán disponibles.</
         <translation type="unfinished">Aquí no hay nada todavía</translation>
     </message>
     <message>
-        <location filename="../quick/qml/LibraryGridPage.qml" line="132"/>
+        <location filename="../quick/qml/LibraryGridPage.qml" line="43"/>
+        <source>Couldn&apos;t reach the server</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../quick/qml/LibraryGridPage.qml" line="48"/>
+        <source>Try again</source>
+        <translation type="unfinished">Reintentar</translation>
+    </message>
+    <message>
+        <location filename="../quick/qml/LibraryGridPage.qml" line="150"/>
         <source>Liked songs</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../quick/qml/LibraryGridPage.qml" line="146"/>
+        <location filename="../quick/qml/LibraryGridPage.qml" line="164"/>
         <source>Play</source>
         <translation type="unfinished">Reproducir</translation>
     </message>
     <message>
-        <location filename="../quick/qml/LibraryGridPage.qml" line="151"/>
+        <location filename="../quick/qml/LibraryGridPage.qml" line="169"/>
         <source>Shuffle</source>
         <translation type="unfinished">Aleatorio</translation>
     </message>
@@ -2874,22 +2884,22 @@ Revisa el PIN — la causa más común es una errata o un código caducado (el r
 <context>
     <name>RadioModel</name>
     <message>
-        <location filename="../quick/models.py" line="1423"/>
+        <location filename="../quick/models.py" line="1451"/>
         <source>This server doesn&apos;t support radio stations.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../quick/models.py" line="1428"/>
+        <location filename="../quick/models.py" line="1456"/>
         <source>Only a server admin can change radio stations.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../quick/models.py" line="1432"/>
+        <location filename="../quick/models.py" line="1460"/>
         <source>Couldn&apos;t add the station: {0}</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../quick/models.py" line="1433"/>
+        <location filename="../quick/models.py" line="1461"/>
         <source>Couldn&apos;t remove the station: {0}</source>
         <translation type="unfinished"></translation>
     </message>
