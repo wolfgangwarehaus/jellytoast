@@ -80,9 +80,12 @@ could run.
   favourite toggles; cast picker (Play on…, the Widgets hand-off code) +
   per-protocol casting switches; Downloads section (progress, pause,
   remove, storage), Download in menus / on album pages, offline mode +
-  Wi-Fi-only switches. *Still to do:* smart mixes, theme picker, Quick
-  Connect sign-in, sleep timer, offline browsing (library from downloads
-  when the server is unreachable).
+  Wi-Fi-only switches; sleep timer. **Opt-in without env vars:** desktop
+  Settings → Display → "New phone interface (beta)" (shown on a phone
+  shell; read at launch, undocked only), and "Use the classic interface"
+  in the Quick Settings to go back. `JT_UI=quick|widgets` still forces.
+  *Still to do:* smart mixes, theme picker, Quick Connect sign-in, offline
+  browsing (library from downloads when the server is unreachable).
 - [ ] **M4 — switch:** default on Plasma Mobile; remove the Widgets phone
   layouts only once parity holds; then the metainfo "phone friendly" flag.
 

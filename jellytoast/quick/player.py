@@ -21,6 +21,7 @@ class PlayerController(QObject):
     positionChanged = Signal()
 
     modesChanged = Signal()  # repeat / shuffle
+    sleepChanged = Signal()
     contextChanged = Signal()
 
     def __init__(self, parent=None, queue=None):
@@ -38,6 +39,16 @@ class PlayerController(QObject):
         b.shuffle_changed.connect(self._on_shuffle)
         b.queue_context_changed.connect(self._on_context)
         b.favorite_toggled.connect(self._on_favorite)
+        # Sleep timer (owned by the player backend; we mirror the countdown).
+        from PySide6.QtCore import QTimer
+
+        self._sleep_deadline = None
+        self._sleep_tick = QTimer(self)
+        self._sleep_tick.setInterval(1000)
+        self._sleep_tick.timeout.connect(self.sleepChanged)
+        b.sleep_timer_started.connect(self._on_sleep_started)
+        b.sleep_timer_cancelled.connect(self._on_sleep_ended)
+        b.sleep_timer_fired.connect(self._on_sleep_ended)
         b.playback_started.connect(self._on_started)
         b.playback_restored.connect(self._on_restored)
         b.playback_paused.connect(lambda: self._set_playing(False))
@@ -73,6 +84,25 @@ class PlayerController(QObject):
     def _on_duration(self, ms: int) -> None:
         self._duration = int(ms)
         self.positionChanged.emit()
+
+    def _on_sleep_started(self, seconds: int) -> None:
+        import time
+
+        self._sleep_deadline = time.monotonic() + max(0, int(seconds))
+        self._sleep_tick.start()
+        self.sleepChanged.emit()
+
+    def _on_sleep_ended(self) -> None:
+        self._sleep_deadline = None
+        self._sleep_tick.stop()
+        self.sleepChanged.emit()
+
+    def _sleep_left(self) -> int:
+        import time
+
+        if self._sleep_deadline is None:
+            return -1
+        return max(0, int(round(self._sleep_deadline - time.monotonic())))
 
     def _on_repeat(self, mode: str) -> None:
         self._repeat = mode
@@ -170,6 +200,19 @@ class PlayerController(QObject):
     # Where the Quick UI's library opens (remembered across launches).
     sectionChanged = Signal()
     section = Property(str, _get_section, _set_section, notify=sectionChanged)
+
+    # Seconds left on the sleep timer; -1 = off, 0 = "after this track".
+    sleepLeft = Property(int, _sleep_left, notify=sleepChanged)
+
+    @Slot(int)
+    def startSleep(self, minutes: int) -> None:  # noqa: N802
+        """Pause after ``minutes`` — at the end of the song playing then,
+        like the desktop timer. 0 = stop after the current song."""
+        self._bus.sleep_timer_requested.emit(max(0, int(minutes)) * 60, "end_of_track")
+
+    @Slot()
+    def cancelSleep(self) -> None:  # noqa: N802
+        self._bus.sleep_timer_cancel_requested.emit()
 
     @Slot(int)
     def seek(self, ms: int) -> None:

@@ -139,6 +139,11 @@ class Prefs(QObject):
             setattr(_settings(), f"cast_{key}_enabled", bool(on))
             self.changed.emit()
 
+    @Slot()
+    def useClassicUi(self) -> None:  # noqa: N802
+        """Back to the classic (Widgets) interface from next launch."""
+        _settings().phone_ui_quick = False
+
     @Slot(result=str)
     def version(self) -> str:
         try:

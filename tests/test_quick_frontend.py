@@ -213,3 +213,28 @@ def test_seek_letter_pages_until_found(qapp, monkeypatch):
     assert found == [("M", 150)] and m.rowCount() == 170
     m.seekLetter("Z")  # past the end → last row
     assert found[-1] == ("Z", 169)
+
+
+def test_front_end_choice(monkeypatch):
+    """JT_UI forces a front end; otherwise the beta setting, on a phone only."""
+    from jellytoast import quick, touch
+    from jellytoast.settings import get_settings
+
+    s = get_settings()
+    saved = s.phone_ui_quick
+    try:
+        monkeypatch.setenv("JT_UI", "quick")
+        assert quick.wanted()
+        monkeypatch.setenv("JT_UI", "widgets")
+        s.phone_ui_quick = True
+        assert not quick.wanted()
+        monkeypatch.delenv("JT_UI")
+        monkeypatch.setattr(touch, "phone_ui", lambda: True)
+        assert quick.wanted()
+        s.phone_ui_quick = False
+        assert not quick.wanted()
+        s.phone_ui_quick = True
+        monkeypatch.setattr(touch, "phone_ui", lambda: False)  # desktop / docked
+        assert not quick.wanted()
+    finally:
+        s.phone_ui_quick = saved

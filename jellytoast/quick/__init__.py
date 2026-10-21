@@ -18,8 +18,20 @@ QML_DIR = Path(__file__).resolve().parent / "qml"
 
 
 def wanted() -> bool:
-    """Whether to start the Qt Quick UI instead of the Widgets window."""
-    return os.environ.get("JT_UI", "").strip().lower() == "quick"
+    """Whether to start the Qt Quick UI instead of the Widgets window:
+    ``JT_UI=quick`` / ``JT_UI=widgets`` force it; otherwise the opt-in
+    "New phone interface (beta)" setting, on an undocked phone shell."""
+    forced = os.environ.get("JT_UI", "").strip().lower()
+    if forced in ("quick", "widgets"):
+        return forced == "quick"
+    try:
+        from jellytoast.settings import get_settings
+        from jellytoast.touch import phone_ui
+
+        return bool(get_settings().phone_ui_quick) and phone_ui()
+    except Exception as e:
+        logger.warning("front-end choice failed, using the classic UI: %s", e)
+        return False
 
 
 def _silence_play_reports() -> None:

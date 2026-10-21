@@ -333,6 +333,26 @@ class _DisplayPageMixin:
         _tt_row.addStretch(1)
         v.addLayout(_tt_row)
 
+        # Plasma Mobile: opt into the Qt Quick phone front end (beta) —
+        # read at launch (jellytoast.quick.wanted), so restart-required.
+        from jellytoast.platform_compat import is_mobile_shell
+
+        if is_mobile_shell():
+            self._phone_quick_check = QCheckBox(
+                QCoreApplication.translate(
+                    "SettingsDialog", "New phone interface (beta) — restart to apply"
+                )
+            )
+            self._phone_quick_check.setChecked(self.s.phone_ui_quick)
+            self._phone_quick_check.toggled.connect(
+                lambda val: setattr(self.s, "phone_ui_quick", val)
+            )
+            _pq_row = QHBoxLayout()
+            _pq_row.setContentsMargins(0, 0, 0, 0)
+            _pq_row.addWidget(self._phone_quick_check)
+            _pq_row.addStretch(1)
+            v.addLayout(_pq_row)
+
         # Borderless main window — any Linux Wayland session (KDE strips the
         # decoration with a KWin rule; GNOME / wlroots go Qt-frameless / CSD).
         # Toggling this on restores the desktop's native titlebar. Decoration

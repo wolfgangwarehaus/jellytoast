@@ -165,6 +165,26 @@ Item {
                 }
             }
 
+            Heading { text: qsTr("INTERFACE") }
+            Label {
+                Layout.fillWidth: true
+                leftPadding: 20; rightPadding: 20; topPadding: 6
+                wrapMode: Text.WordWrap
+                text: qsTr("This is the new phone interface (beta). You can go back to the classic one any time.")
+                color: theme.textDim
+                font.pixelSize: 13
+            }
+            PillButton {
+                objectName: "classicUiButton"
+                Layout.leftMargin: 16
+                Layout.topMargin: 8
+                text: qsTr("Use the classic interface")
+                onClicked: {
+                    prefs.useClassicUi()
+                    toast.show(qsTr("Restart jellytoast to switch"))
+                }
+            }
+
             Heading { text: qsTr("ABOUT") }
             Label {
                 Layout.fillWidth: true

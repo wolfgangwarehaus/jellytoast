@@ -540,3 +540,23 @@ def test_downloads_page_progress_pause_and_remove(quick, monkeypatch):
     quick.wait_until(lambda: fake.removed)
     assert fake.removed == ["pl1"]
     assert quick.find("text:Playlist 1") is None
+
+
+def test_sleep_timer_menu(quick):
+    spy = _Spy("sleep_timer_requested", "sleep_timer_cancel_requested")
+    try:
+        quick.fake_now_playing()
+        quick.wait_for("miniPlayer")
+        quick.tap("text:Test Artist")
+        quick.wait_until(lambda: quick.state()["nowPlaying"])
+        quick.tap("sleepButton")
+        quick.tap("text:30 minutes")
+        assert spy.got["sleep_timer_requested"][-1] == (1800, "end_of_track")
+        PlayerBus.get().sleep_timer_started.emit(1800)  # the backend's answer
+        quick.wait_until(lambda: 1790 <= quick.eval("player.sleepLeft") <= 1800)
+        assert quick.find("text:29:") or quick.find("text:30:00")
+        quick.tap("sleepButton")
+        quick.tap("text:Turn off timer")
+        assert spy.got["sleep_timer_cancel_requested"]
+    finally:
+        spy.close()

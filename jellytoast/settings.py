@@ -586,6 +586,16 @@ class Settings:
         )
 
     @property
+    def phone_ui_quick(self) -> bool:
+        """Use the new Qt Quick interface on a phone shell (Plasma Mobile,
+        undocked) — beta, opt-in; read at launch."""
+        return self._s.value("display/phone_ui_quick", False, type=bool)
+
+    @phone_ui_quick.setter
+    def phone_ui_quick(self, v: bool):
+        self._s.setValue("display/phone_ui_quick", bool(v))
+
+    @property
     def quick_section(self) -> str:
         """Qt Quick phone UI: the library section it last showed (album |
         artist | playlist | song | genre | favorite) — reopened at launch."""
