@@ -39,7 +39,7 @@ def test_albums_pages_until_short_page(qapp, prov):
     assert m.rowCount() == 130 and not m.canFetchMore()
     idx = m.index(5)
     assert m.data(idx, m.NameRole) == "Album 5"
-    assert m.data(idx, m.CoverRole) == "http://s/a5.jpg"
+    assert m.data(idx, m.CoverRole) == "image://cover/a5/512"  # cached by item, not URL
     assert m.data(idx, m.YearRole) == "2000"
 
 

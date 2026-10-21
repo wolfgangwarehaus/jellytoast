@@ -27,7 +27,7 @@ Item {
         property string value
         signal picked(string value)
         Layout.fillWidth: true
-        height: 56
+        Layout.preferredHeight: 56
         focusPolicy: Qt.NoFocus
         hoverEnabled: false
         background: Rectangle { color: theme.text; opacity: choice.pressed ? 0.08 : 0 }

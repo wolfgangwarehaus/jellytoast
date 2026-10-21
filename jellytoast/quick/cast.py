@@ -20,7 +20,8 @@ logger = logging.getLogger(__name__)
 
 
 class Cast(_CastDispatcherMixin, QObject):
-    changed = Signal()
+    changed = Signal()  # scanning / active / enabled / available
+    devicesChanged = Signal()  # only when the device set changes (rebuilds rows)
     failed = Signal(str)  # message for the UI
     _devices_found = Signal(list)  # discovery callback → GUI thread
 
@@ -63,7 +64,7 @@ class Cast(_CastDispatcherMixin, QObject):
         self._active = getattr(active, "name", "") or ""
         self.changed.emit()
 
-    devices = Property("QVariantList", _get_devices, notify=changed)
+    devices = Property("QVariantList", _get_devices, notify=devicesChanged)
     scanning = Property(bool, lambda self: self._scanning, notify=changed)
     active = Property(str, lambda self: self._active, notify=changed)
 
@@ -75,8 +76,15 @@ class Cast(_CastDispatcherMixin, QObject):
     enabled = Property(bool, _enabled, notify=changed)
 
     def _on_devices(self, devices: list) -> None:
-        self._devices = list(devices or [])
-        self.changed.emit()
+        devices = list(devices or [])
+        key = [(d.uuid or d.name, d.name) for d in devices]
+        self._devices = devices
+        # Discovery reports the full list repeatedly; only repaint (which
+        # rebuilds every row) when it actually changed — rows must not move
+        # under the finger.
+        if key != getattr(self, "_devices_key", None):
+            self._devices_key = key
+            self.devicesChanged.emit()
 
     def _on_started(self, name: str) -> None:
         self._active = name

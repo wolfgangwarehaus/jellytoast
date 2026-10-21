@@ -181,20 +181,23 @@ class PlayerController(QObject):
     def _artist(self) -> str:
         return get_now_playing().subtitle or ""
 
+    def _art_id(self) -> str:
+        """The item whose art represents the playing track (its album's),
+        or "" for sources with their own art (radio stations, etc.)."""
+        np = get_now_playing()
+        return np.image_id or str((np.raw or {}).get("AlbumId") or "")
+
     def _cover(self) -> str:
-        return get_now_playing().thumb_url or ""
+        from jellytoast.quick.covers import cover_source
+
+        art = self._art_id()
+        return cover_source(art, 160) if art else (get_now_playing().thumb_url or "")
 
     def _big_cover(self) -> str:
-        np = get_now_playing()
-        image_id = np.image_id or np.item_id
-        if not image_id:
-            return ""
-        from jellytoast.providers import get_provider
+        from jellytoast.quick.covers import cover_source
 
-        try:
-            return get_provider().get_image_url(image_id, "Primary", 1024) or np.thumb_url or ""
-        except Exception:
-            return np.thumb_url or ""
+        art = self._art_id()
+        return cover_source(art, 1024) if art else (get_now_playing().thumb_url or "")
 
     def _album_id(self) -> str:
         raw = get_now_playing().raw or {}

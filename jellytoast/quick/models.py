@@ -21,6 +21,7 @@ from PySide6.QtCore import (
 )
 
 from jellytoast import async_io
+from jellytoast.quick.covers import cover_source
 
 logger = logging.getLogger(__name__)
 
@@ -256,9 +257,9 @@ class LibraryModel(QAbstractListModel):
                     continue
                 if kind in ("song", "favSongs"):
                     src = it.get("AlbumId") or it.get("Id", "")
-                    it["_cover"] = prov.get_image_url(src, "Primary", 160) if src else ""
+                    it["_cover"] = cover_source(src, 160)
                 else:
-                    it["_cover"] = prov.get_image_url(it.get("Id", ""), "Primary", COVER_PX)
+                    it["_cover"] = cover_source(it.get("Id", ""), COVER_PX)
             return items
 
         run_async = async_io.run_async  # resolved at call time (tests patch it)
@@ -588,12 +589,7 @@ class QueueModel(QAbstractListModel):
         src = it.get("AlbumId") or it.get("Id", "")
         if not src:
             return ""
-        if src not in self._covers:
-            try:
-                self._covers[src] = _provider().get_image_url(src, "Primary", 160) or ""
-            except Exception:
-                self._covers[src] = ""
-        return self._covers[src]
+        return cover_source(src, 160)
 
     def data(self, index, role=Qt.ItemDataRole.DisplayRole):
         if not index.isValid() or not (0 <= index.row() < len(self._items)):
@@ -842,7 +838,7 @@ class SearchModel(QAbstractListModel):
                             "name": it.get("Name", ""),
                             "subtitle": sub,
                             "year": str(it.get("ProductionYear") or ""),
-                            "cover": prov.get_image_url(src, "Primary", px) if src else "",
+                            "cover": cover_source(src, px),
                             "_raw": it,
                         }
                     )
@@ -997,9 +993,9 @@ class DownloadsModel(QAbstractListModel):
             logger.warning("downloads list failed: %s", e)
             rows = []
         try:
-            prov = _provider()
+            _provider()
         except Exception:
-            prov = None
+            pass
         for r in rows:
             item_id = r.get("item_id", "")
             meta = r.get("metadata") or {}
@@ -1009,7 +1005,7 @@ class DownloadsModel(QAbstractListModel):
                 r["_size"] = ""
             src = meta.get("AlbumId") if r.get("kind") == "track" else item_id
             try:
-                r["_cover"] = prov.get_image_url(src, "Primary", 160) if (prov and src) else ""
+                r["_cover"] = cover_source(src, 160)
             except Exception:
                 r["_cover"] = ""
         self.beginResetModel()

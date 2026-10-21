@@ -76,7 +76,7 @@ Drawer {
             property string glyph: "cast"
             property bool current: false
             Layout.fillWidth: true
-            height: 56
+            Layout.preferredHeight: 56
             focusPolicy: Qt.NoFocus
             hoverEnabled: false
             background: Rectangle { radius: 10; color: theme.text; opacity: drow.pressed ? 0.08 : 0 }

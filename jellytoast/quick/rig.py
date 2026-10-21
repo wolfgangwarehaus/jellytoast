@@ -44,11 +44,20 @@ _KEYS = {
 
 
 def pump(ms: int = 0) -> None:
-    """Run the event loop for ``ms`` (animations, async results, images)."""
+    """Run the event loop for ``ms`` (animations, async results, images).
+
+    A real nested QEventLoop, not QTest.qWait: PySide releases the GIL
+    inside QEventLoop.exec() (as app.exec() does) but not inside qWait —
+    and QML's image-reader thread needs the GIL to call our async cover
+    provider while the GUI thread renders, so qWait could deadlock."""
+    from PySide6.QtCore import QEventLoop, QTimer
+
     if ms <= 0:
         QCoreApplication.processEvents()
         return
-    QTest.qWait(ms)
+    loop = QEventLoop()
+    QTimer.singleShot(int(ms), loop.quit)
+    loop.exec()
 
 
 class RigError(RuntimeError):
@@ -130,8 +139,39 @@ class Rig:
                         hits.append(content)
         if visible:
             shown = [it for it in hits if self._on_screen(it)]
-            hits = shown or [it for it in hits if self._shown(it)]
+            # Prefer what a finger would actually reach: the item (or one of
+            # its ancestors) is on the hit-test path at its own centre. Rows
+            # a view just replaced linger until deleted, still "visible".
+            reachable = [it for it in shown if self._reachable(it)]
+            hits = reachable or shown or [it for it in hits if self._shown(it)]
         return hits[-1] if hits else None
+
+    def _reachable(self, it: QQuickItem) -> bool:
+        """``it`` is what a tap at its centre lands on: it's on the hit-test
+        path itself, or the deepest item there lies inside it."""
+        import shiboken6
+
+        def ptr(x):
+            return shiboken6.getCppPointer(x)[0]
+
+        try:
+            c = it.mapToScene(QPointF(it.width() / 2, it.height() / 2))
+            chain, node = [], self.window.contentItem()
+            while node is not None:
+                chain.append(node)
+                local = node.mapFromScene(c)
+                node = node.childAt(local.x(), local.y())
+            target = ptr(it)
+            if any(ptr(n) == target for n in chain):
+                return True
+            x = chain[-1]
+            while x is not None:
+                if ptr(x) == target:
+                    return True
+                x = x.parentItem()
+        except RuntimeError:
+            return False
+        return False
 
     def get(self, target: Target) -> QQuickItem:
         if isinstance(target, QQuickItem):
