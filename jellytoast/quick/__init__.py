@@ -32,8 +32,9 @@ def available() -> bool:
 
 def wanted() -> bool:
     """Whether to start the Qt Quick UI instead of the Widgets window:
-    ``JT_UI=quick`` / ``JT_UI=widgets`` force it; otherwise the opt-in
-    "New phone interface (beta)" setting, on an undocked phone shell."""
+    ``JT_UI=quick`` / ``JT_UI=widgets`` force it; otherwise an undocked
+    phone shell gets it unless "Phone interface" was turned off (Settings →
+    "Use the classic interface")."""
     forced = os.environ.get("JT_UI", "").strip().lower()
     if forced in ("quick", "widgets"):
         return forced == "quick"
@@ -204,6 +205,7 @@ def build_engine(app, *, start_core: bool = True):
     from jellytoast.quick.player import PlayerController
     from jellytoast.quick.playlists import Playlists
     from jellytoast.quick.prefs import Prefs
+    from jellytoast.quick.scrobbling import Scrobbling
     from jellytoast.quick.session import Session
     from jellytoast.quick.theme import Theme
 
@@ -229,6 +231,7 @@ def build_engine(app, *, start_core: bool = True):
         "actions": Actions(engine),
         "session": Session(engine),
         "prefs": Prefs(engine),
+        "scrobbling": Scrobbling(engine),
         "libraries": Libraries(engine),
         "playlists": Playlists(engine),
         "cast": Cast(None, engine),

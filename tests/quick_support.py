@@ -292,15 +292,16 @@ def fake_provider(monkeypatch):
 
 
 @pytest.fixture
-def quick(qapp, fake_provider):
-    """The real Main.qml over the fake library, at phone size, with a Rig."""
+def quick(qapp, fake_provider, isolated_settings):
+    """The real Main.qml over the fake library, at phone size, with a Rig.
+    Settings are a fresh, pinned instance: the phone tests change quality,
+    theme, EQ… and none of that may leak into a later test."""
     from jellytoast import quick as quick_ui
     from jellytoast.player_state import NowPlaying, get_now_playing, set_now_playing
     from jellytoast.quick.rig import Rig
     from jellytoast.settings import get_settings
 
     settings = get_settings()
-    saved_section = settings.quick_section
     settings.quick_section = "album"  # every test starts on Albums
     from jellytoast import library_selection as _ls
 
@@ -329,4 +330,3 @@ def quick(qapp, fake_provider):
     QCoreApplication.processEvents()
     set_now_playing(saved_np)
     _ls.reset_after_server_change()
-    settings.quick_section = saved_section

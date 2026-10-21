@@ -2795,38 +2795,58 @@ Revisa el PIN — la causa más común es una errata o un código caducado (el r
 <context>
     <name>Prefs</name>
     <message>
-        <location filename="../quick/prefs.py" line="30"/>
+        <location filename="../quick/prefs.py" line="31"/>
         <source>Original</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../quick/prefs.py" line="36"/>
+        <location filename="../quick/prefs.py" line="37"/>
         <source>Off</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../quick/prefs.py" line="37"/>
+        <location filename="../quick/prefs.py" line="38"/>
         <source>Per song</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../quick/prefs.py" line="38"/>
+        <location filename="../quick/prefs.py" line="39"/>
         <source>Per album</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../quick/prefs.py" line="95"/>
+        <location filename="../quick/prefs.py" line="96"/>
         <source>Dark</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../quick/prefs.py" line="96"/>
+        <location filename="../quick/prefs.py" line="97"/>
         <source>Light</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../quick/prefs.py" line="97"/>
+        <location filename="../quick/prefs.py" line="98"/>
         <source>Follow the system</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../quick/prefs.py" line="221"/>
+        <source>Small</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../quick/prefs.py" line="222"/>
+        <source>Default</source>
+        <translation type="unfinished">Predeterminado</translation>
+    </message>
+    <message>
+        <location filename="../quick/prefs.py" line="223"/>
+        <source>Large</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../quick/prefs.py" line="224"/>
+        <source>Largest</source>
         <translation type="unfinished"></translation>
     </message>
 </context>
@@ -2854,22 +2874,22 @@ Revisa el PIN — la causa más común es una errata o un código caducado (el r
 <context>
     <name>RadioModel</name>
     <message>
-        <location filename="../quick/models.py" line="1421"/>
+        <location filename="../quick/models.py" line="1423"/>
         <source>This server doesn&apos;t support radio stations.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../quick/models.py" line="1424"/>
+        <location filename="../quick/models.py" line="1428"/>
         <source>Only a server admin can change radio stations.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../quick/models.py" line="1428"/>
+        <location filename="../quick/models.py" line="1432"/>
         <source>Couldn&apos;t add the station: {0}</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../quick/models.py" line="1429"/>
+        <location filename="../quick/models.py" line="1433"/>
         <source>Couldn&apos;t remove the station: {0}</source>
         <translation type="unfinished"></translation>
     </message>
@@ -3012,6 +3032,44 @@ Subsonic requiere permiso de administrador para crear / editar / eliminar.</tran
         <location filename="../radio_view.py" line="813"/>
         <source>Couldn&apos;t {0} station</source>
         <translation>No se pudo {0} la emisora</translation>
+    </message>
+</context>
+<context>
+    <name>Scrobbling</name>
+    <message>
+        <location filename="../quick/scrobbling.py" line="58"/>
+        <source>Asking Last.fm…</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../quick/scrobbling.py" line="62"/>
+        <source>Couldn&apos;t reach Last.fm — try again later.</source>
+        <translation type="unfinished">No se pudo contactar con Last.fm — inténtalo más tarde.</translation>
+    </message>
+    <message>
+        <location filename="../quick/scrobbling.py" line="68"/>
+        <source>Approve jellytoast in the browser, then come back here.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../quick/scrobbling.py" line="79"/>
+        <source>Timed out waiting for Last.fm. Try again.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../quick/scrobbling.py" line="129"/>
+        <source>Paste your token first.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../quick/scrobbling.py" line="134"/>
+        <source>Checking…</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../quick/scrobbling.py" line="144"/>
+        <source>That token didn&apos;t work — check it and try again.</source>
+        <translation type="unfinished"></translation>
     </message>
 </context>
 <context>
@@ -3736,7 +3794,7 @@ Subsonic requiere permiso de administrador para crear / editar / eliminar.</tran
     </message>
     <message>
         <location filename="../settings_page_display.py" line="344"/>
-        <source>New phone interface (beta) — restart to apply</source>
+        <source>Phone interface — restart to apply</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
@@ -4260,56 +4318,129 @@ Ejecuta pywal (o wallust) una vez para que genere una paleta, y vuelve a activar
     </message>
     <message>
         <location filename="../quick/qml/SettingsPage.qml" line="158"/>
+        <source>SOUND</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../quick/qml/SettingsPage.qml" line="164"/>
+        <source>Bit-perfect playback is on, so the equalizer and crossfade are off.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../quick/qml/SettingsPage.qml" line="173"/>
+        <source>Equalizer</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../quick/qml/SettingsPage.qml" line="181"/>
+        <source>Preset</source>
+        <translation type="unfinished">Preajuste</translation>
+    </message>
+    <message>
+        <location filename="../quick/qml/SettingsPage.qml" line="182"/>
+        <source>Custom</source>
+        <translation type="unfinished">Personalizado</translation>
+    </message>
+    <message>
+        <location filename="../quick/qml/SettingsPage.qml" line="227"/>
+        <source>Crossfade between songs</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../quick/qml/SettingsPage.qml" line="245"/>
+        <source>%1 s</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../quick/qml/SettingsPage.qml" line="254"/>
+        <source>Lyrics size</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../quick/qml/SettingsPage.qml" line="260"/>
+        <source>SCROBBLING</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../quick/qml/SettingsPage.qml" line="273"/>
+        <location filename="../quick/qml/SettingsPage.qml" line="301"/>
+        <source>Connected as %1</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../quick/qml/SettingsPage.qml" line="282"/>
+        <location filename="../quick/qml/SettingsPage.qml" line="311"/>
+        <source>Disconnect</source>
+        <translation type="unfinished">Desconectar</translation>
+    </message>
+    <message>
+        <location filename="../quick/qml/SettingsPage.qml" line="283"/>
+        <source>Cancel</source>
+        <translation type="unfinished">Cancelar</translation>
+    </message>
+    <message>
+        <location filename="../quick/qml/SettingsPage.qml" line="283"/>
+        <location filename="../quick/qml/SettingsPage.qml" line="336"/>
+        <source>Connect</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../quick/qml/SettingsPage.qml" line="325"/>
+        <source>User token (listenbrainz.org/settings)</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../quick/qml/SettingsPage.qml" line="342"/>
         <source>OFFLINE</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../quick/qml/SettingsPage.qml" line="163"/>
+        <location filename="../quick/qml/SettingsPage.qml" line="347"/>
         <source>Offline mode — only play downloads</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../quick/qml/SettingsPage.qml" line="171"/>
+        <location filename="../quick/qml/SettingsPage.qml" line="355"/>
         <source>Download on Wi-Fi only</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../quick/qml/SettingsPage.qml" line="176"/>
+        <location filename="../quick/qml/SettingsPage.qml" line="360"/>
         <source>CASTING</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../quick/qml/SettingsPage.qml" line="190"/>
+        <location filename="../quick/qml/SettingsPage.qml" line="374"/>
         <source>INTERFACE</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../quick/qml/SettingsPage.qml" line="195"/>
-        <source>This is the new phone interface (beta). You can go back to the classic one any time.</source>
+        <location filename="../quick/qml/SettingsPage.qml" line="379"/>
+        <source>This is the phone interface. You can go back to the classic one any time.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../quick/qml/SettingsPage.qml" line="203"/>
+        <location filename="../quick/qml/SettingsPage.qml" line="387"/>
         <source>Use the classic interface</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../quick/qml/SettingsPage.qml" line="206"/>
+        <location filename="../quick/qml/SettingsPage.qml" line="390"/>
         <source>Restart jellytoast to switch</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../quick/qml/SettingsPage.qml" line="210"/>
+        <location filename="../quick/qml/SettingsPage.qml" line="394"/>
         <source>ABOUT</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../quick/qml/SettingsPage.qml" line="227"/>
+        <location filename="../quick/qml/SettingsPage.qml" line="411"/>
         <source>Sign out?</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../quick/qml/SettingsPage.qml" line="233"/>
+        <location filename="../quick/qml/SettingsPage.qml" line="417"/>
         <source>Playback stops, the queue is cleared and pending downloads are cancelled.</source>
         <translation type="unfinished"></translation>
     </message>

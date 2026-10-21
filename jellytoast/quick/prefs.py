@@ -23,6 +23,7 @@ class Prefs(QObject):
         bus = PlayerBus.get()
         bus.replaygain_changed.connect(lambda _m: self.changed.emit())
         bus.offline_mode_changed.connect(lambda _on: self.changed.emit())
+        bus.bit_perfect_active_changed.connect(lambda _on: self.changed.emit())
 
     # ── option lists ({label, value}) ──
     def _qualities(self):
@@ -129,6 +130,109 @@ class Prefs(QObject):
 
         st = _settings()
         apply_theme_family(st.theme_family or "jellytoast", mode, bool(st.frosted))
+        self.changed.emit()
+
+    # ── sound: equalizer + crossfade (the desktop Playback / EQ pages' keys
+    #    and signals; both are off while bit-perfect playback is on) ──
+    def _bit_perfect(self) -> bool:
+        return bool(getattr(PlayerBus.get(), "bit_perfect_active", False))
+
+    bitPerfect = Property(bool, _bit_perfect, notify=changed)
+
+    def _eq_presets(self):
+        from jellytoast.eq_presets import PRESETS
+
+        names = list(PRESETS) + sorted(_settings().eq_user_presets or {})
+        return names + (["Custom"] if self._eq_preset() == "Custom" else [])
+
+    def _eq_preset(self) -> str:
+        return _settings().eq_preset or "Flat"
+
+    def _eq_bands(self):
+        return [float(b) for b in (_settings().eq_bands or [0.0] * 10)]
+
+    eqEnabled = Property(bool, lambda self: bool(_settings().eq_enabled), notify=changed)
+    eqPreset = Property(str, _eq_preset, notify=changed)
+    eqPresets = Property("QVariantList", _eq_presets, notify=changed)
+    eqBands = Property("QVariantList", _eq_bands, notify=changed)
+    eqFrequencies = Property(
+        "QVariantList",
+        lambda self: list(__import__("jellytoast.eq_presets", fromlist=["x"]).BAND_FREQUENCIES),
+        constant=True,
+    )
+
+    def _emit_eq(self) -> None:
+        st = _settings()
+        PlayerBus.get().eq_changed.emit(bool(st.eq_enabled), list(st.eq_bands))
+        self.changed.emit()
+
+    @Slot(bool)
+    def setEqEnabled(self, on: bool) -> None:  # noqa: N802
+        _settings().eq_enabled = bool(on)
+        self._emit_eq()
+
+    @Slot(str)
+    def setEqPreset(self, name: str) -> None:  # noqa: N802
+        from jellytoast.eq_presets import PRESETS
+
+        st = _settings()
+        bands = PRESETS.get(name) or (st.eq_user_presets or {}).get(name)
+        if isinstance(bands, dict):  # user presets carry {bands, preamp}
+            st.eq_preamp = float(bands.get("preamp") or 0.0)
+            bands = bands.get("bands")
+        if not bands:
+            return
+        st.eq_bands = [float(b) for b in bands]
+        st.eq_preset = name
+        self._emit_eq()
+
+    @Slot(int, float)
+    def setEqBand(self, index: int, db: float) -> None:  # noqa: N802
+        from jellytoast.eq_presets import GAIN_LIMIT_DB
+
+        st = _settings()
+        bands = self._eq_bands()
+        if not (0 <= index < len(bands)):
+            return
+        bands[index] = max(-GAIN_LIMIT_DB, min(GAIN_LIMIT_DB, round(float(db), 1)))
+        st.eq_bands = bands
+        st.eq_preset = "Custom"
+        self._emit_eq()
+
+    crossfade = Property(bool, lambda self: bool(_settings().crossfade_enabled), notify=changed)
+    crossfadeSeconds = Property(
+        float, lambda self: _settings().crossfade_duration_ms / 1000.0, notify=changed
+    )
+
+    @Slot(bool)
+    def setCrossfade(self, on: bool) -> None:  # noqa: N802
+        _settings().crossfade_enabled = bool(on)
+        PlayerBus.get().crossfade_changed.emit(bool(on))
+        self.changed.emit()
+
+    @Slot(float)
+    def setCrossfadeSeconds(self, seconds: float) -> None:  # noqa: N802
+        _settings().crossfade_duration_ms = int(round(seconds * 1000))
+        self.changed.emit()
+
+    # ── lyrics size ──
+    def _lyrics_sizes(self):
+        return [
+            {"label": self.tr("Small"), "value": "small"},
+            {"label": self.tr("Default"), "value": "default"},
+            {"label": self.tr("Large"), "value": "large"},
+            {"label": self.tr("Largest"), "value": "largest"},
+        ]
+
+    lyricsSizes = Property("QVariantList", _lyrics_sizes, constant=True)
+    lyricsSize = Property(
+        str, lambda self: _settings().lyrics_font_size or "default", notify=changed
+    )
+
+    @Slot(str)
+    def setLyricsSize(self, size: str) -> None:  # noqa: N802
+        _settings().lyrics_font_size = size
+        PlayerBus.get().lyrics_font_size_changed.emit(size)
         self.changed.emit()
 
     # ── library view (grid / list), shared with the desktop library ──

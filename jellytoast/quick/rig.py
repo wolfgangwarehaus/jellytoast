@@ -396,6 +396,33 @@ class Rig:
             last = p
         raise RigError(f"{target!r} kept moving")
 
+    def reveal(self, target: Target, margin: float = 80) -> QQuickItem:
+        """Scroll the nearest scrolling ancestor just enough that ``target``
+        is fully on screen (as a person would before tapping it)."""
+
+        it = self.find(target, visible=False) if isinstance(target, str) else self.get(target)
+        if it is None:
+            raise RigError(f"no item {target!r}")
+        flick = it.parentItem()
+        while flick is not None and not flick.inherits("QQuickFlickable"):
+            flick = flick.parentItem()
+        if flick is None:
+            return it
+        top = it.mapToItem(flick, QPointF(0, 0)).y()
+        bottom = top + it.height()
+        cy = float(flick.property("contentY"))
+        if top < margin:
+            cy += top - margin
+        elif bottom > flick.height() - margin:
+            cy += bottom - (flick.height() - margin)
+        else:
+            return it
+        lo = float(flick.property("originY") or 0)
+        hi = lo + max(0.0, float(flick.property("contentHeight")) - flick.height())
+        flick.setProperty("contentY", max(lo, min(hi, cy)))
+        self.next_frame()
+        return it
+
     def wait_idle(self, timeout: float = 10.0) -> None:
         """Until no model is loading and the page stack has stopped moving."""
 

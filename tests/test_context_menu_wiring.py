@@ -89,6 +89,11 @@ def _no_downloads(monkeypatch):
     from jellytoast import offline
 
     monkeypatch.setattr(offline, "is_downloaded", lambda _id: False)
+    # "Add to playlist" shows only with a signed-in provider; whether one
+    # is around depends on test order — these menus are pinned without it.
+    from jellytoast import playlist_actions
+
+    monkeypatch.setattr(playlist_actions, "available", lambda: False)
 
 
 def _make_library_view(kind: str):

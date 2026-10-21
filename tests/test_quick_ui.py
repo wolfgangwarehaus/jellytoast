@@ -1006,3 +1006,77 @@ def test_now_playing_shows_live_radio(quick):
     assert quick.find("seekBar") is None
     PlayerBus.get().queue_context_changed.emit(QueueContext())  # back to music
     quick.wait_until(lambda: quick.find("liveBadge") is None)
+
+
+# ── settings: sound, lyrics size, scrobbling ──
+
+
+def test_settings_sound_and_lyrics(quick):
+    from jellytoast.settings import get_settings
+
+    s = get_settings()
+    saved = (s.eq_enabled, list(s.eq_bands), s.eq_preset, s.crossfade_enabled, s.lyrics_font_size)
+    spy = _Spy("eq_changed", "crossfade_changed", "lyrics_font_size_changed")
+    try:
+        s.eq_enabled, s.crossfade_enabled = False, False
+        _open_settings(quick)
+        quick.wait_for("settingsPage")
+        quick.wait_idle()
+        quick.tap("eqSwitch")
+        assert s.eq_enabled and spy.got["eq_changed"][-1][0] is True
+        quick.wait_for("eqPresetRow")
+        quick.tap("eqPresetRow")
+        quick.tap("text:Bass Boost")
+        assert s.eq_preset == "Bass Boost" and spy.got["eq_changed"][-1][1][0] == 7.0
+        quick.eval('prefs.setEqBand(9, 4)')  # a slider release
+        assert s.eq_preset == "Custom" and s.eq_bands[9] == 4.0
+        quick.reveal("crossfadeSwitch")
+        quick.tap("crossfadeSwitch")
+        assert s.crossfade_enabled and spy.got["crossfade_changed"][-1] == (True,)
+        quick.reveal("lyricsSizeRow")
+        quick.tap("lyricsSizeRow")
+        quick.tap("text:Largest")
+        assert s.lyrics_font_size == "largest" and spy.got["lyrics_font_size_changed"][-1] == ("largest",)
+    finally:
+        spy.close()
+        s.eq_enabled, s.eq_bands, s.eq_preset = saved[0], saved[1], saved[2]
+        s.crossfade_enabled, s.lyrics_font_size = saved[3], saved[4]
+
+
+def test_scrobbling_connect(quick, monkeypatch):
+    from jellytoast.quick import scrobbling as sc
+    from jellytoast.scrobble import lastfm, listenbrainz
+    from jellytoast.settings import get_settings
+
+    s = get_settings()
+    saved = (s.lastfm_session_key, s.lastfm_username, s.lastfm_enabled,
+             s.listenbrainz_token, s.listenbrainz_username, s.listenbrainz_enabled)
+    opened = []
+    monkeypatch.setattr(sc.QDesktopServices, "openUrl", lambda url: opened.append(url.toString()))
+    monkeypatch.setattr(lastfm, "get_token", lambda: "tok123")
+    sessions = iter([None, {"key": "sk", "name": "august"}])
+    monkeypatch.setattr(lastfm, "get_session", lambda token: next(sessions))
+    monkeypatch.setattr(sc, "_POLL_MS", 50)
+    monkeypatch.setattr(listenbrainz, "validate_token", lambda token, url="": "aug" if token == "good" else None)
+    try:
+        s.lastfm_session_key, s.listenbrainz_token, s.listenbrainz_username = "", "", ""
+        scr = quick.engine.rootContext().contextProperty("scrobbling")
+        scr._poll.setInterval(50)
+        _open_settings(quick)
+        quick.wait_for("settingsPage")
+        quick.wait_idle()
+        quick.reveal("lastfmButton")
+        quick.tap("lastfmButton")
+        quick.wait_until(lambda: s.lastfm_session_key == "sk", timeout=5)
+        assert opened and "tok123" in opened[0] and s.lastfm_username == "august" and s.lastfm_enabled
+        quick.get("listenbrainzToken").setProperty("text", "nope")
+        quick.reveal("listenbrainzConnect")
+        quick.tap("listenbrainzConnect")
+        quick.wait_until(lambda: "didn't work" in scr.property("listenbrainzStatus"))
+        quick.get("listenbrainzToken").setProperty("text", "good")
+        quick.tap("listenbrainzConnect")
+        quick.wait_until(lambda: s.listenbrainz_username == "aug")
+        assert s.listenbrainz_enabled
+    finally:
+        (s.lastfm_session_key, s.lastfm_username, s.lastfm_enabled,
+         s.listenbrainz_token, s.listenbrainz_username, s.listenbrainz_enabled) = saved

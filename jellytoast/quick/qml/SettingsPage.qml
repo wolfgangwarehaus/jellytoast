@@ -155,6 +155,190 @@ Item {
                 font.pixelSize: 12
             }
 
+            Heading { text: qsTr("SOUND") }
+            Label {
+                Layout.fillWidth: true
+                leftPadding: 20; rightPadding: 20
+                visible: prefs.bitPerfect
+                wrapMode: Text.WordWrap
+                text: qsTr("Bit-perfect playback is on, so the equalizer and crossfade are off.")
+                color: theme.textDim
+                font.pixelSize: 12
+            }
+            SwitchRow {
+                objectName: "eqSwitch"
+                Layout.fillWidth: true
+                Layout.leftMargin: 12; Layout.rightMargin: 12
+                enabled: !prefs.bitPerfect
+                text: qsTr("Equalizer")
+                checked: prefs.eqEnabled
+                onToggled: prefs.setEqEnabled(checked)
+            }
+            ChoiceRow {
+                objectName: "eqPresetRow"
+                visible: prefs.eqEnabled
+                Layout.leftMargin: 12; Layout.rightMargin: 12
+                label: qsTr("Preset")
+                options: prefs.eqPresets.map(n => ({ label: n === "Custom" ? qsTr("Custom") : n, value: n }))
+                value: prefs.eqPreset
+                onPicked: v => prefs.setEqPreset(v)
+            }
+            // Ten bands, ±12 dB. Release a slider to apply it.
+            Row {
+                objectName: "eqBands"
+                Layout.alignment: Qt.AlignHCenter
+                Layout.topMargin: 4
+                visible: prefs.eqEnabled
+                spacing: 2
+                Repeater {
+                    model: 10
+                    Column {
+                        required property int index
+                        spacing: 2
+                        Slider {
+                            id: band
+                            objectName: "eqBand" + index
+                            orientation: Qt.Vertical
+                            width: 34
+                            height: 150
+                            from: -12; to: 12; stepSize: 0.5
+                            value: prefs.eqBands[index] || 0
+                            focusPolicy: Qt.NoFocus
+                            onPressedChanged: if (!pressed) prefs.setEqBand(index, value)
+                        }
+                        Label {
+                            width: 34
+                            horizontalAlignment: Text.AlignHCenter
+                            text: {
+                                var f = prefs.eqFrequencies[index]
+                                return f >= 1000 ? (f / 1000) + "k" : String(f)
+                            }
+                            color: theme.textDim
+                            font.pixelSize: 10
+                        }
+                    }
+                }
+            }
+            SwitchRow {
+                objectName: "crossfadeSwitch"
+                Layout.fillWidth: true
+                Layout.leftMargin: 12; Layout.rightMargin: 12
+                enabled: !prefs.bitPerfect
+                text: qsTr("Crossfade between songs")
+                checked: prefs.crossfade
+                onToggled: prefs.setCrossfade(checked)
+            }
+            RowLayout {
+                Layout.fillWidth: true
+                Layout.leftMargin: 20; Layout.rightMargin: 20
+                visible: prefs.crossfade
+                Slider {
+                    id: xf
+                    objectName: "crossfadeSlider"
+                    Layout.fillWidth: true
+                    from: 1; to: 10; stepSize: 0.5
+                    value: prefs.crossfadeSeconds
+                    focusPolicy: Qt.NoFocus
+                    onPressedChanged: if (!pressed) prefs.setCrossfadeSeconds(value)
+                }
+                Label {
+                    text: qsTr("%1 s").arg(xf.value.toFixed(1))
+                    color: theme.textDim
+                    font.pixelSize: 14
+                    font.features: { "tnum": 1 }
+                }
+            }
+            ChoiceRow {
+                objectName: "lyricsSizeRow"
+                Layout.leftMargin: 12; Layout.rightMargin: 12
+                label: qsTr("Lyrics size")
+                options: prefs.lyricsSizes
+                value: prefs.lyricsSize
+                onPicked: v => prefs.setLyricsSize(v)
+            }
+
+            Heading { text: qsTr("SCROBBLING") }
+            // Last.fm
+            RowLayout {
+                Layout.fillWidth: true
+                Layout.leftMargin: 20; Layout.rightMargin: 12
+                Layout.preferredHeight: 52
+                ColumnLayout {
+                    Layout.fillWidth: true
+                    spacing: 1
+                    Label { text: "Last.fm"; color: theme.text; font.pixelSize: 16 }
+                    Label {
+                        Layout.fillWidth: true
+                        visible: text !== ""
+                        text: scrobbling.lastfmConnected ? qsTr("Connected as %1").arg(scrobbling.lastfmUser)
+                                                         : scrobbling.lastfmStatus
+                        color: theme.textDim
+                        font.pixelSize: 12
+                        wrapMode: Text.WordWrap
+                    }
+                }
+                PillButton {
+                    objectName: "lastfmButton"
+                    text: scrobbling.lastfmConnected ? qsTr("Disconnect")
+                          : scrobbling.lastfmWaiting ? qsTr("Cancel") : qsTr("Connect")
+                    onClicked: scrobbling.lastfmConnected ? scrobbling.disconnectLastfm()
+                               : scrobbling.lastfmWaiting ? scrobbling.cancelLastfm() : scrobbling.connectLastfm()
+                }
+            }
+            // ListenBrainz
+            RowLayout {
+                Layout.fillWidth: true
+                Layout.leftMargin: 20; Layout.rightMargin: 12
+                Layout.preferredHeight: 52
+                ColumnLayout {
+                    Layout.fillWidth: true
+                    spacing: 1
+                    Label { text: "ListenBrainz"; color: theme.text; font.pixelSize: 16 }
+                    Label {
+                        Layout.fillWidth: true
+                        visible: text !== ""
+                        text: scrobbling.listenbrainzConnected
+                              ? qsTr("Connected as %1").arg(scrobbling.listenbrainzUser)
+                              : scrobbling.listenbrainzStatus
+                        color: theme.textDim
+                        font.pixelSize: 12
+                        wrapMode: Text.WordWrap
+                    }
+                }
+                PillButton {
+                    objectName: "listenbrainzDisconnect"
+                    visible: scrobbling.listenbrainzConnected
+                    text: qsTr("Disconnect")
+                    onClicked: scrobbling.disconnectListenbrainz()
+                }
+            }
+            RowLayout {
+                Layout.fillWidth: true
+                Layout.leftMargin: 20; Layout.rightMargin: 12
+                visible: !scrobbling.listenbrainzConnected
+                spacing: 8
+                TextField {
+                    id: lbToken
+                    objectName: "listenbrainzToken"
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: 44
+                    placeholderText: qsTr("User token (listenbrainz.org/settings)")
+                    placeholderTextColor: theme.textFaint
+                    color: theme.text
+                    font.pixelSize: 14
+                    leftPadding: 12
+                    echoMode: TextInput.PasswordEchoOnEdit
+                    inputMethodHints: Qt.ImhNoAutoUppercase | Qt.ImhNoPredictiveText
+                    background: Rectangle { radius: 10; color: theme.surface }
+                }
+                PillButton {
+                    objectName: "listenbrainzConnect"
+                    text: qsTr("Connect")
+                    enabled: lbToken.text.trim() !== ""
+                    onClicked: scrobbling.connectListenbrainz(lbToken.text)
+                }
+            }
+
             Heading { text: qsTr("OFFLINE") }
             SwitchRow {
                 objectName: "offlineModeSwitch"
@@ -192,7 +376,7 @@ Item {
                 Layout.fillWidth: true
                 leftPadding: 20; rightPadding: 20; topPadding: 6
                 wrapMode: Text.WordWrap
-                text: qsTr("This is the new phone interface (beta). You can go back to the classic one any time.")
+                text: qsTr("This is the phone interface. You can go back to the classic one any time.")
                 color: theme.textDim
                 font.pixelSize: 13
             }

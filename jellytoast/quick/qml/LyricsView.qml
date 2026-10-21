@@ -55,7 +55,8 @@ Item {
             wrapMode: Text.WordWrap
             text: line || "♪"
             color: !lyrics.synced || now ? theme.text : theme.textFaint
-            font.pixelSize: 22
+            // Settings → Lyrics size.
+            font.pixelSize: ({ small: 18, "default": 22, large: 26, largest: 30 })[prefs.lyricsSize] || 22
             font.weight: now ? Font.Bold : Font.DemiBold
             Behavior on color { ColorAnimation { duration: 200 } }
             TapHandler {
