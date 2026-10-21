@@ -33,6 +33,84 @@ def _silence_play_reports() -> None:
     logger.warning("play reports to the server are OFF (JT_NO_PLAY_REPORTS=1)")
 
 
+def _start_services(app, core: dict, *, scrobble: bool = True) -> None:
+    """The window-free services the Widgets app starts after first paint
+    (app.main → _post_show_init), and the same flushes on quit."""
+
+    def _try(what, fn):
+        try:
+            return fn()
+        except Exception as e:  # a service must never take the UI down
+            logger.warning("%s unavailable: %s", what, e)
+
+    from jellytoast import offline
+
+    _try("offline / connectivity", offline.init)
+
+    def _sleep():
+        from jellytoast.power import SleepInhibitor
+
+        inh = SleepInhibitor()
+        inh.start()
+        core["sleep"] = inh
+
+    _try("sleep inhibitor", _sleep)
+
+    def _notify():
+        from jellytoast.notifications.nowplaying import NowPlayingNotifier
+
+        n = NowPlayingNotifier(app)
+        n.start()
+        core["notifier"] = n
+
+    _try("now-playing notifications", _notify)
+
+    if scrobble:
+
+        def _scrobble():
+            from jellytoast.scrobble import get_scrobble_manager, refresh_server_scrobble_flags
+
+            get_scrobble_manager().flush_pending()
+            refresh_server_scrobble_flags()
+
+        _try("scrobbling", _scrobble)
+    else:
+        logger.warning("Last.fm / ListenBrainz scrobbling is OFF (dev rig)")
+
+    def _cleanup():
+        if scrobble:
+            _try(
+                "scrobble flush",
+                lambda: (
+                    __import__("jellytoast.scrobble", fromlist=["get_scrobble_manager"])
+                    .get_scrobble_manager()
+                    .flush_current_on_quit()
+                ),
+            )
+        _try(
+            "download suspend",
+            lambda: __import__("jellytoast.offline.manager", fromlist=["suspend"]).suspend(),
+        )
+        if core.get("queue") is not None:
+            _try("queue save", core["queue"].flush_pending_save)
+        _try(
+            "image cache flush",
+            lambda: __import__(
+                "jellytoast.image_cache", fromlist=["flush_pending_writes"]
+            ).flush_pending_writes(timeout_s=1.0),
+        )
+        if core.get("cast") is not None:
+            _try("cast cleanup", core["cast"].cleanup)
+        if core.get("mpv") is not None:
+            _try("mpv shutdown", core["mpv"].shutdown)
+        if core.get("mpris") is not None:
+            _try("media controls stop", core["mpris"].stop)
+        if core.get("sleep") is not None:
+            _try("sleep inhibitor stop", core["sleep"].stop)
+
+    app.aboutToQuit.connect(_cleanup)
+
+
 def _apply_font(app) -> None:
     """Settings → Display → Font, else the desktop app's built-in stack
     (Inter → Noto Sans → sans-serif; the Widgets UI gets it from QSS)."""
@@ -90,6 +168,7 @@ def build_engine(app, *, start_core: bool = True):
                 core["mpris"] = mpris
             except Exception as e:  # never block the UI on the session bus
                 logger.warning("media controls unavailable: %s", e)
+        _start_services(app, core, scrobble=os.environ.get("JT_NO_PLAY_REPORTS") != "1")
 
     # Our own components + theme; never the platform style — Plasma exports
     # QT_QUICK_CONTROLS_STYLE=org.kde.breeze, which pip's PySide6 can't load.

@@ -2,6 +2,58 @@
 <!DOCTYPE TS>
 <TS version="2.1" language="es">
 <context>
+    <name>Actions</name>
+    <message>
+        <location filename="../quick/actions.py" line="50"/>
+        <source>Nothing to play</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../quick/actions.py" line="62"/>
+        <source>Playing next</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../quick/actions.py" line="65"/>
+        <source>Added to queue</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../quick/actions.py" line="82"/>
+        <source>Added to favorites</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../quick/actions.py" line="82"/>
+        <source>Removed from favorites</source>
+        <translation type="unfinished"></translation>
+    </message>
+</context>
+<context>
+    <name>AlbumPage</name>
+    <message>
+        <location filename="../quick/qml/AlbumPage.qml" line="71"/>
+        <source>Play</source>
+        <translation type="unfinished">Reproducir</translation>
+    </message>
+    <message>
+        <location filename="../quick/qml/AlbumPage.qml" line="79"/>
+        <source>Shuffle</source>
+        <translation type="unfinished">Aleatorio</translation>
+    </message>
+    <message>
+        <location filename="../quick/qml/AlbumPage.qml" line="102"/>
+        <location filename="../quick/qml/AlbumPage.qml" line="111"/>
+        <source>Added to queue</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../quick/qml/AlbumPage.qml" line="111"/>
+        <source>Playing next</source>
+        <translation type="unfinished"></translation>
+    </message>
+</context>
+<context>
     <name>AppearanceRevertDialog</name>
     <message>
         <location filename="../appearance_confirm.py" line="50"/>
@@ -221,7 +273,7 @@ firewalld:
 <context>
     <name>ClassicalWork</name>
     <message>
-        <location filename="../ui_helpers.py" line="1110"/>
+        <location filename="../ui_helpers.py" line="1132"/>
         <source>Movement {0} of {1}</source>
         <translation>Movimiento {0} de {1}</translation>
     </message>
@@ -857,6 +909,14 @@ Esto libera el almacenamiento de inmediato. Tu biblioteca en el servidor no se v
     </message>
 </context>
 <context>
+    <name>GenresPage</name>
+    <message>
+        <location filename="../quick/qml/GenresPage.qml" line="8"/>
+        <source>Genres</source>
+        <translation type="unfinished">Géneros</translation>
+    </message>
+</context>
+<context>
     <name>GenresView</name>
     <message>
         <location filename="../genres_view.py" line="415"/>
@@ -900,6 +960,29 @@ Esto libera el almacenamiento de inmediato. Tu biblioteca en el servidor no se v
         <location filename="../hotkeys.py" line="150"/>
         <source>Open currently-playing album</source>
         <translation>Abrir el álbum en reproducción</translation>
+    </message>
+</context>
+<context>
+    <name>ItemMenu</name>
+    <message>
+        <location filename="../quick/qml/ItemMenu.qml" line="21"/>
+        <source>Play</source>
+        <translation type="unfinished">Reproducir</translation>
+    </message>
+    <message>
+        <location filename="../quick/qml/ItemMenu.qml" line="27"/>
+        <source>Shuffle</source>
+        <translation type="unfinished">Aleatorio</translation>
+    </message>
+    <message>
+        <location filename="../quick/qml/ItemMenu.qml" line="33"/>
+        <source>Play next</source>
+        <translation type="unfinished">Reproducir a continuación</translation>
+    </message>
+    <message>
+        <location filename="../quick/qml/ItemMenu.qml" line="38"/>
+        <source>Add to queue</source>
+        <translation type="unfinished">Añadir a la cola</translation>
     </message>
 </context>
 <context>
@@ -1026,22 +1109,22 @@ jellytoast funcionará, pero las funciones de bandeja no estarán disponibles.</
         <translation>Ver como cuadrícula</translation>
     </message>
     <message>
-        <location filename="../top_bar.py" line="829"/>
+        <location filename="../top_bar.py" line="841"/>
         <source>Ascending</source>
         <translation>Ascendente</translation>
     </message>
     <message>
-        <location filename="../top_bar.py" line="830"/>
+        <location filename="../top_bar.py" line="842"/>
         <source>Descending</source>
         <translation>Descendente</translation>
     </message>
     <message>
-        <location filename="../top_bar.py" line="873"/>
+        <location filename="../top_bar.py" line="885"/>
         <source>Sort: {0} ({1})</source>
         <translation>Orden: {0} ({1})</translation>
     </message>
     <message>
-        <location filename="../top_bar.py" line="1180"/>
+        <location filename="../top_bar.py" line="1192"/>
         <source>All libraries</source>
         <translation>Todas las bibliotecas</translation>
     </message>
@@ -1122,6 +1205,34 @@ jellytoast funcionará, pero las funciones de bandeja no estarán disponibles.</
         <location filename="../library_grid.py" line="2644"/>
         <source>Loading albums…</source>
         <translation>Cargando álbumes…</translation>
+    </message>
+</context>
+<context>
+    <name>LibraryGridPage</name>
+    <message>
+        <location filename="../quick/qml/LibraryGridPage.qml" line="10"/>
+        <source>Albums</source>
+        <translation type="unfinished">Álbumes</translation>
+    </message>
+    <message>
+        <location filename="../quick/qml/LibraryGridPage.qml" line="32"/>
+        <source>Sign in with the regular jellytoast app first, then relaunch.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../quick/qml/LibraryGridPage.qml" line="38"/>
+        <source>Nothing here yet</source>
+        <translation type="unfinished">Aquí no hay nada todavía</translation>
+    </message>
+    <message>
+        <location filename="../quick/qml/LibraryGridPage.qml" line="137"/>
+        <source>Play</source>
+        <translation type="unfinished">Reproducir</translation>
+    </message>
+    <message>
+        <location filename="../quick/qml/LibraryGridPage.qml" line="142"/>
+        <source>Shuffle</source>
+        <translation type="unfinished">Aleatorio</translation>
     </message>
 </context>
 <context>
@@ -1294,6 +1405,14 @@ jellytoast funcionará, pero las funciones de bandeja no estarán disponibles.</
     </message>
 </context>
 <context>
+    <name>LyricsView</name>
+    <message>
+        <location filename="../quick/qml/LyricsView.qml" line="23"/>
+        <source>No lyrics for this song</source>
+        <translation type="unfinished"></translation>
+    </message>
+</context>
+<context>
     <name>MacMenuBar</name>
     <message>
         <location filename="../macos_menubar.py" line="78"/>
@@ -1424,6 +1543,52 @@ jellytoast funcionará, pero las funciones de bandeja no estarán disponibles.</
         <location filename="../macos_menubar.py" line="272"/>
         <source>A native music client for Jellyfin &amp;amp; Subsonic.</source>
         <translation>Un cliente de música nativo para Jellyfin y Subsonic.</translation>
+    </message>
+</context>
+<context>
+    <name>Main</name>
+    <message>
+        <location filename="../quick/qml/Main.qml" line="28"/>
+        <source>Albums</source>
+        <translation type="unfinished">Álbumes</translation>
+    </message>
+    <message>
+        <location filename="../quick/qml/Main.qml" line="29"/>
+        <source>Artists</source>
+        <translation type="unfinished">Artistas</translation>
+    </message>
+    <message>
+        <location filename="../quick/qml/Main.qml" line="30"/>
+        <source>Playlists</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../quick/qml/Main.qml" line="31"/>
+        <source>Songs</source>
+        <translation type="unfinished">Canciones</translation>
+    </message>
+    <message>
+        <location filename="../quick/qml/Main.qml" line="32"/>
+        <source>Genres</source>
+        <translation type="unfinished">Géneros</translation>
+    </message>
+</context>
+<context>
+    <name>NowPlaying</name>
+    <message>
+        <location filename="../quick/qml/NowPlaying.qml" line="72"/>
+        <source>PLAYING FROM</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../quick/qml/NowPlaying.qml" line="95"/>
+        <source>Go to artist</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../quick/qml/NowPlaying.qml" line="103"/>
+        <source>Go to album</source>
+        <translation type="unfinished"></translation>
     </message>
 </context>
 <context>
@@ -1633,15 +1798,15 @@ jellytoast funcionará, pero las funciones de bandeja no estarán disponibles.</
     <message>
         <location filename="../now_playing_page.py" line="624"/>
         <location filename="../np_phone.py" line="101"/>
-        <location filename="../np_phone.py" line="140"/>
+        <location filename="../np_phone.py" line="145"/>
         <source>Favorite</source>
         <translation>Favorito</translation>
     </message>
     <message>
         <location filename="../now_playing_page.py" line="642"/>
-        <location filename="../now_playing_page.py" line="1178"/>
-        <location filename="../np_phone.py" line="456"/>
-        <location filename="../np_phone.py" line="576"/>
+        <location filename="../now_playing_page.py" line="1182"/>
+        <location filename="../np_phone.py" line="490"/>
+        <location filename="../np_phone.py" line="617"/>
         <source>Nothing Playing</source>
         <translation>Nada en reproducción</translation>
     </message>
@@ -1651,207 +1816,207 @@ jellytoast funcionará, pero las funciones de bandeja no estarán disponibles.</
         <translation> Reproducir</translation>
     </message>
     <message>
-        <location filename="../now_playing_page.py" line="752"/>
-        <location filename="../np_phone.py" line="194"/>
+        <location filename="../now_playing_page.py" line="756"/>
+        <location filename="../np_phone.py" line="202"/>
         <source>Shuffle</source>
         <translation>Aleatorio</translation>
     </message>
     <message>
-        <location filename="../now_playing_page.py" line="753"/>
-        <location filename="../np_phone.py" line="198"/>
+        <location filename="../now_playing_page.py" line="757"/>
+        <location filename="../np_phone.py" line="206"/>
         <source>Repeat</source>
         <translation>Repetir</translation>
     </message>
     <message>
-        <location filename="../now_playing_page.py" line="754"/>
-        <location filename="../np_phone.py" line="223"/>
+        <location filename="../now_playing_page.py" line="758"/>
+        <location filename="../np_phone.py" line="231"/>
         <source>Sleep timer</source>
         <translation>Temporizador de apagado</translation>
     </message>
     <message>
-        <location filename="../now_playing_page.py" line="755"/>
-        <location filename="../np_phone.py" line="219"/>
+        <location filename="../now_playing_page.py" line="759"/>
+        <location filename="../np_phone.py" line="227"/>
         <source>Cast</source>
         <translation>Enviar</translation>
     </message>
     <message>
-        <location filename="../now_playing_page.py" line="800"/>
+        <location filename="../now_playing_page.py" line="804"/>
         <source>Hide lyrics</source>
         <translation>Ocultar letra</translation>
     </message>
     <message>
-        <location filename="../now_playing_page.py" line="829"/>
+        <location filename="../now_playing_page.py" line="833"/>
         <source>● Live</source>
         <translation>● En vivo</translation>
     </message>
     <message>
-        <location filename="../now_playing_page.py" line="913"/>
+        <location filename="../now_playing_page.py" line="917"/>
         <source>UP NEXT</source>
         <translation>A CONTINUACIÓN</translation>
     </message>
     <message>
-        <location filename="../now_playing_page.py" line="967"/>
-        <location filename="../now_playing_page.py" line="1609"/>
+        <location filename="../now_playing_page.py" line="971"/>
+        <location filename="../now_playing_page.py" line="1613"/>
         <source>Nothing queued</source>
         <translation>Cola vacía</translation>
     </message>
     <message>
-        <location filename="../now_playing_page.py" line="968"/>
-        <location filename="../now_playing_page.py" line="1610"/>
+        <location filename="../now_playing_page.py" line="972"/>
+        <location filename="../now_playing_page.py" line="1614"/>
         <source>Pick an album, playlist, or song to start the queue.</source>
         <translation>Elige un álbum, lista o canción para empezar la cola.</translation>
     </message>
     <message>
-        <location filename="../now_playing_page.py" line="1197"/>
-        <location filename="../now_playing_page.py" line="1475"/>
-        <location filename="../now_playing_page.py" line="1483"/>
-        <location filename="../now_playing_page.py" line="1485"/>
+        <location filename="../now_playing_page.py" line="1201"/>
+        <location filename="../now_playing_page.py" line="1479"/>
+        <location filename="../now_playing_page.py" line="1487"/>
+        <location filename="../now_playing_page.py" line="1489"/>
         <source>QUEUE</source>
         <translation>COLA</translation>
     </message>
     <message>
-        <location filename="../now_playing_page.py" line="1303"/>
-        <location filename="../now_playing_page.py" line="1367"/>
-        <location filename="../now_playing_page.py" line="2088"/>
+        <location filename="../now_playing_page.py" line="1307"/>
+        <location filename="../now_playing_page.py" line="1371"/>
+        <location filename="../now_playing_page.py" line="2092"/>
         <source>Unknown</source>
         <translation>Desconocido</translation>
     </message>
     <message>
-        <location filename="../now_playing_page.py" line="1438"/>
-        <location filename="../now_playing_page.py" line="2013"/>
+        <location filename="../now_playing_page.py" line="1442"/>
+        <location filename="../now_playing_page.py" line="2017"/>
         <source>Loading…</source>
         <translation>Cargando…</translation>
     </message>
     <message>
-        <location filename="../now_playing_page.py" line="1444"/>
-        <location filename="../now_playing_page.py" line="1478"/>
+        <location filename="../now_playing_page.py" line="1448"/>
+        <location filename="../now_playing_page.py" line="1482"/>
         <source>ALBUM</source>
         <translation>ÁLBUM</translation>
     </message>
     <message>
-        <location filename="../now_playing_page.py" line="1445"/>
-        <location filename="../now_playing_page.py" line="1479"/>
+        <location filename="../now_playing_page.py" line="1449"/>
+        <location filename="../now_playing_page.py" line="1483"/>
         <source>PLAYLIST</source>
         <translation>LISTA</translation>
     </message>
     <message>
-        <location filename="../now_playing_page.py" line="1446"/>
-        <location filename="../now_playing_page.py" line="1480"/>
+        <location filename="../now_playing_page.py" line="1450"/>
+        <location filename="../now_playing_page.py" line="1484"/>
         <source>ARTIST</source>
         <translation>ARTISTA</translation>
     </message>
     <message>
-        <location filename="../now_playing_page.py" line="1447"/>
+        <location filename="../now_playing_page.py" line="1451"/>
         <source>BROWSING</source>
         <translation>EXPLORANDO</translation>
     </message>
     <message>
-        <location filename="../now_playing_page.py" line="1481"/>
+        <location filename="../now_playing_page.py" line="1485"/>
         <source>LIBRARY SHUFFLE</source>
         <translation>BIBLIOTECA ALEATORIA</translation>
     </message>
     <message>
-        <location filename="../now_playing_page.py" line="1482"/>
+        <location filename="../now_playing_page.py" line="1486"/>
         <source>SEARCH RESULTS</source>
         <translation>RESULTADOS DE BÚSQUEDA</translation>
     </message>
     <message>
-        <location filename="../now_playing_page.py" line="1484"/>
+        <location filename="../now_playing_page.py" line="1488"/>
         <source>INSTANT MIX</source>
         <translation>MEZCLA INSTANTÁNEA</translation>
     </message>
     <message>
-        <location filename="../now_playing_page.py" line="1694"/>
+        <location filename="../now_playing_page.py" line="1698"/>
         <source>Play next</source>
         <translation>Reproducir a continuación</translation>
     </message>
     <message>
-        <location filename="../now_playing_page.py" line="1695"/>
+        <location filename="../now_playing_page.py" line="1699"/>
         <source>Add to queue</source>
         <translation>Añadir a la cola</translation>
     </message>
     <message>
-        <location filename="../now_playing_page.py" line="1705"/>
+        <location filename="../now_playing_page.py" line="1709"/>
         <source>Remove from queue</source>
         <translation>Quitar de la cola</translation>
     </message>
     <message>
-        <location filename="../now_playing_page.py" line="1829"/>
+        <location filename="../now_playing_page.py" line="1833"/>
         <source>this album</source>
         <translation>este álbum</translation>
     </message>
     <message>
-        <location filename="../now_playing_page.py" line="1832"/>
+        <location filename="../now_playing_page.py" line="1836"/>
         <source>Remove download</source>
         <translation>Eliminar descarga</translation>
     </message>
     <message>
-        <location filename="../now_playing_page.py" line="1833"/>
+        <location filename="../now_playing_page.py" line="1837"/>
         <source>Remove the downloaded copy of “{0}”?</source>
         <translation>¿Eliminar la copia descargada de «{0}»?</translation>
     </message>
     <message>
-        <location filename="../now_playing_page.py" line="1834"/>
+        <location filename="../now_playing_page.py" line="1838"/>
         <source>Remove</source>
         <translation>Eliminar</translation>
     </message>
     <message>
-        <location filename="../now_playing_page.py" line="2083"/>
+        <location filename="../now_playing_page.py" line="2087"/>
         <source>Couldn&apos;t load</source>
         <translation>No se pudo cargar</translation>
     </message>
     <message>
-        <location filename="../now_playing_page.py" line="2152"/>
+        <location filename="../now_playing_page.py" line="2156"/>
         <source>●  LIVE  ·  {0}</source>
         <translation>●  EN VIVO  ·  {0}</translation>
     </message>
     <message>
-        <location filename="../now_playing_page.py" line="2154"/>
+        <location filename="../now_playing_page.py" line="2158"/>
         <source>●  LIVE</source>
         <translation>●  EN VIVO</translation>
     </message>
     <message>
-        <location filename="../now_playing_page.py" line="2159"/>
+        <location filename="../now_playing_page.py" line="2163"/>
         <source>PAUSED  ·  {0}</source>
         <translation>EN PAUSA  ·  {0}</translation>
     </message>
     <message>
-        <location filename="../now_playing_page.py" line="2161"/>
+        <location filename="../now_playing_page.py" line="2165"/>
         <source>PAUSED</source>
         <translation>EN PAUSA</translation>
     </message>
     <message>
-        <location filename="../now_playing_page.py" line="2186"/>
+        <location filename="../now_playing_page.py" line="2190"/>
         <source>song</source>
         <translation>canción</translation>
     </message>
     <message>
-        <location filename="../now_playing_page.py" line="2186"/>
+        <location filename="../now_playing_page.py" line="2190"/>
         <source>songs</source>
         <translation>canciones</translation>
     </message>
     <message>
-        <location filename="../now_playing_page.py" line="2188"/>
+        <location filename="../now_playing_page.py" line="2192"/>
         <source>track</source>
         <translation>pista</translation>
     </message>
     <message>
-        <location filename="../now_playing_page.py" line="2188"/>
+        <location filename="../now_playing_page.py" line="2192"/>
         <source>tracks</source>
         <translation>pistas</translation>
     </message>
     <message>
-        <location filename="../now_playing_page.py" line="2208"/>
+        <location filename="../now_playing_page.py" line="2212"/>
         <source>{0} min</source>
         <translation>{0} min</translation>
     </message>
     <message>
-        <location filename="../now_playing_page.py" line="2212"/>
+        <location filename="../now_playing_page.py" line="2216"/>
         <source>{0} hr</source>
         <translation>{0} h</translation>
     </message>
     <message>
-        <location filename="../now_playing_page.py" line="2213"/>
+        <location filename="../now_playing_page.py" line="2217"/>
         <source>{0} hr {1} min</source>
         <translation>{0} h {1} min</translation>
     </message>
@@ -1889,57 +2054,57 @@ jellytoast funcionará, pero las funciones de bandeja no estarán disponibles.</
     </message>
     <message>
         <location filename="../np_phone.py" line="102"/>
-        <location filename="../np_phone.py" line="141"/>
+        <location filename="../np_phone.py" line="146"/>
         <source>More</source>
         <translation>Más</translation>
     </message>
     <message>
-        <location filename="../np_phone.py" line="150"/>
+        <location filename="../np_phone.py" line="155"/>
         <source>No lyrics for this track</source>
         <translation>Esta canción no tiene letra</translation>
     </message>
     <message>
-        <location filename="../np_phone.py" line="195"/>
+        <location filename="../np_phone.py" line="203"/>
         <source>Previous</source>
         <translation>Anterior</translation>
     </message>
     <message>
-        <location filename="../np_phone.py" line="196"/>
+        <location filename="../np_phone.py" line="204"/>
         <source>Play / Pause</source>
         <translation>Reproducir / Pausar</translation>
     </message>
     <message>
-        <location filename="../np_phone.py" line="197"/>
+        <location filename="../np_phone.py" line="205"/>
         <source>Next</source>
         <translation>Siguiente</translation>
     </message>
     <message>
-        <location filename="../np_phone.py" line="220"/>
+        <location filename="../np_phone.py" line="228"/>
         <source>Lyrics</source>
         <translation>Letra</translation>
     </message>
     <message>
-        <location filename="../np_phone.py" line="221"/>
+        <location filename="../np_phone.py" line="229"/>
         <source>Visualizer</source>
         <translation>Visualizador</translation>
     </message>
     <message>
-        <location filename="../np_phone.py" line="222"/>
+        <location filename="../np_phone.py" line="230"/>
         <source>Queue</source>
         <translation>Cola</translation>
     </message>
     <message>
-        <location filename="../np_phone.py" line="537"/>
+        <location filename="../np_phone.py" line="578"/>
         <source>Download album</source>
         <translation>Descargar álbum</translation>
     </message>
     <message>
-        <location filename="../np_phone.py" line="540"/>
+        <location filename="../np_phone.py" line="581"/>
         <source>Remove album from favorites</source>
         <translation>Quitar el álbum de favoritos</translation>
     </message>
     <message>
-        <location filename="../np_phone.py" line="542"/>
+        <location filename="../np_phone.py" line="583"/>
         <source>Add album to favorites</source>
         <translation>Añadir el álbum a favoritos</translation>
     </message>
@@ -2114,9 +2279,22 @@ Revisa el PIN — la causa más común es una errata o un código caducado (el r
 <context>
     <name>QueueManager</name>
     <message>
-        <location filename="../queue_manager.py" line="686"/>
+        <location filename="../queue_manager.py" line="718"/>
         <source>Unknown</source>
         <translation>Desconocido</translation>
+    </message>
+</context>
+<context>
+    <name>QueueView</name>
+    <message>
+        <location filename="../quick/qml/QueueView.qml" line="16"/>
+        <source>The queue is empty</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../quick/qml/QueueView.qml" line="50"/>
+        <source>Remove</source>
+        <translation type="unfinished"></translation>
     </message>
 </context>
 <context>
@@ -2198,6 +2376,35 @@ Subsonic requiere permiso de administrador para crear / editar / eliminar.</tran
         <location filename="../radio_view.py" line="813"/>
         <source>Couldn&apos;t {0} station</source>
         <translation>No se pudo {0} la emisora</translation>
+    </message>
+</context>
+<context>
+    <name>SearchPage</name>
+    <message>
+        <location filename="../quick/qml/SearchPage.qml" line="9"/>
+        <source>Search</source>
+        <translation type="unfinished">Buscar</translation>
+    </message>
+    <message>
+        <location filename="../quick/qml/SearchPage.qml" line="25"/>
+        <source>Artists, albums, songs</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../quick/qml/SearchPage.qml" line="47"/>
+        <source>No matches</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../quick/qml/SearchPage.qml" line="103"/>
+        <location filename="../quick/qml/SearchPage.qml" line="117"/>
+        <source>Added to queue</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../quick/qml/SearchPage.qml" line="117"/>
+        <source>Playing next</source>
+        <translation type="unfinished"></translation>
     </message>
 </context>
 <context>
@@ -3519,6 +3726,25 @@ Ejecuta pywal (o wallust) una vez para que genere una paleta, y vuelve a activar
     </message>
 </context>
 <context>
+    <name>SongsPage</name>
+    <message>
+        <location filename="../quick/qml/SongsPage.qml" line="8"/>
+        <source>Songs</source>
+        <translation type="unfinished">Canciones</translation>
+    </message>
+    <message>
+        <location filename="../quick/qml/SongsPage.qml" line="37"/>
+        <location filename="../quick/qml/SongsPage.qml" line="58"/>
+        <source>Added to queue</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../quick/qml/SongsPage.qml" line="58"/>
+        <source>Playing next</source>
+        <translation type="unfinished"></translation>
+    </message>
+</context>
+<context>
     <name>SongsView</name>
     <message>
         <location filename="../songs_view.py" line="604"/>
@@ -3800,6 +4026,14 @@ La carátula por pista no se modifica con esta escritura masiva.</translation>
     </message>
 </context>
 <context>
+    <name>TrackRow</name>
+    <message>
+        <location filename="../quick/qml/TrackRow.qml" line="46"/>
+        <source>Add to queue</source>
+        <translation type="unfinished">Añadir a la cola</translation>
+    </message>
+</context>
+<context>
     <name>TrayController</name>
     <message>
         <location filename="../tray.py" line="31"/>
@@ -3862,29 +4096,29 @@ La carátula por pista no se modifica con esta escritura masiva.</translation>
 <context>
     <name>UiHelpers</name>
     <message>
-        <location filename="../ui_helpers.py" line="1505"/>
+        <location filename="../ui_helpers.py" line="1533"/>
         <source>Couldn&apos;t update favorite — check your connection.</source>
         <translation>No se pudo actualizar el favorito — comprueba tu conexión.</translation>
     </message>
     <message>
-        <location filename="../ui_helpers.py" line="3013"/>
+        <location filename="../ui_helpers.py" line="3041"/>
         <source>Deep Cuts: {0}</source>
         <translation>Rarezas: {0}</translation>
     </message>
     <message>
-        <location filename="../ui_helpers.py" line="3016"/>
-        <location filename="../ui_helpers.py" line="3030"/>
+        <location filename="../ui_helpers.py" line="3044"/>
+        <location filename="../ui_helpers.py" line="3058"/>
         <source>More like {0}</source>
         <translation>Más como {0}</translation>
     </message>
     <message>
-        <location filename="../ui_helpers.py" line="3022"/>
-        <location filename="../ui_helpers.py" line="3032"/>
+        <location filename="../ui_helpers.py" line="3050"/>
+        <location filename="../ui_helpers.py" line="3060"/>
         <source>{0} has no genre tags, add some to help suggestions.</source>
         <translation>{0} no tiene etiquetas de género; añade algunas para mejorar las sugerencias.</translation>
     </message>
     <message>
-        <location filename="../ui_helpers.py" line="3027"/>
+        <location filename="../ui_helpers.py" line="3055"/>
         <source>{0} Discoveries</source>
         <translation>Descubrimientos de {0}</translation>
     </message>

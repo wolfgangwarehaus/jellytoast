@@ -35,6 +35,7 @@ ApplicationWindow {
 
     function showSection(key) {
         section = key
+        player.section = key
         nowPlaying.close()
         var page
         if (key === "song")
@@ -183,7 +184,7 @@ ApplicationWindow {
             Layout.fillWidth: true
             Layout.fillHeight: true
             clip: true
-            Component.onCompleted: win.showSection("album")
+            Component.onCompleted: win.showSection(player.section)
 
             pushEnter: Transition {
                 ParallelAnimation {

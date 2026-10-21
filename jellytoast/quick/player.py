@@ -157,6 +157,20 @@ class PlayerController(QObject):
     def previous(self) -> None:
         self._bus.prev_track.emit()
 
+    def _get_section(self) -> str:
+        from jellytoast.settings import get_settings
+
+        return get_settings().quick_section
+
+    def _set_section(self, v: str) -> None:
+        from jellytoast.settings import get_settings
+
+        get_settings().quick_section = v
+
+    # Where the Quick UI's library opens (remembered across launches).
+    sectionChanged = Signal()
+    section = Property(str, _get_section, _set_section, notify=sectionChanged)
+
     @Slot(int)
     def seek(self, ms: int) -> None:
         self._position = int(ms)

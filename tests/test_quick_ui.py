@@ -253,3 +253,10 @@ def test_now_playing_lyrics_and_queue_surfaces(quick):
 
     quick.key("esc")  # back from the queue → cover
     assert quick.state()["nowPlaying"] and quick.eval("nowPlaying.surface") == "cover"
+
+
+def test_section_is_remembered(quick):
+    from jellytoast.settings import get_settings
+
+    _section(quick, "Playlists")
+    assert get_settings().quick_section == "playlist"

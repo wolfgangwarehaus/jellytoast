@@ -586,6 +586,17 @@ class Settings:
         )
 
     @property
+    def quick_section(self) -> str:
+        """Qt Quick phone UI: the library section it last showed (album |
+        artist | playlist | song | genre) — reopened at launch."""
+        v = str(self._s.value("quick/section", "album") or "album")
+        return v if v in ("album", "artist", "playlist", "song", "genre") else "album"
+
+    @quick_section.setter
+    def quick_section(self, v: str):
+        self._s.setValue("quick/section", str(v))
+
+    @property
     def media_integration_enabled(self) -> bool:
         """Whether to register jellytoast with the OS media controls —
         MPRIS (Linux: Plasma/GNOME media widget + media keys) and SMTC

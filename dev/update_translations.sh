@@ -4,7 +4,8 @@
 #   dev/update_translations.sh           # update every .ts, compile every .qm
 #   dev/update_translations.sh es        # also CREATE jellytoast/i18n/jellytoast_es.ts
 #
-# pyside6-lupdate scans jellytoast/*.py for self.tr()/translate() strings and
+# pyside6-lupdate scans jellytoast/*.py for self.tr()/translate() strings (and
+# the Qt Quick front end's jellytoast/quick/qml/*.qml for qsTr()) and
 # merges them into the .ts catalogs (existing translations are preserved;
 # removed strings are marked obsolete, not deleted). pyside6-lrelease compiles
 # each .ts into the .qm the app ships (package data in jellytoast/i18n/).
@@ -21,7 +22,7 @@ LUPDATE="$(command -v .venv/bin/pyside6-lupdate || command -v pyside6-lupdate)"
 LRELEASE="$(command -v .venv/bin/pyside6-lrelease || command -v pyside6-lrelease)"
 
 # Every app source file — the i18n package itself has no UI strings.
-mapfile -t SOURCES < <(find jellytoast -name '*.py' -not -path "$I18N_DIR/*" | sort)
+mapfile -t SOURCES < <(find jellytoast \( -name '*.py' -o -name '*.qml' \) -not -path "$I18N_DIR/*" | sort)
 
 # New-language bootstrap: seed an empty catalog so lupdate fills it below.
 for lang in "$@"; do

@@ -156,7 +156,11 @@ def quick(qapp, fake_provider):
     from jellytoast import quick as quick_ui
     from jellytoast.player_state import NowPlaying, get_now_playing, set_now_playing
     from jellytoast.quick.rig import Rig
+    from jellytoast.settings import get_settings
 
+    settings = get_settings()
+    saved_section = settings.quick_section
+    settings.quick_section = "album"  # every test starts on Albums
     saved_np = get_now_playing()
     set_now_playing(NowPlaying())  # global — never inherit another test's track
     engine = quick_ui.build_engine(qapp, start_core=False)
@@ -177,3 +181,4 @@ def quick(qapp, fake_provider):
     QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
     QCoreApplication.processEvents()
     set_now_playing(saved_np)
+    settings.quick_section = saved_section
