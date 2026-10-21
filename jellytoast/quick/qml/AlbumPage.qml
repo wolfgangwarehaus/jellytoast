@@ -62,11 +62,22 @@ Item {
                 elide: Text.ElideRight
                 font.pixelSize: 13
             }
-            Row {
-                anchors.horizontalCenter: parent.horizontalCenter
-                spacing: 12
+            // Download · Play · Shuffle — Play centred, the icons at the edges.
+            Item {
+                width: parent.width
+                height: 48
+                IconButton {
+                    objectName: "downloadAlbum"
+                    anchors.left: parent.left
+                    anchors.leftMargin: 8
+                    anchors.verticalCenter: parent.verticalCenter
+                    iconName: "download"
+                    tint: theme.textDim
+                    onClicked: actions.download(page.album.id, page.album.name)
+                }
                 PillButton {
                     objectName: "playAll"
+                    anchors.centerIn: parent
                     iconName: "play"
                     text: qsTr("Play")
                     filled: true
@@ -74,16 +85,12 @@ Item {
                     onClicked: tracks.play(0)
                 }
                 IconButton {
-                    objectName: "downloadAlbum"
-                    anchors.verticalCenter: parent.verticalCenter
-                    iconName: "download"
-                    tint: theme.textDim
-                    onClicked: actions.download(page.album.id, page.album.name)
-                }
-                PillButton {
                     objectName: "shuffleAll"
+                    anchors.right: parent.right
+                    anchors.rightMargin: 8
+                    anchors.verticalCenter: parent.verticalCenter
                     iconName: "shuffle"
-                    text: qsTr("Shuffle")
+                    tint: theme.textDim
                     enabled: list.count > 0
                     onClicked: tracks.shuffle()
                 }
