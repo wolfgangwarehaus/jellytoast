@@ -192,6 +192,24 @@ class Rig:
         return self.get(target).property(name)
 
     # ── input ─────────────────────────────────────────────────────────────
+    def next_frame(self, timeout_ms: int = 300) -> None:
+        """Wait for the window to render once more. Layouts position new
+        items in the polish pass just before a frame — a person never sees
+        (or taps) them before that, so neither should the rig."""
+        from PySide6.QtCore import QEventLoop, QTimer
+
+        pump(40)  # let running animations advance (they tick per frame)
+        w = self.window
+        loop = QEventLoop()
+        w.frameSwapped.connect(loop.quit)
+        QTimer.singleShot(timeout_ms, loop.quit)
+        w.update()
+        loop.exec()
+        try:
+            w.frameSwapped.disconnect(loop.quit)
+        except (RuntimeError, TypeError):
+            pass
+
     def _settle(self, timeout: float = 3.0) -> None:
         """Wait out page transitions — StackView drops input while busy, so a
         tap mid-slide would silently do nothing (a person waits too)."""
@@ -220,6 +238,7 @@ class Rig:
                     except RuntimeError:
                         continue
             if not busy:
+                self.next_frame()
                 return
             pump(30)
 
@@ -360,6 +379,22 @@ class Rig:
 
     def wait_for(self, target: str, timeout: float = 10.0) -> QQuickItem:
         return self.wait_until(lambda: self.find(target), timeout)
+
+    def wait_still(self, target: Target, timeout: float = 5.0) -> QQuickItem:
+        """Until ``target`` stops moving (a sheet sliding in, a list
+        settling) — before computing raw coordinates on it."""
+        it = self.get(target)
+        deadline = time.monotonic() + timeout
+        last, same = None, 0
+        while time.monotonic() < deadline:
+            pump(60)
+            self.next_frame()
+            p = self.point(it)
+            same = same + 1 if p == last else 0
+            if same >= 2:  # unchanged across three looks ~100 ms apart
+                return it
+            last = p
+        raise RigError(f"{target!r} kept moving")
 
     def wait_idle(self, timeout: float = 10.0) -> None:
         """Until no model is loading and the page stack has stopped moving."""

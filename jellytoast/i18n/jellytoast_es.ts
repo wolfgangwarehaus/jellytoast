@@ -148,7 +148,7 @@
 <context>
     <name>Cast</name>
     <message>
-        <location filename="../quick/cast.py" line="137"/>
+        <location filename="../quick/cast.py" line="145"/>
         <source>Pair {0} once from the desktop jellytoast app, then cast from here.</source>
         <translation type="unfinished"></translation>
     </message>
@@ -1692,7 +1692,12 @@ jellytoast funcionará, pero las funciones de bandeja no estarán disponibles.</
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../quick/qml/Main.qml" line="325"/>
+        <location filename="../quick/qml/Main.qml" line="219"/>
+        <source>Offline — showing your downloads</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../quick/qml/Main.qml" line="339"/>
         <source>Cast failed</source>
         <translation type="unfinished">Fallo al enviar</translation>
     </message>

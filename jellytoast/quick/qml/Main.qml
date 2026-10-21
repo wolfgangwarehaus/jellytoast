@@ -208,6 +208,20 @@ ApplicationWindow {
             }
         }
 
+        Rectangle {
+            objectName: "offlineBanner"
+            Layout.fillWidth: true
+            Layout.preferredHeight: visible ? 30 : 0
+            visible: prefs.offlineMode && session.signedIn
+            color: theme.surface
+            Label {
+                anchors.centerIn: parent
+                text: qsTr("Offline — showing your downloads")
+                color: theme.textDim
+                font.pixelSize: 12
+            }
+        }
+
         StackView {
             id: stack
             objectName: "stack"

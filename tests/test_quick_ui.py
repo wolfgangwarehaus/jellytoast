@@ -79,7 +79,7 @@ def test_seek_drag_requests_position(quick):
         quick.wait_for("miniPlayer")
         quick.tap("text:Test Artist")
         quick.wait_until(lambda: quick.state()["nowPlaying"])
-        bar = quick.get("seekBar")
+        bar = quick.wait_still("seekBar")
         p = bar.mapToScene(bar.boundingRect().topLeft())
         quick.tap((p.x() + bar.width() / 2, p.y() + 12))
         quick.wait_until(lambda: got)
@@ -430,11 +430,18 @@ def test_cast_sheet_lists_devices_and_reports_failure(quick, monkeypatch):
         quick.tap("castButton")
         quick.wait_for("text:Living Room TV")
         assert quick.find("text:Kitchen") is not None
+        target = quick.get("text:Living Room TV")
+        p = quick.point(target)
+        rows = [
+            (i.property("label"), quick.point(i).y(), i.isVisible())
+            for i in quick.items()
+            if i.property("label") in ("Living Room TV", "Kitchen", "This device")
+        ]
         quick.tap("text:Living Room TV")
         quick.wait_for("castFailed")
     finally:
         spy.close()
-    assert cm.started == [("Living Room TV", 30.0)]
+    assert cm.started == [("Living Room TV", 30.0)], f"tapped {p}; rows {rows}"
     assert quick.find("text:Could not cast to Living Room TV") is not None
     # The failed hand-off resumed local playback.
     assert spy.got["stop_requested"] and spy.got["play_requested"]
@@ -575,3 +582,62 @@ def test_now_playing_format_line(quick):
     quick.wait_until(lambda: quick.prop("formatLine", "text") == "Casting to Kitchen")
     bus.cast_stopped.emit()
     quick.wait_until(lambda: "FLAC" in quick.prop("formatLine", "text"))
+
+
+# ── M3: offline browsing ──
+
+
+def _offline_library(monkeypatch, on=True):
+    """Downloads index: albums 7 and 12 (with tracks), Air as an artist."""
+    import jellytoast.offline as offline
+    from tests.quick_support import FakeProvider
+
+    lib = FakeProvider()
+    albums = {a["Id"]: a for a in lib.albums if a["Id"] in ("al7", "al12")}
+    tracks = {aid: lib.get_album_tracks(aid)[:3] for aid in albums}
+    state = {"on": on}
+
+    def list_complete_items(kind=None):
+        if kind == "album":
+            return [dict(a) for a in albums.values()]
+        if kind == "track":
+            return [dict(t) for ts in tracks.values() for t in ts]
+        return []
+
+    monkeypatch.setattr(offline, "is_offline_mode", lambda: state["on"])
+    monkeypatch.setattr(offline, "offline_source", lambda: "user")
+    monkeypatch.setattr(offline, "list_complete_items", list_complete_items)
+    monkeypatch.setattr(
+        offline, "child_snapshots", lambda cid, kind=None: [dict(t) for t in tracks.get(cid, [])]
+    )
+    return state
+
+
+def test_offline_mode_shows_downloads_only(quick, monkeypatch):
+    state = _offline_library(monkeypatch, on=False)
+    state["on"] = True
+    PlayerBus.get().offline_mode_changed.emit(True)
+    quick.wait_for("offlineBanner")
+    quick.wait_for("text:Album 007")
+    quick.wait_idle()
+    assert quick.state()["albums"]["count"] == 2
+    assert quick.find("text:Album 001") is None
+
+    quick.tap("text:Album 012")
+    quick.wait_for("text:Track 3 of Album 012")
+    assert quick.find("text:Track 4 of Album 012") is None  # only what's downloaded
+    quick.key("esc")
+    quick.wait_idle()
+
+    _section(quick, "Artists")
+    quick.wait_for("text:Air")  # synthesized from the downloaded albums' artists
+
+    quick.tap("searchButton")
+    quick.wait_idle()
+    quick.type("012")
+    quick.wait_for("text:Track 1 of Album 012", timeout=5)
+    assert not any(c[0] == "search_all" for c in quick.provider.calls)
+
+    state["on"] = False
+    PlayerBus.get().offline_mode_changed.emit(False)
+    quick.wait_until(lambda: quick.find("offlineBanner") is None)

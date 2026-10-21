@@ -104,9 +104,12 @@ Drawer {
             onClicked: { if (cast.active !== "") cast.disconnect(); sheet.close() }
         }
         Repeater {
-            model: cast.enabled ? cast.devices : []
+            // Only `devices` here: any other dependency (enabled, scanning…)
+            // would re-run the binding and rebuild every row under the finger.
+            model: cast.devices
             DeviceRow {
                 required property var modelData
+                visible: cast.enabled
                 label: modelData.name
                 glyph: modelData.type === "airplay" ? "airplay" : "cast"
                 current: cast.active === modelData.name

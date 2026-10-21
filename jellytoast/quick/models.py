@@ -101,6 +101,10 @@ class LibraryModel(QAbstractListModel):
         self._kind = kind
         self._parent_id = ""
         self._seek: str = ""
+        self._offline = False
+        from jellytoast.player_state import PlayerBus
+
+        PlayerBus.get().offline_mode_changed.connect(self._on_offline_mode)
 
     # ── QAbstractListModel ──
     def rowCount(self, parent=_ROOT):  # noqa: N802
@@ -199,6 +203,9 @@ class LibraryModel(QAbstractListModel):
         self._done = False
         self._loading = False
         self._seek = ""
+        from jellytoast.quick import offline_lib
+
+        self._offline = offline_lib.active()
         self.beginResetModel()
         self._items = []
         self.endResetModel()
@@ -210,6 +217,10 @@ class LibraryModel(QAbstractListModel):
 
     def _fetch_page(self, prov, start: int) -> List[Dict]:
         k, pid, n = self._kind, self._parent_id, self.PAGE
+        if self._offline:
+            from jellytoast.quick import offline_lib
+
+            return offline_lib.items(k, pid) if start == 0 else []
         if k == "album":
             resp = prov.get_items("", "MusicAlbum", n, start, "SortName", "Ascending", True)
         elif k == "genreAlbums":
@@ -239,7 +250,23 @@ class LibraryModel(QAbstractListModel):
         return (resp or {}).get("Items") or []
 
     def _single_shot(self) -> bool:
-        return self._kind in ("genre", "artistAlbums")
+        return self._offline or self._kind in ("genre", "artistAlbums")
+
+    def _on_offline_mode(self, on: bool) -> None:
+        """Re-load from the new source — but an AUTOMATIC flip (a server
+        hiccup) keeps a list that's already showing, like the desktop grid,
+        so a flapping connection doesn't blank it."""
+        if not _alive(self) or self._gen == 0:
+            return
+        if on:
+            try:
+                from jellytoast import offline
+
+                if offline.offline_source() == "auto" and self._items:
+                    return
+            except Exception:
+                pass
+        self.reload()
 
     def fetchMore(self, parent=_ROOT):  # noqa: N802
         if not self.canFetchMore(parent):
@@ -477,6 +504,18 @@ class TracksModel(QAbstractListModel):
         self.infoChanged.emit()
         self._loading = True
         self.loadingChanged.emit()
+        from jellytoast.quick import offline_lib
+
+        if offline_lib.active():
+            kind = self._kind
+            async_io.run_async(
+                offline_lib.tracks,
+                album_id,
+                kind,
+                on_result=lambda items, g=gen: self._landed(g, items),
+                on_error=lambda e, g=gen: self._landed(g, [], e),
+            )
+            return
         prov = _provider()
         fetch = prov.get_playlist_items if self._kind == "playlist" else prov.get_album_tracks
         async_io.run_async(
@@ -811,7 +850,12 @@ class SearchModel(QAbstractListModel):
         prov = _provider()
 
         def _fetch():
-            found = prov.search_all(term, songs=20, albums=14, artists=10) or {}
+            from jellytoast.quick import offline_lib
+
+            if offline_lib.active():
+                found = offline_lib.search(term)
+            else:
+                found = prov.search_all(term, songs=20, albums=14, artists=10) or {}
             rows: List[Dict] = []
             for typ, kind, label in self._SECTIONS:
                 for it in found.get(typ) or []:

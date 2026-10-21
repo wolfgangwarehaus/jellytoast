@@ -84,8 +84,12 @@ could run.
   Settings → Display → "New phone interface (beta)" (shown on a phone
   shell; read at launch, undocked only), and "Use the classic interface"
   in the Quick Settings to go back. `JT_UI=quick|widgets` still forces.
-  *Still to do:* smart mixes, theme picker, Quick Connect sign-in, offline
-  browsing (library from downloads when the server is unreachable).
+  Offline browsing: in offline mode (chosen, or automatic when the server
+  is unreachable) every section, album / playlist page and search reads
+  the downloads, with an "Offline — showing your downloads" banner.
+  Covers go through the app's image cache (`image://cover/<id>/<px>`), so
+  they persist across launches and show offline.
+  *Still to do:* smart mixes, theme picker, Quick Connect sign-in.
 - [ ] **M4 — switch:** default on Plasma Mobile; remove the Widgets phone
   layouts only once parity holds; then the metainfo "phone friendly" flag.
 
@@ -103,8 +107,11 @@ could run.
 - **Tests:** the `quick` fixture (tests/quick_support.py) loads the real
   QML over a fake 150-album library; drive it with the same `Rig` API.
   Give interactive items an `objectName` so tests and qctl can find them.
-- Rig waits out StackView transitions before input (StackView drops
-  input while busy). Hold one window wrapper (PySide invalidates the
+- Rig waits out StackView / popup transitions and one rendered frame
+  before input (StackView drops input while busy; layouts place new items
+  in the pre-frame polish). Use `wait_still(T)` before computing raw
+  coordinates on something that animates in. Never bind a Repeater model
+  to an expression with other dependencies — it rebuilds every row. Hold one window wrapper (PySide invalidates the
   contentItem wrapper when its window wrapper is collected). Fixture
   teardown really deletes the window (a dead window can keep the mouse
   grab).
