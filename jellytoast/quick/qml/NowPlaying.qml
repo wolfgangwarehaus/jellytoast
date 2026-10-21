@@ -194,10 +194,22 @@ Rectangle {
             Item { Layout.preferredWidth: 48 }
         }
 
+        // Format line — fixed height so it never moves the cover.
+        Label {
+            objectName: "formatLine"
+            Layout.fillWidth: true
+            Layout.preferredHeight: 18
+            horizontalAlignment: Text.AlignHCenter
+            text: player.formatLine
+            color: player.formatLine.startsWith(qsTr("Casting")) ? theme.accent : theme.textDim
+            elide: Text.ElideRight
+            font.pixelSize: 12
+        }
+
         SeekBar {
             objectName: "seekBar"
             Layout.fillWidth: true
-            Layout.topMargin: 12
+            Layout.topMargin: 6
             position: player.position
             duration: player.duration
             onSeek: ms => player.seek(ms)

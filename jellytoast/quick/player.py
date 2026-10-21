@@ -22,6 +22,7 @@ class PlayerController(QObject):
 
     modesChanged = Signal()  # repeat / shuffle
     sleepChanged = Signal()
+    formatChanged = Signal()
     contextChanged = Signal()
 
     def __init__(self, parent=None, queue=None):
@@ -46,6 +47,11 @@ class PlayerController(QObject):
         self._sleep_tick = QTimer(self)
         self._sleep_tick.setInterval(1000)
         self._sleep_tick.timeout.connect(self.sleepChanged)
+        # The format line (what's being decoded / where it's going).
+        self._codec, self._kbps, self._cast_to = "", 0, ""
+        b.streaming_info_updated.connect(self._on_streaming_info)
+        b.cast_started.connect(self._on_cast_started)
+        b.cast_stopped.connect(self._on_cast_stopped)
         b.sleep_timer_started.connect(self._on_sleep_started)
         b.sleep_timer_cancelled.connect(self._on_sleep_ended)
         b.sleep_timer_fired.connect(self._on_sleep_ended)
@@ -69,6 +75,8 @@ class PlayerController(QObject):
         self.positionChanged.emit()
 
     def _on_stopped(self) -> None:
+        self._codec, self._kbps = "", 0
+        self.formatChanged.emit()
         self._position = 0
         self._set_playing(False)
         self.positionChanged.emit()
@@ -84,6 +92,41 @@ class PlayerController(QObject):
     def _on_duration(self, ms: int) -> None:
         self._duration = int(ms)
         self.positionChanged.emit()
+
+    def _on_streaming_info(self, codec: str, kbps: int) -> None:
+        self._codec, self._kbps = codec or "", int(kbps or 0)
+        self.formatChanged.emit()
+
+    def _on_cast_started(self, name: str) -> None:
+        self._cast_to = name or self.tr("device")
+        self.formatChanged.emit()
+
+    def _on_cast_stopped(self) -> None:
+        self._cast_to = ""
+        self.formatChanged.emit()
+
+    def _format_line(self) -> str:
+        """Same reading as the desktop bar's info line, condensed:
+        "Streaming · FLAC · 1411 kbps", "Local playback · …",
+        "Casting to Kitchen"."""
+        if self._cast_to:
+            return self.tr("Casting to {0}").format(self._cast_to)
+        np = get_now_playing()
+        if not np.item_id or not (self._codec or self._kbps):
+            return ""
+        from jellytoast.settings import get_settings
+
+        st = get_settings()
+        parts = [self.tr("Local playback") if np.is_local else self.tr("Streaming")]
+        if getattr(self._bus, "bit_perfect_active", False):
+            parts.append(self.tr("Bit Perfect"))
+        elif (st.replaygain or "no") != "no":
+            parts.append(self.tr("Normalized"))
+        if self._codec:
+            parts.append(self._codec.upper())
+        if self._kbps > 0:
+            parts.append(self.tr("{0} kbps").format(self._kbps))
+        return " · ".join(parts)
 
     def attach_queue(self, queue) -> None:
         """Pick up the queue's state once the core is running."""
@@ -211,6 +254,8 @@ class PlayerController(QObject):
     # Where the Quick UI's library opens (remembered across launches).
     sectionChanged = Signal()
     section = Property(str, _get_section, _set_section, notify=sectionChanged)
+
+    formatLine = Property(str, _format_line, notify=formatChanged)
 
     # Seconds left on the sleep timer; -1 = off, 0 = "after this track".
     sleepLeft = Property(int, _sleep_left, notify=sleepChanged)

@@ -560,3 +560,18 @@ def test_sleep_timer_menu(quick):
         assert spy.got["sleep_timer_cancel_requested"]
     finally:
         spy.close()
+
+
+def test_now_playing_format_line(quick):
+    quick.fake_now_playing("Song", "Someone")
+    quick.wait_for("miniPlayer")
+    quick.tap("text:Someone")
+    quick.wait_until(lambda: quick.state()["nowPlaying"])
+    bus = PlayerBus.get()
+    bus.streaming_info_updated.emit("flac", 1411)
+    quick.wait_until(lambda: "FLAC · 1411 kbps" in (quick.prop("formatLine", "text") or ""))
+    assert quick.prop("formatLine", "text").startswith("Streaming")
+    bus.cast_started.emit("Kitchen")
+    quick.wait_until(lambda: quick.prop("formatLine", "text") == "Casting to Kitchen")
+    bus.cast_stopped.emit()
+    quick.wait_until(lambda: "FLAC" in quick.prop("formatLine", "text"))

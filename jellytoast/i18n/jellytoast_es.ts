@@ -148,7 +148,7 @@
 <context>
     <name>Cast</name>
     <message>
-        <location filename="../quick/cast.py" line="129"/>
+        <location filename="../quick/cast.py" line="137"/>
         <source>Pair {0} once from the desktop jellytoast app, then cast from here.</source>
         <translation type="unfinished"></translation>
     </message>
@@ -1715,32 +1715,37 @@ jellytoast funcionará, pero las funciones de bandeja no estarán disponibles.</
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../quick/qml/NowPlaying.qml" line="295"/>
+        <location filename="../quick/qml/NowPlaying.qml" line="204"/>
+        <source>Casting</source>
+        <translation type="unfinished">Enviando</translation>
+    </message>
+    <message>
+        <location filename="../quick/qml/NowPlaying.qml" line="307"/>
         <source>end of song</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../quick/qml/NowPlaying.qml" line="309"/>
+        <location filename="../quick/qml/NowPlaying.qml" line="321"/>
         <source>%1 minutes</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../quick/qml/NowPlaying.qml" line="310"/>
+        <location filename="../quick/qml/NowPlaying.qml" line="322"/>
         <source>1 hour</source>
         <translation type="unfinished">1 hora</translation>
     </message>
     <message>
-        <location filename="../quick/qml/NowPlaying.qml" line="310"/>
+        <location filename="../quick/qml/NowPlaying.qml" line="322"/>
         <source>1 h 30 min</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../quick/qml/NowPlaying.qml" line="315"/>
+        <location filename="../quick/qml/NowPlaying.qml" line="327"/>
         <source>After this song</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../quick/qml/NowPlaying.qml" line="319"/>
+        <location filename="../quick/qml/NowPlaying.qml" line="331"/>
         <source>Turn off timer</source>
         <translation type="unfinished"></translation>
     </message>
@@ -2360,6 +2365,44 @@ Double-check the PIN — common cause is a typo or a stale code (the receiver ro
         <translation>Falló el emparejamiento: {0}
 
 Revisa el PIN — la causa más común es una errata o un código caducado (el receptor los rota cada pocos minutos).</translation>
+    </message>
+</context>
+<context>
+    <name>PlayerController</name>
+    <message>
+        <location filename="../quick/player.py" line="101"/>
+        <source>device</source>
+        <translation type="unfinished">dispositivo</translation>
+    </message>
+    <message>
+        <location filename="../quick/player.py" line="113"/>
+        <source>Casting to {0}</source>
+        <translation type="unfinished">Enviando a {0}</translation>
+    </message>
+    <message>
+        <location filename="../quick/player.py" line="120"/>
+        <source>Local playback</source>
+        <translation type="unfinished">Reproducción local</translation>
+    </message>
+    <message>
+        <location filename="../quick/player.py" line="120"/>
+        <source>Streaming</source>
+        <translation type="unfinished">Transmitiendo</translation>
+    </message>
+    <message>
+        <location filename="../quick/player.py" line="122"/>
+        <source>Bit Perfect</source>
+        <translation type="unfinished">Bit Perfect</translation>
+    </message>
+    <message>
+        <location filename="../quick/player.py" line="124"/>
+        <source>Normalized</source>
+        <translation type="unfinished">Normalizado</translation>
+    </message>
+    <message>
+        <location filename="../quick/player.py" line="128"/>
+        <source>{0} kbps</source>
+        <translation type="unfinished">{0} kbps</translation>
     </message>
 </context>
 <context>
@@ -3239,111 +3282,111 @@ Subsonic requiere permiso de administrador para crear / editar / eliminar.</tran
     </message>
     <message>
         <location filename="../settings_page_display.py" line="307"/>
-        <location filename="../settings_page_display.py" line="377"/>
-        <location filename="../settings_page_display.py" line="398"/>
+        <location filename="../settings_page_display.py" line="379"/>
+        <location filename="../settings_page_display.py" line="400"/>
         <source>(needs restart)</source>
         <translation>(requiere reinicio)</translation>
     </message>
     <message>
-        <location filename="../settings_page_display.py" line="322"/>
+        <location filename="../settings_page_display.py" line="323"/>
         <source>Show hover tooltips</source>
         <translation>Mostrar descripciones al pasar el cursor</translation>
     </message>
     <message>
-        <location filename="../settings_page_display.py" line="342"/>
+        <location filename="../settings_page_display.py" line="344"/>
         <source>New phone interface (beta) — restart to apply</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../settings_page_display.py" line="370"/>
+        <location filename="../settings_page_display.py" line="372"/>
         <source>Use native window border</source>
         <translation>Usar el borde de ventana nativo</translation>
     </message>
     <message>
-        <location filename="../settings_page_display.py" line="392"/>
+        <location filename="../settings_page_display.py" line="394"/>
         <source>Square corners</source>
         <translation>Esquinas rectas</translation>
     </message>
     <message>
-        <location filename="../settings_page_display.py" line="539"/>
+        <location filename="../settings_page_display.py" line="541"/>
         <source>Frosted glass needs compositor blur — {0}.</source>
         <translation>El cristal esmerilado necesita desenfoque del compositor — {0}.</translation>
     </message>
     <message>
-        <location filename="../settings_page_display.py" line="599"/>
-        <location filename="../settings_page_display.py" line="721"/>
+        <location filename="../settings_page_display.py" line="601"/>
+        <location filename="../settings_page_display.py" line="723"/>
         <source>Import…</source>
         <translation>Importar…</translation>
     </message>
     <message>
-        <location filename="../settings_page_display.py" line="603"/>
+        <location filename="../settings_page_display.py" line="605"/>
         <source>Import a base16 .yaml colour scheme (≈250 community themes)</source>
         <translation>Importa un esquema de color base16 .yaml (≈250 temas de la comunidad)</translation>
     </message>
     <message>
-        <location filename="../settings_page_display.py" line="624"/>
+        <location filename="../settings_page_display.py" line="626"/>
         <source>Mode:</source>
         <translation>Modo:</translation>
     </message>
     <message>
-        <location filename="../settings_page_display.py" line="635"/>
+        <location filename="../settings_page_display.py" line="637"/>
         <source>Frosted glass</source>
         <translation>Cristal esmerilado</translation>
     </message>
     <message>
-        <location filename="../settings_page_display.py" line="639"/>
+        <location filename="../settings_page_display.py" line="641"/>
         <source>Translucent, blurred body (Frosted) vs a solid opaque body.</source>
         <translation>Cuerpo translúcido y desenfocado (esmerilado) frente a un cuerpo sólido opaco.</translation>
     </message>
     <message>
-        <location filename="../settings_page_display.py" line="656"/>
+        <location filename="../settings_page_display.py" line="658"/>
         <source>Accent color</source>
         <translation>Color de acento</translation>
     </message>
     <message>
-        <location filename="../settings_page_display.py" line="660"/>
+        <location filename="../settings_page_display.py" line="662"/>
         <source>Follow system accent</source>
         <translation>Seguir el acento del sistema</translation>
     </message>
     <message>
-        <location filename="../settings_page_display.py" line="664"/>
+        <location filename="../settings_page_display.py" line="666"/>
         <source>Adopt your desktop&apos;s accent colour (KDE Plasma / GNOME 47+ / Windows / macOS).</source>
         <translation>Adopta el color de acento de tu escritorio (KDE Plasma / GNOME 47+ / Windows / macOS).</translation>
     </message>
     <message>
-        <location filename="../settings_page_display.py" line="680"/>
+        <location filename="../settings_page_display.py" line="682"/>
         <source>Palette</source>
         <translation>Paleta</translation>
     </message>
     <message>
-        <location filename="../settings_page_display.py" line="689"/>
-        <location filename="../settings_page_display.py" line="699"/>
+        <location filename="../settings_page_display.py" line="691"/>
+        <location filename="../settings_page_display.py" line="701"/>
         <source>Follow pywal / wallust</source>
         <translation>Seguir pywal / wallust</translation>
     </message>
     <message>
-        <location filename="../settings_page_display.py" line="700"/>
+        <location filename="../settings_page_display.py" line="702"/>
         <source>pywal / wallust are tools that build themes from your wallpaper.</source>
         <translation>pywal / wallust son herramientas que crean temas a partir de tu fondo de pantalla.</translation>
     </message>
     <message>
-        <location filename="../settings_page_display.py" line="722"/>
-        <location filename="../settings_page_display.py" line="778"/>
+        <location filename="../settings_page_display.py" line="724"/>
+        <location filename="../settings_page_display.py" line="780"/>
         <source>Default</source>
         <translation>Predeterminado</translation>
     </message>
     <message>
-        <location filename="../settings_page_display.py" line="751"/>
+        <location filename="../settings_page_display.py" line="753"/>
         <source>Glass opacity</source>
         <translation>Opacidad del cristal</translation>
     </message>
     <message>
-        <location filename="../settings_page_display.py" line="782"/>
+        <location filename="../settings_page_display.py" line="784"/>
         <source>Reset glass opacity to this theme&apos;s default</source>
         <translation>Restablecer la opacidad del cristal al valor por defecto del tema</translation>
     </message>
     <message>
-        <location filename="../settings_page_display.py" line="881"/>
+        <location filename="../settings_page_display.py" line="883"/>
         <source>Imported scheme</source>
         <translation>Esquema importado</translation>
     </message>
@@ -3649,22 +3692,22 @@ Ports used: UDP 5353 (mDNS / AirPlay), UDP 1900 (SSDP / DLNA), TCP {0} (cast pro
 Puertos usados: UDP 5353 (mDNS / AirPlay), UDP 1900 (SSDP / DLNA), TCP {0} (proxy de envío).</translation>
     </message>
     <message>
-        <location filename="../settings_page_display.py" line="1132"/>
+        <location filename="../settings_page_display.py" line="1134"/>
         <source>Import a base16 theme</source>
         <translation>Importar un tema base16</translation>
     </message>
     <message>
-        <location filename="../settings_page_display.py" line="1134"/>
+        <location filename="../settings_page_display.py" line="1136"/>
         <source>base16 schemes (*.yaml *.yml);;All files (*)</source>
         <translation>Esquemas base16 (*.yaml *.yml);;Todos los archivos (*)</translation>
     </message>
     <message>
-        <location filename="../settings_page_display.py" line="1146"/>
+        <location filename="../settings_page_display.py" line="1148"/>
         <source>Import failed</source>
         <translation>Fallo al importar</translation>
     </message>
     <message>
-        <location filename="../settings_page_display.py" line="1147"/>
+        <location filename="../settings_page_display.py" line="1149"/>
         <source>Couldn&apos;t read that as a base16 colour scheme:
 
 {0}</source>
@@ -3673,12 +3716,12 @@ Puertos usados: UDP 5353 (mDNS / AirPlay), UDP 1900 (SSDP / DLNA), TCP {0} (prox
 {0}</translation>
     </message>
     <message>
-        <location filename="../settings_page_display.py" line="1192"/>
+        <location filename="../settings_page_display.py" line="1194"/>
         <source>Couldn&apos;t apply that theme</source>
         <translation>No se pudo aplicar ese tema</translation>
     </message>
     <message>
-        <location filename="../settings_page_display.py" line="1193"/>
+        <location filename="../settings_page_display.py" line="1195"/>
         <source>Couldn&apos;t read {0} as a base16 colour scheme:
 
 {1}</source>
@@ -3687,12 +3730,12 @@ Puertos usados: UDP 5353 (mDNS / AirPlay), UDP 1900 (SSDP / DLNA), TCP {0} (prox
 {1}</translation>
     </message>
     <message>
-        <location filename="../settings_page_display.py" line="1241"/>
+        <location filename="../settings_page_display.py" line="1243"/>
         <source>pywal palette not found</source>
         <translation>No se encontró la paleta de pywal</translation>
     </message>
     <message>
-        <location filename="../settings_page_display.py" line="1242"/>
+        <location filename="../settings_page_display.py" line="1244"/>
         <source>{0}
 
 Run pywal (or wallust) once so it generates a palette, then turn this back on.</source>
@@ -3701,12 +3744,12 @@ Run pywal (or wallust) once so it generates a palette, then turn this back on.</
 Ejecuta pywal (o wallust) una vez para que genere una paleta, y vuelve a activar esto.</translation>
     </message>
     <message>
-        <location filename="../settings_page_display.py" line="1269"/>
+        <location filename="../settings_page_display.py" line="1271"/>
         <source>No system accent</source>
         <translation>Sin acento del sistema</translation>
     </message>
     <message>
-        <location filename="../settings_page_display.py" line="1270"/>
+        <location filename="../settings_page_display.py" line="1272"/>
         <source>Your desktop didn&apos;t report an accent colour — this works on KDE Plasma and GNOME 47+.</source>
         <translation>Tu escritorio no informó de un color de acento — esto funciona en KDE Plasma y GNOME 47+.</translation>
     </message>
