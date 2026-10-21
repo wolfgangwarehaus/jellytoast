@@ -200,6 +200,40 @@ class LibraryModel(QAbstractListModel):
 
     parentId = Property(str, _get_parent_id, _set_parent_id, notify=kindChanged)
 
+    # ── sorting (album grids; shared with the desktop library's choice) ──
+    SORTABLE = ("album", "genreAlbums", "favAlbums")
+
+    def _sort(self):
+        from jellytoast.settings import get_settings
+
+        st = get_settings()
+        by = st.library_sort_by or "SortName"
+        order = "Descending" if (st.library_sort_order or "") == "descending" else "Ascending"
+        return by, order
+
+    sortChanged = Signal()
+
+    def _get_sort_by(self) -> str:
+        return self._sort()[0]
+
+    def _get_sort_desc(self) -> bool:
+        return self._sort()[1] == "Descending"
+
+    sortBy = Property(str, _get_sort_by, notify=sortChanged)
+    sortDescending = Property(bool, _get_sort_desc, notify=sortChanged)
+    sortable = Property(bool, lambda self: self._kind in self.SORTABLE, notify=kindChanged)
+
+    @Slot(str, bool)
+    def setSort(self, sort_by: str, descending: bool) -> None:  # noqa: N802
+        """Re-sort (and remember it, like the desktop library's sort menu)."""
+        from jellytoast.settings import get_settings
+
+        st = get_settings()
+        st.library_sort_by = sort_by or "SortName"
+        st.library_sort_order = "descending" if descending else "ascending"
+        self.sortChanged.emit()
+        self.reload()
+
     def _get_complete(self) -> bool:
         return self._done
 
@@ -232,12 +266,11 @@ class LibraryModel(QAbstractListModel):
             from jellytoast.quick import offline_lib
 
             return offline_lib.items(k, pid) if start == 0 else []
+        by, order = self._sort() if k in self.SORTABLE else ("SortName", "Ascending")
         if k == "album":
-            resp = prov.get_items("", "MusicAlbum", n, start, "SortName", "Ascending", True)
+            resp = prov.get_items("", "MusicAlbum", n, start, by, order, True)
         elif k == "genreAlbums":
-            resp = prov.get_items(
-                "", "MusicAlbum", n, start, "SortName", "Ascending", True, genre_ids=pid
-            )
+            resp = prov.get_items("", "MusicAlbum", n, start, by, order, True, genre_ids=pid)
         elif k == "playlist":
             resp = prov.get_items("", "Playlist", n, start, "SortName", "Ascending", True)
         elif k == "song":
@@ -251,9 +284,7 @@ class LibraryModel(QAbstractListModel):
             )
         elif k in ("favAlbums", "favSongs"):
             typ = "MusicAlbum" if k == "favAlbums" else "Audio"
-            resp = prov.get_items(
-                "", typ, n, start, "SortName", "Ascending", True, filters="IsFavorite"
-            )
+            resp = prov.get_items("", typ, n, start, by, order, True, filters="IsFavorite")
         elif k == "artist":
             return list(prov.get_artists(n, start) or [])
         elif k == "genre":

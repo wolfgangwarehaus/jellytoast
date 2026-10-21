@@ -200,6 +200,50 @@ ApplicationWindow {
                 font.weight: Font.DemiBold
             }
             IconButton {
+                id: sortButton
+                objectName: "sortButton"
+                readonly property var lib: stack.currentItem && stack.currentItem.lib ? stack.currentItem.lib : null
+                anchors.right: searchButton.left
+                anchors.verticalCenter: parent.verticalCenter
+                iconName: "sort"
+                visible: session.signedIn && lib !== null && lib.sortable
+                onClicked: sortMenu.popup(sortButton, sortButton.width - sortMenu.width, sortButton.height)
+                Menu {
+                    id: sortMenu
+                    objectName: "sortMenu"
+                    Repeater {
+                        model: [
+                            { key: "SortName", label: qsTr("Name") },
+                            { key: "AlbumArtist,SortName", label: qsTr("Album artist") },
+                            { key: "PremiereDate,SortName", label: qsTr("Release date") },
+                            { key: "DateCreated,SortName", label: qsTr("Date added") },
+                            { key: "DatePlayed,SortName", label: qsTr("Recently played") }
+                        ]
+                        MenuItem {
+                            required property var modelData
+                            text: modelData.label
+                            checkable: true
+                            checked: sortButton.lib !== null && sortButton.lib.sortBy === modelData.key
+                            onTriggered: sortButton.lib.setSort(modelData.key, sortButton.lib.sortDescending)
+                        }
+                    }
+                    MenuSeparator { }
+                    MenuItem {
+                        text: qsTr("Ascending")
+                        checkable: true
+                        checked: sortButton.lib !== null && !sortButton.lib.sortDescending
+                        onTriggered: sortButton.lib.setSort(sortButton.lib.sortBy, false)
+                    }
+                    MenuItem {
+                        text: qsTr("Descending")
+                        checkable: true
+                        checked: sortButton.lib !== null && sortButton.lib.sortDescending
+                        onTriggered: sortButton.lib.setSort(sortButton.lib.sortBy, true)
+                    }
+                }
+            }
+            IconButton {
+                id: searchButton
                 objectName: "searchButton"
                 anchors.right: parent.right
                 anchors.rightMargin: 4

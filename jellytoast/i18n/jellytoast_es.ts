@@ -1741,12 +1741,47 @@ jellytoast funcionará, pero las funciones de bandeja no estarán disponibles.</
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../quick/qml/Main.qml" line="222"/>
+        <location filename="../quick/qml/Main.qml" line="216"/>
+        <source>Name</source>
+        <translation type="unfinished">Nombre</translation>
+    </message>
+    <message>
+        <location filename="../quick/qml/Main.qml" line="217"/>
+        <source>Album artist</source>
+        <translation type="unfinished">Artista del álbum</translation>
+    </message>
+    <message>
+        <location filename="../quick/qml/Main.qml" line="218"/>
+        <source>Release date</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../quick/qml/Main.qml" line="219"/>
+        <source>Date added</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../quick/qml/Main.qml" line="220"/>
+        <source>Recently played</source>
+        <translation type="unfinished">Escuchado recientemente</translation>
+    </message>
+    <message>
+        <location filename="../quick/qml/Main.qml" line="232"/>
+        <source>Ascending</source>
+        <translation type="unfinished">Ascendente</translation>
+    </message>
+    <message>
+        <location filename="../quick/qml/Main.qml" line="238"/>
+        <source>Descending</source>
+        <translation type="unfinished">Descendente</translation>
+    </message>
+    <message>
+        <location filename="../quick/qml/Main.qml" line="266"/>
         <source>Offline — showing your downloads</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../quick/qml/Main.qml" line="346"/>
+        <location filename="../quick/qml/Main.qml" line="390"/>
         <source>Cast failed</source>
         <translation type="unfinished">Fallo al enviar</translation>
     </message>
@@ -2745,7 +2780,7 @@ Subsonic requiere permiso de administrador para crear / editar / eliminar.</tran
     <name>Session</name>
     <message>
         <location filename="../quick/session.py" line="93"/>
-        <location filename="../quick/session.py" line="167"/>
+        <location filename="../quick/session.py" line="168"/>
         <source>Signing in is off in the dev rig — it would replace your real login.</source>
         <translation type="unfinished"></translation>
     </message>
@@ -2775,32 +2810,32 @@ Subsonic requiere permiso de administrador para crear / editar / eliminar.</tran
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../quick/session.py" line="171"/>
+        <location filename="../quick/session.py" line="173"/>
         <source>Please fill in the server URL.</source>
         <translation type="unfinished">Completa la URL del servidor.</translation>
     </message>
     <message>
-        <location filename="../quick/session.py" line="246"/>
+        <location filename="../quick/session.py" line="250"/>
         <source>The code expired. Try again.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../quick/session.py" line="248"/>
+        <location filename="../quick/session.py" line="252"/>
         <source>Couldn&apos;t find a Jellyfin server at that address.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../quick/session.py" line="250"/>
+        <location filename="../quick/session.py" line="254"/>
         <source>Quick Connect is turned off on this server.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../quick/session.py" line="252"/>
+        <location filename="../quick/session.py" line="256"/>
         <source>Quick Connect failed: {0}</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../quick/session.py" line="284"/>
+        <location filename="../quick/session.py" line="288"/>
         <source>Signing out is off in the dev rig — it would clear your real login.</source>
         <translation type="unfinished"></translation>
     </message>

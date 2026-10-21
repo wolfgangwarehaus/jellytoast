@@ -156,7 +156,8 @@ Item {
         anchors.top: parent.top
         anchors.bottom: parent.bottom
         anchors.margins: 4
-        visible: page.scrubbable
+        // Letters only mean something in name order, A → Z.
+        visible: page.scrubbable && page.lib.sortBy === "SortName" && !page.lib.sortDescending
         model: page.lib
         view: grid
     }

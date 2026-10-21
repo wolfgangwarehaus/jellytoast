@@ -706,3 +706,27 @@ def test_quick_connect_sign_in(qapp, fake_provider, monkeypatch, request):
     quick.wait_for("text:482915")
     quick.wait_until(lambda: quick.state()["page"] == "LibraryGridPage", timeout=5)
     assert ("qc_finish", "s3cret") in fake_provider.calls
+
+
+def test_album_sort_menu(quick):
+    from jellytoast.settings import get_settings
+
+    s = get_settings()
+    saved = (s.library_sort_by, s.library_sort_order)
+    try:
+        assert quick.find("azRail", visible=False) is not None
+        quick.tap("sortButton")
+        quick.tap("text:Date added")
+        quick.wait_until(
+            lambda: ("MusicAlbum", "DateCreated,SortName", "Ascending") in quick.provider.sorts
+        )
+        assert s.library_sort_by == "DateCreated,SortName"  # shared with the desktop library
+        quick.tap("sortButton")
+        quick.tap("text:Descending")
+        quick.wait_for("text:Album 149")  # the fake reverses on Descending
+        assert s.library_sort_order == "descending"
+        assert not quick.find("azRail", visible=False).isVisible()  # letters only for Name A→Z
+        _section(quick, "Artists")
+        assert quick.find("sortButton") is None  # albums only
+    finally:
+        s.library_sort_by, s.library_sort_order = saved

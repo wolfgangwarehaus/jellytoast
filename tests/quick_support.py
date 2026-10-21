@@ -75,6 +75,7 @@ class FakeProvider:
             (_track(a, n) for a in self.albums[:30] for n in range(1, 4)), key=lambda t: t["Name"]
         )
         self.calls: List[tuple] = []
+        self.sorts: List[tuple] = []
 
     def get_items(
         self,
@@ -90,6 +91,7 @@ class FakeProvider:
         **kw,
     ):
         self.calls.append(("get_items", item_types, start, limit))
+        self.sorts.append((item_types, sort_by, sort_order))
         if item_types == "MusicAlbum":
             pool = [a for a in self.albums if not genre_ids or a["Genre"] == genre_ids]
         elif item_types == "Playlist":
@@ -98,6 +100,8 @@ class FakeProvider:
             pool = self.songs
         else:
             pool = []
+        if sort_order == "Descending":
+            pool = list(reversed(pool))
         if "IsFavorite" in (filters or ""):
             pool = [x for x in pool if (x.get("UserData") or {}).get("IsFavorite")]
         page = pool[start : start + limit]
