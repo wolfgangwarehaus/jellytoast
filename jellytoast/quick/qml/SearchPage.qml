@@ -64,9 +64,10 @@ Item {
         anchors.bottom: parent.bottom
         clip: true
         model: results
-        boundsBehavior: Flickable.DragOverBounds
-        maximumFlickVelocity: 8000
-        flickDeceleration: 2500
+        boundsBehavior: Flickable.DragAndOvershootBounds
+        maximumFlickVelocity: theme.scrollMaxVelocity
+        flickDeceleration: theme.scrollDeceleration
+        pressDelay: 100  // a scroll that starts at once never "presses" the item under it
         section.property: "section"
         section.delegate: Label {
             required property string section

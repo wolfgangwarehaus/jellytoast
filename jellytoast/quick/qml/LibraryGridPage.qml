@@ -43,10 +43,10 @@ Item {
         cellWidth: width / page.columns
         cellHeight: cellWidth + (page.round ? 34 : 46)
         cacheBuffer: cellHeight * 4
-        boundsBehavior: Flickable.DragOverBounds
-        maximumFlickVelocity: 8000
-        flickDeceleration: 2500
-        pixelAligned: true
+        boundsBehavior: Flickable.DragAndOvershootBounds
+        maximumFlickVelocity: theme.scrollMaxVelocity
+        flickDeceleration: theme.scrollDeceleration
+        pressDelay: 100  // a scroll that starts at once never "presses" the item under it
         reuseItems: true
         bottomMargin: 8
 
@@ -160,10 +160,10 @@ Item {
         visible: session.signedIn && page.listMode
         clip: true
         model: visible ? page.lib : null
-        boundsBehavior: Flickable.DragOverBounds
-        maximumFlickVelocity: 8000
-        flickDeceleration: 2500
-        pixelAligned: true
+        boundsBehavior: Flickable.DragAndOvershootBounds
+        maximumFlickVelocity: theme.scrollMaxVelocity
+        flickDeceleration: theme.scrollDeceleration
+        pressDelay: 100  // a scroll that starts at once never "presses" the item under it
         reuseItems: true
         cacheBuffer: 600
         delegate: ItemDelegate {

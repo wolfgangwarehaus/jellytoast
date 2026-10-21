@@ -25,6 +25,9 @@ Item {
     BusyIndicator { anchors.centerIn: parent; running: lyrics.loading; visible: running }
 
     ListView {
+        flickDeceleration: theme.scrollDeceleration
+        pressDelay: 100  // a scroll that starts at once never "presses" the item under it
+        maximumFlickVelocity: theme.scrollMaxVelocity
         id: list
         anchors.fill: parent
         clip: true
@@ -37,7 +40,7 @@ Item {
         preferredHighlightEnd: height * 0.35 + 40
         highlightRangeMode: root.following && lyrics.synced ? ListView.ApplyRange : ListView.NoHighlightRange
         highlightMoveDuration: 350
-        boundsBehavior: Flickable.DragOverBounds
+        boundsBehavior: Flickable.DragAndOvershootBounds
         topMargin: 24
         bottomMargin: 24
         onMovingChanged: if (moving && dragging) { root.following = false; refollow.restart() }

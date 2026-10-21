@@ -15,9 +15,10 @@ Item {
         id: flick
         anchors.fill: parent
         contentHeight: col.implicitHeight + 24
-        boundsBehavior: Flickable.DragOverBounds
-        maximumFlickVelocity: 8000
-        flickDeceleration: 2500
+        boundsBehavior: Flickable.DragAndOvershootBounds
+        maximumFlickVelocity: theme.scrollMaxVelocity
+        flickDeceleration: theme.scrollDeceleration
+        pressDelay: 100  // a scroll that starts at once never "presses" the item under it
         clip: true
 
         Column {
@@ -61,6 +62,9 @@ Item {
                         font.weight: Font.DemiBold
                     }
                     ListView {
+                        flickDeceleration: theme.scrollDeceleration
+                        pressDelay: 100  // a scroll that starts at once never "presses" the item under it
+                        maximumFlickVelocity: theme.scrollMaxVelocity
                         id: row
                         objectName: "rail_" + rail.modelData.kind
                         width: parent.width
@@ -71,7 +75,7 @@ Item {
                         rightMargin: 16
                         clip: true
                         model: lib
-                        boundsBehavior: Flickable.DragOverBounds
+                        boundsBehavior: Flickable.DragAndOvershootBounds
                         delegate: Item {
                             id: tile
                             required property int index

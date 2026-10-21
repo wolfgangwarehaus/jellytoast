@@ -49,6 +49,9 @@ Item {
     }
 
     ListView {
+        flickDeceleration: theme.scrollDeceleration
+        pressDelay: 100  // a scroll that starts at once never "presses" the item under it
+        maximumFlickVelocity: theme.scrollMaxVelocity
         id: list
         objectName: "downloadList"
         anchors.top: bar.bottom
@@ -57,7 +60,7 @@ Item {
         anchors.bottom: parent.bottom
         clip: true
         model: dl
-        boundsBehavior: Flickable.DragOverBounds
+        boundsBehavior: Flickable.DragAndOvershootBounds
         delegate: SwipeDelegate {
             id: drow
             required property int index

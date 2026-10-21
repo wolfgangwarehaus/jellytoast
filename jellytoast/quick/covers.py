@@ -15,7 +15,7 @@ GUI thread: a ``Cover`` asks ``covers.request(key)``, the pipeline loads
 it, ``ready(key)`` fires, and the Cover then shows ``image://coverpx/<key>``
 — a *synchronous* pixmap provider, which Qt calls on the GUI thread.
 
-Keys are ``<itemId>/<px>``; models hand QML ``image://cover/<key>`` (see
+Keys are ``<itemId>/<px>[/<radius px>]``; models hand QML ``image://cover/<key>`` (see
 ``cover_source``) and the Cover component unwraps it."""
 
 from __future__ import annotations
@@ -58,6 +58,11 @@ class Covers(QObject):
         return pix
 
     @Slot(str, result=bool)
+    def cached(self, key: str) -> bool:
+        """Whether ``key``'s art is ready (no loading started)."""
+        return key in self._pix
+
+    @Slot(str, result=bool)
     def request(self, key: str) -> bool:
         """True if ``key``'s art is ready now; otherwise start loading it
         and answer later through ``ready``."""
@@ -68,9 +73,14 @@ class Covers(QObject):
             return True
         if key in self._inflight or key in self._missing:
             return False
-        item_id, _, px = key.rpartition("/")
+        # "<itemId>/<px>" or "<itemId>/<px>/<radius px>" (corners baked in,
+        # so QML needs no per-tile shader layer to round them).
+        parts = key.split("/")
         try:
-            size = int(px)
+            if len(parts) >= 3 and parts[-1].isdigit() and parts[-2].isdigit():
+                item_id, size, radius = "/".join(parts[:-2]), int(parts[-2]), int(parts[-1])
+            else:
+                item_id, size, radius = "/".join(parts[:-1]), int(parts[-1]), 0
         except ValueError:
             return False
         self._inflight.add(key)
@@ -87,12 +97,36 @@ class Covers(QObject):
                 size,
                 size,
                 lambda pix, k=key: self._landed(k, pix),
+                rounded_radius=radius,
                 on_error=lambda *_a, k=key: self._landed(k, None),
             )
         except Exception as e:
             logger.debug("cover %s failed: %s", key, e)
             self._landed(key, None)
         return False
+
+    @staticmethod
+    def _parse(key: str):
+        parts = key.split("/")
+        if len(parts) >= 3 and parts[-1].isdigit() and parts[-2].isdigit():
+            return "/".join(parts[:-2]), int(parts[-2]), int(parts[-1])
+        return "/".join(parts[:-1]), int(parts[-1]), 0
+
+    @Slot(str)
+    def release(self, key: str) -> None:
+        """A tile stopped wanting ``key`` (scrolled away / recycled): if its
+        download is still queued behind others, withdraw it so the covers
+        on screen go first."""
+        if key not in self._inflight:
+            return
+        try:
+            item_id, size, radius = self._parse(key)
+        except ValueError:
+            return
+        from jellytoast.ui_helpers import cancel_deferred_image
+
+        if cancel_deferred_image(f"{item_id}|quick", size, size, radius):
+            self._inflight.discard(key)
 
     def _landed(self, key: str, pix) -> None:
         self._inflight.discard(key)

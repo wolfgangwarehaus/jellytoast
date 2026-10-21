@@ -1621,6 +1621,22 @@ def _promote_deferred_key(cache_key: str) -> None:
     _deferred_normal.move_to_end(cache_key, last=False)
 
 
+def cancel_deferred_image(key: str, target_w: int, target_h: int, rounded_radius: int = 0) -> bool:
+    """Withdraw a ``load_image_async`` request that is still PARKED in the
+    concurrency gate's queue (never sent): its tile scrolled away, so it
+    must not hold up the ones on screen. A request already on the network
+    is left alone. Returns True if one was withdrawn. Its subscribers are
+    forgotten without callbacks — a later request starts it afresh."""
+    cache_key = f"{key}|{target_w}x{target_h}|r={rounded_radius}"
+    entry = _deferred_normal.pop(cache_key, None)
+    if entry is None:
+        entry = _deferred_low.pop(cache_key, None)
+    if entry is None:
+        return False
+    _inflight_subscribers.pop(cache_key, None)
+    return True
+
+
 def _promote_next_deferred() -> None:
     """Claim a gate slot and fire the next deferred load — NORMAL before
     LOW, so a visible tile beats a prefetch. Loops on start-failure: the

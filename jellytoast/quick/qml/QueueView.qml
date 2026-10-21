@@ -20,9 +20,10 @@ Item {
         anchors.fill: parent
         clip: true
         model: queue
-        boundsBehavior: Flickable.DragOverBounds
-        maximumFlickVelocity: 8000
-        flickDeceleration: 2500
+        boundsBehavior: Flickable.DragAndOvershootBounds
+        maximumFlickVelocity: theme.scrollMaxVelocity
+        flickDeceleration: theme.scrollDeceleration
+        pressDelay: 100  // a scroll that starts at once never "presses" the item under it
         delegate: SwipeDelegate {
             id: qrow
             required property int index

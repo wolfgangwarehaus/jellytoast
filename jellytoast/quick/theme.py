@@ -19,6 +19,22 @@ def _qcolor(css: str) -> QColor:
     return c
 
 
+def _env_num(name: str, default: float) -> float:
+    import os
+
+    try:
+        return float(os.environ.get(name) or default)
+    except ValueError:
+        return default
+
+
+# Scroll feel, shared by every list (logical px). Lower deceleration = a
+# longer glide after a flick; max velocity caps a hard fling. Override with
+# JT_SCROLL_DECEL / JT_SCROLL_MAXV to experiment without editing QML.
+SCROLL_DECELERATION = 1400.0
+SCROLL_MAX_VELOCITY = 7000.0
+
+
 class Theme(QObject):
     changed = Signal()
 
@@ -44,3 +60,9 @@ class Theme(QObject):
     onAccent = Property(QColor, _on_accent, notify=changed)
     groove = Property(QColor, lambda self: _qcolor(_u.SLIDER_GROOVE), notify=changed)
     surface = Property(QColor, lambda self: _qcolor(_u.POPUP_OPAQUE_FILL), notify=changed)
+    scrollDeceleration = Property(
+        float, lambda self: _env_num("JT_SCROLL_DECEL", SCROLL_DECELERATION), constant=True
+    )
+    scrollMaxVelocity = Property(
+        float, lambda self: _env_num("JT_SCROLL_MAXV", SCROLL_MAX_VELOCITY), constant=True
+    )

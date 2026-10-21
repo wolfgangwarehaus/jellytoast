@@ -57,9 +57,12 @@ Item {
     }
 
     Flickable {
+        flickDeceleration: theme.scrollDeceleration
+        pressDelay: 100  // a scroll that starts at once never "presses" the item under it
+        maximumFlickVelocity: theme.scrollMaxVelocity
         anchors.fill: parent
         contentHeight: col.implicitHeight + 32
-        boundsBehavior: Flickable.DragOverBounds
+        boundsBehavior: Flickable.DragAndOvershootBounds
         clip: true
 
         ColumnLayout {

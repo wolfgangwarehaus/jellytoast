@@ -17,10 +17,10 @@ Item {
         anchors.fill: parent
         clip: true
         model: session.signedIn ? lib : null
-        boundsBehavior: Flickable.DragOverBounds
-        maximumFlickVelocity: 8000
-        flickDeceleration: 2500
-        pixelAligned: true
+        boundsBehavior: Flickable.DragAndOvershootBounds
+        maximumFlickVelocity: theme.scrollMaxVelocity
+        flickDeceleration: theme.scrollDeceleration
+        pressDelay: 100  // a scroll that starts at once never "presses" the item under it
         delegate: ItemDelegate {
             id: gRow
             required property string itemId

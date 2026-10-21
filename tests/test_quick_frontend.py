@@ -287,3 +287,22 @@ def test_seek_letter_by_album_artist_both_directions(qapp, monkeypatch):
         assert not m.scrubbable
     finally:
         s.library_sort_by, s.library_sort_order = saved
+
+
+def test_cancel_deferred_image_only_touches_parked_requests(qapp):
+    """A scrolled-away tile can withdraw its queued cover download; one
+    already on the network (or unknown) is left alone."""
+    from jellytoast import ui_helpers as u
+
+    key, w, h, r = "al9|quick", 512, 512, 23
+    cache_key = f"{key}|{w}x{h}|r={r}"
+    u._deferred_normal[cache_key] = (w, h, r, lambda: None)
+    u._inflight_subscribers[cache_key] = [(lambda pix: None, None)]
+    try:
+        assert u.cancel_deferred_image(key, w, h, r)
+        assert cache_key not in u._deferred_normal
+        assert cache_key not in u._inflight_subscribers
+        assert not u.cancel_deferred_image(key, w, h, r)  # nothing left to withdraw
+    finally:
+        u._deferred_normal.pop(cache_key, None)
+        u._inflight_subscribers.pop(cache_key, None)
