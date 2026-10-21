@@ -32,22 +32,42 @@ Item {
         }
     }
 
-    // The track: a thin grey line.
+    // The track: a thin grey line, shorter than the list and centred,
+    // with a faint first / last letter at its ends.
     Rectangle {
         id: track
         anchors.right: parent.right
-        anchors.rightMargin: 4
-        anchors.top: parent.top
-        anchors.bottom: parent.bottom
-        anchors.topMargin: 12
-        anchors.bottomMargin: 12
-        width: rail.engaged ? 3 : 2
+        anchors.rightMargin: 6
+        anchors.verticalCenter: parent.verticalCenter
+        height: Math.min(parent.height * 0.6, 460)
+        width: rail.engaged ? 6 : 4
         radius: width / 2
         color: theme.textFaint
-        opacity: rail.engaged ? 0.9 : 0.55
+        opacity: rail.engaged ? 0.6 : 0.35
+        Behavior on width { NumberAnimation { duration: 100 } }
     }
-    // Where you are: a short, slightly brighter segment on the line —
-    // under the finger while scrubbing, else the list's scroll position.
+    Text {
+        anchors.horizontalCenter: track.horizontalCenter
+        anchors.bottom: track.top
+        anchors.bottomMargin: 4
+        text: rail.reversed ? "Z" : "A"
+        color: theme.textDim
+        opacity: 0.7
+        font.pixelSize: 10
+        font.weight: Font.DemiBold
+    }
+    Text {
+        anchors.horizontalCenter: track.horizontalCenter
+        anchors.top: track.bottom
+        anchors.topMargin: 4
+        text: rail.reversed ? "A" : "Z"
+        color: theme.textDim
+        opacity: 0.7
+        font.pixelSize: 10
+        font.weight: Font.DemiBold
+    }
+    // Where you are: a pill the same width as the line, inside it — under
+    // the finger while scrubbing, else the list's scroll position.
     Rectangle {
         id: marker
         readonly property real frac: rail.engaged
@@ -55,10 +75,10 @@ Item {
             : (rail.view && rail.view.visibleArea.heightRatio < 1
                ? rail.view.visibleArea.yPosition / Math.max(0.0001, 1 - rail.view.visibleArea.heightRatio)
                : 0)
-        x: track.x + track.width / 2 - width / 2
+        x: track.x
         y: track.y + Math.max(0, Math.min(1, frac)) * (track.height - height)
-        width: rail.engaged ? 6 : 4
-        height: 36
+        width: track.width
+        height: Math.max(24, Math.min(40, track.height * 0.12))
         radius: width / 2
         color: rail.engaged ? theme.accent : theme.textDim
     }
