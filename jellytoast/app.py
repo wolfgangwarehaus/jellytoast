@@ -2546,14 +2546,15 @@ def main():
 
     win.tray = None if is_mobile_shell() else TrayController(app, mini, win)
     if is_mobile_shell():
-        # Docked mode (Plasma Mobile quick setting) flips in plasmamobilerc;
-        # re-evaluate the window controls when it changes. KConfig saves by
-        # atomic rename, which drops the watch — re-add it every time.
+        # Docked mode (a shell quick setting) flips in plasmamobilerc /
+        # Phosh's dconf db; re-evaluate the window controls when it changes.
+        # KConfig and dconf save by atomic rename, which drops the watch —
+        # re-add it every time.
         from PySide6.QtCore import QFileSystemWatcher
 
-        from jellytoast.platform_compat import plasma_mobile_config_path
+        from jellytoast.platform_compat import docked_config_path
 
-        _cfg = plasma_mobile_config_path()
+        _cfg = docked_config_path()
         win._mobile_cfg_watcher = QFileSystemWatcher([_cfg], win)
 
         def _on_mobile_cfg_changed(_path, _w=win._mobile_cfg_watcher):

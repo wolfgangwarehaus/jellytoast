@@ -108,18 +108,26 @@ could run.
 - [ ] Remove the Widgets phone layouts — later, once the Quick UI has had
   a release or two in the wild.
 - [ ] **Phosh** (prep for the OnePlus 6T; verify on a real device):
-  - [ ] `platform_compat.is_mobile_shell()`: also true on Phosh
-    (`XDG_CURRENT_DESKTOP` contains `Phosh`) — today only Plasma Mobile's
-    `PLASMA_PLATFORM=phone…` / `QT_QUICK_CONTROLS_MOBILE` count, so Phosh
-    gets the desktop UI unless `JT_UI=quick`.
-  - [ ] `is_docked()` for Phosh: its docked mode (external display /
-    keyboard) — find where Phosh exposes it; today only `plasmamobilerc`.
-  - [ ] Squeekboard pops up for the Quick UI's text fields (Qt
-    text-input-v3) — search, sign-in, new playlist name.
-  - [ ] Media controls on the Phosh lock screen (MPRIS), notifications,
-    close-to-background behaviour.
+  - [x] `platform_compat.is_mobile_shell()`: also true on Phosh
+    (`is_phosh()`: its session's `DesktopNames=Phosh;GNOME;` →
+    `XDG_CURRENT_DESKTOP=Phosh:GNOME`), so it gets the Quick UI by default.
+  - [x] `is_docked()` for Phosh: its docked toggle sets phoc's
+    `sm.puri.phoc auto-maximize` to false (and restores the window buttons /
+    turns the OSK off). Read with `gsettings get`, re-run only when
+    `~/.config/dconf/user` changes; the app's docked watcher follows that
+    file on Phosh. No phoc schema / flatpak sandbox → undocked (same as
+    Plasma's plasmamobilerc in the flatpak).
+  - [ ] Squeekboard pops up for the Quick UI's text fields — search,
+    sign-in, new playlist name. Qt ≥ 6.7 speaks text-input-v3 (we need
+    6.11), so it should; check `QT_IM_MODULE` isn't forcing something else.
+  - [ ] Media controls on the Phosh lock screen (MPRIS — needs the
+    DesktopEntry / icon to resolve), notifications.
+  - [ ] Close-to-background in the Quick UI (any phone shell): closing its
+    window quits even mid-song; the Widgets window keeps playing
+    (`app._close_hides_window`).
   - [ ] Packaging: postmarketOS / Nura OS (aarch64) — PySide6 with
-    QtQuick from the distro, or the Flatpak (KDE runtime) on Phosh.
+    QtQuick from the distro, or the Flatpak (KDE runtime, aarch64 already
+    built) on Phosh.
 
 ## Rig (dev + tests)
 

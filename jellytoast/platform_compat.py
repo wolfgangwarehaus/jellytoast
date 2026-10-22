@@ -149,9 +149,19 @@ def is_linux_wayland() -> bool:
     return IS_LINUX and will_be_wayland()
 
 
+def is_phosh() -> bool:
+    """Phosh (the GNOME-based phone shell). Its session file sets
+    ``DesktopNames=Phosh;GNOME;`` → ``XDG_CURRENT_DESKTOP=Phosh:GNOME``."""
+    if not IS_LINUX:
+        return False
+    parts = os.environ.get("XDG_CURRENT_DESKTOP", "").upper().split(":")
+    return "PHOSH" in parts
+
+
 def is_mobile_shell() -> bool:
-    """A phone shell (Plasma Mobile today). ``startplasmamobile`` exports
-    ``PLASMA_PLATFORM=phone:handset`` and ``QT_QUICK_CONTROLS_MOBILE=true``.
+    """A phone shell: Plasma Mobile or Phosh. ``startplasmamobile`` exports
+    ``PLASMA_PLATFORM=phone:handset`` and ``QT_QUICK_CONTROLS_MOBILE=true``;
+    Phosh names itself in ``XDG_CURRENT_DESKTOP``.
     Gates *behaviour* (close-to-background, no tray, no mini player) — layout
     follows window width instead, since docked mode can turn the forced-
     maximize off mid-session."""
@@ -159,7 +169,9 @@ def is_mobile_shell() -> bool:
         return False
     if os.environ.get("PLASMA_PLATFORM", "").startswith("phone"):
         return True
-    return os.environ.get("QT_QUICK_CONTROLS_MOBILE", "").lower() in ("1", "true")
+    if os.environ.get("QT_QUICK_CONTROLS_MOBILE", "").lower() in ("1", "true"):
+        return True
+    return is_phosh()
 
 
 def plasma_mobile_config_path() -> str:
@@ -168,13 +180,54 @@ def plasma_mobile_config_path() -> str:
     )
 
 
-def is_docked() -> bool:
-    """Plasma Mobile's docked (convergence) mode — the quick setting that
-    gives windows their decorations back while leaving them maximized. Read
-    live from ``plasmamobilerc`` ``[General] convergenceModeEnabled``; False
-    off a mobile shell or when unreadable."""
-    if not is_mobile_shell():
-        return False
+def dconf_user_db_path() -> str:
+    """The user dconf database GSettings writes to (default profile) —
+    Phosh's docked toggle lands here."""
+    return os.path.join(
+        os.environ.get("XDG_CONFIG_HOME") or os.path.expanduser("~/.config"), "dconf", "user"
+    )
+
+
+def docked_config_path() -> str:
+    """The file that changes when the shell's docked mode flips, for a
+    QFileSystemWatcher: ``plasmamobilerc`` on Plasma Mobile, the dconf
+    database on Phosh."""
+    return dconf_user_db_path() if is_phosh() else plasma_mobile_config_path()
+
+
+# (dconf db mtime, docked) — `gsettings get` is a subprocess, and
+# touch.phone_ui() / popup fills ask often; re-run only when dconf changed.
+_phosh_docked_cache: tuple[float | None, bool] = (None, False)
+
+
+def _phosh_docked() -> bool:
+    """Phosh's docked mode turns phoc's ``auto-maximize`` off (and gives
+    windows their buttons back). No phoc schema / no gsettings (a flatpak
+    sandbox) → undocked."""
+    global _phosh_docked_cache
+    try:
+        mtime: float | None = os.stat(dconf_user_db_path()).st_mtime
+    except OSError:
+        mtime = None
+    cached_mtime, cached = _phosh_docked_cache
+    if mtime is not None and mtime == cached_mtime:
+        return cached
+    import subprocess
+
+    docked = False
+    try:
+        out = subprocess.run(
+            ["gsettings", "get", "sm.puri.phoc", "auto-maximize"],
+            capture_output=True, text=True, timeout=2,
+        )
+        docked = out.returncode == 0 and out.stdout.strip() == "false"
+    except (OSError, subprocess.SubprocessError):
+        pass
+    _phosh_docked_cache = (mtime, docked)
+    return docked
+
+
+def _plasma_docked() -> bool:
     try:
         group = ""
         with open(plasma_mobile_config_path(), encoding="utf-8") as f:
@@ -187,6 +240,17 @@ def is_docked() -> bool:
     except OSError:
         pass
     return False
+
+
+def is_docked() -> bool:
+    """The phone shell's docked (convergence) mode — the quick setting that
+    gives windows their decorations back. Plasma Mobile: read live from
+    ``plasmamobilerc`` ``[General] convergenceModeEnabled``. Phosh: phoc's
+    ``auto-maximize`` GSetting is off. False off a mobile shell or when
+    unreadable."""
+    if not is_mobile_shell():
+        return False
+    return _phosh_docked() if is_phosh() else _plasma_docked()
 
 
 APP_ID = "io.github.wolfgangwarehaus.jellytoast"

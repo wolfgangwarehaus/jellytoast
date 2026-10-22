@@ -10,7 +10,7 @@ from jellytoast import platform_compat as pc
 
 @pytest.fixture
 def clean_env(monkeypatch):
-    for var in ("PLASMA_PLATFORM", "QT_QUICK_CONTROLS_MOBILE", "FLATPAK_ID"):
+    for var in ("PLASMA_PLATFORM", "QT_QUICK_CONTROLS_MOBILE", "FLATPAK_ID", "XDG_CURRENT_DESKTOP"):
         monkeypatch.delenv(var, raising=False)
     monkeypatch.setattr(pc, "IS_LINUX", True)
     return monkeypatch
@@ -27,6 +27,15 @@ class TestIsMobileShell:
 
     def test_desktop(self, clean_env):
         clean_env.setenv("QT_QUICK_CONTROLS_MOBILE", "0")
+        assert not pc.is_mobile_shell()
+
+    def test_phosh(self, clean_env):
+        clean_env.setenv("XDG_CURRENT_DESKTOP", "Phosh:GNOME")
+        assert pc.is_mobile_shell()
+        assert pc.is_phosh()
+
+    def test_gnome_is_not_phosh(self, clean_env):
+        clean_env.setenv("XDG_CURRENT_DESKTOP", "GNOME")
         assert not pc.is_mobile_shell()
 
     def test_never_off_linux(self, clean_env):
@@ -132,6 +141,58 @@ class TestIsDocked:
         clean_env.setenv("PLASMA_PLATFORM", "phone:handset")
         clean_env.setenv("XDG_CONFIG_HOME", str(tmp_path))
         assert not pc.is_docked()
+
+
+class TestIsDockedPhosh:
+    @pytest.fixture
+    def phosh(self, tmp_path, clean_env):
+        clean_env.setenv("XDG_CURRENT_DESKTOP", "Phosh:GNOME")
+        clean_env.setenv("XDG_CONFIG_HOME", str(tmp_path))
+        (tmp_path / "dconf").mkdir()
+        db = tmp_path / "dconf" / "user"
+        db.write_bytes(b"")
+        clean_env.setattr(pc, "_phosh_docked_cache", (None, False))
+        calls = []
+        state = {"out": "true\n", "rc": 0}
+
+        def fake_run(cmd, **_kw):
+            import subprocess
+
+            calls.append(cmd)
+            return subprocess.CompletedProcess(cmd, state["rc"], state["out"], "")
+
+        clean_env.setattr("subprocess.run", fake_run)
+        return db, state, calls
+
+    def test_auto_maximize_off_means_docked(self, phosh):
+        _db, state, calls = phosh
+        state["out"] = "false\n"
+        assert pc.is_docked()
+        assert calls[0][1:] == ["get", "sm.puri.phoc", "auto-maximize"]
+
+    def test_auto_maximize_on_means_undocked(self, phosh):
+        assert not pc.is_docked()
+
+    def test_missing_schema_means_undocked(self, phosh):
+        _db, state, _calls = phosh
+        state["rc"], state["out"] = 1, ""
+        assert not pc.is_docked()
+
+    def test_rereads_only_when_dconf_changes(self, phosh):
+        import os
+
+        db, state, calls = phosh
+        assert not pc.is_docked()
+        assert not pc.is_docked()
+        assert len(calls) == 1
+        state["out"] = "false\n"
+        st = db.stat()
+        os.utime(db, (st.st_atime, st.st_mtime + 5))
+        assert pc.is_docked()
+        assert len(calls) == 2
+
+    def test_watch_path(self, phosh, tmp_path):
+        assert pc.docked_config_path() == str(tmp_path / "dconf" / "user")
 
 
 class TestSettingsOnAMobileShell:
