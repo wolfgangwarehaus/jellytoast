@@ -581,3 +581,30 @@ class TestPlay:
         ctrl._on_prefetch_request(_np("n1"))
         cm.pending(False)
         assert cm.requests == []
+
+
+class TestReplacedSession:
+    def test_wire_flags_a_replaced_session_for_retry(self, proxied):
+        mc = _WireMC()
+
+        def play_media(url, content_type, **kw):
+            kw["callback_function"](
+                True, {"type": "INVALID_REQUEST", "reason": "INVALID_MEDIA_SESSION_ID"}
+            )
+
+        mc.play_media = play_media
+        out = CastManager().chromecast_queue_next(_wire_dev(mc), _np("n1"), provider=_Prov())
+        assert out["queued"] is None and out["retry"] is True
+
+    def test_retried_not_refused(self, monkeypatch):
+        import jellytoast.cast_receiver_queue as _rq_mod
+
+        later = []
+        monkeypatch.setattr(_rq_mod.QTimer, "singleShot", lambda _ms, fn: later.append(fn))
+        h = _host()
+        rq = CastReceiverQueue(h)
+        rq.set_wanted(_np("n1"))
+        h._cast_manager.requests[-1].on_done({"removed": True, "queued": None, "retry": True})
+        assert rq._refused_item_id == "" and len(later) == 1
+        later.pop()()
+        assert len(h._cast_manager.requests) == 2

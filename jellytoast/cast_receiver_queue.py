@@ -30,6 +30,8 @@ reads the host's cast state and calls back into ``_on_ended`` /
 import logging
 from typing import Optional
 
+from PySide6.QtCore import QTimer
+
 from jellytoast.cast_manager import CastType
 from jellytoast.cast_manager._chromecast import CAST_TAG_KEY
 from jellytoast.player_state import get_now_playing
@@ -48,6 +50,9 @@ class CastReceiverQueue:
     # for it to report the queued one before pushing the next track
     # ourselves (it never took the queued item).
     ADVANCE_WAIT_S = 4.0
+    # Retries for a request that reached a session a LOAD had just replaced.
+    MAX_RETRIES = 3
+    RETRY_MS = 1000
 
     def __init__(self, host):
         self._host = host
@@ -75,6 +80,7 @@ class CastReceiverQueue:
         # Item the receiver refused to queue; not retried until the
         # receiver's queue is replaced or the app's next track changes.
         self._refused_item_id = ""
+        self._retries = 0
 
     # ── Lifecycle ────────────────────────────────────────────────────────
 
@@ -89,6 +95,7 @@ class CastReceiverQueue:
         self.followed_item_id = ""
         self.end_wait_wall = 0.0
         self._refused_item_id = ""
+        self._retries = 0
 
     def begin_load(self) -> None:
         self.reset()
@@ -193,6 +200,11 @@ class CastReceiverQueue:
         queued = result.get("queued")
         if queued is not None:
             self.queued = queued
+        elif result.get("retry") and self._retries < self.MAX_RETRIES:
+            # Asked a session that had just been replaced; ask again.
+            self._retries += 1
+            QTimer.singleShot(self.RETRY_MS, self.sync)
+            return
         elif want is not None and result.get("removed"):
             self._refused_item_id = want.item_id
         # The app's next track may have changed while we waited.

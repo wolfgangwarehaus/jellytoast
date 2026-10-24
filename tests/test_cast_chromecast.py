@@ -654,3 +654,47 @@ class TestRadioCast:
         assert "http://server/stream.flac" in identity_proxy
         _, _, kwargs = cast.media_controller.play_media_calls[0]
         assert kwargs.get("stream_type") == "BUFFERED"
+
+
+class TestLoadWaitsForItsOwnStatus:
+    """A group's previous track still reads PLAYING right after a LOAD; that
+    must not count as the new track having started."""
+
+    def _cast(self, after_polls):
+        cast = _FakeCast()
+        mc = cast.media_controller
+        mc.status.media_custom_data = {"jellytoast": "jt-old"}
+        polls = {"n": 0}
+        real_play_media = mc.play_media
+
+        def play_media(url, content_type, **kw):
+            real_play_media(url, content_type, **kw)
+            mc.loaded_tag = kw["media_info"]["customData"]["jellytoast"]
+
+        mc.play_media = play_media
+
+        base = mc.status
+
+        def _status():
+            polls["n"] += 1
+            if polls["n"] > after_polls:
+                base.media_custom_data = {"jellytoast": mc.loaded_tag}
+            return base
+
+        type(mc).status = property(lambda self: _status(), lambda self, v: None)
+        return cast, polls
+
+    def test_old_items_playing_is_not_success(self, manager):
+        cast, polls = self._cast(after_polls=4)
+        try:
+            assert manager.cast_to_chromecast(_device(cast), "http://x/a.flac", is_audio=True)
+            assert polls["n"] > 4  # kept polling until its own tag showed
+        finally:
+            del type(cast.media_controller).status
+
+    def test_never_seeing_its_own_status_fails(self, manager):
+        cast, _ = self._cast(after_polls=10**9)
+        try:
+            assert not manager.cast_to_chromecast(_device(cast), "http://x/a.flac", is_audio=True)
+        finally:
+            del type(cast.media_controller).status

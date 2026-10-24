@@ -395,6 +395,7 @@ class _ChromecastMixin:
             # tracks with a known duration. Default Media Receiver rejects
             # an unsized BUFFERED Icecast stream into IDLE/ERROR.
             stream_type = "LIVE" if is_live else "BUFFERED"
+            tag = new_cast_tag()
             kwargs = dict(
                 title=title,
                 thumb=thumb,
@@ -404,7 +405,7 @@ class _ChromecastMixin:
                 # its status can't be mistaken for one we queue later (and
                 # so pychromecast, which keeps the last customData it saw,
                 # doesn't carry an old item's tag forward).
-                media_info={"customData": {CAST_TAG_KEY: new_cast_tag()}},
+                media_info={"customData": {CAST_TAG_KEY: tag}},
             )
             # Resume position. Default Media Receiver honors current_time
             # on play_media; passing 0 starts at the beginning.
@@ -449,6 +450,12 @@ class _ChromecastMixin:
                         "poll: state=%r idle_reason=%r", state, idle_reason
                     )
                     last_seen = (state, idle_reason)
+                if self._status_tag_other_than(st, tag):
+                    # Still the previous track's status (seen on a group:
+                    # its PLAYING read as this LOAD having taken, and a
+                    # queue insert then went to the replaced session).
+                    time.sleep(0.25)
+                    continue
                 if state in ("PLAYING", "BUFFERING"):
                     self._arm_active_cast(dev, reset_paused=True)
                     return True
@@ -465,7 +472,9 @@ class _ChromecastMixin:
                     return False
                 time.sleep(0.25)
             final = getattr(mc.status, "player_state", None)
-            if final in ("PLAYING", "BUFFERING", "PAUSED"):
+            if final in ("PLAYING", "BUFFERING", "PAUSED") and not self._status_tag_other_than(
+                mc.status, tag
+            ):
                 self._arm_active_cast(dev, reset_paused=True)
                 return True
             logger.warning(
@@ -484,6 +493,13 @@ class _ChromecastMixin:
             logger.warning("Chromecast play: %s", e)
             self.last_cast_failure = "unreachable"
             return False
+
+    @staticmethod
+    def _status_tag_other_than(status, tag: str) -> bool:
+        """True when the media status is for one of our items other than
+        ``tag``."""
+        seen = (getattr(status, "media_custom_data", None) or {}).get(CAST_TAG_KEY)
+        return bool(seen) and seen != tag
 
     def _note_relay_unreachable(self, url: str) -> None:
         """The receiver took the session but never played. If the stream
@@ -600,6 +616,10 @@ class _ChromecastMixin:
             ),
         )
         if ok is False:
+            if isinstance(reply, dict) and reply.get("reason") == "INVALID_MEDIA_SESSION_ID":
+                # The session changed under us (a LOAD just replaced it).
+                out["retry"] = True
+                return out
             logger.info("cast: the receiver wouldn't queue %r", np.title)
             return out
         out["queued"] = {
