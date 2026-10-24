@@ -498,10 +498,20 @@ class TestTransport:
         assert cast.media_controller.play_calls == 0
 
     def test_pause_when_paused_calls_play(self, manager):
-        cast = self._armed(manager, player_is_playing=False)
+        cast = self._armed(manager, player_state="PAUSED", player_is_playing=False)
         manager.chromecast_pause()
         assert cast.media_controller.play_calls == 1
         assert cast.media_controller.pause_calls == 0
+
+    @pytest.mark.parametrize("paused, expect_pause", [(False, 1), (True, 0)])
+    def test_pause_during_a_reconnect_uses_last_known_state(self, manager, paused, expect_pause):
+        # A reconnect blanks the status to UNKNOWN; "not playing" there
+        # turned a pause press into a play.
+        cast = self._armed(manager, player_state="UNKNOWN", player_is_playing=False)
+        manager.sync_cast_paused(paused)
+        manager.chromecast_pause()
+        assert cast.media_controller.pause_calls == expect_pause
+        assert cast.media_controller.play_calls == 1 - expect_pause
 
     def test_pause_noop_when_no_active_cast(self, manager):
         manager.active_cast = None

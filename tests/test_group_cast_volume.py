@@ -139,3 +139,81 @@ def test_single_chromecast_still_forces_and_snapshots(mgr, monkeypatch):
     assert applied == 30
     assert mgr._pre_cast_device_volume == 70
     assert mgr._pre_cast_member_volumes is None
+
+
+def test_prepare_sets_members_in_parallel(mgr, monkeypatch):
+    # One slow / offline speaker mustn't hold the others (and the first
+    # track) back by its connect timeout, one after another.
+    import threading
+    import time
+
+    barrier = threading.Barrier(3, timeout=2)
+    sets = []
+
+    def _slow(uuid, level01):
+        dev = _member(uuid, level01, sets)
+        dev.cast_object.wait = lambda timeout=3: barrier.wait()
+        return dev
+
+    mgr.chromecast_devices = [_slow("a", 0.5), _slow("b", 0.5), _slow("c", 0.5)]
+    monkeypatch.setattr(
+        "jellytoast.settings.get_settings",
+        lambda: SimpleNamespace(cast_member_volumes={"g1": {"a": 20, "b": 30, "c": 40}}),
+    )
+    t0 = time.monotonic()
+    mgr.prepare_group_volume_before_media(_group("g1"))  # serial would hit the barrier timeout
+    assert time.monotonic() - t0 < 1.5
+    assert sorted(sets) == [("a", 0.2), ("b", 0.3), ("c", 0.4)]
+    assert [m["uuid"] for m in mgr._pre_cast_member_volumes] == ["a", "b", "c"]
+
+
+def test_prepare_skips_unreachable_member(mgr, monkeypatch):
+    sets = []
+    bad = _member("bad", 0.5, sets)
+
+    def _timeout(timeout=3):
+        raise TimeoutError("offline")
+
+    bad.cast_object.wait = _timeout
+    mgr.chromecast_devices = [_member("ok", 0.5, sets), bad]
+    monkeypatch.setattr(
+        "jellytoast.settings.get_settings",
+        lambda: SimpleNamespace(cast_member_volumes={"g1": {"ok": 20, "bad": 30}}),
+    )
+    mgr.prepare_group_volume_before_media(_group("g1"))
+    assert sets == [("ok", 0.2)]
+    assert mgr._pre_cast_member_volumes == [{"uuid": "ok", "volume": 50}]
+
+
+def test_group_members_reuses_one_multizone_controller(mgr, monkeypatch):
+    # Every volume-popup open registered another controller on the group's
+    # connection; they piled up for the whole session.
+    import sys
+    import types
+
+    registered = []
+
+    class _MZ:
+        def __init__(self, uuid):
+            self.members = ["m1"]
+            self._members = {"m1": "Kitchen"}
+
+        def update_members(self):
+            pass
+
+    fake_mod = types.ModuleType("pychromecast.controllers.multizone")
+    fake_mod.MultizoneController = _MZ
+    monkeypatch.setitem(sys.modules, "pychromecast.controllers.multizone", fake_mod)
+    monkeypatch.setattr("time.sleep", lambda _s: None)
+    monkeypatch.setattr(
+        "jellytoast.cast_manager.run_async",
+        lambda fn, on_result=None, on_error=None: on_result(fn()),
+    )
+    group_cc = SimpleNamespace(uuid="g1", wait=lambda timeout=6: None,
+                               register_handler=registered.append)
+    group = SimpleNamespace(name="Group", uuid="g1", cast_object=group_cc)
+    out = []
+    mgr.group_members_async(group, out.append)
+    mgr.group_members_async(group, out.append)
+    assert len(registered) == 1
+    assert out[0] == out[1] and out[0][0]["name"] == "Kitchen"

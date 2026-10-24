@@ -19,8 +19,14 @@ logger = logging.getLogger(__name__)
 
 
 class _ChromecastMixin:
-    # Shared by every manager instance: keyed per handle / member uuid.
-    _volume_throttle = _Throttle()
+    @property
+    def _volume_throttle(self) -> _Throttle:
+        """Per manager, keyed per handle / member uuid (created lazily —
+        the mixin has no ``__init__``)."""
+        t = self.__dict__.get("_volume_throttle_obj")
+        if t is None:
+            t = self.__dict__["_volume_throttle_obj"] = _Throttle()
+        return t
 
     # ── Chromecast ──────────────────────────────────────────────────────────
 
@@ -200,7 +206,7 @@ class _ChromecastMixin:
             # device is powered off / off-network. RequestTimeout is
             # caught below → reported as a failed connect.
             cc.wait(timeout=10)
-            self._arm_active_cast(dev)
+            self._arm_active_cast(dev, reset_paused=True)
             return True
         except Exception as e:
             logger.warning("Chromecast connect: %s", e)
@@ -353,7 +359,7 @@ class _ChromecastMixin:
                     )
                     last_seen = (state, idle_reason)
                 if state in ("PLAYING", "BUFFERING"):
-                    self._arm_active_cast(dev)
+                    self._arm_active_cast(dev, reset_paused=True)
                     return True
                 if state == "IDLE" and idle_reason == "ERROR":
                     logger.warning(
@@ -369,7 +375,7 @@ class _ChromecastMixin:
                 time.sleep(0.25)
             final = getattr(mc.status, "player_state", None)
             if final in ("PLAYING", "BUFFERING", "PAUSED"):
-                self._arm_active_cast(dev)
+                self._arm_active_cast(dev, reset_paused=True)
                 return True
             logger.warning(
                 "Chromecast play: receiver never started (state=%s) "
@@ -478,7 +484,17 @@ class _ChromecastMixin:
             cc = self.active_cast.cast_object
             if cc:
                 mc = cc.media_controller
-                if mc.status.player_is_playing:
+                state = getattr(mc.status, "player_state", None)
+                if state in ("PLAYING", "BUFFERING"):
+                    playing = True
+                elif state == "PAUSED":
+                    playing = False
+                else:
+                    # UNKNOWN: the status was blanked by a reconnect. Go by
+                    # the last real state we saw rather than "not playing"
+                    # (which turned a pause press into a no-op play).
+                    playing = not getattr(self, "_cast_paused", False)
+                if playing:
                     mc.pause()
                 else:
                     mc.play()
@@ -548,24 +564,31 @@ class _ChromecastMixin:
         saved = get_settings().cast_member_volumes.get(group_uuid, {}) if group_uuid else {}
         if not saved:
             return
-        snap: List[Dict] = []
-        for uuid, level in saved.items():
+        def _preset(uuid, level) -> Optional[Dict]:
             dev = next((d for d in self.chromecast_devices if d.uuid == uuid), None)
             if dev is None or dev.cast_object is None:
-                continue
+                return None
             try:
                 cc = dev.cast_object
                 cc.wait(timeout=3)
                 cur = getattr(cc.status, "volume_level", None)
                 if cur is None:
-                    continue
+                    return None
                 cur_pct = int(round(float(cur) * 100))
-                snap.append({"uuid": uuid, "volume": cur_pct})
                 if cur_pct != int(level):
                     cc.set_volume(max(0.0, min(1.0, int(level) / 100.0)))
+                return {"uuid": uuid, "volume": cur_pct}
             except Exception as e:
                 logger.warning("group volume pre-set for %s: %s", uuid, e)
-        self._pre_cast_member_volumes = snap
+                return None
+
+        # All members at once: one at a time, each offline speaker held the
+        # first track back by its full connect timeout.
+        from concurrent.futures import ThreadPoolExecutor
+
+        with ThreadPoolExecutor(max_workers=min(8, len(saved))) as pool:
+            results = list(pool.map(lambda kv: _preset(*kv), saved.items()))
+        self._pre_cast_member_volumes = [r for r in results if r is not None]
 
     def group_members_async(self, group_dev: CastDevice, on_result: Callable):
         """Resolve a Chromecast group's member speakers + their current
@@ -587,8 +610,14 @@ class _ChromecastMixin:
             if group_cc is None:
                 return []
             group_cc.wait(timeout=6)
-            mz = MultizoneController(group_cc.uuid)
-            group_cc.register_handler(mz)
+            # One controller per group handle: registering a new one on
+            # every popup open stacked handlers on the connection, each
+            # processing every multizone message for the rest of the session.
+            mz = getattr(group_cc, "_jt_multizone", None)
+            if mz is None:
+                mz = MultizoneController(group_cc.uuid)
+                group_cc.register_handler(mz)
+                group_cc._jt_multizone = mz
             # update_members() sends a GET_STATUS; the group's
             # TYPE_MULTIZONE_STATUS reply lands asynchronously a beat
             # later. mz.members is a list of member uuids (not a dict)

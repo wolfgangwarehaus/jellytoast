@@ -393,8 +393,12 @@ class _CastTransportMixin:
             self._cast_last_player_state = ps
             if ps == "PAUSED":
                 self._on_paused(True)
+                if self._cast_manager is not None:
+                    self._cast_manager.sync_cast_paused(True)
             elif ps in ("PLAYING", "BUFFERING"):
                 self._on_paused(False)
+                if self._cast_manager is not None:
+                    self._cast_manager.sync_cast_paused(False)
             elif ps == "IDLE":
                 # IDLE with idle_reason FINISHED = track ended cleanly.
                 # Trigger _on_ended so the queue manager advances.
