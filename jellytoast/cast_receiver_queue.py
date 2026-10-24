@@ -217,14 +217,17 @@ class CastReceiverQueue:
         q = self.queued
         ps = getattr(status, "player_state", None)
         if q is not None and self._on_queued_item(status, q):
-            if ps in _PLAYING:
-                self._follow(q)
-                return False
             if ps == "IDLE" and (getattr(status, "idle_reason", "") or "") == "ERROR":
                 logger.warning("cast: the receiver couldn't play the queued track")
                 self._push_next_ourselves()
                 return True
-            return False
+            # Moved on. The first status for the new item (seen on a Google
+            # speaker group) is IDLE/FINISHED for the *old* item, carrying
+            # the new one in extendedStatus (LOADING) — pychromecast takes
+            # that as the media. Then LOADING, BUFFERING, PLAYING. Don't let
+            # that IDLE reach the caller as a track end.
+            self._follow(q)
+            return ps not in _PLAYING
         tag = (getattr(status, "media_custom_data", None) or {}).get(CAST_TAG_KEY)
         if tag and tag in self.stale_tags and ps in _PLAYING and not self.loading:
             # The receiver moved on to a track the app no longer wants next.

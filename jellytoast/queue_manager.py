@@ -184,6 +184,7 @@ class QueueManager(QObject):
         self.bus.repeat_changed.connect(self._on_repeat_changed)
         self.bus.shuffle_changed.connect(self._on_shuffle_changed)
         self.bus.playback_ended.connect(self._on_playback_ended)
+        self.bus.cast_started.connect(self._on_cast_started)
 
     # ── Properties ──────────────────────────────────────────────────────────
     #
@@ -556,6 +557,14 @@ class QueueManager(QObject):
         can react to skip-heavy patterns on the *next* refill."""
         self._record_transition(was_skip=True)
         self.next()
+
+    @Slot(str)
+    def _on_cast_started(self, _name: str):
+        """A cast picked up the playing track (or a restored queue that
+        never played here): re-send the next track so a Chromecast can
+        queue it. Deferred so the player has finished its own cast-start
+        handling first."""
+        QTimer.singleShot(0, self._emit_prefetch)
 
     def _record_transition(self, was_skip: bool) -> None:
         """Append one entry to the rolling skip-history window. Cheap

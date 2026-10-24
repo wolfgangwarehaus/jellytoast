@@ -379,6 +379,15 @@ class TestFollow:
         assert seen["handoff"] is True  # play() of n1 inside _on_ended: no push
         assert rq.queued is None
 
+    @pytest.mark.parametrize("state,reason", [("IDLE", "FINISHED"), ("LOADING", None)])
+    def test_first_status_of_the_move(self, state, reason):
+        # A Google group's first status for the queued item: the old item's
+        # IDLE/FINISHED (or LOADING) with the new item's media already in it.
+        h, rq = self._queued()
+        assert rq.on_status(_status(state, tag="t1", idle_reason=reason)) is True
+        h._on_ended.assert_called_once()
+        assert not rq.holding
+
     def test_current_track_status_is_not_a_move(self):
         h, rq = self._queued()
         assert rq.on_status(_status("PLAYING", tag="t0")) is False

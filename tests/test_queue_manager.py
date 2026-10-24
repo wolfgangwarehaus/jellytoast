@@ -721,3 +721,32 @@ class TestNullJellyfinFieldsDoNotCrash:
         )
         assert np.year == ""
         assert np.subtitle == ""
+
+
+# ── Next-track refreshes for the Chromecast receiver queue ──────────────────
+
+
+class TestPrefetchRefresh:
+    def _next_ids(self, cap):
+        return [a[0].item_id if a[0] else None for a in cap]
+
+    def test_removing_the_next_track_refreshes(self, qm):
+        qm.play_now(_items(4), 0, QueueContext(kind=QueueKind.ALBUM))
+        cap = _capture(qm.bus.queue_prefetch_request)
+        qm.remove_at(1)
+        assert self._next_ids(cap) == ["id2"]
+
+    def test_repeat_change_refreshes(self, qm):
+        qm.play_now(_items(3), 2, QueueContext(kind=QueueKind.ALBUM))
+        cap = _capture(qm.bus.queue_prefetch_request)
+        qm._on_repeat_changed("all")
+        assert self._next_ids(cap) == ["id0"]
+
+    def test_cast_start_resends_the_next_track(self, qm, monkeypatch):
+        from jellytoast import queue_manager
+
+        monkeypatch.setattr(queue_manager.QTimer, "singleShot", lambda _ms, fn: fn())
+        qm.play_now(_items(3), 0, QueueContext(kind=QueueKind.ALBUM))
+        cap = _capture(qm.bus.queue_prefetch_request)
+        qm.bus.cast_started.emit("Home group")
+        assert self._next_ids(cap) == ["id1"]
