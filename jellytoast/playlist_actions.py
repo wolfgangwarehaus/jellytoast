@@ -1,4 +1,6 @@
-"""Add to playlist (#238): one submenu every song / album menu can carry.
+"""Add to playlist (#238): one submenu every song / album menu can carry;
+plus deleting a playlist (``can_delete`` / ``delete_message`` /
+``confirm_delete``), shared by the desktop tile menu and the phone UI.
 
 ``add_playlist_submenu(menu, resolve_ids, host=…)`` appends an
 **Add to playlist ▸** entry listing the user's server playlists plus
@@ -221,3 +223,72 @@ def _new_playlist(host: QWidget, resolve_ids) -> None:
         )
 
     run_async(_work, on_result=_done, on_error=_failed)
+
+
+# ── Delete a playlist ────────────────────────────────────────────────────
+
+
+def can_delete(item: dict) -> bool:
+    """Whether to offer "Delete playlist" for this playlist item: the
+    server can edit playlists, we're online, and it's ours (providers set
+    ``CanDelete`` False for someone else's / read-only playlists)."""
+    return available() and item.get("CanDelete", True) is not False
+
+
+def delete_message(name: str, source_file: str = "") -> str:
+    """The confirmation text. A playlist imported from a file on the
+    server (an .m3u in the music folders) only loses the server's copy —
+    the file stays, and the next library scan imports it again."""
+    if source_file:
+        return QCoreApplication.translate(
+            "PlaylistActions",
+            "“{0}” comes from the file “{1}” in your music library. Deleting it "
+            "here doesn't remove that file, so the server will add the playlist "
+            "back at its next library scan. To get rid of it for good, delete "
+            "or move the file on the server.",
+        ).format(name, source_file)
+    return QCoreApplication.translate(
+        "PlaylistActions", "“{0}” will be deleted. The songs stay in your library."
+    ).format(name)
+
+
+def delete(host: Optional[QWidget], playlist_id: str, name: str, on_done=None) -> None:
+    """Delete on a worker; toast the outcome (when there's a ``host``) and
+    tell the Playlists views. ``on_done(ok)`` runs on the GUI thread."""
+    from jellytoast.async_io import run_async
+
+    prov = _provider()
+
+    def _ok(_r) -> None:
+        _changed()
+        if host is not None:
+            _toast(host, QCoreApplication.translate("PlaylistActions", "Deleted {0}").format(name))
+        if on_done:
+            on_done(True)
+
+    def _failed(e) -> None:
+        logger.warning("delete playlist %s failed: %s", playlist_id, e)
+        if host is not None:
+            _toast(
+                host,
+                QCoreApplication.translate("PlaylistActions", "Couldn't delete {0}").format(name),
+            )
+        if on_done:
+            on_done(False)
+
+    run_async(prov.delete_playlist, playlist_id, on_result=_ok, on_error=_failed)
+
+
+def confirm_delete(host: QWidget, item: dict) -> None:
+    """Desktop: ask (naming the source file when there is one), then delete."""
+    from jellytoast.frosted_dialog import frosted_confirm
+
+    name = item.get("Name") or ""
+    if frosted_confirm(
+        host,
+        QCoreApplication.translate("PlaylistActions", "Delete playlist?"),
+        delete_message(name, item.get("SourceFile") or ""),
+        confirm_text=QCoreApplication.translate("PlaylistActions", "Delete"),
+        destructive=True,
+    ):
+        delete(host, item.get("Id", ""), name)

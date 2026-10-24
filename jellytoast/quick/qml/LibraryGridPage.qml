@@ -6,6 +6,15 @@ import Jellytoast
 Item {
     id: page
     property string kind: "album"
+
+    // The long-press menu's item: the tile's own fields plus the model's
+    // live ones (favourite; for playlists, whether it's ours to delete and
+    // the file it came from).
+    function menuInfo(base, index) {
+        var g = page.lib.get(index)
+        return Object.assign(base, { favorite: g.favorite, canDelete: g.canDelete,
+                                     sourceFile: g.sourceFile })
+    }
     property string parentId: ""
     property string title: qsTr("Albums")
     property var source: null           // a ready LibraryModel (Albums uses the shared one)
@@ -122,7 +131,7 @@ Item {
             TapHandler {
                 id: tap
                 onTapped: page.openItem(page.itemKind, cell.info())
-                onLongPressed: itemMenu.show(Object.assign(cell.info(), { favorite: page.lib.get(cell.index).favorite }),
+                onLongPressed: itemMenu.show(page.menuInfo(cell.info(), cell.index),
                                              cell, point.position.x, point.position.y)
             }
         }
@@ -205,7 +214,7 @@ Item {
                          year: lrow.year, cover: lrow.cover }
             }
             onClicked: page.openItem(page.itemKind, lrow.info())
-            onPressAndHold: itemMenu.show(Object.assign(lrow.info(), { favorite: page.lib.get(lrow.index).favorite }),
+            onPressAndHold: itemMenu.show(page.menuInfo(lrow.info(), lrow.index),
                                           lrow, width / 2, height / 2)
             contentItem: Row {
                 spacing: 12

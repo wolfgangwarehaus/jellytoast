@@ -3192,7 +3192,19 @@ def show_tile_context_menu(parent, item: Dict, kind: str, global_pos, on_play=No
         if downloaded
         else _q.translate("_LibraryListView", "Download")
     )
+    delete_act = None
+    if kind == "playlist":
+        from jellytoast import playlist_actions
+
+        if playlist_actions.can_delete(item):
+            menu.addSeparator()
+            delete_act = menu.addAction(_q.translate("_LibraryListView", "Delete playlist…"))
     chosen = menu.exec(global_pos)
+    if delete_act is not None and chosen is delete_act:
+        from jellytoast import playlist_actions
+
+        playlist_actions.confirm_delete(parent, item)
+        return
     if play_act is not None and chosen is play_act:
         on_play(item_id)
         return

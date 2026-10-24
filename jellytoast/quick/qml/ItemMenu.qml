@@ -130,6 +130,7 @@ Sheet {
         iconName: "settings"
         text: qsTr("Rename playlist")
         visible: menu.item.kind === "playlist" && playlists.available
+                 && menu.item.canDelete !== false
         onClicked: menu.run(() => playlistDialogs.rename(menu.item))
     }
     SheetRow {
@@ -137,6 +138,7 @@ Sheet {
         iconName: "win_close"
         text: qsTr("Delete playlist")
         visible: menu.item.kind === "playlist" && playlists.available
+                 && menu.item.canDelete !== false
         tint: "#e57373"
         onClicked: menu.run(() => playlistDialogs.confirmDelete(menu.item))
     }

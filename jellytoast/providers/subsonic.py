@@ -18,6 +18,7 @@ backends to a jellytoast-internal schema and retire the adapter.
 
 import hashlib
 import logging
+import re
 import secrets
 from typing import Any, Dict, List, Optional, Tuple
 from urllib.parse import urlencode
@@ -179,6 +180,18 @@ def _cues_for_line(raw_text: str, cue_line: Optional[dict], ticks) -> List[Dict[
         })
     out.sort(key=lambda c: c["Start"])
     return out
+
+
+_AUTO_IMPORTED = re.compile(r"^Auto-imported from '(.+)'$")
+
+
+def _playlist_source_file(comment) -> str:
+    """The file a playlist was imported from, or "". Navidrome notes it in
+    the comment ("Auto-imported from 'X.m3u'"). Deleting such a playlist
+    only drops Navidrome's copy — its next scan of that folder imports the
+    file again — so the delete confirmation says so."""
+    m = _AUTO_IMPORTED.match(str(comment or "").strip())
+    return m.group(1) if m else ""
 
 
 class SubsonicProvider(MediaProvider):
@@ -904,6 +917,7 @@ class SubsonicProvider(MediaProvider):
         except Exception:
             return {"Items": [], "TotalRecordCount": 0}
         pls = (resp.get("playlists") or {}).get("playlist") or []
+        me = (self._username or "").lower()
         items = [
             {
                 "Id": str(p.get("id", "")),
@@ -913,6 +927,11 @@ class SubsonicProvider(MediaProvider):
                 "Genres": [],
                 "ImageTags": ({"Primary": p.get("coverArt")} if p.get("coverArt") else {}),
                 "UserData": {"IsFavorite": False},
+                # Only the owner can delete; OpenSubsonic servers also flag
+                # someone else's shared playlist read-only.
+                "CanDelete": not p.get("readonly")
+                and (not me or str(p.get("owner", me)).lower() == me),
+                "SourceFile": _playlist_source_file(p.get("comment")),
                 "_subsonic_raw": p,
             }
             for p in pls

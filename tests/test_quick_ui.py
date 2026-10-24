@@ -918,6 +918,29 @@ def test_rename_and_delete_playlist(quick):
     quick.wait_until(lambda: quick.find("text:Playlist 0") is None)  # list refreshed
 
 
+def test_delete_playlist_respects_read_only_and_names_the_source_file(quick):
+    # Someone else's (read-only) playlist offers no Delete / Rename; one
+    # imported from an .m3u says the file stays and the playlist comes back.
+    quick.provider.playlists[1]["CanDelete"] = False
+    quick.provider.playlists[2]["SourceFile"] = "Mix.m3u"
+    _section(quick, "Playlists")
+    quick.wait_for("text:Playlist 1")
+
+    quick.long_press("text:Playlist 1")
+    quick.wait_for("addToPlaylistRow")
+    assert not quick.find("deletePlaylistRow", visible=False).isVisible()
+    assert not quick.find("renamePlaylistRow", visible=False).isVisible()
+    quick.key("esc")
+
+    quick.long_press("text:Playlist 2")
+    _sheet_row(quick, "deletePlaylistRow")
+    quick.wait_for("deletePlaylistDialog")
+    text = quick.find("deletePlaylistText", visible=False).property("text")
+    assert "Mix.m3u" in text and "next library scan" in text
+    quick.tap("text:OK")
+    quick.wait_until(lambda: ("delete_playlist", "pl2") in quick.provider.calls)
+
+
 def test_now_playing_add_to_playlist(quick):
     quick.fake_now_playing("Song", "Someone", item_id="al3-t1", album_id="al3")
     quick.wait_for("miniPlayer")

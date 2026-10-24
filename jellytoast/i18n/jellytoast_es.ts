@@ -1165,12 +1165,12 @@ Esto libera el almacenamiento de inmediato. Tu biblioteca en el servidor no se v
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../quick/qml/ItemMenu.qml" line="138"/>
+        <location filename="../quick/qml/ItemMenu.qml" line="139"/>
         <source>Delete playlist</source>
-        <translation type="unfinished"></translation>
+        <translation>Eliminar lista de reproducción</translation>
     </message>
     <message>
-        <location filename="../quick/qml/ItemMenu.qml" line="145"/>
+        <location filename="../quick/qml/ItemMenu.qml" line="147"/>
         <source>Download</source>
         <translation type="unfinished">Descargar</translation>
     </message>
@@ -1400,37 +1400,37 @@ jellytoast funcionará, pero las funciones de bandeja no estarán disponibles.</
 <context>
     <name>LibraryGridPage</name>
     <message>
-        <location filename="../quick/qml/LibraryGridPage.qml" line="10"/>
+        <location filename="../quick/qml/LibraryGridPage.qml" line="19"/>
         <source>Albums</source>
         <translation type="unfinished">Álbumes</translation>
     </message>
     <message>
-        <location filename="../quick/qml/LibraryGridPage.qml" line="32"/>
+        <location filename="../quick/qml/LibraryGridPage.qml" line="41"/>
         <source>Nothing here yet</source>
         <translation type="unfinished">Aquí no hay nada todavía</translation>
     </message>
     <message>
-        <location filename="../quick/qml/LibraryGridPage.qml" line="43"/>
+        <location filename="../quick/qml/LibraryGridPage.qml" line="52"/>
         <source>Couldn&apos;t reach the server</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../quick/qml/LibraryGridPage.qml" line="48"/>
+        <location filename="../quick/qml/LibraryGridPage.qml" line="57"/>
         <source>Try again</source>
         <translation type="unfinished">Reintentar</translation>
     </message>
     <message>
-        <location filename="../quick/qml/LibraryGridPage.qml" line="150"/>
+        <location filename="../quick/qml/LibraryGridPage.qml" line="159"/>
         <source>Liked songs</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../quick/qml/LibraryGridPage.qml" line="164"/>
+        <location filename="../quick/qml/LibraryGridPage.qml" line="173"/>
         <source>Play</source>
         <translation type="unfinished">Reproducir</translation>
     </message>
     <message>
-        <location filename="../quick/qml/LibraryGridPage.qml" line="169"/>
+        <location filename="../quick/qml/LibraryGridPage.qml" line="178"/>
         <source>Shuffle</source>
         <translation type="unfinished">Aleatorio</translation>
     </message>
@@ -2661,69 +2661,99 @@ Revisa el PIN — la causa más común es una errata o un código caducado (el r
 <context>
     <name>PlaylistActions</name>
     <message>
-        <location filename="../playlist_actions.py" line="94"/>
+        <location filename="../playlist_actions.py" line="96"/>
         <source>Add to playlist</source>
         <translation>Añadir a lista de reproducción</translation>
     </message>
     <message>
-        <location filename="../playlist_actions.py" line="101"/>
+        <location filename="../playlist_actions.py" line="103"/>
         <source>New playlist…</source>
         <translation>Nueva lista de reproducción…</translation>
     </message>
     <message>
-        <location filename="../playlist_actions.py" line="107"/>
+        <location filename="../playlist_actions.py" line="109"/>
         <source>Loading…</source>
         <translation>Cargando…</translation>
     </message>
     <message>
-        <location filename="../playlist_actions.py" line="156"/>
+        <location filename="../playlist_actions.py" line="158"/>
         <source>Added to {0}</source>
         <translation>Añadida a {0}</translation>
     </message>
     <message>
-        <location filename="../playlist_actions.py" line="157"/>
+        <location filename="../playlist_actions.py" line="159"/>
         <source>Added {0} songs to {1}</source>
         <translation>{0} canciones añadidas a {1}</translation>
     </message>
     <message>
-        <location filename="../playlist_actions.py" line="176"/>
+        <location filename="../playlist_actions.py" line="178"/>
         <source>Nothing to add</source>
         <translation>No hay nada que añadir</translation>
     </message>
     <message>
-        <location filename="../playlist_actions.py" line="181"/>
+        <location filename="../playlist_actions.py" line="183"/>
         <source>Couldn&apos;t add to {0}</source>
         <translation>No se pudo añadir a {0}</translation>
     </message>
     <message>
-        <location filename="../playlist_actions.py" line="192"/>
+        <location filename="../playlist_actions.py" line="194"/>
         <source>New playlist</source>
         <translation>Nueva lista de reproducción</translation>
     </message>
     <message>
-        <location filename="../playlist_actions.py" line="193"/>
+        <location filename="../playlist_actions.py" line="195"/>
         <source>Name</source>
         <translation>Nombre</translation>
     </message>
     <message>
-        <location filename="../playlist_actions.py" line="194"/>
+        <location filename="../playlist_actions.py" line="196"/>
         <source>My playlist</source>
         <translation>Mi lista</translation>
     </message>
     <message>
-        <location filename="../playlist_actions.py" line="195"/>
+        <location filename="../playlist_actions.py" line="197"/>
         <source>Create</source>
         <translation>Crear</translation>
     </message>
     <message>
-        <location filename="../playlist_actions.py" line="212"/>
+        <location filename="../playlist_actions.py" line="214"/>
         <source>Created {0}</source>
         <translation>Se creó {0}</translation>
     </message>
     <message>
-        <location filename="../playlist_actions.py" line="220"/>
+        <location filename="../playlist_actions.py" line="222"/>
         <source>Couldn&apos;t create {0}</source>
         <translation>No se pudo crear {0}</translation>
+    </message>
+    <message>
+        <location filename="../playlist_actions.py" line="243"/>
+        <source>“{0}” comes from the file “{1}” in your music library. Deleting it here doesn&apos;t remove that file, so the server will add the playlist back at its next library scan. To get rid of it for good, delete or move the file on the server.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../playlist_actions.py" line="250"/>
+        <source>“{0}” will be deleted. The songs stay in your library.</source>
+        <translation>Se eliminará «{0}». Las canciones siguen en tu biblioteca.</translation>
+    </message>
+    <message>
+        <location filename="../playlist_actions.py" line="265"/>
+        <source>Deleted {0}</source>
+        <translation>Se eliminó {0}</translation>
+    </message>
+    <message>
+        <location filename="../playlist_actions.py" line="274"/>
+        <source>Couldn&apos;t delete {0}</source>
+        <translation>No se pudo eliminar {0}</translation>
+    </message>
+    <message>
+        <location filename="../playlist_actions.py" line="289"/>
+        <source>Delete playlist?</source>
+        <translation>¿Eliminar la lista de reproducción?</translation>
+    </message>
+    <message>
+        <location filename="../playlist_actions.py" line="291"/>
+        <source>Delete</source>
+        <translation type="unfinished">Eliminar</translation>
     </message>
 </context>
 <context>
@@ -2736,12 +2766,7 @@ Revisa el PIN — la causa más común es una errata o un código caducado (el r
     <message>
         <location filename="../quick/qml/PlaylistDialogs.qml" line="50"/>
         <source>Delete playlist?</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <location filename="../quick/qml/PlaylistDialogs.qml" line="56"/>
-        <source>“%1” will be deleted. The songs stay in your library.</source>
-        <translation type="unfinished"></translation>
+        <translation>¿Eliminar la lista de reproducción?</translation>
     </message>
 </context>
 <context>
@@ -2792,14 +2817,14 @@ Revisa el PIN — la causa más común es una errata o un código caducado (el r
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../quick/playlists.py" line="218"/>
+        <location filename="../quick/playlists.py" line="223"/>
         <source>Deleted {0}</source>
-        <translation type="unfinished"></translation>
+        <translation>Se eliminó {0}</translation>
     </message>
     <message>
-        <location filename="../quick/playlists.py" line="222"/>
+        <location filename="../quick/playlists.py" line="227"/>
         <source>Couldn&apos;t delete {0}</source>
-        <translation type="unfinished"></translation>
+        <translation>No se pudo eliminar {0}</translation>
     </message>
 </context>
 <context>
@@ -2863,7 +2888,7 @@ Revisa el PIN — la causa más común es una errata o un código caducado (el r
 <context>
     <name>QueueManager</name>
     <message>
-        <location filename="../queue_manager.py" line="718"/>
+        <location filename="../queue_manager.py" line="733"/>
         <source>Unknown</source>
         <translation>Desconocido</translation>
     </message>
@@ -2884,22 +2909,22 @@ Revisa el PIN — la causa más común es una errata o un código caducado (el r
 <context>
     <name>RadioModel</name>
     <message>
-        <location filename="../quick/models.py" line="1451"/>
+        <location filename="../quick/models.py" line="1456"/>
         <source>This server doesn&apos;t support radio stations.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../quick/models.py" line="1456"/>
+        <location filename="../quick/models.py" line="1461"/>
         <source>Only a server admin can change radio stations.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../quick/models.py" line="1460"/>
+        <location filename="../quick/models.py" line="1465"/>
         <source>Couldn&apos;t add the station: {0}</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../quick/models.py" line="1461"/>
+        <location filename="../quick/models.py" line="1466"/>
         <source>Couldn&apos;t remove the station: {0}</source>
         <translation type="unfinished"></translation>
     </message>
@@ -5403,26 +5428,26 @@ La carátula por pista no se modifica con esta escritura masiva.</translation>
     <name>_LibraryListView</name>
     <message>
         <location filename="../library_grid.py" line="1930"/>
-        <location filename="../library_grid.py" line="3218"/>
+        <location filename="../library_grid.py" line="3230"/>
         <source>this {0}</source>
         <translation>este {0}</translation>
     </message>
     <message>
         <location filename="../library_grid.py" line="1933"/>
         <location filename="../library_grid.py" line="3191"/>
-        <location filename="../library_grid.py" line="3221"/>
+        <location filename="../library_grid.py" line="3233"/>
         <source>Remove download</source>
         <translation>Eliminar descarga</translation>
     </message>
     <message>
         <location filename="../library_grid.py" line="1934"/>
-        <location filename="../library_grid.py" line="3222"/>
+        <location filename="../library_grid.py" line="3234"/>
         <source>Remove the downloaded files for “{0}”?</source>
         <translation>¿Eliminar los archivos descargados de «{0}»?</translation>
     </message>
     <message>
         <location filename="../library_grid.py" line="1935"/>
-        <location filename="../library_grid.py" line="3223"/>
+        <location filename="../library_grid.py" line="3235"/>
         <source>Remove</source>
         <translation>Eliminar</translation>
     </message>
@@ -5465,6 +5490,11 @@ La carátula por pista no se modifica con esta escritura masiva.</translation>
         <location filename="../library_grid.py" line="3193"/>
         <source>Download</source>
         <translation>Descargar</translation>
+    </message>
+    <message>
+        <location filename="../library_grid.py" line="3201"/>
+        <source>Delete playlist…</source>
+        <translation type="unfinished"></translation>
     </message>
 </context>
 <context>

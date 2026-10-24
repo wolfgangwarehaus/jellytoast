@@ -50,10 +50,12 @@ Item {
         title: qsTr("Delete playlist?")
         standardButtons: Dialog.Cancel | Dialog.Ok
         Label {
+            objectName: "deletePlaylistText"
             width: deleteDialog.availableWidth
             wrapMode: Text.WordWrap
             color: theme.text
-            text: qsTr("“%1” will be deleted. The songs stay in your library.").arg(deleteDialog.item.name || "")
+            text: playlists.deleteMessage(deleteDialog.item.name || "",
+                                          deleteDialog.item.sourceFile || "")
         }
         onAccepted: {
             playlists.remove(item.id, item.name)

@@ -206,6 +206,11 @@ class Playlists(QObject):
             ),
         )
 
+    @Slot(str, str, result=str)
+    def deleteMessage(self, name: str, source_file: str) -> str:  # noqa: N802
+        """The confirmation text (shared with the desktop dialog)."""
+        return _pa.delete_message(name, source_file)
+
     @Slot(str, str)
     def remove(self, playlist_id: str, name: str) -> None:
         """Delete a playlist (its songs stay in the library)."""

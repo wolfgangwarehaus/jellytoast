@@ -528,7 +528,7 @@ class LibraryModel(QAbstractListModel):
         if not (0 <= row < len(self._items)):
             return {}
         it = self._items[row]
-        return {
+        out = {
             "id": it.get("Id", ""),
             "name": it.get("Name", ""),
             "artist": self._subtitle(it),
@@ -537,6 +537,11 @@ class LibraryModel(QAbstractListModel):
             "kind": self._kind,
             "favorite": bool((it.get("UserData") or {}).get("IsFavorite")),
         }
+        if self._kind == "playlist":
+            # For the menu's Delete row and its confirmation.
+            out["canDelete"] = it.get("CanDelete", True) is not False
+            out["sourceFile"] = it.get("SourceFile") or ""
+        return out
 
     @Slot(str, bool)
     def markFavorite(self, item_id: str, on: bool) -> None:  # noqa: N802

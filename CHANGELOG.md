@@ -33,6 +33,10 @@ developer-facing history lives in [`docs/CHANGELOG.md`](docs/CHANGELOG.md).
   a playlist and pick **Add to playlist** — any of your Navidrome / Jellyfin
   playlists, or **New playlist…** to start one. Also in the ⋮ menu on the
   phone's Now Playing.
+- **Delete playlists.** Right-click a playlist (or long-press it on a phone)
+  and pick **Delete playlist**. If it came from an .m3u file in your music
+  folder, jellytoast says so — the server will bring it back at its next scan
+  unless you remove the file. Playlists that aren't yours don't offer it.
 - **Plain background on phones.** The frosted theme's grainy "glass"
   texture (used when real blur isn't available) is gone on a phone — just a
   clean, solid background.
