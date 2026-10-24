@@ -622,24 +622,22 @@ class _ChromecastMixin:
         on_done: Optional[Callable[[dict], None]] = None,
     ):
         """Non-blocking ``chromecast_queue_next`` (it waits on the receiver's
-        replies); ``on_done(result)`` fires on the GUI thread."""
-        from jellytoast import cast_manager as _pkg
+        replies). Runs on the serial command worker, in order with pause /
+        seek / volume; ``on_done(result)`` fires on the GUI thread."""
+        from jellytoast.async_io import call_on_gui
 
-        def _go() -> dict:
-            return self.chromecast_queue_next(
-                dev, np, provider=provider, remove_item_id=remove_item_id
-            )
-
-        def _ok(result: dict) -> None:
+        def _go() -> None:
+            try:
+                result = self.chromecast_queue_next(
+                    dev, np, provider=provider, remove_item_id=remove_item_id
+                )
+            except Exception as e:
+                logger.warning("cast queue: %s", e)
+                result = {"removed": remove_item_id is None, "queued": None}
             if on_done:
-                on_done(result)
+                call_on_gui(lambda: on_done(result))
 
-        def _err(e: Exception) -> None:
-            logger.warning("cast queue: %s", e)
-            if on_done:
-                on_done({"removed": remove_item_id is None, "queued": None})
-
-        _pkg.run_async(_go, on_result=_ok, on_error=_err)
+        self._cc_queue.submit(_go)
 
     def connect_to_chromecast_async(
         self, dev: CastDevice, on_done: Optional[Callable[[bool], None]] = None

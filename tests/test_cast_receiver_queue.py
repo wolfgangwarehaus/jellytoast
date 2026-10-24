@@ -10,7 +10,6 @@ from unittest.mock import MagicMock
 
 import pytest
 
-import jellytoast.cast_manager as _cm_pkg
 from jellytoast.cast_manager import CastDevice, CastManager, CastType
 from jellytoast.cast_manager import _chromecast as _cc_mod
 from jellytoast.cast_receiver_queue import CastReceiverQueue
@@ -165,11 +164,8 @@ class TestQueueNextWire:
         assert out == {"removed": True, "queued": None}
         assert mc.sent == [] and mc.inserts == []
 
-    def test_async_wrapper_reports_on_done(self, proxied, monkeypatch):
-        def _run(fn, on_result=None, on_error=None):
-            on_result(fn())
-
-        monkeypatch.setattr(_cm_pkg, "run_async", _run)
+    def test_async_wrapper_reports_on_done(self, proxied):
+        # Runs on the serial command worker (inline under the test fixture).
         got = []
         CastManager().chromecast_queue_next_async(
             _wire_dev(_WireMC()), _np("n1"), provider=_Prov(), on_done=got.append
