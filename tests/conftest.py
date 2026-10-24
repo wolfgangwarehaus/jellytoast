@@ -581,4 +581,42 @@ def clean_theme_settings():
 
 
 # Qt Quick front end fixtures (fake library + Rig) — tests/quick_support.py.
+def pytest_configure(config):
+    config.addinivalue_line(
+        "markers", "real_cast_queue: use the real background Chromecast command worker"
+    )
+
+
+class _InlineExecutor:
+    """Runs submitted work at once on the calling thread."""
+
+    def submit(self, fn, *a, **kw):
+        from concurrent.futures import Future
+
+        f = Future()
+        try:
+            f.set_result(fn(*a, **kw))
+        except Exception as e:  # pragma: no cover - _cc_send catches its own
+            f.set_exception(e)
+        return f
+
+    def shutdown(self, wait=True):
+        pass
+
+
+@pytest.fixture(autouse=True)
+def _inline_chromecast_commands(request, monkeypatch):
+    """Chromecast transport commands go to a background worker in the app;
+    run them inline so tests can assert right after the call. Tests of the
+    worker itself opt out with ``@pytest.mark.real_cast_queue``."""
+    if request.node.get_closest_marker("real_cast_queue"):
+        yield
+        return
+    from jellytoast.cast_manager._chromecast import _ChromecastMixin
+
+    monkeypatch.setattr(_ChromecastMixin, "_cc_queue", property(lambda self: _InlineExecutor()))
+    monkeypatch.setattr(_ChromecastMixin, "_CC_RETRY_DELAY_S", 0.0)
+    yield
+
+
 from tests.quick_support import fake_provider, quick  # noqa: E402, F401

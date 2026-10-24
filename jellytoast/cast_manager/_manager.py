@@ -160,8 +160,8 @@ class CastManager(_ChromecastMixin, _AirplayMixin, _OtherProtocolsMixin):
             pass
 
     # ── Transport dispatch (mid-cast play/pause + volume + seek) ─────────
-    # Route by device_type, mirroring stop_cast. Chromecast is local + fast
-    # so it runs inline; DLNA/Sonos block on SOAP so they run off the GUI
+    # Route by device_type, mirroring stop_cast. Chromecast queues on its
+    # own command worker (_cc_send); DLNA/Sonos block on SOAP so they run off the GUI
     # thread. Without this, the player's transport controls reached only the
     # chromecast_* methods (early-return off-Chromecast) and silently no-op'd.
 
@@ -332,7 +332,12 @@ class CastManager(_ChromecastMixin, _AirplayMixin, _OtherProtocolsMixin):
             cc = self.active_cast.cast_object
             if cc is not None:
                 try:
-                    pos = cc.media_controller.status.current_time or 0.0
+                    # adjusted_: the receiver only reports on state changes;
+                    # this extrapolates to now while playing.
+                    st = cc.media_controller.status
+                    pos = getattr(st, "adjusted_current_time", None)
+                    if pos is None:
+                        pos = st.current_time or 0.0
                 except Exception:
                     pos = 0.0
                 self.chromecast_seek(max(0.0, pos + delta_sec))

@@ -270,3 +270,82 @@ class TestAutoAdvanceRetry:
         ctrl.play(_np())
         assert len(calls) == 1
         assert cm.stopped == 1
+
+
+class TestCommandWorker:
+    """pause / play / seek / volume block on the receiver's reply (up to
+    10 s); they run on one background worker, in order, and pause / play /
+    seek retry across a reconnect."""
+
+    @pytest.fixture
+    def mgr(self):
+        from jellytoast.cast_manager import CastManager
+
+        m = CastManager()
+        m._CC_RETRY_DELAY_S = 0.01
+        yield m
+        m._cc_queue.shutdown(wait=True)
+
+    @pytest.mark.real_cast_queue
+    def test_runs_off_the_calling_thread_in_order(self, mgr):
+        import threading
+
+        seen = []
+        me = threading.get_ident()
+        for i in range(5):
+            mgr._cc_send(lambda i=i: seen.append((i, threading.get_ident() != me)), "x")
+        mgr._cc_drain()
+        assert seen == [(i, True) for i in range(5)]
+
+    @pytest.mark.real_cast_queue
+    def test_retries_a_press_lost_to_a_reconnect(self, mgr):
+        from pychromecast.error import RequestFailed
+
+        tries = []
+
+        def pause():
+            tries.append(1)
+            if len(tries) < 2:
+                raise RequestFailed("pause")
+
+        mgr._cc_send(pause, "pause", retries=2)
+        mgr._cc_drain()
+        assert len(tries) == 2
+
+    @pytest.mark.real_cast_queue
+    def test_gives_up_quietly(self, mgr, caplog):
+        import logging
+
+        def boom():
+            raise OSError("down")
+
+        with caplog.at_level(logging.WARNING):
+            mgr._cc_send(boom, "seek", retries=1)
+            mgr._cc_drain()
+        assert "Chromecast seek failed" in caplog.text
+
+    @pytest.mark.real_cast_queue
+    def test_stop_waits_for_queued_commands(self, mgr):
+        import threading
+
+        order = []
+        gate = threading.Event()
+        cc = MagicMock()
+        cc.media_controller.stop.side_effect = lambda: order.append("stop")
+        mgr.active_cast = SimpleNamespace(device_type=CastType.CHROMECAST, cast_object=cc)
+        mgr._cc_send(lambda: (gate.wait(1), order.append("volume")), "volume")
+        gate.set()
+        mgr.chromecast_stop()
+        assert order == ["volume", "stop"]
+
+    def test_pause_does_not_call_the_receiver_inline(self, mgr, monkeypatch):
+        # The press only queues; the blocking call happens on the worker.
+        queued = []
+        monkeypatch.setattr(mgr, "_cc_send", lambda fn, what, retries=0: queued.append(what))
+        cc = MagicMock()
+        cc.media_controller.status.player_state = "PLAYING"
+        mgr.active_cast = SimpleNamespace(device_type=CastType.CHROMECAST, cast_object=cc)
+        mgr.chromecast_pause()
+        mgr.chromecast_seek(30)
+        assert queued == ["pause", "seek"]
+        cc.media_controller.pause.assert_not_called()

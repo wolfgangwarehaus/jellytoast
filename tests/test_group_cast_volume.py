@@ -217,3 +217,27 @@ def test_group_members_reuses_one_multizone_controller(mgr, monkeypatch):
     mgr.group_members_async(group, out.append)
     assert len(registered) == 1
     assert out[0] == out[1] and out[0][0]["name"] == "Kitchen"
+
+
+def test_member_volume_retries_through_a_reconnect(mgr, monkeypatch):
+    # The on-stop restore hit a member whose connection was coming back
+    # ("is connecting...") and left it at the cast level.
+    from pychromecast.error import NotConnected
+
+    calls = []
+
+    def set_volume(v):
+        calls.append(v)
+        if len(calls) < 3:
+            raise NotConnected("Chromecast 192.168.50.231:8009 is connecting...")
+
+    cc = SimpleNamespace(wait=lambda timeout=5: None, set_volume=set_volume)
+    mgr.chromecast_devices = [SimpleNamespace(uuid="k", name="Kitchen", cast_object=cc)]
+    monkeypatch.setattr(
+        "jellytoast.cast_manager.run_async",
+        lambda fn, on_result=None, on_error=None: on_result(fn()),
+    )
+    done = []
+    mgr.set_member_volume_async("k", 38, on_done=done.append)
+    assert calls == [0.38, 0.38, 0.38]
+    assert done == [True]

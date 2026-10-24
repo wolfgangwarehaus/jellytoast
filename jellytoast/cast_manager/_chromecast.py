@@ -28,6 +28,53 @@ class _ChromecastMixin:
             t = self.__dict__["_volume_throttle_obj"] = _Throttle()
         return t
 
+    # ── Chromecast commands, off the GUI thread ─────────────────────────────
+    # pychromecast's pause / play / seek / set_volume each block until the
+    # receiver answers — up to 10 s. On a group whose leader is struggling
+    # that froze the UI, and a press while the socket was reconnecting raised
+    # RequestFailed and was lost. One serial worker keeps presses in order.
+
+    @property
+    def _cc_queue(self):
+        q = self.__dict__.get("_cc_queue_obj")
+        if q is None:
+            from concurrent.futures import ThreadPoolExecutor
+
+            q = self.__dict__["_cc_queue_obj"] = ThreadPoolExecutor(
+                max_workers=1, thread_name_prefix="jt-cast-cmd"
+            )
+        return q
+
+    # Spacing between attempts: a dropped group connection is usually back
+    # within a second, occasionally after pychromecast's 5 s retry.
+    _CC_RETRY_DELAY_S = 2.0
+
+    def _cc_send(self, fn: Callable, what: str, retries: int = 0) -> None:
+        """Queue ``fn()`` on the command worker; retry idempotent commands
+        (pause / play / seek) across a reconnect."""
+
+        def _go() -> None:
+            for attempt in range(retries + 1):
+                try:
+                    fn()
+                    return
+                except Exception as e:
+                    if attempt == retries:
+                        logger.warning("Chromecast %s failed: %s", what, e)
+                        return
+                    logger.info("Chromecast %s failed (%s), retrying", what, e)
+                    time.sleep(self._CC_RETRY_DELAY_S)
+
+        self._cc_queue.submit(_go)
+
+    def _cc_drain(self, timeout: float = 3.0) -> None:
+        """Wait (bounded) for queued commands — before a stop, so a volume
+        restore lands before the app quits and the receiver app closes."""
+        try:
+            self._cc_queue.submit(lambda: None).result(timeout=timeout)
+        except Exception:
+            pass
+
     # ── Chromecast ──────────────────────────────────────────────────────────
 
     def discover_chromecasts(self):
@@ -495,15 +542,16 @@ class _ChromecastMixin:
                     # (which turned a pause press into a no-op play).
                     playing = not getattr(self, "_cast_paused", False)
                 if playing:
-                    mc.pause()
+                    self._cc_send(mc.pause, "pause", retries=2)
                 else:
-                    mc.play()
+                    self._cc_send(mc.play, "play", retries=2)
 
     def chromecast_seek(self, sec: float):
         if self.active_cast and self.active_cast.device_type == CastType.CHROMECAST:
             cc = self.active_cast.cast_object
             if cc:
-                cc.media_controller.seek(sec)
+                mc = cc.media_controller
+                self._cc_send(lambda: mc.seek(sec), "seek", retries=2)
 
     def chromecast_set_volume(self, percent: int):
         """Set Chromecast device volume (0-100)."""
@@ -511,7 +559,9 @@ class _ChromecastMixin:
             cc = self.active_cast.cast_object
             if cc:
                 self._volume_throttle.submit(
-                    id(cc), max(0.0, min(1.0, percent / 100.0)), cc.set_volume
+                    id(cc),
+                    max(0.0, min(1.0, percent / 100.0)),
+                    lambda v: self._cc_send(lambda: cc.set_volume(v), "volume"),
                 )
 
     def chromecast_get_volume(self) -> Optional[int]:
@@ -535,6 +585,7 @@ class _ChromecastMixin:
         if self.active_cast and self.active_cast.device_type == CastType.CHROMECAST:
             cc = self.active_cast.cast_object
             if cc:
+                self._cc_drain()
                 try:
                     cc.media_controller.stop()
                     cc.quit_app()
@@ -701,8 +752,21 @@ class _ChromecastMixin:
             # worker forever, permanently leaking a slot from the bounded
             # async pool. run_async's on_error logs the RequestTimeout.
             cc.wait(timeout=5)
-            cc.set_volume(max(0.0, min(1.0, level_pct / 100.0)))
-            return True
+            # A member mid-reconnect refuses ("is connecting...") and wait()
+            # doesn't cover that — it only waits for the FIRST connect. One
+            # speaker that drops its sender connections every few minutes
+            # was left at the cast level when the on-stop restore hit that
+            # window. Retry for roughly one reconnect.
+            for attempt in range(4):
+                try:
+                    cc.set_volume(max(0.0, min(1.0, level_pct / 100.0)))
+                    return True
+                except Exception as e:
+                    if attempt == 3:
+                        raise
+                    logger.info("member volume for %r: %s, retrying", dev.name, e)
+                    time.sleep(self._CC_RETRY_DELAY_S)
+            return False
 
         _pkg.run_async(
             _go,
