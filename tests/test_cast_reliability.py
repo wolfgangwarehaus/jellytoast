@@ -13,6 +13,7 @@ import pytest
 
 from jellytoast.cast_manager import CastDevice, CastType
 from jellytoast.cast_manager._common import _Throttle
+from jellytoast.cast_receiver_queue import CastReceiverQueue
 from jellytoast.player_cast_transport import _CastTransportMixin
 
 _apply = _CastTransportMixin._apply_cast_status
@@ -218,6 +219,7 @@ def _auto_advance_ctrl(monkeypatch, cm):
     ctrl.api = SimpleNamespace()
     ctrl._monotonic = lambda: 0.0
     ctrl._cast_attempt = 0
+    ctrl._cast_rq = CastReceiverQueue(ctrl)
     ctrl.bus = SimpleNamespace(
         cast_stopped=SimpleNamespace(emit=lambda: None),
         playback_started=SimpleNamespace(emit=lambda _np: None),

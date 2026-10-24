@@ -386,6 +386,9 @@ class QueueManager(QObject):
                 set_now_playing(NowPlaying())
             else:
                 self._play_current()
+        else:
+            # The removed track may have been the next one.
+            self._emit_prefetch()
         self._q.is_modified = True
         self.bus.queue_context_changed.emit(self._q.context)
         self.bus.queue_changed.emit(self._q.play_ordered(), self._q.current_index)
@@ -452,6 +455,9 @@ class QueueManager(QObject):
     def _on_repeat_changed(self, mode: str):
         self._repeat = RepeatMode(mode)
         self.settings.repeat_mode = mode
+        # Repeat decides what comes after the last track (or whether the
+        # current one goes again): refresh the prefetch / cast queue.
+        self._emit_prefetch()
 
     @Slot(bool)
     def _on_shuffle_changed(self, enabled: bool):

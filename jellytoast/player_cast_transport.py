@@ -162,10 +162,19 @@ class _CastTransportMixin:
             if self._muted_volume is not None:
                 self._muted_volume = None
                 self.bus.mute_state.emit(False)
+        # A device pick that cast the playing track (not through play()):
+        # queue the app's next track on the receiver behind it.
+        rq = getattr(self, "_cast_rq", None)
+        if rq is not None:
+            rq.reset()
+            rq.sync()
 
     @Slot()
     def _on_cast_stopped(self):
         self._cast_poll_timer.stop()
+        rq = getattr(self, "_cast_rq", None)
+        if rq is not None:
+            rq.reset()
         # Detach the push-status listener — the session is over, but the
         # receiver's worker thread otherwise keeps the registration (and a
         # stale device reference) alive for the rest of the process.
@@ -288,6 +297,9 @@ class _CastTransportMixin:
         self._apply_cast_status(status)
         self._sync_receiver_volume(cc)
         self._check_cast_track_overdue(cc, status)
+        rq = getattr(self, "_cast_rq", None)
+        if rq is not None:
+            rq.tick()
 
         # Interpolate position during playback. _apply_cast_status only
         # emits when chromecast reports a NEW current_time; between
@@ -317,6 +329,10 @@ class _CastTransportMixin:
         pos_ms = self._cast_anchor_pos_ms + (now - self._cast_anchor_wall) * 1000
         overdue_s = (pos_ms - self._cast_last_duration_ms) / 1000.0
         if overdue_s < self._CAST_END_GRACE_S:
+            return
+        rq = getattr(self, "_cast_rq", None)
+        if rq is not None and rq.holding:
+            # Waiting for the receiver to move on to its queued track.
             return
         raw = getattr(status, "player_state", None)
         if raw != "IDLE" and overdue_s < self._CAST_END_GIVE_UP_S:
@@ -387,6 +403,10 @@ class _CastTransportMixin:
             # after the reconnect look like it didn't follow playback — the
             # queue would never advance. Keep the last real state; the
             # reconnect asks the receiver for a fresh one.
+            return
+        # The receiver moving on through its own queue (or failing to).
+        rq = getattr(self, "_cast_rq", None)
+        if rq is not None and rq.on_status(status):
             return
         if ps and ps != self._cast_last_player_state:
             prev = self._cast_last_player_state

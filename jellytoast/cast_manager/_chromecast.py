@@ -9,13 +9,47 @@ than binding them at import — a direct ``from ._common import
 run_async`` would freeze a stale reference and ignore the patch.
 """
 
+import itertools
 import logging
+import threading
 import time
 from typing import Callable, Dict, List, Optional
 
 from ._common import CastDevice, CastType, _Throttle, _type_enabled
 
 logger = logging.getLogger(__name__)
+
+# Every item we hand a receiver carries ``customData: {"jellytoast": tag}``
+# with a fresh tag, so its media status says which of our items it's on —
+# how the app follows the receiver's own queue (and tells a queued repeat
+# of the same track apart from the one playing).
+_cast_tags = itertools.count(1)
+CAST_TAG_KEY = "jellytoast"
+
+# How long to wait for the receiver to answer a queue request.
+_QUEUE_REPLY_TIMEOUT_S = 5.0
+
+
+def new_cast_tag() -> str:
+    return f"jt-{next(_cast_tags)}"
+
+
+def _queue_item_id(reply: Optional[dict], tag: str, url: str) -> Optional[int]:
+    """The receiver's id for the item we just queued, from its reply to
+    QUEUE_INSERT (a MEDIA_STATUS listing the queue). None when the reply
+    doesn't say."""
+    try:
+        items = (reply or {}).get("status", [{}])[0].get("items") or []
+    except (AttributeError, IndexError, TypeError):
+        return None
+    for it in items:
+        media = it.get("media") or {}
+        if (media.get("customData") or {}).get(CAST_TAG_KEY) == tag or (
+            media.get("contentId") == url
+        ):
+            return it.get("itemId")
+    # No media in the listing: an insert without insertBefore goes last.
+    return items[-1].get("itemId") if items else None
 
 
 class _ChromecastMixin:
@@ -361,7 +395,17 @@ class _ChromecastMixin:
             # tracks with a known duration. Default Media Receiver rejects
             # an unsized BUFFERED Icecast stream into IDLE/ERROR.
             stream_type = "LIVE" if is_live else "BUFFERED"
-            kwargs = dict(title=title, thumb=thumb, stream_type=stream_type, autoplay=True)
+            kwargs = dict(
+                title=title,
+                thumb=thumb,
+                stream_type=stream_type,
+                autoplay=True,
+                # A LOAD replaces the receiver's queue; tag the new item so
+                # its status can't be mistaken for one we queue later (and
+                # so pychromecast, which keeps the last customData it saw,
+                # doesn't carry an old item's tag forward).
+                media_info={"customData": {CAST_TAG_KEY: new_cast_tag()}},
+            )
             # Resume position. Default Media Receiver honors current_time
             # on play_media; passing 0 starts at the beginning.
             if current_time and current_time > 0.5:
@@ -458,6 +502,144 @@ class _ChromecastMixin:
                 self.last_cast_failure = "relay_unreachable"
         except Exception as e:
             logger.debug("relay fetch check failed: %s", e)
+
+    # ── Receiver queue ───────────────────────────────────────────────────
+    # The receiver plays the app's next track on its own (no reload, no
+    # group re-sync, no reliance on our connection at the track boundary):
+    # we keep one item queued behind the one playing. The player backend
+    # (cast_receiver_queue) decides what that item is; this is the wire.
+
+    @staticmethod
+    def _chromecast_request(mc, send: Callable) -> tuple:
+        """Send a media-channel request and wait for the receiver's reply.
+        ``send(callback)`` issues it. Returns ``(ok, reply)`` — ``ok`` is
+        True on an answer, False on a refusal / failed send, and None when
+        no answer came in time (the request may or may not have landed)."""
+        done = threading.Event()
+        box: dict = {}
+
+        def _cb(sent: bool, reply: Optional[dict]) -> None:
+            box["sent"], box["reply"] = sent, reply
+            done.set()
+
+        send(_cb)
+        if not done.wait(_QUEUE_REPLY_TIMEOUT_S):
+            return None, None
+        reply = box.get("reply")
+        if not box.get("sent"):
+            return False, reply
+        if isinstance(reply, dict) and reply.get("type") in (
+            "INVALID_REQUEST",
+            "ERROR",
+            "LOAD_FAILED",
+            "LOAD_CANCELLED",
+        ):
+            logger.debug("receiver refused queue request: %r", reply)
+            return False, reply
+        return True, reply
+
+    def chromecast_queue_next(
+        self, dev: CastDevice, np, *, provider, remove_item_id: Optional[int] = None
+    ) -> dict:
+        """Take the item ``remove_item_id`` off the receiver's queue (when
+        given), then queue ``np`` behind what's playing (when given).
+
+        Returns ``{"removed": bool, "queued": dict | None}``. ``queued``
+        describes the new item — ``tag``, ``item_id``, ``url`` (as sent),
+        ``receiver_id`` (None when the receiver's reply didn't say) and
+        ``playing_url`` (the content id of what was playing when it went
+        in). Nothing is queued after a failed removal: it would play after
+        the item we couldn't take back."""
+        out = {"removed": remove_item_id is None, "queued": None}
+        cc = dev.cast_object
+        if cc is None:
+            return out
+        mc = cc.media_controller
+        status = mc.status
+        session = getattr(status, "media_session_id", None)
+        if session is None:
+            # Nothing loaded: there's no queue to change.
+            out["removed"] = True
+            return out
+        if remove_item_id is not None:
+            ok, _ = self._chromecast_request(
+                mc,
+                lambda cb: mc.send_message(
+                    {
+                        "type": "QUEUE_REMOVE",
+                        "mediaSessionId": session,
+                        "itemIds": [remove_item_id],
+                    },
+                    inc_session_id=True,
+                    callback_function=cb,
+                ),
+            )
+            out["removed"] = bool(ok)
+            if not ok:
+                return out
+        if np is None:
+            return out
+        from jellytoast.cast_proxy import resolve_cast_url
+
+        url, content_type, _live = self._chromecast_media_for(np, provider)
+        url = resolve_cast_url(url)
+        thumb = resolve_cast_url(np.thumb_url) if np.thumb_url else ""
+        tag = new_cast_tag()
+        playing_url = getattr(status, "content_id", None)
+        ok, reply = self._chromecast_request(
+            mc,
+            lambda cb: mc.play_media(
+                url,
+                content_type,
+                title=np.title,
+                thumb=thumb,
+                stream_type="BUFFERED",
+                enqueue=True,
+                media_info={"customData": {CAST_TAG_KEY: tag}},
+                callback_function=cb,
+            ),
+        )
+        if ok is False:
+            logger.info("cast: the receiver wouldn't queue %r", np.title)
+            return out
+        out["queued"] = {
+            "tag": tag,
+            "item_id": np.item_id,
+            "url": url,
+            "receiver_id": _queue_item_id(reply, tag, url) if ok else None,
+            "playing_url": playing_url,
+        }
+        logger.debug("cast: queued %r on the receiver as %r", np.title, out["queued"])
+        return out
+
+    def chromecast_queue_next_async(
+        self,
+        dev: CastDevice,
+        np,
+        *,
+        provider,
+        remove_item_id: Optional[int] = None,
+        on_done: Optional[Callable[[dict], None]] = None,
+    ):
+        """Non-blocking ``chromecast_queue_next`` (it waits on the receiver's
+        replies); ``on_done(result)`` fires on the GUI thread."""
+        from jellytoast import cast_manager as _pkg
+
+        def _go() -> dict:
+            return self.chromecast_queue_next(
+                dev, np, provider=provider, remove_item_id=remove_item_id
+            )
+
+        def _ok(result: dict) -> None:
+            if on_done:
+                on_done(result)
+
+        def _err(e: Exception) -> None:
+            logger.warning("cast queue: %s", e)
+            if on_done:
+                on_done({"removed": remove_item_id is None, "queued": None})
+
+        _pkg.run_async(_go, on_result=_ok, on_error=_err)
 
     def connect_to_chromecast_async(
         self, dev: CastDevice, on_done: Optional[Callable[[bool], None]] = None

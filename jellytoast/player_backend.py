@@ -218,6 +218,7 @@ except (ImportError, OSError) as e:
 
 from jellytoast.async_io import run_async
 from jellytoast.cast_manager import CastType
+from jellytoast.cast_receiver_queue import CastReceiverQueue
 from jellytoast.playback.crossfade import Crossfader, CrossfadeState
 from jellytoast.player_cast_transport import (
     _CastStatusForwarder,
@@ -275,6 +276,9 @@ class MpvController(_CastTransportMixin, QObject):
         # tracks (the older callback completes after the newer one started).
         self._cast_attempt = 0
         self._cast_end_poke_wall = 0.0  # see _check_cast_track_overdue
+        # Chromecast: the app's next track waits queued on the receiver,
+        # which moves on by itself (see cast_receiver_queue).
+        self._cast_rq = CastReceiverQueue(self)
         # The poll timer is gated on bus.cast_started / bus.cast_stopped
         # — no point waking every 500ms when nothing is casting. Started
         # from `_on_cast_started`, stopped from `_on_cast_stopped`.
@@ -899,6 +903,9 @@ class MpvController(_CastTransportMixin, QObject):
         if self._cast_active():
             cm = self._cast_manager
             dev = cm.active_cast
+            # The receiver already moved on to this track through its own
+            # queue: only the app needs to catch up — no push.
+            followed = self._cast_rq.take_followed(np)
             # Reset poll-state tracking so the next status tick treats
             # this as a fresh track (avoids carrying over the previous
             # track's player_state and duration). The interpolation
@@ -926,6 +933,14 @@ class MpvController(_CastTransportMixin, QObject):
             is_cc = dev.device_type == CastType.CHROMECAST
             self._cast_attempt += 1
             token = self._cast_attempt
+            if followed:
+                np.is_paused = False
+                self.bus.playback_started.emit(np)
+                self._begin_play_session(np)
+                self._report_session_start(np)
+                return
+            # A LOAD replaces whatever the receiver had queued.
+            self._cast_rq.begin_load()
 
             def _push(retried: bool) -> None:
                 cm.start_track(
@@ -957,6 +972,7 @@ class MpvController(_CastTransportMixin, QObject):
 
                     QTimer.singleShot(3000, _retry)
                     return
+                self._cast_rq.load_done(ok)
                 if ok:
                     _np.is_paused = False
                     self.bus.playback_started.emit(_np)
@@ -1355,7 +1371,9 @@ class MpvController(_CastTransportMixin, QObject):
         switch when the current track ends — avoids the "stop, decode
         next, start" stutter you'd get from re-issuing mpv.play() on
         end-file. No-op when casting (mpv is dormant) or when mpv has
-        no media loaded."""
+        no media loaded. While casting, the next track goes to the
+        Chromecast's own queue instead."""
+        self._cast_rq.set_wanted(np)
         if self._mpv is None or self._cast_active():
             return
         # Mid-crossfade, appending would re-arm exactly the doubled-audio
@@ -2162,6 +2180,8 @@ class MpvController(_CastTransportMixin, QObject):
             # `playback_ended` handler reads this flag.
             self._sleep_pending_eot = True
             self.bus.sleep_timer_fired.emit()
+            # Take the next track off the receiver's queue: it stops here.
+            self._cast_rq.sync()
             return
         self.bus.sleep_timer_fired.emit()
         if mode == "fade_stop":

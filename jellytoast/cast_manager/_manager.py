@@ -469,22 +469,7 @@ class CastManager(_ChromecastMixin, _AirplayMixin, _OtherProtocolsMixin):
         kind = dev.device_type
 
         if kind == CastType.CHROMECAST:
-            # Pick the highest-quality URL + MIME the receiver can direct-
-            # play (FLAC stays FLAC, etc.); fall back to a 320 kbps MP3
-            # transcode for codecs it can't groove (ALAC/DSD/…).
-            container = (np.raw.get("Container") if np.raw else "") or ""
-            url = np.stream_url
-            if is_radio_item:
-                mime = _radio_mime_for(url)
-            elif np.is_audio:
-                mime = self.chromecast_audio_mime_for(container)
-                if mime is None:
-                    url = provider.get_audio_transcode_url(
-                        np.item_id, max_bitrate_kbps=320, codec="mp3"
-                    )
-                    mime = "audio/mpeg"
-            else:
-                mime = None
+            url, mime, _live = self._chromecast_media_for(np, provider)
             self.cast_to_chromecast_async(
                 dev,
                 url,
@@ -531,6 +516,30 @@ class CastManager(_ChromecastMixin, _AirplayMixin, _OtherProtocolsMixin):
         # AirPlay v1 stays synchronous; report inline.
         ok = self.cast_to_airplay(dev, np.stream_url, np.title)
         _done(ok)
+
+    def _chromecast_media_for(self, np, provider):
+        """``(url, content_type, is_live)`` to hand a Chromecast for ``np`` —
+        shared by the track push and the receiver-queue insert.
+
+        Picks the highest-quality URL + MIME the receiver can direct-play
+        (FLAC stays FLAC, etc.), falling back to a 320 kbps MP3 transcode
+        for codecs it can't groove (ALAC/DSD/…). Internet radio keeps its
+        inline stream URL with a MIME guessed from it."""
+        is_live = bool(np.raw and np.raw.get("streamUrl"))
+        container = (np.raw.get("Container") if np.raw else "") or ""
+        url = np.stream_url
+        if is_live:
+            mime = _radio_mime_for(url)
+        elif np.is_audio:
+            mime = self.chromecast_audio_mime_for(container)
+            if mime is None:
+                url = provider.get_audio_transcode_url(
+                    np.item_id, max_bitrate_kbps=320, codec="mp3"
+                )
+                mime = "audio/mpeg"
+        else:
+            mime = None
+        return url, mime, is_live
 
     def _run_off_thread_result(self, fn, on_result):
         """``run_async`` variant that marshals the bool result back to the

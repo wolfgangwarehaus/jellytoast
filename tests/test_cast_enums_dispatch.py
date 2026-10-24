@@ -24,6 +24,7 @@ import pytest
 import jellytoast.async_io as aio
 from jellytoast.cast_manager import CastType
 from jellytoast.cast_manager._manager import CastManager
+from jellytoast.cast_receiver_queue import CastReceiverQueue
 from jellytoast.offline.index import DownloadState
 from jellytoast.player_state import NowPlaying
 
@@ -329,6 +330,7 @@ def test_player_backend_play_delegates_to_start_track(qapp, monkeypatch):
     ctrl.api = _Prov()
     ctrl._monotonic = lambda: 0.0
     ctrl._cast_attempt = 0
+    ctrl._cast_rq = CastReceiverQueue(ctrl)
     # play() touches these poll-anchor attrs before dispatch.
     for attr in (
         "_cast_last_player_state", "_cast_last_duration_ms",
@@ -371,6 +373,7 @@ def test_cast_auto_advance_failure_recovers_to_local(qapp, monkeypatch, caplog):
     ctrl.api = _Prov()
     ctrl._monotonic = lambda: 0.0
     ctrl._cast_attempt = 0
+    ctrl._cast_rq = CastReceiverQueue(ctrl)
     ctrl.bus = SimpleNamespace(
         cast_stopped=SimpleNamespace(
             emit=lambda: events.__setitem__("cast_stopped", events["cast_stopped"] + 1)
@@ -416,6 +419,7 @@ def test_cast_auto_advance_success_does_not_warn(qapp, monkeypatch, caplog):
     ctrl.api = _Prov()
     ctrl._monotonic = lambda: 0.0
     ctrl._cast_attempt = 0
+    ctrl._cast_rq = CastReceiverQueue(ctrl)
     ctrl.bus = SimpleNamespace(playback_started=SimpleNamespace(emit=lambda _np: None))
     ctrl._begin_play_session = lambda _np: None
     ctrl._report_session_start = lambda _np: None
