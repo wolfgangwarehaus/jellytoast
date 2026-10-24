@@ -119,6 +119,16 @@ class _CastTransportMixin:
     # clobber _cast_volume. ~3 of the 500ms poll ticks.
     _CAST_VOLUME_SYNC_SUPPRESS_S = 1.5
 
+    # Track-end watchdog (seconds past the track's end, by the interpolated
+    # position). The queue advances on the receiver's IDLE/FINISHED push; if
+    # that push is lost — the connection dropped around the end, common on a
+    # group whose leader resets its socket — playback just stops. Past
+    # GRACE we ask the receiver for its status (every POKE seconds), and
+    # move on once it says IDLE; past GIVE_UP we move on regardless.
+    _CAST_END_GRACE_S = 5.0
+    _CAST_END_POKE_S = 3.0
+    _CAST_END_GIVE_UP_S = 20.0
+
     @Slot(str)
     def _on_cast_started(self, _name: str):
         if not self._cast_poll_timer.isActive():
@@ -277,6 +287,7 @@ class _CastTransportMixin:
             return
         self._apply_cast_status(status)
         self._sync_receiver_volume(cc)
+        self._check_cast_track_overdue(cc, status)
 
         # Interpolate position during playback. _apply_cast_status only
         # emits when chromecast reports a NEW current_time; between
@@ -293,6 +304,38 @@ class _CastTransportMixin:
             # when the chromecast itself reports a new value, so
             # we stay corrected on every push.
             self._on_position(interp_ms)
+
+    def _check_cast_track_overdue(self, cc, status):
+        """Advance the queue when the track is over but the receiver never
+        said so (see ``_CAST_END_GRACE_S``). Live streams have no duration,
+        so they never trip this."""
+        if self._cast_last_player_state not in ("PLAYING", "BUFFERING"):
+            return
+        if self._cast_last_duration_ms <= 0 or self._cast_anchor_wall <= 0:
+            return
+        now = self._monotonic()
+        pos_ms = self._cast_anchor_pos_ms + (now - self._cast_anchor_wall) * 1000
+        overdue_s = (pos_ms - self._cast_last_duration_ms) / 1000.0
+        if overdue_s < self._CAST_END_GRACE_S:
+            return
+        raw = getattr(status, "player_state", None)
+        if raw != "IDLE" and overdue_s < self._CAST_END_GIVE_UP_S:
+            # Disconnected (UNKNOWN), or a stale PLAYING: ask again.
+            if now - self._cast_end_poke_wall >= self._CAST_END_POKE_S:
+                self._cast_end_poke_wall = now
+                try:
+                    cc.media_controller.update_status()
+                except Exception as e:
+                    logger.debug("cast status refresh failed: %s", e)
+            return
+        logger.warning(
+            "cast: the receiver never reported the track's end (state %r, "
+            "%.0f s past it) — moving on",
+            raw,
+            overdue_s,
+        )
+        self._cast_last_player_state = "IDLE"
+        self._on_ended()
 
     def _sync_receiver_volume(self, cc):
         """Mirror device-side volume changes back into the app (M2).
@@ -337,6 +380,14 @@ class _CastTransportMixin:
         # Player state first — anchoring depends on knowing whether
         # we're playing right now.
         ps = status.player_state
+        if ps == "UNKNOWN":
+            # pychromecast swaps in a blank status (UNKNOWN, position 0) when
+            # the connection drops. Not a real state: taking it would reset
+            # the bar to 0:00 and, worse, make the IDLE/FINISHED that arrives
+            # after the reconnect look like it didn't follow playback — the
+            # queue would never advance. Keep the last real state; the
+            # reconnect asks the receiver for a fresh one.
+            return
         if ps and ps != self._cast_last_player_state:
             prev = self._cast_last_player_state
             self._cast_last_player_state = ps
@@ -353,6 +404,13 @@ class _CastTransportMixin:
                     reason = getattr(status, "idle_reason", "") or ""
                     if reason.upper() == "FINISHED":
                         self._on_ended()
+                    elif not reason and prev != "PAUSED":
+                        # IDLE with no reason: what a reconnect can report
+                        # once the track ended while we were cut off. Keep
+                        # the playing state (and its position) so the
+                        # track-end watchdog decides.
+                        self._cast_last_player_state = prev
+                        return
 
         # Re-anchor position from the chromecast's reported value
         # whenever it sends a fresh number. The poll path also runs

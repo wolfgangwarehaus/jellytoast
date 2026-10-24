@@ -274,6 +274,7 @@ class MpvController(_CastTransportMixin, QObject):
         # mashing Next while casting fires playback_started for stale
         # tracks (the older callback completes after the newer one started).
         self._cast_attempt = 0
+        self._cast_end_poke_wall = 0.0  # see _check_cast_track_overdue
         # The poll timer is gated on bus.cast_started / bus.cast_stopped
         # — no point waking every 500ms when nothing is casting. Started
         # from `_on_cast_started`, stopped from `_on_cast_stopped`.
@@ -926,9 +927,35 @@ class MpvController(_CastTransportMixin, QObject):
             self._cast_attempt += 1
             token = self._cast_attempt
 
-            def _on_cast_done(ok: bool, _np=np, _t=token, _is_cc=is_cc, _dev=dev) -> None:
+            def _push(retried: bool) -> None:
+                cm.start_track(
+                    dev, np, provider=self.api,
+                    on_done=lambda ok, _r=retried: _on_cast_done(ok, _retried=_r),
+                )
+
+            def _on_cast_done(
+                ok: bool, _np=np, _t=token, _is_cc=is_cc, _dev=dev, _retried=False
+            ) -> None:
                 if _is_cc and _t != self._cast_attempt:
                     # A newer chromecast attempt is authoritative.
+                    return
+                if (
+                    not ok
+                    and _is_cc
+                    and not _retried
+                    and getattr(cm, "last_cast_failure", None) == "unreachable"
+                    and cm.active_cast is _dev
+                ):
+                    # The receiver didn't answer (a group's connection
+                    # resetting between tracks) — one more go before giving
+                    # the track back to this computer.
+                    logger.info("cast auto-advance: receiver unreachable, retrying in 3 s")
+
+                    def _retry(_t=_t) -> None:
+                        if _t == self._cast_attempt and cm.active_cast is _dev:
+                            _push(True)
+
+                    QTimer.singleShot(3000, _retry)
                     return
                 if ok:
                     _np.is_paused = False
@@ -968,7 +995,7 @@ class MpvController(_CastTransportMixin, QObject):
                     except Exception:
                         pass
 
-            cm.start_track(dev, np, provider=self.api, on_done=_on_cast_done)
+            _push(False)
             return
         if self._mpv is None:
             return

@@ -7,7 +7,10 @@ and the ``run_async`` re-export deliberately live in the package
 monkeypatch-contract rationale.
 """
 
+import logging
 import socket
+import threading
+import time
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Callable, Dict
@@ -91,3 +94,48 @@ def _type_enabled(kind: str) -> bool:
 
     qs = open_qsettings()
     return bool(qs.value(f"cast/{kind}_enabled", False, type=bool))
+
+
+class _Throttle:
+    """At most one send per ``interval`` per key, always ending on the
+    latest value: the first call goes out at once, later ones inside the
+    window collapse into a single trailing send. A volume slider drag fires
+    a set per tick — 50+ in two seconds on the wire to a speaker group,
+    each one a receiver round-trip. ``send(value)`` runs on the caller's
+    thread (leading) or a timer thread (trailing)."""
+
+    def __init__(self, interval: float = 0.12):
+        self._interval = interval
+        self._lock = threading.Lock()
+        self._last: Dict[object, float] = {}
+        self._pending: Dict[object, tuple] = {}
+
+    def submit(self, key, value, send: Callable) -> None:
+        with self._lock:
+            now = time.monotonic()
+            wait = self._last.get(key, -1e9) + self._interval - now
+            if wait > 0:
+                scheduled = key in self._pending
+                self._pending[key] = (value, send)
+                if not scheduled:
+                    t = threading.Timer(wait, self._flush, args=(key,))
+                    t.daemon = True
+                    t.start()
+                return
+            self._last[key] = now
+        self._send(send, value)
+
+    def _flush(self, key) -> None:
+        with self._lock:
+            item = self._pending.pop(key, None)
+            if item is None:
+                return
+            self._last[key] = time.monotonic()
+        self._send(item[1], item[0])
+
+    @staticmethod
+    def _send(send: Callable, value) -> None:
+        try:
+            send(value)
+        except Exception as e:
+            logging.getLogger(__name__).warning("cast volume: %s", e)

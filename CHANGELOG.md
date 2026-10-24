@@ -17,6 +17,12 @@ developer-facing history lives in [`docs/CHANGELOG.md`](docs/CHANGELOG.md).
   lyrics, the queue (drag to reorder), playlists you can edit, internet
   radio, downloads, casting, EQ, crossfade and Last.fm / ListenBrainz. Prefer
   the old one? **Settings → Use the classic interface** and restart.
+- **Steadier speaker-group casting.** Casting to a group of speakers no
+  longer stops after a song or two when the connection hiccups — it moves on
+  to the next track, retries once if the group is briefly unreachable, and
+  sends volume changes without flooding the speakers.
+- **Phosh support.** On Phosh phones jellytoast opens the new phone
+  interface too, and notices when you dock.
 - **Listed as phone-friendly.** Software centres now show jellytoast as
   working on touch screens and phones.
 - **Add songs to playlists.** Right-click (or long-press) a song, an album or

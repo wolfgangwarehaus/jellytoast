@@ -13,12 +13,15 @@ import logging
 import time
 from typing import Callable, Dict, List, Optional
 
-from ._common import CastDevice, CastType, _type_enabled
+from ._common import CastDevice, CastType, _Throttle, _type_enabled
 
 logger = logging.getLogger(__name__)
 
 
 class _ChromecastMixin:
+    # Shared by every manager instance: keyed per handle / member uuid.
+    _volume_throttle = _Throttle()
+
     # ── Chromecast ──────────────────────────────────────────────────────────
 
     def discover_chromecasts(self):
@@ -144,7 +147,7 @@ class _ChromecastMixin:
                         logger.warning("Chromecast discovery zeroconf close: %s", exc)
 
         def _on_result(devices: List[CastDevice]) -> None:
-            self.chromecast_devices = devices
+            self.chromecast_devices = self._merge_chromecast_handles(devices)
             self._notify()
 
         _pkg.run_async(
@@ -152,6 +155,37 @@ class _ChromecastMixin:
             on_result=_on_result,
             on_error=lambda e: logger.warning("Chromecast discovery: %s", e),
         )
+
+    def _merge_chromecast_handles(self, fresh: List[CastDevice]) -> List[CastDevice]:
+        """Fold a new sweep into the known devices, keeping the existing
+        handle for a speaker that's still at the same host:port. Every
+        sweep (each time the cast menu opens) materialises new handles, and
+        each one that gets used (member volume, group pre-set) opens its own
+        socket + heartbeat to the speaker. Swapping them in wholesale left
+        the old, still-connected ones running — a long session stacked up
+        duplicate connections to every group member. Handles that drop out
+        are disconnected, unless they're the active cast."""
+        old_by_uuid = {d.uuid: d for d in self.chromecast_devices}
+        active = getattr(self.active_cast, "cast_object", None)
+        merged: List[CastDevice] = []
+        for dev in fresh:
+            old = old_by_uuid.pop(dev.uuid, None)
+            if old is not None and (old.host, old.port) == (dev.host, dev.port):
+                old.name = dev.name
+                merged.append(old)
+                continue
+            if old is not None:
+                old_by_uuid[dev.uuid] = old  # moved host: retire the old one
+            merged.append(dev)
+        for gone in old_by_uuid.values():
+            cc = gone.cast_object
+            if cc is None or cc is active:
+                continue
+            try:
+                cc.disconnect(timeout=0)
+            except Exception as e:
+                logger.debug("Chromecast handle disconnect %r: %s", gone.name, e)
+        return merged
 
     def connect_to_chromecast(self, dev: CastDevice) -> bool:
         """Establish a session with the device without sending any media.
@@ -347,7 +381,11 @@ class _ChromecastMixin:
             self._note_relay_unreachable(url)
             return False
         except Exception as e:
+            # Couldn't talk to the receiver at all (wait() timed out, the
+            # socket dropped mid-load) — a group leader resetting its
+            # connection, often back within seconds. Callers may retry.
             logger.warning("Chromecast play: %s", e)
+            self.last_cast_failure = "unreachable"
             return False
 
     def _note_relay_unreachable(self, url: str) -> None:
@@ -456,10 +494,9 @@ class _ChromecastMixin:
         if self.active_cast and self.active_cast.device_type == CastType.CHROMECAST:
             cc = self.active_cast.cast_object
             if cc:
-                try:
-                    cc.set_volume(max(0.0, min(1.0, percent / 100.0)))
-                except Exception as e:
-                    logger.warning("Chromecast volume: %s", e)
+                self._volume_throttle.submit(
+                    id(cc), max(0.0, min(1.0, percent / 100.0)), cc.set_volume
+                )
 
     def chromecast_get_volume(self) -> Optional[int]:
         """The device's current volume as 0-100, or None if unreadable.
@@ -611,6 +648,18 @@ class _ChromecastMixin:
         thread. Connects to the member's physical Chromecast directly —
         its device volume is independent of the group session, so this
         works mid-playback."""
+
+        # A member slider drag sends a level per tick; each would take a
+        # pool worker for wait() + set. Collapse them per speaker.
+        self._volume_throttle.submit(
+            ("member", member_uuid),
+            level_pct,
+            lambda lvl: self._set_member_volume_now(member_uuid, lvl, on_done),
+        )
+
+    def _set_member_volume_now(
+        self, member_uuid: str, level_pct: int, on_done: Optional[Callable] = None
+    ):
         from jellytoast import cast_manager as _pkg
 
         def _go() -> bool:
