@@ -200,6 +200,39 @@ _SVG = {
         '<rect x="6" y="6" width="12" height="12" rx="1" fill="currentColor"/></svg>'
     ),
     # ── Volume / queue / favorite ─────────────────────────────────────
+    "phone": (
+        '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">'
+        '<rect x="7" y="2.5" width="10" height="19" rx="2.5" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/>'
+        '<circle cx="12" cy="18" r="1.1" fill="currentColor"/>'
+        '</svg>'
+    ),
+    "speaker": (
+        '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">'
+        '<rect x="6" y="2.5" width="12" height="19" rx="2.5" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/>'
+        '<circle cx="12" cy="14.5" r="3.5" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/>'
+        '<circle cx="12" cy="7" r="1.2" fill="currentColor"/>'
+        '</svg>'
+    ),
+    "speaker_group": (
+        '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">'
+        '<rect x="2" y="4.5" width="9" height="15" rx="2" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/>'
+        '<circle cx="6.5" cy="14" r="2.3" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/>'
+        '<rect x="13" y="4.5" width="9" height="15" rx="2" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/>'
+        '<circle cx="17.5" cy="14" r="2.3" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/>'
+        '</svg>'
+    ),
+    "refresh": (
+        '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">'
+        '<path d="M20 12 a8 8 0 1 1 -2.35 -5.65" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/>'
+        '<path d="M20 4 V8.5 H15.5" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/>'
+        '</svg>'
+    ),
+    "tv": (
+        '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">'
+        '<rect x="2.5" y="4" width="19" height="13" rx="2" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/>'
+        '<path d="M8 21 H16" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/>'
+        '</svg>'
+    ),
     "volume": (
         '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">'
         '<path d="M3 9 H7 L12 5 V19 L7 15 H3 Z" stroke="currentColor" stroke-width="2" '

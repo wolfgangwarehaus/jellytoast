@@ -469,6 +469,114 @@ def test_cast_sheet_lists_devices_and_reports_failure(quick, monkeypatch):
     assert spy.got["stop_requested"] and spy.got["play_requested"]
 
 
+class _FakeGroupCastManager(_FakeCastManager):
+    """Casts succeed; one device is a speaker group with members."""
+
+    def __init__(self):
+        super().__init__()
+        from types import SimpleNamespace
+
+        from jellytoast.cast_manager import CastType
+
+        self.devices.append(
+            SimpleNamespace(
+                name="Home group",
+                uuid="g1",
+                device_type=CastType.CHROMECAST,
+                cast_type="group",
+                cast_object=None,
+            )
+        )
+        self.member_volumes = []
+
+    def start_track(self, dev, np, *, provider, resume_seconds, on_done):
+        self.started.append((dev.name, resume_seconds))
+        self.active_cast = dev
+        on_done(True)
+
+    def stop_cast(self):
+        from jellytoast.player_state import PlayerBus
+
+        self.active_cast = None
+        PlayerBus.get().cast_stopped.emit()
+
+    def group_members_async(self, dev, on_result):
+        on_result(
+            [
+                {"uuid": "m1", "name": "Sunroom speaker", "volume": 20, "available": True},
+                {"uuid": "m2", "name": "Bedroom speaker", "volume": 10, "available": False},
+            ]
+        )
+
+    def set_member_volume_async(self, uuid, level, on_done=None):
+        self.member_volumes.append((uuid, level))
+
+
+def test_cast_card_volume_group_members_and_stop(quick, monkeypatch):
+    """Casting to a group: the sheet's card says where it's playing, its
+    slider sets the SPEAKER's volume, each member has its own, Stop casting
+    comes back to the phone; Now Playing shows a "Playing on" pill."""
+    from jellytoast.player_state import PlayerBus, get_now_playing
+    from jellytoast.quick.cast import Cast
+    from jellytoast.settings import get_settings
+
+    monkeypatch.setattr(get_settings(), "cast_chromecast_enabled", True, raising=False)
+    cm = _FakeGroupCastManager()
+    cast = Cast(cm, quick.engine)
+    quick.engine.rootContext().setContextProperty("cast", cast)
+    quick.fake_now_playing("Song", "Someone", position_ms=30_000)
+    get_now_playing().stream_url = "http://server/stream"
+    spy = _Spy("volume_changed", "stop_requested")
+    try:
+        quick.wait_for("miniPlayer")
+        quick.tap("text:Someone")
+        quick.wait_until(lambda: quick.state()["nowPlaying"])
+        assert not quick.find("castPill", visible=False).isVisible()
+        quick.tap("castButton")
+        quick.wait_for("text:Home group")
+        assert quick.find("text:GROUPS") is not None
+        quick.tap("text:Home group")
+        quick.wait_until(lambda: cast.property("active") == "Home group")
+        assert cm.started == [("Home group", 30.0)]
+        quick.wait_for("castCard")
+        assert quick.get("castCardName").property("text") == "Home group"
+        # The player reports the speaker's level → the slider follows it.
+        PlayerBus.get().volume_state.emit(25)
+        quick.wait_until(lambda: round(quick.get("castVolume").property("value")) == 25)
+        # Drag-free: a tap far along the slider sets the speaker's volume.
+        slider = quick.get("castVolume")
+        pt = quick.point(slider)
+        quick.tap((pt.x() + slider.width() * 0.3, pt.y()))
+        quick.wait_until(lambda: spy.got["volume_changed"])
+        assert spy.got["volume_changed"][-1][0] > 50
+        # Each speaker in the group.
+        quick.tap("castMembersToggle")
+        quick.wait_for("text:Sunroom speaker")
+        cast.setMemberVolume("m1", 35)
+        assert cm.member_volumes == [("m1", 35)]
+        quick.reveal("castStop")
+        quick.tap("castStop")
+        quick.wait_until(lambda: cast.property("active") == "")
+        assert not quick.find("castCard", visible=False).isVisible()
+    finally:
+        spy.close()
+
+
+def test_cast_scan_waits_for_the_core(quick):
+    """The sheet opened before the core was up: the scan runs once the
+    cast manager attaches, instead of never (only "This phone" listed)."""
+    from jellytoast.quick.cast import Cast
+
+    cast = Cast(None, quick.engine)
+    cast.scan()
+    assert cast.property("scanning") and cast.property("devices") == []
+    cm = _FakeCastManager()
+    cast.attach(cm)
+    assert [d["name"] for d in cast.property("devices")] == ["Living Room TV", "Kitchen"]
+    assert [d["kind"] for d in cast.property("devices")] == ["display", "speaker"]
+    cast.stopScan()
+
+
 # ── M3: downloads ──
 
 

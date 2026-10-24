@@ -195,7 +195,7 @@ Item {
                     Column {
                         required property int index
                         spacing: 2
-                        Slider {
+                        AppSlider {
                             id: band
                             objectName: "eqBand" + index
                             orientation: Qt.Vertical
@@ -232,7 +232,7 @@ Item {
                 Layout.fillWidth: true
                 Layout.leftMargin: 20; Layout.rightMargin: 20
                 visible: prefs.crossfade
-                Slider {
+                AppSlider {
                     id: xf
                     objectName: "crossfadeSlider"
                     Layout.fillWidth: true

@@ -27,6 +27,10 @@ developer-facing history lives in [`docs/CHANGELOG.md`](docs/CHANGELOG.md).
   isn't left too loud or too quiet.
 - **Phosh support.** On Phosh phones jellytoast opens the new phone
   interface too, and notices when you dock.
+- **A proper casting card on phones.** Tap the cast button for your
+  speakers, TVs and groups (they're all listed now, and it scrolls). While
+  casting you get a card with the speaker's own volume, each speaker's
+  level in a group, and Stop casting. Now Playing shows where it's playing.
 - **Listed as phone-friendly.** Software centres now show jellytoast as
   working on touch screens and phones.
 - **Add songs to playlists.** Right-click (or long-press) a song, an album or

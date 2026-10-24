@@ -2441,7 +2441,14 @@ def main():
     # "Jellyfin", and couldn't pick the provider kind.
     server_url = settings.server_url.rstrip("/")
 
-    if not QSystemTrayIcon.isSystemTrayAvailable():
+    # Qt Quick phone front end (see dev/QT_QUICK_PLAN.md): decided up front —
+    # it has no tray, so the no-tray warning below is for the classic window
+    # only (a modal there blocked the phone UI from ever starting).
+    from jellytoast import quick as _quick
+
+    _use_quick = _quick.wanted()
+
+    if not _use_quick and not QSystemTrayIcon.isSystemTrayAvailable():
         QMessageBox.warning(
             None,
             QCoreApplication.translate("JellytoastWindow", "No system tray"),
@@ -2474,11 +2481,9 @@ def main():
 
     _radio_state.init()
 
-    # Qt Quick phone front end (opt-in while it's being built — see
-    # dev/QT_QUICK_PLAN.md). Same core, settings and sign-in; no Widgets window.
-    from jellytoast import quick as _quick
-
-    if _quick.wanted():
+    # Qt Quick phone front end: same core, settings and sign-in; no Widgets
+    # window.
+    if _use_quick:
         _rc = _quick.run(app)
         if _rc is not None:
             sys.exit(_rc)

@@ -19,6 +19,22 @@ def _qcolor(css: str) -> QColor:
     return c
 
 
+def _with_alpha(c: QColor, a: float) -> QColor:
+    c = QColor(c)
+    c.setAlphaF(a)
+    return c
+
+
+def _over(top: QColor, bottom: QColor) -> QColor:
+    """``top`` composited over an opaque ``bottom``."""
+    a = top.alphaF()
+    return QColor.fromRgbF(
+        top.redF() * a + bottom.redF() * (1 - a),
+        top.greenF() * a + bottom.greenF() * (1 - a),
+        top.blueF() * a + bottom.blueF() * (1 - a),
+    )
+
+
 def _env_num(name: str, default: float) -> float:
     import os
 
@@ -59,7 +75,18 @@ class Theme(QObject):
     accent = Property(QColor, lambda self: _qcolor(_u.ACCENT), notify=changed)
     onAccent = Property(QColor, _on_accent, notify=changed)
     groove = Property(QColor, lambda self: _qcolor(_u.SLIDER_GROOVE), notify=changed)
-    surface = Property(QColor, lambda self: _qcolor(_u.POPUP_OPAQUE_FILL), notify=changed)
+    def _surface(self) -> QColor:
+        """Sheets / placeholders: the popup fill laid over the background —
+        always opaque (some themes' fill is translucent glass, which let
+        Now Playing show through a sheet)."""
+        return _over(_qcolor(_u.POPUP_OPAQUE_FILL), self._bg())
+
+    def _raised(self) -> QColor:
+        """A card on a sheet: the surface, a touch toward the text colour."""
+        return _over(_with_alpha(_qcolor(_u.TEXT), 0.07), self._surface())
+
+    surface = Property(QColor, _surface, notify=changed)
+    raised = Property(QColor, _raised, notify=changed)
     scrollDeceleration = Property(
         float, lambda self: _env_num("JT_SCROLL_DECEL", SCROLL_DECELERATION), constant=True
     )

@@ -100,6 +100,48 @@ Rectangle {
             }
         }
 
+        // Casting: where it's playing — tap for the speaker's volume / stop.
+        AbstractButton {
+            id: castPill
+            objectName: "castPill"
+            visible: cast.active !== ""
+            Layout.alignment: Qt.AlignHCenter
+            Layout.preferredHeight: 34
+            Layout.preferredWidth: Math.min(pillIcon.width + 8 + pillText.implicitWidth + 32, parent.width)
+            Layout.bottomMargin: 6
+            focusPolicy: Qt.NoFocus
+            hoverEnabled: false
+            onClicked: np.openCast()
+            background: Rectangle {
+                radius: height / 2
+                color: theme.accent
+                opacity: castPill.pressed ? 0.28 : 0.18
+            }
+            contentItem: Item {}
+            Icon {
+                id: pillIcon
+                x: 16
+                anchors.verticalCenter: parent.verticalCenter
+                name: cast.activeKind === "group" ? "speaker_group"
+                      : cast.activeKind === "display" ? "tv" : "speaker"
+                tint: theme.accent
+                size: 16
+            }
+            Label {
+                id: pillText
+                anchors.left: pillIcon.right
+                anchors.leftMargin: 8
+                anchors.right: parent.right
+                anchors.rightMargin: 16
+                anchors.verticalCenter: parent.verticalCenter
+                text: qsTr("Playing on %1").arg(cast.active)
+                color: theme.accent
+                elide: Text.ElideRight
+                font.pixelSize: 13
+                font.weight: Font.DemiBold
+            }
+        }
+
         // ── surface: cover, or lyrics / queue in its place; never resized by text ──
         Item {
             id: surfaceBox

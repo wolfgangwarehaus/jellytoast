@@ -176,7 +176,7 @@
 <context>
     <name>Cast</name>
     <message>
-        <location filename="../quick/cast.py" line="145"/>
+        <location filename="../quick/cast.py" line="279"/>
         <source>Pair {0} once from the desktop jellytoast app, then cast from here.</source>
         <translation type="unfinished"></translation>
     </message>
@@ -319,27 +319,72 @@ firewalld:
 <context>
     <name>CastSheet</name>
     <message>
-        <location filename="../quick/qml/CastSheet.qml" line="43"/>
+        <location filename="../quick/qml/CastSheet.qml" line="71"/>
         <source>Play on</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../quick/qml/CastSheet.qml" line="64"/>
+        <location filename="../quick/qml/CastSheet.qml" line="119"/>
         <source>Turn on the kinds of speakers and TVs you use in Settings → Casting.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../quick/qml/CastSheet.qml" line="68"/>
+        <location filename="../quick/qml/CastSheet.qml" line="123"/>
         <source>Open Settings</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../quick/qml/CastSheet.qml" line="101"/>
-        <source>This device</source>
+        <location filename="../quick/qml/CastSheet.qml" line="163"/>
+        <source>PLAYING ON</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../quick/qml/CastSheet.qml" line="125"/>
+        <location filename="../quick/qml/CastSheet.qml" line="234"/>
+        <source>Speakers in this group</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../quick/qml/CastSheet.qml" line="289"/>
+        <source>Stop casting</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../quick/qml/CastSheet.qml" line="344"/>
+        <source>Connecting…</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../quick/qml/CastSheet.qml" line="362"/>
+        <source>This phone</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../quick/qml/CastSheet.qml" line="370"/>
+        <source>SPEAKERS &amp; TVS</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../quick/qml/CastSheet.qml" line="393"/>
+        <source>GROUPS</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../quick/qml/CastSheet.qml" line="403"/>
+        <source>Speaker group</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../quick/qml/CastSheet.qml" line="424"/>
+        <source>Search again</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../quick/qml/CastSheet.qml" line="433"/>
+        <source>Looking for speakers and TVs…</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../quick/qml/CastSheet.qml" line="420"/>
         <source>No speakers or TVs found on this network.</source>
         <translation type="unfinished"></translation>
     </message>
@@ -1196,12 +1241,12 @@ Install mpv from your system package manager, or download it from https://mpv.io
 Instala mpv desde el gestor de paquetes de tu sistema, o descárgalo de https://mpv.io.</translation>
     </message>
     <message>
-        <location filename="../app.py" line="2447"/>
+        <location filename="../app.py" line="2454"/>
         <source>No system tray</source>
         <translation>Sin bandeja del sistema</translation>
     </message>
     <message>
-        <location filename="../app.py" line="2448"/>
+        <location filename="../app.py" line="2455"/>
         <source>Your desktop doesn&apos;t appear to have a system tray.
 jellytoast will run, but tray features will be unavailable.</source>
         <translation>Tu escritorio no parece tener bandeja del sistema.
@@ -1865,57 +1910,62 @@ jellytoast funcionará, pero las funciones de bandeja no estarán disponibles.</
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../quick/qml/NowPlaying.qml" line="399"/>
+        <location filename="../quick/qml/NowPlaying.qml" line="441"/>
         <source>Add to playlist…</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../quick/qml/NowPlaying.qml" line="410"/>
+        <location filename="../quick/qml/NowPlaying.qml" line="452"/>
         <source>Go to artist</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../quick/qml/NowPlaying.qml" line="421"/>
+        <location filename="../quick/qml/NowPlaying.qml" line="463"/>
         <source>Go to album</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../quick/qml/NowPlaying.qml" line="187"/>
+        <location filename="../quick/qml/NowPlaying.qml" line="229"/>
         <source>Casting</source>
         <translation type="unfinished">Enviando</translation>
     </message>
     <message>
-        <location filename="../quick/qml/NowPlaying.qml" line="211"/>
+        <location filename="../quick/qml/NowPlaying.qml" line="137"/>
+        <source>Playing on %1</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../quick/qml/NowPlaying.qml" line="253"/>
         <source>LIVE</source>
         <translation type="unfinished">EN VIVO</translation>
     </message>
     <message>
-        <location filename="../quick/qml/NowPlaying.qml" line="318"/>
+        <location filename="../quick/qml/NowPlaying.qml" line="360"/>
         <source>end of song</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../quick/qml/NowPlaying.qml" line="332"/>
+        <location filename="../quick/qml/NowPlaying.qml" line="374"/>
         <source>%1 minutes</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../quick/qml/NowPlaying.qml" line="333"/>
+        <location filename="../quick/qml/NowPlaying.qml" line="375"/>
         <source>1 hour</source>
         <translation type="unfinished">1 hora</translation>
     </message>
     <message>
-        <location filename="../quick/qml/NowPlaying.qml" line="333"/>
+        <location filename="../quick/qml/NowPlaying.qml" line="375"/>
         <source>1 h 30 min</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../quick/qml/NowPlaying.qml" line="338"/>
+        <location filename="../quick/qml/NowPlaying.qml" line="380"/>
         <source>After this song</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../quick/qml/NowPlaying.qml" line="342"/>
+        <location filename="../quick/qml/NowPlaying.qml" line="384"/>
         <source>Turn off timer</source>
         <translation type="unfinished"></translation>
     </message>
