@@ -21,6 +21,10 @@ developer-facing history lives in [`docs/CHANGELOG.md`](docs/CHANGELOG.md).
   longer stops after a song or two when the connection hiccups — it moves on
   to the next track, retries once if the group is briefly unreachable, and
   sends volume changes without flooding the speakers.
+- **Speakers get their volume back.** When you stop casting (or quit, or
+  the app crashes mid-cast), each speaker goes back to the level it had
+  before — even one that was briefly offline when you stopped — so the TV
+  isn't left too loud or too quiet.
 - **Phosh support.** On Phosh phones jellytoast opens the new phone
   interface too, and notices when you dock.
 - **Listed as phone-friendly.** Software centres now show jellytoast as

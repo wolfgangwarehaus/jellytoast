@@ -776,6 +776,38 @@ class Settings:
                 cleaned[str(gid)] = inner
         self._s.setValue("playback/cast_member_volumes", json.dumps(cleaned))
 
+    @property
+    def cast_home_volumes(self) -> dict:
+        """``{speaker_uuid: 0-100}`` — a Chromecast's own volume from before
+        a cast session, kept until the on-stop restore is confirmed. A
+        restore that failed (speaker mid-reconnect, app crash) would
+        otherwise let the next session snapshot the CAST level as the
+        "before" one and hand that back — the TV left too quiet / loud."""
+        raw = self._s.value("playback/cast_home_volumes", "", type=str)
+        try:
+            v = json.loads(raw) if raw else {}
+        except Exception:
+            return {}
+        if not isinstance(v, dict):
+            return {}
+        out = {}
+        for sid, vol in v.items():
+            try:
+                out[str(sid)] = max(0, min(100, int(vol)))
+            except (TypeError, ValueError):
+                continue
+        return out
+
+    @cast_home_volumes.setter
+    def cast_home_volumes(self, v: dict):
+        cleaned = {}
+        for sid, vol in (v or {}).items():
+            try:
+                cleaned[str(sid)] = max(0, min(100, int(vol)))
+            except (TypeError, ValueError):
+                continue
+        self._s.setValue("playback/cast_home_volumes", json.dumps(cleaned))
+
     # ── Sonos cast settings (see docs/research/casting_sonos.md §8) ─────────
 
     @property

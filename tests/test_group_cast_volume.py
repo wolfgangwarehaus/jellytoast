@@ -56,7 +56,7 @@ def test_prepare_applies_saved_before_media_and_snapshots(mgr, monkeypatch):
     mgr.chromecast_devices = [_member("tv", 0.80, sets), _member("kit", 0.20, sets)]
     monkeypatch.setattr(
         "jellytoast.settings.get_settings",
-        lambda: SimpleNamespace(cast_member_volumes={"g1": {"tv": 55, "kit": 20}}),
+        lambda: SimpleNamespace(cast_member_volumes={"g1": {"tv": 55, "kit": 20}}, cast_home_volumes={}),
     )
 
     mgr.prepare_group_volume_before_media(_group("g1"))
@@ -79,7 +79,7 @@ def test_prepare_is_idempotent_within_a_session(mgr, monkeypatch):
     mgr.chromecast_devices = [_member("tv", 0.10, sets)]
     monkeypatch.setattr(
         "jellytoast.settings.get_settings",
-        lambda: SimpleNamespace(cast_member_volumes={"g1": {"tv": 55}}),
+        lambda: SimpleNamespace(cast_member_volumes={"g1": {"tv": 55}}, cast_home_volumes={}),
     )
 
     mgr.prepare_group_volume_before_media(_group("g1"))
@@ -93,7 +93,7 @@ def test_prepare_noop_without_a_saved_balance(mgr, monkeypatch):
     mgr.chromecast_devices = [_member("tv", 0.80, sets)]
     monkeypatch.setattr(
         "jellytoast.settings.get_settings",
-        lambda: SimpleNamespace(cast_member_volumes={}),
+        lambda: SimpleNamespace(cast_member_volumes={}, cast_home_volumes={}),
     )
 
     mgr.prepare_group_volume_before_media(_group("g1"))
@@ -118,11 +118,18 @@ def test_group_restore_hands_members_back_on_stop(mgr, monkeypatch):
     mgr.active_cast = _group()
     mgr._pre_cast_member_volumes = [{"uuid": "tv", "volume": 80}, {"uuid": "kit", "volume": 20}]
     sets = []
-    monkeypatch.setattr(mgr, "set_member_volume_async", lambda u, v, on_done=None: sets.append((u, v)))
+    mgr.chromecast_devices = [
+        SimpleNamespace(uuid="tv", name="TV", cast_object=object()),
+        SimpleNamespace(uuid="kit", name="Kitchen", cast_object=object()),
+    ]
+    monkeypatch.setattr(
+        mgr, "_set_speaker_volume_blocking", lambda cc, label, v: sets.append((label, v)) or True
+    )
 
     mgr.stop_cast()
+    assert sorted(mgr._restore_job.result(timeout=2)) == ["kit", "tv"]
 
-    assert sets == [("tv", 80), ("kit", 20)]
+    assert sorted(sets) == [("Kitchen", 20), ("TV", 80)]
     assert mgr._pre_cast_member_volumes is None
 
 
@@ -158,7 +165,7 @@ def test_prepare_sets_members_in_parallel(mgr, monkeypatch):
     mgr.chromecast_devices = [_slow("a", 0.5), _slow("b", 0.5), _slow("c", 0.5)]
     monkeypatch.setattr(
         "jellytoast.settings.get_settings",
-        lambda: SimpleNamespace(cast_member_volumes={"g1": {"a": 20, "b": 30, "c": 40}}),
+        lambda: SimpleNamespace(cast_member_volumes={"g1": {"a": 20, "b": 30, "c": 40}}, cast_home_volumes={}),
     )
     t0 = time.monotonic()
     mgr.prepare_group_volume_before_media(_group("g1"))  # serial would hit the barrier timeout
@@ -178,7 +185,7 @@ def test_prepare_skips_unreachable_member(mgr, monkeypatch):
     mgr.chromecast_devices = [_member("ok", 0.5, sets), bad]
     monkeypatch.setattr(
         "jellytoast.settings.get_settings",
-        lambda: SimpleNamespace(cast_member_volumes={"g1": {"ok": 20, "bad": 30}}),
+        lambda: SimpleNamespace(cast_member_volumes={"g1": {"ok": 20, "bad": 30}}, cast_home_volumes={}),
     )
     mgr.prepare_group_volume_before_media(_group("g1"))
     assert sets == [("ok", 0.2)]
@@ -241,3 +248,22 @@ def test_member_volume_retries_through_a_reconnect(mgr, monkeypatch):
     mgr.set_member_volume_async("k", 38, on_done=done.append)
     assert calls == [0.38, 0.38, 0.38]
     assert done == [True]
+
+
+def test_group_snapshot_prefers_the_home_ledger(mgr, monkeypatch):
+    # Living room still at the cast level (26) from a restore that never
+    # landed; its real level (60) is in the ledger and wins.
+    sets = []
+    mgr.chromecast_devices = [_member("lr", 0.26, sets), _member("kit", 0.40, sets)]
+    monkeypatch.setattr(
+        "jellytoast.settings.get_settings",
+        lambda: SimpleNamespace(
+            cast_member_volumes={"g1": {"lr": 31, "kit": 40}},
+            cast_home_volumes={"lr": 60},
+        ),
+    )
+    mgr.prepare_group_volume_before_media(_group("g1"))
+    assert mgr._pre_cast_member_volumes == [
+        {"uuid": "lr", "volume": 60},
+        {"uuid": "kit", "volume": 40},
+    ]

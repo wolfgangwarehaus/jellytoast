@@ -639,7 +639,16 @@ class _ChromecastMixin:
 
         with ThreadPoolExecutor(max_workers=min(8, len(saved))) as pool:
             results = list(pool.map(lambda kv: _preset(*kv), saved.items()))
-        self._pre_cast_member_volumes = [r for r in results if r is not None]
+        # A level still in the home ledger is the speaker's real one — the
+        # live reading may be a cast level an earlier restore never undid.
+        home = get_settings().cast_home_volumes
+        snap = [
+            {"uuid": r["uuid"], "volume": home.get(r["uuid"], r["volume"])}
+            for r in results
+            if r is not None
+        ]
+        self._pre_cast_member_volumes = snap
+        self._remember_home_volumes({m["uuid"]: m["volume"] for m in snap})
 
     def group_members_async(self, group_dev: CastDevice, on_result: Callable):
         """Resolve a Chromecast group's member speakers + their current
@@ -737,6 +746,33 @@ class _ChromecastMixin:
             lambda lvl: self._set_member_volume_now(member_uuid, lvl, on_done),
         )
 
+    def _set_speaker_volume_blocking(self, cc, label: str, level_pct: int) -> bool:
+        """Set one speaker's own volume (0-100) on the calling (worker)
+        thread. False when it never took."""
+        try:
+            # Bounded: an unreachable speaker would otherwise block the
+            # worker forever.
+            cc.wait(timeout=5)
+        except Exception as e:
+            logger.warning("speaker volume for %r: %s", label, e)
+            return False
+        # A speaker mid-reconnect refuses ("is connecting...") and wait()
+        # doesn't cover that — it only waits for the FIRST connect. One
+        # that drops its sender connections every few minutes was left at
+        # the cast level when the on-stop restore hit that window. Retry
+        # for roughly one reconnect.
+        for attempt in range(4):
+            try:
+                cc.set_volume(max(0.0, min(1.0, level_pct / 100.0)))
+                return True
+            except Exception as e:
+                if attempt == 3:
+                    logger.warning("speaker volume for %r: %s", label, e)
+                    return False
+                logger.info("speaker volume for %r: %s, retrying", label, e)
+                time.sleep(self._CC_RETRY_DELAY_S)
+        return False
+
     def _set_member_volume_now(
         self, member_uuid: str, level_pct: int, on_done: Optional[Callable] = None
     ):
@@ -746,27 +782,9 @@ class _ChromecastMixin:
             dev = next((d for d in self.chromecast_devices if d.uuid == member_uuid), None)
             if dev is None or dev.cast_object is None:
                 return False
-            cc = dev.cast_object
-            # Bound the connect wait (matches the member-read site): an
-            # unreachable group-member speaker would otherwise block this
-            # worker forever, permanently leaking a slot from the bounded
-            # async pool. run_async's on_error logs the RequestTimeout.
-            cc.wait(timeout=5)
-            # A member mid-reconnect refuses ("is connecting...") and wait()
-            # doesn't cover that — it only waits for the FIRST connect. One
-            # speaker that drops its sender connections every few minutes
-            # was left at the cast level when the on-stop restore hit that
-            # window. Retry for roughly one reconnect.
-            for attempt in range(4):
-                try:
-                    cc.set_volume(max(0.0, min(1.0, level_pct / 100.0)))
-                    return True
-                except Exception as e:
-                    if attempt == 3:
-                        raise
-                    logger.info("member volume for %r: %s, retrying", dev.name, e)
-                    time.sleep(self._CC_RETRY_DELAY_S)
-            return False
+            return self._set_speaker_volume_blocking(
+                dev.cast_object, getattr(dev, "name", member_uuid), level_pct
+            )
 
         _pkg.run_async(
             _go,

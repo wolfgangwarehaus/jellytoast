@@ -275,10 +275,90 @@ class CastManager(_ChromecastMixin, _AirplayMixin, _OtherProtocolsMixin):
         restore it. Chromecast exposes it locally (the receiver status is
         already cached — no round-trip). DLNA/Sonos volume reads are
         blocking SOAP and stay a follow-up, so those keep today's
-        behaviour (no device-volume restore)."""
+        behaviour (no device-volume restore). A home level still waiting
+        from an unconfirmed restore wins over the live reading."""
         self._pre_cast_device_volume = None
         if kind == CastType.CHROMECAST:
-            self._pre_cast_device_volume = self.chromecast_get_volume()
+            cur = self.chromecast_get_volume()
+            uuid = getattr(self.active_cast, "uuid", "")
+            if uuid:
+                from jellytoast.settings import get_settings
+
+                cur = get_settings().cast_home_volumes.get(uuid, cur)
+                if cur is not None:
+                    self._remember_home_volumes({uuid: cur})
+            self._pre_cast_device_volume = cur
+
+    # ── Home volumes: the speaker's own level, kept until restored ──────
+
+    def _remember_home_volumes(self, levels: dict) -> None:
+        """Persist pre-cast levels; an entry already there is the older,
+        truer one (its restore never landed) and is kept."""
+        from jellytoast.async_io import call_on_gui
+
+        def _save():
+            from jellytoast.settings import get_settings
+
+            s = get_settings()
+            home = s.cast_home_volumes
+            for uuid, level in levels.items():
+                home.setdefault(uuid, level)
+            s.cast_home_volumes = home
+
+        call_on_gui(_save)
+
+    def _forget_home_volumes(self, uuids) -> None:
+        """GUI thread: drop entries whose restore was confirmed."""
+        uuids = set(uuids or ())
+        if not uuids:
+            return
+        from jellytoast.settings import get_settings
+
+        s = get_settings()
+        home = s.cast_home_volumes
+        if uuids & home.keys():
+            s.cast_home_volumes = {k: v for k, v in home.items() if k not in uuids}
+
+    def _start_volume_restore(self, targets) -> None:
+        """Hand each speaker back its level — ``[(uuid, level, cc|None)]``,
+        ``cc`` None = look the handle up by uuid. Runs all at once off the
+        GUI thread, retrying a speaker mid-reconnect; confirmed ones leave
+        the home-volume ledger. ``cleanup`` waits on ``_restore_job`` so a
+        quit doesn't disconnect the speakers out from under it."""
+        if not targets:
+            return
+        import threading
+        from concurrent.futures import Future, ThreadPoolExecutor
+
+        def _one(target):
+            uuid, level, cc = target
+            dev = next((d for d in self.chromecast_devices if d.uuid == uuid), None)
+            if cc is None:
+                cc = dev.cast_object if dev is not None else None
+            if cc is None:
+                return None
+            label = getattr(dev, "name", "") or uuid
+            ok = self._set_speaker_volume_blocking(cc, label, int(level))
+            return uuid if ok else None
+
+        job: Future = Future()
+
+        def _run():
+            try:
+                with ThreadPoolExecutor(max_workers=min(8, len(targets))) as pool:
+                    job.set_result([u for u in pool.map(_one, targets) if u])
+            except Exception as e:  # pragma: no cover - _one catches its own
+                job.set_exception(e)
+
+        def _done(f):
+            from jellytoast.async_io import call_on_gui
+
+            if f.exception() is None:
+                call_on_gui(lambda: self._forget_home_volumes(f.result()))
+
+        job.add_done_callback(_done)
+        self._restore_job = job
+        threading.Thread(target=_run, name="jt-cast-restore", daemon=True).start()
 
     def _restore_device_volume(self) -> None:
         """Push the snapshotted pre-cast volume back to the device before
@@ -296,17 +376,17 @@ class CastManager(_ChromecastMixin, _AirplayMixin, _OtherProtocolsMixin):
         if getattr(self.active_cast, "cast_type", "") == "group":
             members = self._pre_cast_member_volumes
             self._pre_cast_member_volumes = None
-            for m in members or []:
-                self.set_member_volume_async(m["uuid"], m["volume"])
+            self._start_volume_restore([(m["uuid"], m["volume"], None) for m in members or []])
             return
         snap = self._pre_cast_device_volume
         self._pre_cast_device_volume = None
+        if self.active_cast.device_type != CastType.CHROMECAST:
+            return  # only Chromecast is snapshotted
         if snap is None:
-            # Only impose the fallback on types we actually snapshot.
-            if self.active_cast.device_type != CastType.CHROMECAST:
-                return
             snap = _CAST_VOLUME_RESTORE_FALLBACK
-        self.cast_set_volume(int(snap))
+        self._start_volume_restore(
+            [(getattr(self.active_cast, "uuid", ""), int(snap), self.active_cast.cast_object)]
+        )
 
     def cast_seek(self, sec: float):
         """Absolute seek (the position slider). seek_relative (skip buttons)
@@ -475,6 +555,15 @@ class CastManager(_ChromecastMixin, _AirplayMixin, _OtherProtocolsMixin):
             # per process under aboutToQuit so a logger setup would
             # be overkill.
             logger.warning("cast cleanup: stop_cast failed — %r", e)
+        # Let the volume restore land before the disconnects below cut it
+        # off (bounded: a speaker that never answers keeps its ledger entry
+        # and is restored at the next cast instead).
+        job = getattr(self, "_restore_job", None)
+        if job is not None:
+            try:
+                self._forget_home_volumes(job.result(timeout=8))
+            except Exception as e:
+                logger.warning("cast cleanup: volume restore unfinished — %r", e)
         for dev in list(self.chromecast_devices):
             cc = dev.cast_object
             if cc is None:
