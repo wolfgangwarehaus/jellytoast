@@ -854,11 +854,28 @@ jobs:
     # future step). One file users install with
     # `flatpak install ./jellytoast-X.Y.Z.flatpak`; a self-hosted OSTree
     # repo for auto-updates is the planned follow-up.
-    runs-on: ubuntu-latest
+    #
+    # Two architectures: x86_64, and aarch64 for Linux phones (the OnePlus 6T
+    # on Nura's immutable Duranium edition, which installs apps as Flatpaks
+    # only) and ARM laptops. aarch64 builds NATIVELY on GitHub's arm64 runner
+    # — the builder image is multi-arch — rather than under qemu, which would
+    # take hours for ffmpeg + mpv. x86_64 keeps its historical file name so
+    # existing links and the `jellytoast.flatpak` alias don't move.
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x86_64
+            runner: ubuntu-latest
+            suffix: ""
+          - arch: aarch64
+            runner: ubuntu-24.04-arm
+            suffix: "-aarch64"
+    runs-on: ${{ matrix.runner }}
     container:
       image: ghcr.io/flathub-infra/flatpak-github-actions:freedesktop-24.08
       options: --privileged
-    timeout-minutes: 60  # ffmpeg + mpv build from source (~20 min, cached after)
+    timeout-minutes: 90  # ffmpeg + mpv build from source (~20-40 min, cached after)
     steps:
       - uses: actions/checkout@v7
       - name: Resolve version
@@ -877,13 +894,13 @@ jobs:
       - uses: flatpak/flatpak-github-actions/flatpak-builder@79327416609af08178ad73b352877e51450790b3 # v6.8
         with:
           manifest-path: packaging/flatpak/io.github.wolfgangwarehaus.jellytoast.yml
-          bundle: jellytoast-${{ steps.ver.outputs.version }}.flatpak
-          cache-key: flatpak-builder-${{ hashFiles('packaging/flatpak/*.yml') }}
-          arch: x86_64
+          bundle: jellytoast-${{ steps.ver.outputs.version }}${{ matrix.suffix }}.flatpak
+          cache-key: flatpak-builder-${{ matrix.arch }}-${{ hashFiles('packaging/flatpak/*.yml') }}
+          arch: ${{ matrix.arch }}
           upload-artifact: false
       - uses: actions/upload-artifact@v7
         with:
-          name: flatpak
+          name: flatpak-${{ matrix.arch }}
           path: jellytoast-*.flatpak
 
   build-python:
@@ -955,6 +972,7 @@ jobs:
           alias "jellytoast-${V}-x86_64.AppImage"        jellytoast-x86_64.AppImage
           alias "jellytoast_${V}_amd64.deb"              jellytoast-amd64.deb
           alias "jellytoast-${V}.flatpak"                jellytoast.flatpak
+          alias "jellytoast-${V}-aarch64.flatpak"        jellytoast-aarch64.flatpak
           alias "jellytoast-${V}-macos-arm64.dmg"        jellytoast-macos.dmg
           alias "jellytoast-${V}-windows-setup.exe"      jellytoast-windows-setup.exe
           # Legacy stable names (pre-0.2.0 README/site links).
