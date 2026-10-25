@@ -12,11 +12,14 @@ developer-facing history lives in [`docs/CHANGELOG.md`](docs/CHANGELOG.md).
      should stand alone: the Store "What's new" shows just the title (+ first
      sentence in --detail mode). -->
 
-- **New phone interface.** On Plasma Mobile jellytoast now opens a rebuilt
-  touch-first app: smoother scrolling, swipe gestures, a Home page, search,
+- **New phone interface.** On Plasma Mobile and Phosh jellytoast now opens a
+  rebuilt touch-first app: smoother scrolling, swipe gestures, a Home page, search,
   lyrics, the queue (drag to reorder), playlists you can edit, internet
   radio, downloads, casting, EQ, crossfade and Last.fm / ListenBrainz. Prefer
   the old one? **Settings → Use the classic interface** and restart.
+- **Install it on a Linux phone.** New instructions for Nura (formerly
+  postmarketOS) and Arch Linux ARM, including a package for Alpine / Nura —
+  see *Linux phones* in the README.
 - **The phone interface speaks Spanish too.** All ~200 of its new strings are
   translated, so Spanish is complete again.
 - **Music keeps playing when you close the phone app.** Close it mid-song and
@@ -36,6 +39,9 @@ developer-facing history lives in [`docs/CHANGELOG.md`](docs/CHANGELOG.md).
   longer stops after a song or two when the connection hiccups — it moves on
   to the next track, retries once if the group is briefly unreachable, and
   sends volume changes without flooding the speakers.
+- **Smoother song changes when casting.** The next song now waits in the
+  speaker's own queue, so speakers move on by themselves — no gap while the
+  app hands over each track, and no stop if the app loses touch for a moment.
 - **Speakers get their volume back.** When you stop casting (or quit, or
   the app crashes mid-cast), each speaker goes back to the level it had
   before — even one that was briefly offline when you stopped — so the TV
@@ -80,8 +86,6 @@ developer-facing history lives in [`docs/CHANGELOG.md`](docs/CHANGELOG.md).
 - **Phone screens fit with wider fonts.** With some fonts (like DejaVu Sans)
   the player bar and a Settings page ran a little past the edge of a 360 px
   phone. Long titles now scroll instead of pushing the layout wider.
-- **The new phone Now Playing speaks Spanish.** Its buttons, the loading
-  spinner and the cast firewall message were showing in English.
 - **Font size changes apply right away, every time.** Changing the text size
   in Settings could occasionally redraw at the old size until a restart.
 - **Faster start without a keyring.** On systems with no keyring service,
