@@ -1,9 +1,9 @@
 <h1 align="center">jellytoast</h1>
 
 <p align="center">
-  A desktop music player for <a href="https://jellyfin.org/">Jellyfin</a> and
-  <a href="https://www.navidrome.org/">Navidrome</a> servers —<br>
-  bit-perfect playback, casting, mini-player, and offline downloads.
+  A music player for <a href="https://jellyfin.org/">Jellyfin</a> and
+  <a href="https://www.navidrome.org/">Navidrome</a> servers, on your desktop and your Linux phone —<br>
+  bit-perfect playback, casting, and offline downloads.
 </p>
 
 <p align="center">
@@ -13,14 +13,16 @@
 
 ## Features
 
-- **Desktop app for your self-hosted music** — supports Jellyfin and Navidrome, with multiple libraries.
-- **Bit-perfect audio** — FLAC / ALAC / OPUS / DSD playback via [mpv](https://mpv.io/).
-- **Cast anywhere** — send music to Chromecast, AirPlay 2, Sonos, or DLNA. Local relay for offline or Tailscale casting.
+- **For your self-hosted music** — Jellyfin and Navidrome, with multiple libraries. Type your server's address and sign in; jellytoast works out which kind it is.
+- **Made for phones too** — on Plasma Mobile and Phosh it opens a touch-first interface: swipe gestures, lyrics, a queue you can drag around, downloads and casting. Close it mid-song and the music keeps going. Installs on [Nura / postmarketOS and Arch Linux ARM](docs/linux-phones.md).
+- **Bit-perfect audio** — FLAC / ALAC / OPUS / DSD playback via [mpv](https://mpv.io/), or EQ, crossfade and volume normalization when you want them.
+- **Cast anywhere** — send music to Chromecast and Google speaker groups, AirPlay 2, Sonos, or DLNA. Groups play on through Wi-Fi hiccups, and each speaker gets its own volume back when you stop. Local relay for offline or Tailscale casting.
 - **Offline mode** — cache albums, playlists, or your whole library for offline playback.
 - **Floating mini player** — compact and album-art views.
 - **Desktop features** — media keys, a tray icon, optional notifications, and a start-at-login option.
 - **Frosted glass & theming** — background blur on KDE, macOS, and Windows, plus a full theme picker: light/dark, built-in color presets (Catppuccin, Dracula, Nord, Gruvbox, …), import any base16 scheme, or follow your system accent (and your pywal wallpaper palette on Linux).
-- **And more** — synced lyrics, an audio visualizer, smart playlists, smart shuffle, a sleep timer, ListenBrainz scrobbling, and tag editing (Jellyfin).
+- **Playlists your way** — add songs, albums and whole playlists to your server's playlists, rename or delete them, or build smart playlists from rules.
+- **And more** — synced lyrics, an audio visualizer, smart shuffle, internet radio, a sleep timer, Last.fm and ListenBrainz scrobbling, and tag editing (Jellyfin). In English and Spanish.
 
 ## Screenshots
 
