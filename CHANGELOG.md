@@ -17,6 +17,8 @@ developer-facing history lives in [`docs/CHANGELOG.md`](docs/CHANGELOG.md).
   lyrics, the queue (drag to reorder), playlists you can edit, internet
   radio, downloads, casting, EQ, crossfade and Last.fm / ListenBrainz. Prefer
   the old one? **Settings → Use the classic interface** and restart.
+- **The phone interface speaks Spanish too.** All ~200 of its new strings are
+  translated, so Spanish is complete again.
 - **Music keeps playing when you close the phone app.** Close it mid-song and
   it carries on in the background; tap the app or the media controls to get
   it back. Close it while paused and it quits as before.
