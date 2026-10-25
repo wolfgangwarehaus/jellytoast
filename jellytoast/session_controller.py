@@ -82,24 +82,32 @@ class _SessionMixin:
         self._refresh_library_selection()
         self._reveal_window()
 
-    def _retry_empty_native_views(self):
+    def _retry_empty_native_views(self, skip=None):
         """Re-trigger the load for any native surface that exists but
         has no items. Called after fresh credentials arrive — the
-        prior fetch likely 401'd against a stale persisted token."""
+        prior fetch likely 401'd against a stale persisted token.
+        ``skip`` is a surface whose load was just started (the home route
+        after sign-in): it's still empty only because that load hasn't
+        landed, and a second load would duplicate every request of the
+        first impression."""
         plan = self._music_fetch_plan()
-        if self.songs_view is not None and not self.songs_view._items:
+
+        def _want(view):
+            return view is not None and view is not skip
+
+        if _want(self.songs_view) and not self.songs_view._items:
             self.songs_view.load_songs(plan)
-        if self.suggestions_view is not None:
+        if _want(self.suggestions_view):
             # SuggestionsView always reloads cleanly (rails handle
             # empty payloads themselves).
             self.suggestions_view.load(plan)
-        if self.album_grid is not None and not self.album_grid._tiles:
+        if _want(self.album_grid) and not self.album_grid._tiles:
             self.album_grid.load_items(plan, "")
-        if self.playlist_grid is not None and not self.playlist_grid._tiles:
+        if _want(self.playlist_grid) and not self.playlist_grid._tiles:
             self.playlist_grid.load_items("", "")
-        if self.artist_grid is not None and not self.artist_grid._tiles:
+        if _want(self.artist_grid) and not self.artist_grid._tiles:
             self.artist_grid.load_items(plan, "")
-        if self.genres_view is not None and not self.genres_view._tiles:
+        if _want(self.genres_view) and not self.genres_view._tiles:
             self.genres_view.load_genres()
 
     def _heartbeat(self):
@@ -388,7 +396,7 @@ class _SessionMixin:
         # Route to home destination (Albums grid by default). Lazily
         # builds the surface and kicks off its load.
         self._route_home()
-        self._retry_empty_native_views()
+        self._retry_empty_native_views(skip=self.content_stack.currentWidget())
         # Qt's auto-focus after the post-login route can land on the first
         # focusable top-bar chrome button (the back arrow), painting a
         # keyboard focus ring the user never asked for. The suggestions

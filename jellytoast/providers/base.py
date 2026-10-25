@@ -57,6 +57,28 @@ class AuthResult:
 # ── Provider ABC ─────────────────────────────────────────────────────
 
 
+# Cover sizes we ask servers for. Every surface scales locally anyway, so the
+# requested size is a cache identity, not a display size: a handful of fixed
+# buckets means a server generates (and caches) far fewer thumbnails, the app's
+# own cache serves every surface from one download, and 600 is Navidrome's own
+# web-UI size (UICoverArtSize), so a server someone already browses in a
+# browser has it ready. Odd sizes (540, a phone tile's exact 333 px) each made
+# a cold server generate a fresh thumbnail — the slow first-launch art.
+COVER_BUCKETS = (600, 1200)
+
+
+def cover_request_px(width: int) -> int:
+    """The bucketed size to request for a cover shown at ``width`` px."""
+    try:
+        width = int(width)
+    except (TypeError, ValueError):
+        return COVER_BUCKETS[0]
+    for b in COVER_BUCKETS:
+        if width <= b:
+            return b
+    return COVER_BUCKETS[-1]
+
+
 class MediaProvider(ABC):
     """Interface every backend implements. Methods are grouped by
     concern; concrete implementations add caching / async semantics

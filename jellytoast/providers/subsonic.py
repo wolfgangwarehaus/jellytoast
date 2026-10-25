@@ -1311,11 +1311,13 @@ class SubsonicProvider(MediaProvider):
         # which works for albums/artists; for songs the AlbumPrimaryImageTag
         # / AlbumId is preferred but the song id also resolves on
         # Navidrome.
+        from jellytoast.providers.base import cover_request_px
+
         return self._build_url(
             "getCoverArt",
             {
                 "id": item_id,
-                "size": width,
+                "size": cover_request_px(width),
             },
         )
 

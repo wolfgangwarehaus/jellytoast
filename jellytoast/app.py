@@ -2448,16 +2448,28 @@ def main():
 
     _use_quick = _quick.wanted()
 
-    if not _use_quick and not QSystemTrayIcon.isSystemTrayAvailable():
-        QMessageBox.warning(
-            None,
+    if (
+        not _use_quick
+        and not QSystemTrayIcon.isSystemTrayAvailable()
+        and not settings.no_tray_notice_shown
+    ):
+        # Once, and without blocking: this used to be a modal on EVERY launch
+        # on a desktop without a tray (stock GNOME, among others) — the first
+        # thing a new user saw, before the window even existed. The app works
+        # fine without one; it's a note, not a question.
+        settings.no_tray_notice_shown = True
+        box = QMessageBox(
+            QMessageBox.Icon.Information,
             QCoreApplication.translate("JellytoastWindow", "No system tray"),
             QCoreApplication.translate(
                 "JellytoastWindow",
-                "Your desktop doesn't appear to have a system tray.\n"
-                "jellytoast will run, but tray features will be unavailable.",
+                "Your desktop doesn't appear to have a system tray, so "
+                "jellytoast's tray icon won't show. Everything else works as usual.",
             ),
         )
+        box.setWindowModality(Qt.WindowModality.NonModal)
+        app._no_tray_notice = box  # keep it alive
+        QTimer.singleShot(2500, box.show)  # after the main window is up
 
     bus = PlayerBus.get()
 

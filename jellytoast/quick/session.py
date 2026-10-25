@@ -93,57 +93,31 @@ class Session(QObject):
                 self.tr("Signing in is off in the dev rig — it would replace your real login.")
             )
             return
-        server, username = _normalized(url), (username or "").strip()
-        if not server or not username:
-            self._fail(self.tr("Please fill in the server URL and username."))
-            return
-        from jellytoast.providers import get_provider, reset_provider
+        from jellytoast import server_connect
 
-        kind = (kind or "jellyfin").lower()
-        settings = self._settings()
-        if kind != get_provider().kind:
-            settings.provider_kind = kind
-            reset_provider()
-        prov = get_provider()
         self._gen += 1
         gen = self._gen
         self._busy, self._error = True, ""
         self.changed.emit()
+        # The shared path (jellytoast/server_connect.py): clean up the
+        # address, find the server — either kind; the chip only breaks a tie —
+        # then authenticate.
+        preferred = (kind or "").lower() or None
 
-        def _go():
-            info = prov.probe(server)
-            if info is None:
-                return ("not-server", None)
-            prov.authenticate(server, username, password)
-            return ("ok", (getattr(info, "product_name", "") or "").strip())
-
-        def _done(result):
+        def _done(found):
             if gen != self._gen:
                 return
-            status, product = result
-            if status != "ok":
-                self._fail(
-                    self.tr("Couldn't find a {0} server at that address.").format(
-                        "Jellyfin" if kind == "jellyfin" else "Navidrome / Subsonic"
-                    )
-                )
-                return
-            settings.server_is_navidrome = "navidrome" in (product or "").lower()
             self._signed_in_ok()
 
         def _err(e):
             if gen != self._gen:
                 return
-            msg = str(e) or e.__class__.__name__
-            if "Connection" in msg or "Max retries" in msg or "timed out" in msg:
-                msg = self.tr("Couldn't reach the server. Check the URL and your network.")
-            elif "401" in msg or "Unauthorized" in msg or "Wrong username" in msg:
-                msg = self.tr("Wrong username or password.")
-            else:
-                msg = self.tr("Couldn't sign in: {0}").format(msg)
-            self._fail(msg)
+            self._fail(server_connect.message_for(e))
 
-        async_io.run_async(_go, on_result=_done, on_error=_err)
+        async_io.run_async(
+            server_connect.sign_in, url, username, password, preferred,
+            on_result=_done, on_error=_err,
+        )
 
     def _signed_in_ok(self) -> None:
         try:

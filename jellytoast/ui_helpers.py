@@ -980,6 +980,7 @@ def clear_image_caches():
     _image_cache.clear()
     _raw_image_cache.clear()
     _raw_cache_bytes = 0
+    _known_no_art.clear()
 
 
 # In-flight QNetworkReply objects keyed to the load context the slot
@@ -1049,6 +1050,30 @@ _DEFERRED_LOW_MAX = 64
 _RESIZE_TIMEOUT_TRIP = 2
 _resize_timeouts = 0
 _prefer_original_covers = False
+
+# How long a SIZED cover request may go without receiving a byte before we
+# give up on the server's resize and fetch the original instead. A server
+# generating a thumbnail sends nothing until it's done, so this is "how long
+# do we wait for a cold resize". It was the full 30 s transfer timeout: a
+# first launch against a cold server (every tester's first impression) sat on
+# blank tiles for 30 s per stuck request, and needed two of them to trip the
+# latch. 8 s comfortably covers a healthy cold resize; past it the original
+# (served off disk, re-scaled locally) is the faster path. Originals keep the
+# full allowance — they're bytes on the wire, not server CPU.
+_SIZED_TRANSFER_TIMEOUT_MS = 8000
+_TRANSFER_TIMEOUT_MS = 30000
+
+# Semantic keys whose art the server says doesn't exist (404 even for the
+# original). Never requested again this session — callers get on_error at
+# once and stop retrying (``image_known_missing``). Cleared with the other
+# in-memory caches on sign-out / server switch.
+_known_no_art: set = set()
+
+
+def image_known_missing(key: str) -> bool:
+    """Whether ``key``'s art is known not to exist on the server (a 404),
+    so a caller's on_error is final — retrying can't help."""
+    return _semantic_key(key) in _known_no_art
 
 # L2 "raw decoded source" cache. Keyed by the SEMANTIC key (the part of
 # the caller's `key` before the first `|`, typically an item id /
@@ -1394,6 +1419,16 @@ def _after_disk_miss(
     """Continuation of ``load_image_async`` after every local tier
     missed — the offline gate, in-flight coalescing, and the network
     fetch. Split out because the disk tiers resolve on the pool."""
+    # Known to have no art (an earlier 404): answer without the network.
+    if sem_key in _known_no_art:
+        if on_error is not None:
+            on_error()
+            return
+        ph_pix = QPixmap.fromImage(_placeholder_image(target_w, target_h))
+        if rounded_radius > 0:
+            ph_pix = _round_corners(ph_pix, rounded_radius)
+        callback(ph_pix)
+        return
     # Offline gate: every local cache tier has been tried above. Don't
     # let a cover-load wait for a network timeout in offline mode —
     # either let the caller handle it (on_error) or hand back the
@@ -1727,13 +1762,13 @@ def _fire_image_request(
             url = stripped
             resize_fallback_done = True  # already original — no further fallback
     req = QNetworkRequest(QUrl(url))
-    # The app-level gate (_GATED_MAX_INFLIGHT) now means a request only
-    # reaches QNAM when a socket is actually free, so this timeout covers
-    # the live transfer alone — not in-queue wait. 30s tolerates a cold
-    # Navidrome reading + resizing embedded art from a large library on
-    # first touch (it caches the thumbnail after), without holding a truly
-    # stuck reply forever.
-    req.setTransferTimeout(30000)
+    # The app-level gate (_GATED_MAX_INFLIGHT) means a request only reaches
+    # QNAM when a socket is actually free, so this timeout covers the live
+    # transfer alone — not in-queue wait. A sized request gets the short
+    # resize allowance (_SIZED_TRANSFER_TIMEOUT_MS): its timeout falls back
+    # to the original below, which keeps the full one.
+    sized = not resize_fallback_done and _strip_resize_params(url) is not None
+    req.setTransferTimeout(_SIZED_TRANSFER_TIMEOUT_MS if sized else _TRANSFER_TIMEOUT_MS)
     if priority == "high":
         req.setPriority(QNetworkRequest.Priority.HighPriority)
     elif priority == "low":
@@ -1881,6 +1916,10 @@ def _after_image_decode(res, ctx, net_err, http_status):
             " [after resize-fallback]" if fb_done else "",
             _redact_url(url),
         )
+        if http_status == 404:
+            # Even the original isn't there: this item has no art. Remember
+            # it so nothing asks again (and callers stop retrying).
+            _known_no_art.add(sem_key)
 
     # Release the gate slot for a gated (normal/low) load and promote the
     # next waiter — NORMAL before LOW so a visible tile beats a prefetch.

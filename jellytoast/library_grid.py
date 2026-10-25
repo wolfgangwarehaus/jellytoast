@@ -2816,6 +2816,13 @@ class LibraryGrid(_PaginatorMixin, QWidget):
             return
         item = items[row]
         cover_id = item.get("Id", "")
+        tags = item.get("ImageTags")
+        if isinstance(tags, dict) and not tags.get("Primary"):
+            # The server says this item has no image (Jellyfin's ImageTags,
+            # Subsonic's missing coverArt): show the placeholder, don't ask —
+            # a request would 404 (and burn the retry budget) or fetch the
+            # server's own generic stand-in.
+            cover_id = ""
         if not cover_id:
             # No art id at all — mark exhausted so the visible re-arm pass
             # (which retries rows missing a cover) doesn't spin on it.
@@ -2844,6 +2851,11 @@ class LibraryGrid(_PaginatorMixin, QWidget):
             self._cover_retries[row] = self.COVER_RETRY_LIMIT
             return
         self._covers_loaded.add(row)
+
+        art_key = (
+            f"{art_stem(cover_id, (item.get('ImageTags') or {}).get('Primary', ''))}"
+            f"|{self.kind}tile"
+        )
 
         def _still_at_row(r: int) -> bool:
             # A reload (login, scope change, refresh) can replace the items
@@ -2885,6 +2897,12 @@ class LibraryGrid(_PaginatorMixin, QWidget):
             if _offline.is_offline_mode():
                 self._cover_failed.add(r)
                 return
+            from jellytoast.ui_helpers import image_known_missing
+
+            if image_known_missing(art_key):
+                # The server has no art for it — final, not worth a retry.
+                self._cover_retries[r] = self.COVER_RETRY_LIMIT
+                return
             tries = self._cover_retries.get(r, 0) + 1
             self._cover_retries[r] = tries
             if tries >= self.COVER_RETRY_LIMIT:
@@ -2902,8 +2920,7 @@ class LibraryGrid(_PaginatorMixin, QWidget):
         load_image_async(
             # Versioned stem: new art on the server lands on a fresh cache
             # slot instead of showing the old cover forever.
-            f"{art_stem(cover_id, (item.get('ImageTags') or {}).get('Primary', ''))}"
-            f"|{self.kind}tile",
+            art_key,
             cover_url,
             target,
             target,

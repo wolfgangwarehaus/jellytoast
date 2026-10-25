@@ -1,9 +1,9 @@
 """Native sign-in surface — boot-time authentication entry point.
 
 A centered card with server URL / username / password fields and a
-Sign In button. On submit it calls the active provider's
-``authenticate`` via ``run_async`` (the GUI thread can't block on a
-10s POST timeout) and emits ``signed_in`` on success. Jellyfin servers
+Sign In button. On submit it hands them to ``server_connect.sign_in`` via
+``run_async`` (address clean-up, server-kind detection, authentication —
+the path the Qt Quick sign-in shares) and emits ``signed_in`` on success. Jellyfin servers
 also offer Quick Connect: show a code, the user approves it from a
 device that's already signed in, no password typed here. The host shows
 this view in the content stack whenever the API isn't authenticated;
@@ -709,33 +709,67 @@ class LoginView(QWidget):
         if self._submitting:
             return
         self._pending_demo = demo
-        server = self._normalized_server()
+        server = self._server_field.text().strip()
         username = self._username_field.text().strip()
         password = self._password_field.text()
         if not server or not username:
             self._show_error(self.tr("Please fill in the server URL and username."))
             return
-        self._ensure_provider()
 
         self._set_submitting(True)
         self._error_label.setVisible(False)
-        # Two-phase: probe the URL first to validate it's actually a
-        # backend of this kind BEFORE the password is sent over the
-        # wire. provider.probe returns None on any failure (network
-        # error, wrong port, non-backend response) so we don't have
-        # to translate exceptions in this path. On success we
-        # authenticate.
+        # One shared path (jellytoast/server_connect.py): clean up the address,
+        # find the server — either kind; the dropdown only breaks a tie —
+        # then authenticate. The password is sent only to an address that
+        # answered as a server.
+        from jellytoast import server_connect
+
+        preferred = self._kind_combo.currentData() or None
         run_async(
-            self.provider.probe,
+            server_connect.sign_in,
             server,
-            on_result=lambda info: self._on_probe_ok(
-                server,
-                username,
-                password,
-                info,
-            ),
-            on_error=lambda e: self._on_probe_err(e),
+            username,
+            password,
+            preferred,
+            on_result=lambda found: self._on_signed_in(found, username, password),
+            on_error=self._on_sign_in_err,
         )
+
+    def _on_signed_in(self, found, username: str, password: str):
+        # The server may have turned out to be the other kind, or at a
+        # cleaned-up address: show what was actually used.
+        self.provider = get_provider()
+        i = self._kind_combo.findData(found.kind)
+        if i >= 0 and i != self._kind_combo.currentIndex():
+            self._kind_combo.setCurrentIndex(i)
+        self._server_field.setText(found.url)
+        self._on_auth_ok(found.url, username, password, found.product)
+
+    def _on_sign_in_err(self, err: Exception):
+        from jellytoast import server_connect
+
+        self._set_submitting(False)
+        code = getattr(err, "code", "")
+        if getattr(self, "_pending_demo", False) and code in (
+            server_connect.ConnectError.UNREACHABLE,
+            server_connect.ConnectError.TIMEOUT,
+            server_connect.ConnectError.NOT_SERVER,
+        ):
+            # The user typed nothing — the public demo itself is down.
+            self._show_error(
+                self.tr(
+                    "The public demo looks offline right now — it's a shared server "
+                    "run by the Navidrome / Jellyfin projects, not by jellytoast. "
+                    "Try again later, or sign in to your own server above."
+                )
+            )
+            return
+        self._show_error(server_connect.message_for(err))
+        if code == server_connect.ConnectError.WRONG_CREDENTIALS:
+            # Almost certainly a mistyped password: clear it and put the
+            # cursor back so the next keystroke replaces it.
+            self._password_field.clear()
+            self._password_field.setFocus(Qt.FocusReason.OtherFocusReason)
 
     def _normalized_server(self) -> str:
         """The URL field, with a scheme added — both Jellyfin and Subsonic
@@ -906,58 +940,6 @@ class LoginView(QWidget):
             self._server_field.setPlaceholderText("http://your.server:8096")
         self._refresh_qc_btn()
 
-    def _on_probe_ok(self, server: str, username: str, password: str, info):
-        if info is None:
-            self._set_submitting(False)
-            self._show_error(
-                self.tr(
-                    "That URL responded but doesn't look like a {0} server."
-                ).format(self.provider.kind.capitalize())
-            )
-            return
-        # URL probe succeeded. Authenticate. The product_name from the
-        # probe (e.g. "Navidrome") is threaded through so _on_auth_ok
-        # can decide whether to run the server-side scrobble detection
-        # — we have the password in scope here, but not after auth.
-        product_name = (getattr(info, "product_name", "") or "").strip()
-        run_async(
-            self.provider.authenticate,
-            server,
-            username,
-            password,
-            on_result=lambda _result: self._on_auth_ok(
-                server,
-                username,
-                password,
-                product_name,
-            ),
-            on_error=lambda e: self._on_auth_err(e),
-        )
-
-    def _on_probe_err(self, err: Exception):
-        self._set_submitting(False)
-        if getattr(self, "_pending_demo", False):
-            # The user typed nothing — any failure here means the public demo
-            # itself is unreachable. Be honest that it's not our server.
-            self._show_error(
-                self.tr(
-                    "The public demo looks offline right now — it's a shared server "
-                    "run by the Navidrome / Jellyfin projects, not by jellytoast. "
-                    "Try again later, or sign in to your own server above."
-                )
-            )
-            return
-        msg = str(err) or err.__class__.__name__
-        if "Connection" in msg or "Max retries" in msg or "timed out" in msg:
-            msg = self.tr("Couldn't reach the server. Check the URL and your network.")
-        elif "404" in msg or "Not Found" in msg:
-            msg = self.tr("That URL doesn't look like a {0} server.").format(
-                self.provider.kind.capitalize()
-            )
-        else:
-            msg = self.tr("Couldn't reach the server: {0}").format(msg)
-        self._show_error(msg)
-
     def _on_auth_ok(
         self, server: str = "", username: str = "", password: str = "", product_name: str = ""
     ):
@@ -995,27 +977,6 @@ class LoginView(QWidget):
         from jellytoast.scrobble import refresh_server_scrobble_flags
 
         refresh_server_scrobble_flags()
-
-    def _on_auth_err(self, err: Exception):
-        self._set_submitting(False)
-        msg = str(err) or err.__class__.__name__
-        unauthorized = "401" in msg or "Unauthorized" in msg
-        # Common case: HTTPError 401 from a wrong password. The full
-        # error string from requests is verbose; surface a friendly
-        # message and tuck the technical detail underneath.
-        if unauthorized:
-            msg = self.tr("Wrong username or password.")
-        elif "404" in msg or "Not Found" in msg:
-            msg = self.tr("Server not found at that URL.")
-        elif "Connection" in msg or "Max retries" in msg:
-            msg = self.tr("Couldn't reach the server. Check the URL and your network.")
-        self._show_error(msg)
-        # On a 401 the user almost certainly mistyped the password;
-        # clear it + return focus + select-all so the next keystroke
-        # replaces the bad input without a tab.
-        if unauthorized:
-            self._password_field.clear()
-            self._password_field.setFocus(Qt.FocusReason.OtherFocusReason)
 
     def _show_error(self, msg: str):
         self._error_label.setText(msg)

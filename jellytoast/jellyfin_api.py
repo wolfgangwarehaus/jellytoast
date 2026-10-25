@@ -854,10 +854,12 @@ class JellyfinAPI:
     ) -> str:
         if not item_id:
             return ""
+        from jellytoast.providers.base import cover_request_px
+
         path = "FillWidth" if fill else "width"
         return (
             f"{self.server_url}/Items/{item_id}/Images/{image_type}"
-            f"?{path}={width}&quality=90&ApiKey={self.token}"
+            f"?{path}={cover_request_px(width)}&quality=90&ApiKey={self.token}"
         )
 
     # ── Playback reporting ──────────────────────────────────────────────────

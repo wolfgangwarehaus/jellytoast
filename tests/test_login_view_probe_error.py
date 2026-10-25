@@ -1,55 +1,63 @@
-"""Coverage for ``jellytoast.login_view.LoginView._on_probe_err``.
+"""The desktop sign-in screen's error handling (``LoginView._on_sign_in_err``).
 
-When the URL probe fails, the error shown to the user must name the
-*selected* provider — not a hardcoded "Jellyfin". A Navidrome user who
-fat-fingers the URL and gets a 404 should be told it "doesn't look like
-a Subsonic server", matching the provider dropdown they picked. The
-sibling success-path message (``_on_probe_ok``) already does this; this
-pins the failure path so it can't silently regress to "Jellyfin" again.
-
-The method only touches ``self.provider.kind``, ``self._set_submitting``
-and ``self._show_error`` — none of which need the constructed widget —
-so the tests drive it on a ``__new__`` instance with those three stubbed,
-no QApplication required.
+Messages come from the shared ``server_connect.message_for``; the view adds
+two things of its own: a "the public demo is down" message when "Try a demo"
+can't reach the demo, and clearing the password after a wrong one.
 """
 
 from __future__ import annotations
 
 from jellytoast.login_view import LoginView
+from jellytoast.server_connect import ConnectError
 
 
-class _FakeProvider:
-    def __init__(self, kind: str):
-        self.kind = kind
+class _Field:
+    def __init__(self):
+        self.cleared = False
+        self.focused = False
+
+    def clear(self):
+        self.cleared = True
+
+    def setFocus(self, *_a):  # noqa: N802
+        self.focused = True
 
 
-def _probe_err(kind: str, err: Exception) -> str:
-    """Run ``_on_probe_err`` on a bare LoginView with a stubbed provider
-    and capture the message handed to ``_show_error``."""
+def _err(err, demo=False):
     view = LoginView.__new__(LoginView)
-    view.provider = _FakeProvider(kind)
     view._set_submitting = lambda _flag: None
+    view._pending_demo = demo
+    view._password_field = _Field()
     captured: list[str] = []
     view._show_error = captured.append
-    LoginView._on_probe_err(view, err)
+    LoginView._on_sign_in_err(view, err)
     assert len(captured) == 1
-    return captured[0]
+    return captured[0], view._password_field
 
 
-def test_404_names_subsonic_when_subsonic_selected():
-    msg = _probe_err("subsonic", Exception("404 Not Found"))
-    assert "Subsonic server" in msg
-    assert "Jellyfin" not in msg
+def test_unreachable_says_so_instead_of_wrong_server_type():
+    msg, _ = _err(ConnectError(ConnectError.UNREACHABLE, "nas.local"))
+    assert "Couldn't reach nas.local" in msg
+    assert "doesn't look like" not in msg
 
 
-def test_404_names_jellyfin_when_jellyfin_selected():
-    msg = _probe_err("jellyfin", Exception("404 Not Found"))
-    assert "Jellyfin server" in msg
+def test_not_a_music_server_names_both_kinds():
+    msg, _ = _err(ConnectError(ConnectError.NOT_SERVER, "example.com"))
+    assert "Jellyfin" in msg and "Navidrome" in msg
 
 
-def test_connection_error_is_provider_neutral():
-    # The unreachable-server message doesn't name a provider — make sure
-    # the 404 branch didn't bleed into it.
-    msg = _probe_err("subsonic", Exception("Max retries exceeded"))
-    assert "Couldn't reach the server" in msg
-    assert "Subsonic" not in msg and "Jellyfin" not in msg
+def test_wrong_password_clears_the_field():
+    msg, pw = _err(ConnectError(ConnectError.WRONG_CREDENTIALS, "nas.local"))
+    assert msg == "Wrong username or password."
+    assert pw.cleared and pw.focused
+
+
+def test_demo_down_blames_the_demo_not_the_user():
+    msg, pw = _err(ConnectError(ConnectError.UNREACHABLE, "demo.navidrome.org"), demo=True)
+    assert "public demo" in msg
+    assert not pw.cleared
+
+
+def test_unexpected_exception_still_gets_a_sentence():
+    msg, _ = _err(RuntimeError("kaboom"))
+    assert "kaboom" in msg

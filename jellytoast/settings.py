@@ -1828,6 +1828,15 @@ class Settings:
         self._s.setValue("ui/autostart", v)
 
     @property
+    def no_tray_notice_shown(self) -> bool:
+        """The one-time "no system tray" note has been shown."""
+        return self._s.value("ui/no_tray_notice_shown", False, type=bool)
+
+    @no_tray_notice_shown.setter
+    def no_tray_notice_shown(self, v: bool):
+        self._s.setValue("ui/no_tray_notice_shown", bool(v))
+
+    @property
     def home_destination(self) -> str:
         # Native music surface the top-bar Home button routes to:
         # "albums" | "playlists" | "artists" | "songs" | "genres" |

@@ -17,6 +17,16 @@ developer-facing history lives in [`docs/CHANGELOG.md`](docs/CHANGELOG.md).
   lyrics, the queue (drag to reorder), playlists you can edit, internet
   radio, downloads, casting, EQ, crossfade and Last.fm / ListenBrainz. Prefer
   the old one? **Settings → Use the classic interface** and restart.
+- **Easier sign-in.** Just type your server's address — jellytoast works out
+  whether it's Jellyfin or Navidrome, adds the missing `http://` or port, and
+  copes with a link pasted from your server's web page. If something's wrong,
+  it says what: can't reach it, not a music server, or wrong password.
+- **Album art shows up faster the first time.** A server that's slow to make
+  thumbnails no longer leaves the grid blank for half a minute, art that
+  fails to load is retried (on phones too), and albums without art just show
+  the placeholder.
+- **No more tray pop-up every launch.** On desktops without a system tray you
+  get a one-time note instead.
 - **Steadier speaker-group casting.** Casting to a group of speakers no
   longer stops after a song or two when the connection hiccups — it moves on
   to the next track, retries once if the group is briefly unreachable, and

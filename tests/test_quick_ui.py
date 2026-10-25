@@ -294,6 +294,18 @@ def _signed_out(qapp, fake_provider, monkeypatch):
     from jellytoast.scrobble import server_scrobble_detect  # noqa: F401 — import before patching
 
     monkeypatch.setattr("jellytoast.scrobble.refresh_server_scrobble_flags", lambda: None)
+    # Server detection probes real HTTP (tests/test_server_connect.py covers
+    # it against a local server); here the fake provider IS the server.
+    from jellytoast import server_connect as sc
+
+    def _detect(raw, preferred=None):
+        url = sc.candidate_urls(raw)[0]
+        fake_provider.calls.append(("probe", url))
+        if "nothing-here" in url:
+            raise sc.ConnectError(sc.ConnectError.NOT_SERVER, "nothing-here")
+        return sc.Found(getattr(fake_provider, "kind", "jellyfin"), url, "Fakefin")
+
+    monkeypatch.setattr(sc, "detect", _detect)
 
 
 def test_sign_in_flow(qapp, fake_provider, monkeypatch, request):

@@ -441,7 +441,11 @@ class LibraryModel(QAbstractListModel):
                     src = it.get("AlbumId") or it.get("Id", "")
                     it["_cover"] = cover_source(src, 160)
                 else:
-                    it["_cover"] = cover_source(it.get("Id", ""), COVER_PX)
+                    tags = it.get("ImageTags")
+                    # No image on the server (Jellyfin ImageTags / Subsonic
+                    # coverArt): leave the placeholder rather than ask for one.
+                    has_art = not isinstance(tags, dict) or bool(tags.get("Primary"))
+                    it["_cover"] = cover_source(it.get("Id", ""), COVER_PX) if has_art else ""
             return items
 
         run_async = async_io.run_async  # resolved at call time (tests patch it)

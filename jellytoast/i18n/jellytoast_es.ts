@@ -2,6 +2,54 @@
 <!DOCTYPE TS>
 <TS version="2.1" language="es">
 <context>
+    <name></name>
+    <message>
+        <location filename="../server_connect.py" line="318"/>
+        <source>the server</source>
+        <translation>el servidor</translation>
+    </message>
+    <message>
+        <location filename="../server_connect.py" line="321"/>
+        <source>Please fill in the server address and username.</source>
+        <translation>Completa la dirección del servidor y el usuario.</translation>
+    </message>
+    <message>
+        <location filename="../server_connect.py" line="323"/>
+        <source>Wrong username or password.</source>
+        <translation>Usuario o contraseña incorrectos.</translation>
+    </message>
+    <message>
+        <location filename="../server_connect.py" line="325"/>
+        <source>Couldn&apos;t reach {0}. Check the address, and that the server is running.</source>
+        <translation>No se pudo conectar con {0}. Comprueba la dirección y que el servidor esté en marcha.</translation>
+    </message>
+    <message>
+        <location filename="../server_connect.py" line="327"/>
+        <source>{0} didn&apos;t answer in time. Check the address and your network.</source>
+        <translation>{0} no respondió a tiempo. Comprueba la dirección y tu red.</translation>
+    </message>
+    <message>
+        <location filename="../server_connect.py" line="330"/>
+        <source>Couldn&apos;t make a secure connection to {0} (a certificate problem). If the server doesn&apos;t use HTTPS, try http:// instead.</source>
+        <translation>No se pudo establecer una conexión segura con {0} (un problema de certificado). Si el servidor no usa HTTPS, prueba con http://.</translation>
+    </message>
+    <message>
+        <location filename="../server_connect.py" line="335"/>
+        <source>{0} answered, but it isn&apos;t a Jellyfin or Navidrome / Subsonic server. Check the address and port.</source>
+        <translation>{0} respondió, pero no es un servidor Jellyfin ni Navidrome / Subsonic. Comprueba la dirección y el puerto.</translation>
+    </message>
+    <message>
+        <location filename="../server_connect.py" line="340"/>
+        <source>The server couldn&apos;t sign you in: {0}</source>
+        <translation>El servidor no pudo iniciar tu sesión: {0}</translation>
+    </message>
+    <message>
+        <location filename="../server_connect.py" line="342"/>
+        <source>The server couldn&apos;t sign you in.</source>
+        <translation>El servidor no pudo iniciar tu sesión.</translation>
+    </message>
+</context>
+<context>
     <name>Actions</name>
     <message>
         <location filename="../quick/actions.py" line="50"/>
@@ -392,7 +440,7 @@ firewalld:
 <context>
     <name>ClassicalWork</name>
     <message>
-        <location filename="../ui_helpers.py" line="1132"/>
+        <location filename="../ui_helpers.py" line="1157"/>
         <source>Movement {0} of {1}</source>
         <translation>Movimiento {0} de {1}</translation>
     </message>
@@ -1241,15 +1289,19 @@ Install mpv from your system package manager, or download it from https://mpv.io
 Instala mpv desde el gestor de paquetes de tu sistema, o descárgalo de https://mpv.io.</translation>
     </message>
     <message>
-        <location filename="../app.py" line="2454"/>
+        <location filename="../app.py" line="2463"/>
         <source>No system tray</source>
         <translation>Sin bandeja del sistema</translation>
     </message>
     <message>
-        <location filename="../app.py" line="2455"/>
+        <location filename="../app.py" line="2464"/>
+        <source>Your desktop doesn&apos;t appear to have a system tray, so jellytoast&apos;s tray icon won&apos;t show. Everything else works as usual.</source>
+        <translation>Tu escritorio no parece tener bandeja del sistema, así que el icono de jellytoast no aparecerá ahí. Todo lo demás funciona con normalidad.</translation>
+    </message>
+    <message>
         <source>Your desktop doesn&apos;t appear to have a system tray.
 jellytoast will run, but tray features will be unavailable.</source>
-        <translation>Tu escritorio no parece tener bandeja del sistema.
+        <translation type="vanished">Tu escritorio no parece tener bandeja del sistema.
 jellytoast funcionará, pero las funciones de bandeja no estarán disponibles.</translation>
     </message>
 </context>
@@ -1527,7 +1579,7 @@ jellytoast funcionará, pero las funciones de bandeja no estarán disponibles.</
     </message>
     <message>
         <location filename="../login_view.py" line="502"/>
-        <location filename="../login_view.py" line="1027"/>
+        <location filename="../login_view.py" line="988"/>
         <source>Sign in</source>
         <translation>Iniciar sesión</translation>
     </message>
@@ -1562,89 +1614,82 @@ jellytoast funcionará, pero las funciones de bandeja no estarán disponibles.</
         <translation>Completa la URL del servidor y el usuario.</translation>
     </message>
     <message>
-        <location filename="../login_view.py" line="777"/>
+        <location filename="../login_view.py" line="811"/>
         <source>Please fill in the server URL.</source>
         <translation>Completa la URL del servidor.</translation>
     </message>
     <message>
-        <location filename="../login_view.py" line="807"/>
+        <location filename="../login_view.py" line="841"/>
         <source>Waiting for approval…</source>
         <translation>Esperando la aprobación…</translation>
     </message>
     <message>
-        <location filename="../login_view.py" line="861"/>
+        <location filename="../login_view.py" line="895"/>
         <source>Quick Connect is turned off on this server. An admin can turn it on in Dashboard → General, or sign in with your password.</source>
         <translation>Quick Connect está desactivado en este servidor. Un administrador puede activarlo en Panel → General, o inicia sesión con tu contraseña.</translation>
     </message>
     <message>
-        <location filename="../login_view.py" line="865"/>
+        <location filename="../login_view.py" line="899"/>
         <source>Couldn&apos;t find a Jellyfin server at that URL.</source>
         <translation>No se encontró ningún servidor Jellyfin en esa URL.</translation>
     </message>
     <message>
-        <location filename="../login_view.py" line="867"/>
+        <location filename="../login_view.py" line="901"/>
         <source>That code expired. Start Quick Connect again to get a new one.</source>
         <translation>Ese código caducó. Vuelve a iniciar Quick Connect para obtener uno nuevo.</translation>
     </message>
     <message>
-        <location filename="../login_view.py" line="869"/>
+        <location filename="../login_view.py" line="903"/>
         <source>The Quick Connect request wasn&apos;t approved.</source>
         <translation>La solicitud de Quick Connect no se aprobó.</translation>
     </message>
     <message>
-        <location filename="../login_view.py" line="873"/>
+        <location filename="../login_view.py" line="907"/>
         <source>Quick Connect didn&apos;t work: {0}</source>
         <translation>Quick Connect no funcionó: {0}</translation>
     </message>
     <message>
-        <location filename="../login_view.py" line="902"/>
+        <location filename="../login_view.py" line="936"/>
         <source>Sign in to your Subsonic / Navidrome server</source>
         <translation>Inicia sesión en tu servidor Subsonic / Navidrome</translation>
     </message>
     <message>
-        <location filename="../login_view.py" line="905"/>
+        <location filename="../login_view.py" line="939"/>
         <source>Sign in to your Jellyfin server</source>
         <translation>Inicia sesión en tu servidor Jellyfin</translation>
     </message>
     <message>
-        <location filename="../login_view.py" line="914"/>
         <source>That URL responded but doesn&apos;t look like a {0} server.</source>
-        <translation>Esa URL respondió pero no parece un servidor {0}.</translation>
+        <translation type="vanished">Esa URL respondió pero no parece un servidor {0}.</translation>
     </message>
     <message>
-        <location filename="../login_view.py" line="944"/>
+        <location filename="../login_view.py" line="761"/>
         <source>The public demo looks offline right now — it&apos;s a shared server run by the Navidrome / Jellyfin projects, not by jellytoast. Try again later, or sign in to your own server above.</source>
         <translation>La demo pública parece estar fuera de línea — es un servidor compartido gestionado por los proyectos Navidrome / Jellyfin, no por jellytoast. Inténtalo más tarde, o inicia sesión en tu propio servidor arriba.</translation>
     </message>
     <message>
-        <location filename="../login_view.py" line="871"/>
-        <location filename="../login_view.py" line="952"/>
-        <location filename="../login_view.py" line="1011"/>
+        <location filename="../login_view.py" line="905"/>
         <source>Couldn&apos;t reach the server. Check the URL and your network.</source>
         <translation>No se pudo conectar con el servidor. Comprueba la URL y tu red.</translation>
     </message>
     <message>
-        <location filename="../login_view.py" line="954"/>
         <source>That URL doesn&apos;t look like a {0} server.</source>
-        <translation>Esa URL no parece un servidor {0}.</translation>
+        <translation type="vanished">Esa URL no parece un servidor {0}.</translation>
     </message>
     <message>
-        <location filename="../login_view.py" line="958"/>
         <source>Couldn&apos;t reach the server: {0}</source>
-        <translation>No se pudo conectar con el servidor: {0}</translation>
+        <translation type="vanished">No se pudo conectar con el servidor: {0}</translation>
     </message>
     <message>
-        <location filename="../login_view.py" line="1007"/>
         <source>Wrong username or password.</source>
-        <translation>Usuario o contraseña incorrectos.</translation>
+        <translation type="vanished">Usuario o contraseña incorrectos.</translation>
     </message>
     <message>
-        <location filename="../login_view.py" line="1009"/>
         <source>Server not found at that URL.</source>
-        <translation>No se encontró un servidor en esa URL.</translation>
+        <translation type="vanished">No se encontró un servidor en esa URL.</translation>
     </message>
     <message>
-        <location filename="../login_view.py" line="1027"/>
+        <location filename="../login_view.py" line="988"/>
         <source>Signing in…</source>
         <translation>Iniciando sesión…</translation>
     </message>
@@ -2959,22 +3004,22 @@ Revisa el PIN — la causa más común es una errata o un código caducado (el r
 <context>
     <name>RadioModel</name>
     <message>
-        <location filename="../quick/models.py" line="1456"/>
+        <location filename="../quick/models.py" line="1460"/>
         <source>This server doesn&apos;t support radio stations.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../quick/models.py" line="1461"/>
+        <location filename="../quick/models.py" line="1465"/>
         <source>Only a server admin can change radio stations.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../quick/models.py" line="1465"/>
+        <location filename="../quick/models.py" line="1469"/>
         <source>Couldn&apos;t add the station: {0}</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../quick/models.py" line="1466"/>
+        <location filename="../quick/models.py" line="1470"/>
         <source>Couldn&apos;t remove the station: {0}</source>
         <translation type="unfinished"></translation>
     </message>
@@ -3235,62 +3280,49 @@ Subsonic requiere permiso de administrador para crear / editar / eliminar.</tran
     <name>Session</name>
     <message>
         <location filename="../quick/session.py" line="93"/>
-        <location filename="../quick/session.py" line="168"/>
+        <location filename="../quick/session.py" line="142"/>
         <source>Signing in is off in the dev rig — it would replace your real login.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../quick/session.py" line="98"/>
         <source>Please fill in the server URL and username.</source>
-        <translation type="unfinished">Completa la URL del servidor y el usuario.</translation>
+        <translation type="obsolete">Completa la URL del servidor y el usuario.</translation>
     </message>
     <message>
-        <location filename="../quick/session.py" line="126"/>
-        <source>Couldn&apos;t find a {0} server at that address.</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <location filename="../quick/session.py" line="139"/>
         <source>Couldn&apos;t reach the server. Check the URL and your network.</source>
-        <translation type="unfinished">No se pudo conectar con el servidor. Comprueba la URL y tu red.</translation>
+        <translation type="obsolete">No se pudo conectar con el servidor. Comprueba la URL y tu red.</translation>
     </message>
     <message>
-        <location filename="../quick/session.py" line="141"/>
         <source>Wrong username or password.</source>
-        <translation type="unfinished">Usuario o contraseña incorrectos.</translation>
+        <translation type="obsolete">Usuario o contraseña incorrectos.</translation>
     </message>
     <message>
-        <location filename="../quick/session.py" line="143"/>
-        <source>Couldn&apos;t sign in: {0}</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <location filename="../quick/session.py" line="173"/>
+        <location filename="../quick/session.py" line="147"/>
         <source>Please fill in the server URL.</source>
         <translation type="unfinished">Completa la URL del servidor.</translation>
     </message>
     <message>
-        <location filename="../quick/session.py" line="250"/>
+        <location filename="../quick/session.py" line="224"/>
         <source>The code expired. Try again.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../quick/session.py" line="252"/>
+        <location filename="../quick/session.py" line="226"/>
         <source>Couldn&apos;t find a Jellyfin server at that address.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../quick/session.py" line="254"/>
+        <location filename="../quick/session.py" line="228"/>
         <source>Quick Connect is turned off on this server.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../quick/session.py" line="256"/>
+        <location filename="../quick/session.py" line="230"/>
         <source>Quick Connect failed: {0}</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../quick/session.py" line="288"/>
+        <location filename="../quick/session.py" line="262"/>
         <source>Signing out is off in the dev rig — it would clear your real login.</source>
         <translation type="unfinished"></translation>
     </message>
@@ -3298,12 +3330,12 @@ Subsonic requiere permiso de administrador para crear / editar / eliminar.</tran
 <context>
     <name>SessionController</name>
     <message>
-        <location filename="../session_controller.py" line="308"/>
+        <location filename="../session_controller.py" line="316"/>
         <source>Reconnected to the primary server</source>
         <translation>Reconectado al servidor principal</translation>
     </message>
     <message>
-        <location filename="../session_controller.py" line="312"/>
+        <location filename="../session_controller.py" line="320"/>
         <source>Switched to alternate server · {0}</source>
         <translation>Cambiado al servidor alternativo · {0}</translation>
     </message>
@@ -5204,29 +5236,29 @@ La carátula por pista no se modifica con esta escritura masiva.</translation>
 <context>
     <name>UiHelpers</name>
     <message>
-        <location filename="../ui_helpers.py" line="1533"/>
+        <location filename="../ui_helpers.py" line="1568"/>
         <source>Couldn&apos;t update favorite — check your connection.</source>
         <translation>No se pudo actualizar el favorito — comprueba tu conexión.</translation>
     </message>
     <message>
-        <location filename="../ui_helpers.py" line="3057"/>
+        <location filename="../ui_helpers.py" line="3096"/>
         <source>Deep Cuts: {0}</source>
         <translation>Rarezas: {0}</translation>
     </message>
     <message>
-        <location filename="../ui_helpers.py" line="3060"/>
-        <location filename="../ui_helpers.py" line="3074"/>
+        <location filename="../ui_helpers.py" line="3099"/>
+        <location filename="../ui_helpers.py" line="3113"/>
         <source>More like {0}</source>
         <translation>Más como {0}</translation>
     </message>
     <message>
-        <location filename="../ui_helpers.py" line="3066"/>
-        <location filename="../ui_helpers.py" line="3076"/>
+        <location filename="../ui_helpers.py" line="3105"/>
+        <location filename="../ui_helpers.py" line="3115"/>
         <source>{0} has no genre tags, add some to help suggestions.</source>
         <translation>{0} no tiene etiquetas de género; añade algunas para mejorar las sugerencias.</translation>
     </message>
     <message>
-        <location filename="../ui_helpers.py" line="3071"/>
+        <location filename="../ui_helpers.py" line="3110"/>
         <source>{0} Discoveries</source>
         <translation>Descubrimientos de {0}</translation>
     </message>
@@ -5478,71 +5510,71 @@ La carátula por pista no se modifica con esta escritura masiva.</translation>
     <name>_LibraryListView</name>
     <message>
         <location filename="../library_grid.py" line="1930"/>
-        <location filename="../library_grid.py" line="3230"/>
+        <location filename="../library_grid.py" line="3247"/>
         <source>this {0}</source>
         <translation>este {0}</translation>
     </message>
     <message>
         <location filename="../library_grid.py" line="1933"/>
-        <location filename="../library_grid.py" line="3191"/>
-        <location filename="../library_grid.py" line="3233"/>
+        <location filename="../library_grid.py" line="3208"/>
+        <location filename="../library_grid.py" line="3250"/>
         <source>Remove download</source>
         <translation>Eliminar descarga</translation>
     </message>
     <message>
         <location filename="../library_grid.py" line="1934"/>
-        <location filename="../library_grid.py" line="3234"/>
+        <location filename="../library_grid.py" line="3251"/>
         <source>Remove the downloaded files for “{0}”?</source>
         <translation>¿Eliminar los archivos descargados de «{0}»?</translation>
     </message>
     <message>
         <location filename="../library_grid.py" line="1935"/>
-        <location filename="../library_grid.py" line="3235"/>
+        <location filename="../library_grid.py" line="3252"/>
         <source>Remove</source>
         <translation>Eliminar</translation>
     </message>
     <message>
-        <location filename="../library_grid.py" line="3151"/>
+        <location filename="../library_grid.py" line="3168"/>
         <source>Play</source>
         <translation>Reproducir</translation>
     </message>
     <message>
-        <location filename="../library_grid.py" line="3154"/>
+        <location filename="../library_grid.py" line="3171"/>
         <source>Remove from favorites</source>
         <translation>Quitar de favoritos</translation>
     </message>
     <message>
-        <location filename="../library_grid.py" line="3156"/>
+        <location filename="../library_grid.py" line="3173"/>
         <source>Favorite</source>
         <translation>Favorito</translation>
     </message>
     <message>
-        <location filename="../library_grid.py" line="3174"/>
+        <location filename="../library_grid.py" line="3191"/>
         <source>Start album radio</source>
         <translation>Iniciar radio del álbum</translation>
     </message>
     <message>
-        <location filename="../library_grid.py" line="3176"/>
+        <location filename="../library_grid.py" line="3193"/>
         <source>Start artist radio</source>
         <translation>Iniciar radio del artista</translation>
     </message>
     <message>
-        <location filename="../library_grid.py" line="3183"/>
+        <location filename="../library_grid.py" line="3200"/>
         <source>Create smart playlist: More like {0}</source>
         <translation>Crear lista inteligente: Más como {0}</translation>
     </message>
     <message>
-        <location filename="../library_grid.py" line="3185"/>
+        <location filename="../library_grid.py" line="3202"/>
         <source>Create smart playlist: Deep Cuts: {0}</source>
         <translation>Crear lista inteligente: Rarezas: {0}</translation>
     </message>
     <message>
-        <location filename="../library_grid.py" line="3193"/>
+        <location filename="../library_grid.py" line="3210"/>
         <source>Download</source>
         <translation>Descargar</translation>
     </message>
     <message>
-        <location filename="../library_grid.py" line="3201"/>
+        <location filename="../library_grid.py" line="3218"/>
         <source>Delete playlist…</source>
         <translation type="unfinished"></translation>
     </message>

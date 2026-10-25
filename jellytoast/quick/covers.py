@@ -31,6 +31,11 @@ from PySide6.QtQuick import QQuickImageProvider
 logger = logging.getLogger(__name__)
 
 _MAX = 400  # decoded covers kept for QML (the pipeline has its own caches too)
+# A cover that failed to load is retried after these delays (seconds), then
+# left as a placeholder until the next app-wide retry (back online). Covers
+# used to give up after ONE failure for the whole session — a cold server's
+# slow first resize or a mid-scan hiccup left blank tiles until a restart.
+_RETRY_DELAYS_S = (3, 10, 30)
 
 
 def cover_source(item_id: str, px: int) -> str:
@@ -46,10 +51,11 @@ class Covers(QObject):
         self._pix: "OrderedDict[str, QPixmap]" = OrderedDict()
         self._inflight: Set[str] = set()
         self._missing: Set[str] = set()
+        self._fails: dict = {}  # key → failed attempts so far
         from jellytoast.player_state import PlayerBus
 
         # Back online: art that failed while offline may load now.
-        PlayerBus.get().offline_mode_changed.connect(lambda on: on or self._missing.clear())
+        PlayerBus.get().offline_mode_changed.connect(lambda on: on or self.forgetMissing())
 
     def pixmap(self, key: str):
         pix = self._pix.get(key)
@@ -73,16 +79,19 @@ class Covers(QObject):
             return True
         if key in self._inflight or key in self._missing:
             return False
+        self._load(key)
+        # A memory-cache hit answers synchronously, inside the load — report
+        # that, or the caller would overwrite "ready" with False after
+        # `ready` already fired.
+        return key in self._pix
+
+    def _load(self, key: str) -> None:
         # "<itemId>/<px>" or "<itemId>/<px>/<radius px>" (corners baked in,
         # so QML needs no per-tile shader layer to round them).
-        parts = key.split("/")
         try:
-            if len(parts) >= 3 and parts[-1].isdigit() and parts[-2].isdigit():
-                item_id, size, radius = "/".join(parts[:-2]), int(parts[-2]), int(parts[-1])
-            else:
-                item_id, size, radius = "/".join(parts[:-1]), int(parts[-1]), 0
+            item_id, size, radius = self._parse(key)
         except ValueError:
-            return False
+            return
         self._inflight.add(key)
         try:
             from jellytoast.providers import get_provider
@@ -103,10 +112,6 @@ class Covers(QObject):
         except Exception as e:
             logger.debug("cover %s failed: %s", key, e)
             self._landed(key, None)
-        # A memory-cache hit answers synchronously, inside the call above —
-        # report that, or the caller would overwrite "ready" with False
-        # after `ready` already fired.
-        return key in self._pix
 
     @staticmethod
     def _parse(key: str):
@@ -134,19 +139,51 @@ class Covers(QObject):
     def _landed(self, key: str, pix) -> None:
         self._inflight.discard(key)
         if pix is None or pix.isNull():
-            # No art (offline and never cached, or none on the server): the
-            # Cover keeps its placeholder. Not retried this session.
+            # The Cover keeps its placeholder meanwhile.
             self._missing.add(key)
+            self._schedule_retry(key)
             return
+        self._fails.pop(key, None)
         self._pix[key] = pix
         while len(self._pix) > _MAX:
             self._pix.popitem(last=False)
         self.ready.emit(key)
 
+    def _schedule_retry(self, key: str) -> None:
+        """Try a failed cover again after a growing delay — unless retrying
+        can't help: offline (the reconnect clears ``_missing``) or the server
+        has no art for it (a 404)."""
+        from jellytoast import offline
+        from jellytoast.ui_helpers import image_known_missing
+
+        if offline.is_offline_mode():
+            return
+        try:
+            item_id, _size, _radius = self._parse(key)
+        except ValueError:
+            return
+        if image_known_missing(f"{item_id}|quick"):
+            return
+        n = self._fails.get(key, 0)
+        if n >= len(_RETRY_DELAYS_S):
+            return  # placeholder until the next forgetMissing()
+        self._fails[key] = n + 1
+        from PySide6.QtCore import QTimer
+
+        QTimer.singleShot(int(_RETRY_DELAYS_S[n] * 1000), self, lambda k=key: self._retry(k))
+
+    def _retry(self, key: str) -> None:
+        if key in self._pix or key in self._inflight or key not in self._missing:
+            return
+        self._missing.discard(key)
+        # A tile still waiting on this key picks it up through `ready`.
+        self._load(key)
+
     @Slot()
     def forgetMissing(self) -> None:  # noqa: N802
         """Retry art that failed (e.g. back online)."""
         self._missing.clear()
+        self._fails.clear()
 
 
 class CoverPixmapProvider(QQuickImageProvider):
