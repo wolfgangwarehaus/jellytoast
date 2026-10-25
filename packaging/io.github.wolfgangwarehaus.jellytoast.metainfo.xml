@@ -5,27 +5,30 @@
   <project_license>GPL-2.0-or-later</project_license>
 
   <name>jellytoast</name>
-  <summary>A desktop music player for Jellyfin and Navidrome servers</summary>
+  <summary>Music player for Jellyfin and Navidrome</summary>
 
   <description>
     <p>
-      jellytoast is a desktop music player for Jellyfin and Navidrome
-      servers (and any Subsonic / OpenSubsonic server). Bit-perfect mpv
-      playback, gapless audio, MPRIS2 system integration, system-tray
-      controls, and a floating mini player.
+      jellytoast is a music player for Jellyfin and Navidrome servers (and
+      any Subsonic / OpenSubsonic server), on the desktop and on Linux
+      phones. Bit-perfect mpv playback, gapless audio, casting, offline
+      downloads, MPRIS2 system integration and a floating mini player.
     </p>
     <p>Features:</p>
     <ul>
+      <li>A touch-first interface on Plasma Mobile and Phosh phones, which keeps playing in the background</li>
+      <li>Sign in by typing the server address; Jellyfin or Navidrome is detected for you</li>
       <li>Browse albums, artists, songs, playlists, genres, and internet radio</li>
       <li>Native search across both providers with offline-aware filtering</li>
       <li>Bit-perfect mpv playback with optional server-side transcode tiers and ReplayGain (track / album)</li>
-      <li>Casting: Chromecast, AirPlay 2, DLNA, and Sonos — each toggleable per-protocol</li>
+      <li>Casting: Chromecast and Google speaker groups, AirPlay 2, DLNA, and Sonos — each toggleable per-protocol</li>
       <li>Local cast relay for remote / Tailscale / self-signed servers (devices that can't reach the source)</li>
       <li>Explicit downloads with full offline playback (cascade by album / artist / playlist) and offline indicator</li>
       <li>Synced and plain lyrics, with a dedicated now-playing page</li>
       <li>Floating mini player with optional always-on-top on KDE Wayland</li>
       <li>MPRIS2 + system-tray integration; media-key support</li>
-      <li>ListenBrainz scrobbling with offline queue</li>
+      <li>Add to, rename and delete your server's playlists</li>
+      <li>Last.fm and ListenBrainz scrobbling with offline queue</li>
       <li>Smart shuffle, smart playlists, sleep timer with fade-to-stop, tag editing (Jellyfin)</li>
       <li>Theming: built-in theme families (Catppuccin, Dracula, Gruvbox, Nord, and more), base16 import, a watched themes folder, pywal/wallust follow, system-accent follow, and a glass-opacity slider</li>
     </ul>

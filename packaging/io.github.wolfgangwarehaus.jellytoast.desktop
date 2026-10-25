@@ -2,7 +2,7 @@
 Type=Application
 Name=jellytoast
 GenericName=Jellyfin / Subsonic Music Player
-Comment=Audio-first native music client for Jellyfin and Subsonic
+Comment=Music player for Jellyfin and Navidrome servers
 Exec=jellytoast
 Icon=io.github.wolfgangwarehaus.jellytoast
 Terminal=false
