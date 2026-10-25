@@ -12,6 +12,8 @@ import logging
 import os
 from pathlib import Path
 
+from PySide6.QtCore import QObject
+
 logger = logging.getLogger(__name__)
 
 QML_DIR = Path(__file__).resolve().parent / "qml"
@@ -309,4 +311,62 @@ def run(app) -> "int | None":
         w, h = (int(v) for v in size.lower().split("x", 1))
         engine.rootObjects()[0].resize(w, h)
     app.setQuitOnLastWindowClosed(True)
+    _keep_running_in_background(app, engine.rootObjects()[0])
     return app.exec()
+
+
+class _CloseToBackground(QObject):
+    """Closing the window while music plays hides it and keeps playing —
+    swiping the app away on a phone shouldn't cut the song off, and the
+    shell's media controls stay live. Closing while paused / stopped quits
+    as before (there's no tray to come back from). Only a close the user
+    or the shell asked for (a *spontaneous* one) is intercepted: a quit the
+    app itself requests (MPRIS Quit, the session ending) goes through."""
+
+    def __init__(self, window):
+        super().__init__(window)
+        self._window = window
+
+    @staticmethod
+    def should_hide() -> bool:
+        from jellytoast.player_state import get_now_playing
+
+        np = get_now_playing()
+        return bool(np.item_id) and not np.is_paused
+
+    def eventFilter(self, obj, event):  # noqa: N802
+        from PySide6.QtCore import QEvent
+
+        if (
+            obj is self._window
+            and event.type() == QEvent.Type.Close
+            and event.spontaneous()
+            and self.should_hide()
+        ):
+            event.ignore()
+            self._window.hide()
+            logger.info("window closed while playing — kept running in the background")
+            return True
+        return False
+
+
+def _keep_running_in_background(app, window) -> None:
+    """Hide-on-close while playing, and the two ways back: launching the
+    app again (the single-instance ping) and the media controls' "open"
+    (MPRIS Raise → ``open_main_window``)."""
+    keeper = _CloseToBackground(window)
+    window.installEventFilter(keeper)
+    window._jt_close_keeper = keeper
+
+    def _bring_back():
+        window.show()
+        window.raise_()
+        window.requestActivate()
+
+    from jellytoast.player_state import PlayerBus
+
+    window._jt_bring_back = _bring_back
+    PlayerBus.get().open_main_window.connect(_bring_back)
+    single = getattr(app, "_single_instance", None)
+    if single is not None:
+        single.raise_requested.connect(_bring_back)

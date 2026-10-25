@@ -122,9 +122,12 @@ could run.
     6.11), so it should; check `QT_IM_MODULE` isn't forcing something else.
   - [ ] Media controls on the Phosh lock screen (MPRIS — needs the
     DesktopEntry / icon to resolve), notifications.
-  - [ ] Close-to-background in the Quick UI (any phone shell): closing its
-    window quits even mid-song; the Widgets window keeps playing
-    (`app._close_hides_window`).
+  - [x] Close-to-background in the Quick UI (any phone shell): closing the
+    window while music plays hides it and keeps playing; paused / stopped
+    still quits. Launching again or the media controls' "open" (MPRIS Raise)
+    bring it back — the Quick UI had wired neither. Only spontaneous closes
+    are intercepted, so MPRIS Quit / session end still quit
+    (`quick._CloseToBackground`, 2026-10-25).
   - [ ] Packaging: postmarketOS / Nura OS (aarch64) — PySide6 with
     QtQuick from the distro, or the Flatpak (KDE runtime, aarch64 already
     built) on Phosh.

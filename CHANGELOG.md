@@ -17,6 +17,9 @@ developer-facing history lives in [`docs/CHANGELOG.md`](docs/CHANGELOG.md).
   lyrics, the queue (drag to reorder), playlists you can edit, internet
   radio, downloads, casting, EQ, crossfade and Last.fm / ListenBrainz. Prefer
   the old one? **Settings → Use the classic interface** and restart.
+- **Music keeps playing when you close the phone app.** Close it mid-song and
+  it carries on in the background; tap the app or the media controls to get
+  it back. Close it while paused and it quits as before.
 - **Easier sign-in.** Just type your server's address — jellytoast works out
   whether it's Jellyfin or Navidrome, adds the missing `http://` or port, and
   copes with a link pasted from your server's web page. If something's wrong,
