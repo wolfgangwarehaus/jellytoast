@@ -54,7 +54,26 @@ else
     exit 1
 fi
 
+# Stapling fetches the ticket from Apple's CloudKit ticket service, and
+# validating asks it again. Both go over the network AFTER notarization has
+# already been accepted, and both failed on a dropped connection on the 0.2.4
+# release ("The network connection was lost", stapler error 68), which sank
+# the whole draft. Retry a few times with a growing pause before giving up.
+retry_stapler() {
+    local action="$1" attempt
+    for attempt in 1 2 3 4 5; do
+        if xcrun stapler "${action}" "${STAPLE_TARGET}"; then
+            return 0
+        fi
+        [ "${attempt}" -lt 5 ] || break
+        echo "stapler ${action} failed (attempt ${attempt}) — retrying in $((attempt * 15)) s…" >&2
+        sleep $((attempt * 15))
+    done
+    echo "error: stapler ${action} kept failing" >&2
+    return 1
+}
+
 echo "Stapling the notarization ticket…"
-xcrun stapler staple "${STAPLE_TARGET}"
-xcrun stapler validate "${STAPLE_TARGET}"
+retry_stapler staple
+retry_stapler validate
 echo "Notarized and stapled: ${STAPLE_TARGET}"
