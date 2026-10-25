@@ -42,3 +42,13 @@ def test_duplicates_each_x64_entry_as_arm64():
 
 def test_noop_when_arm64_present():
     assert mod.add_arm64(mod.add_arm64(KOMAC)) is None
+
+
+def test_crlf_manifest_keeps_crlf():
+    # komac 2.17 (the 0.2.4 release) writes CRLF line endings.
+    crlf = KOMAC.replace("\n", "\r\n")
+    out = mod.add_arm64(crlf)
+    assert out is not None
+    assert out.count("- Architecture: arm64") == KOMAC.count("- Architecture: x64")
+    assert "\r\n" in out and "\n" not in out.replace("\r\n", "")
+    assert mod.add_arm64(out) is None  # already patched → no-op

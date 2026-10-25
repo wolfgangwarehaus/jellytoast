@@ -34,7 +34,19 @@ def gh(*args: str) -> str:
 
 def add_arm64(text: str) -> str | None:
     """The manifest with each x64 installer entry duplicated as arm64, or
-    None when it already has arm64 (or has no x64 entry to copy)."""
+    None when it already has arm64 (or has no x64 entry to copy). Keeps the
+    file's line endings: komac 2.17 writes CRLF, which hid the
+    ``Installers:\n`` block from the 0.2.4 run."""
+    crlf = "\r\n" in text
+    if crlf:
+        text = text.replace("\r\n", "\n")
+    new = _add_arm64_lf(text)
+    if new is not None and crlf:
+        new = new.replace("\n", "\r\n")
+    return new
+
+
+def _add_arm64_lf(text: str) -> str | None:
     if re.search(r"^- Architecture: arm64$", text, re.M):
         return None
     head, sep, rest = text.partition("Installers:\n")
