@@ -35,8 +35,10 @@ doas apk upgrade --repository ~/packages/packaging jellytoast
 - **DLNA, Sonos and AirPlay speakers** aren't offered: their Python libraries
   aren't packaged in Alpine. Chromecast and Google speaker groups work.
 - **Nura Duranium** (the immutable edition) keeps the system read-only and
-  installs apps as Flatpaks; `apk` is for the regular edition. jellytoast has no
-  ARM Flatpak yet, so use the regular edition for now.
+  installs apps as Flatpaks; `apk` is for the regular edition. From jellytoast
+  0.2.5 each release includes an ARM Flatpak: download
+  `jellytoast-aarch64.flatpak` from the latest release and run
+  `flatpak install ./jellytoast-aarch64.flatpak`.
 
 ## Arch Linux ARM
 
