@@ -20,11 +20,13 @@
 #   • packaging/…jellytoast.metainfo.xml          newest <release version=…>
 #   • packaging/winget/*.yaml                     PackageVersion + InstallerUrl
 #   • packaging/aur/PKGBUILD                      pkgver (pkgrel reset to 1)
+#   • packaging/alpine/APKBUILD                   pkgver (pkgrel reset to 0)
 # So one cut stamps every distribution channel's manifest; the per-channel
 # fan-out workflows (winget/aur on release: published) then ship from them.
 # NOT stamped here (filled at publish from the built artifact): the winget
 # InstallerSha256 (winget-releaser computes it) and the AUR sha256sums
-# (`updpkgsums` refreshes it) — the tag tarball / .exe don't exist yet.
+# (`updpkgsums` refreshes it) — the tag tarball / .exe don't exist yet. The
+# Alpine sha512sums likewise: the build steps run `abuild checksum` first.
 # The CHANGELOG [Unreleased] block is moved verbatim into the new version's
 # section, leaving a fresh empty [Unreleased] at the top.
 set -euo pipefail
@@ -207,8 +209,19 @@ text, n = re.subn(r"(?m)^pkgrel=\S+\s*$", "pkgrel=1", text)
 assert n == 1, "did not reset pkgrel in PKGBUILD"
 pk.write_text(text, encoding="utf-8")
 
+# 7. Alpine / Nura APKBUILD — pkgver + reset pkgrel=0 (Alpine counts from 0).
+#    Its sha512sums can't be known before the tag exists; the documented build
+#    (docs/linux-phones.md) runs `abuild checksum` first.
+apk = root / "packaging" / "alpine" / "APKBUILD"
+text = apk.read_text(encoding="utf-8")
+text, n = re.subn(r"(?m)^pkgver=\S+\s*$", f"pkgver={new}", text)
+assert n == 1, "did not bump pkgver in APKBUILD"
+text, n = re.subn(r"(?m)^pkgrel=\S+\s*$", "pkgrel=0", text)
+assert n == 1, "did not reset pkgrel in APKBUILD"
+apk.write_text(text, encoding="utf-8")
+
 print(
-    f"bumped pyproject + version.py + metainfo + CHANGELOG + winget + AUR "
+    f"bumped pyproject + version.py + metainfo + CHANGELOG + winget + AUR + Alpine "
     f"→ {new} ({date})"
 )
 PY
@@ -220,7 +233,7 @@ PY
 # spuriously fail here. That runtime check runs in CI on the release commit
 # against a fresh install; locally we verify the three files we just edited
 # all carry the same version, which is the drift this script could cause.
-echo "→ verifying pyproject / version.py / metainfo / winget / AUR agree…"
+echo "→ verifying pyproject / version.py / metainfo / winget / AUR / Alpine agree…"
 python3 - <<'PY'
 import glob
 import re
@@ -243,6 +256,7 @@ for wf in glob.glob("packaging/winget/*.yaml"):
     if m:
         wg.add(m.group(1))
 aur = re.search(r"(?m)^pkgver=(\S+)\s*$", Path("packaging/aur/PKGBUILD").read_text("utf-8")).group(1)
+apkv = re.search(r"(?m)^pkgver=(\S+)\s*$", Path("packaging/alpine/APKBUILD").read_text("utf-8")).group(1)
 errs = []
 if fallbacks != {pyv}:
     errs.append(f"version.py fallbacks {sorted(fallbacks)} != pyproject {pyv}")
@@ -252,9 +266,11 @@ if wg != {pyv}:
     errs.append(f"winget PackageVersion {sorted(wg)} != pyproject {pyv}")
 if aur != pyv:
     errs.append(f"AUR pkgver {aur} != pyproject {pyv}")
+if apkv != pyv:
+    errs.append(f"Alpine pkgver {apkv} != pyproject {pyv}")
 if errs:
     sys.exit("consistency check FAILED: " + "; ".join(errs))
-print(f"✓ pyproject, version.py, metainfo, winget, and AUR all agree at {pyv}")
+print(f"✓ pyproject, version.py, metainfo, winget, AUR and Alpine all agree at {pyv}")
 PY
 
 # ── Commit + annotated tag ──────────────────────────────────────────────
@@ -263,7 +279,7 @@ PY
 git add pyproject.toml jellytoast/version.py \
   packaging/io.github.wolfgangwarehaus.jellytoast.metainfo.xml CHANGELOG.md \
   packaging/winget/*.yaml \
-  packaging/aur/PKGBUILD
+  packaging/aur/PKGBUILD packaging/alpine/APKBUILD
 git commit -q -m "release: v$NEW_VERSION"
 git tag -a "v$NEW_VERSION" -m "jellytoast v$NEW_VERSION"
 echo "✓ committed + tagged v$NEW_VERSION"

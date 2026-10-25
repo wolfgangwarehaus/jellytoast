@@ -44,6 +44,8 @@ Latest builds are on [**Releases**][rel].
   - [.deb][dl-deb]
   - [Flatpak][dl-flatpak]
   - [AUR][aur] — `yay -S jellytoast`
+- **Linux phones** (Plasma Mobile, Phosh) — Nura / postmarketOS and Arch Linux ARM:
+  see [Linux phones](docs/linux-phones.md)
 - **macOS**
   - [App Store][mas]
   - [.dmg][dl-dmg] *(Apple Silicon, macOS 15+)*

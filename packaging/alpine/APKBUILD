@@ -1,0 +1,77 @@
+# Maintainer: august <august@wolfgangwarehaus.com>
+#
+# Alpine / Nura (formerly postmarketOS) package for jellytoast. On a phone
+# shell (Plasma Mobile, Phosh) it opens the touch-first Qt Quick interface.
+#
+# Every hard dependency is in Alpine's main / community repos from v3.24
+# (PySide6 6.11, libmpv 0.41, python-mpv, pychromecast), which is what Nura
+# v26.06 is built on — verified on aarch64 (2026-10-25): it signs in, loads the
+# library and art, and decodes audio through Alpine's libmpv.
+#
+# Not packaged in Alpine, so not depended on: async-upnp-client (DLNA),
+# soco (Sonos) and pyatv (AirPlay). jellytoast imports each lazily and simply
+# hides that kind of speaker when it's missing; Chromecast works.
+pkgname=jellytoast
+pkgver=0.2.3
+pkgrel=0
+pkgdesc="Music player for Jellyfin and Navidrome, with a touch interface for phones"
+url="https://github.com/wolfgangwarehaus/jellytoast"
+arch="noarch"
+license="GPL-2.0-or-later"
+depends="
+	mpv-libs
+	py3-aiohttp
+	py3-cryptography
+	py3-dbus-next
+	py3-ifaddr
+	py3-jeepney
+	py3-keyring
+	py3-mpv
+	py3-numpy
+	py3-pychromecast
+	py3-pyside6
+	py3-requests
+	py3-xlib
+	py3-zeroconf
+	python3
+	qt6-qtdeclarative
+	"
+makedepends="
+	py3-gpep517
+	py3-installer
+	py3-setuptools
+	py3-wheel
+	"
+subpackages="$pkgname-pyc"
+source="$pkgname-$pkgver.tar.gz::https://github.com/wolfgangwarehaus/jellytoast/archive/refs/tags/v$pkgver.tar.gz"
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	# The full suite needs the dev extras (pytest-xdist, Qt test fixtures);
+	# a clean import of the built wheel against the packaged dependencies is
+	# what catches a missing or broken runtime dep.
+	python3 -m venv --clear --without-pip --system-site-packages .testenv
+	.testenv/bin/python3 -m installer .dist/*.whl
+	.testenv/bin/python3 -c "import jellytoast.app"
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" .dist/*.whl
+
+	local appid=io.github.wolfgangwarehaus.jellytoast
+	install -Dm644 packaging/$appid.desktop \
+		"$pkgdir"/usr/share/applications/$appid.desktop
+	install -Dm644 packaging/$appid.metainfo.xml \
+		"$pkgdir"/usr/share/metainfo/$appid.metainfo.xml
+	install -Dm644 packaging/icons/jellytoast.svg \
+		"$pkgdir"/usr/share/icons/hicolor/scalable/apps/$appid.svg
+}
+
+sha512sums="
+d96032e8347f7c90afda2d7c2731f6ed82f812b78b0f233c430b435e176c028399b92513a925d9be78097beada430c7f6989bfe722b6bfbecba8cc0d46920c78  jellytoast-0.2.3.tar.gz
+"

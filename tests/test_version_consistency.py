@@ -37,6 +37,7 @@ METAINFO = (
 )
 WINGET_DIR = REPO_ROOT / "packaging" / "winget"
 AUR_PKGBUILD = REPO_ROOT / "packaging" / "aur" / "PKGBUILD"
+ALPINE_APKBUILD = REPO_ROOT / "packaging" / "alpine" / "APKBUILD"
 
 
 def _pyproject_version() -> str:
@@ -162,6 +163,12 @@ def test_winget_installer_url_points_at_pyproject_version():
 
 def test_aur_pkgver_matches_pyproject():
     assert _aur_pkgver() == _pyproject_version()
+
+
+def test_alpine_pkgver_matches_pyproject():
+    m = re.search(r"(?m)^pkgver=(\S+)\s*$", ALPINE_APKBUILD.read_text("utf-8"))
+    assert m, "no pkgver in the Alpine APKBUILD"
+    assert m.group(1) == _pyproject_version()
 
 
 def test_workflow_referenced_packaging_scripts_exist():
