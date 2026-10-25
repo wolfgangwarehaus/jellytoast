@@ -12,6 +12,8 @@ developer-facing history lives in [`docs/CHANGELOG.md`](docs/CHANGELOG.md).
      should stand alone: the Store "What's new" shows just the title (+ first
      sentence in --detail mode). -->
 
+## [0.2.4] — 2026-10-25
+
 - **New phone interface.** On Plasma Mobile and Phosh jellytoast now opens a
   rebuilt touch-first app: smoother scrolling, swipe gestures, a Home page, search,
   lyrics, the queue (drag to reorder), playlists you can edit, internet

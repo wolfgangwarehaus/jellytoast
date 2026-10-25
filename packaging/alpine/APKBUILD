@@ -12,7 +12,7 @@
 # soco (Sonos) and pyatv (AirPlay). jellytoast imports each lazily and simply
 # hides that kind of speaker when it's missing; Chromecast works.
 pkgname=jellytoast
-pkgver=0.2.3
+pkgver=0.2.4
 pkgrel=0
 pkgdesc="Music player for Jellyfin and Navidrome, with a touch interface for phones"
 url="https://github.com/wolfgangwarehaus/jellytoast"
