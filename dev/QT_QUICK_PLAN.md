@@ -47,7 +47,7 @@ could run.
   the full QML tree would have added ~290 MB; pruned, the bundle measured
   289 MB locally. Windows / macOS still prune it. release.yml boots the
   frozen bundle with JT_UI=quick and fails on a QML load error.
-- [ ] **M1 — shell:** StackView navigation + back, top bar (section dropdown,
+- [x] **M1 — shell:** StackView navigation + back, top bar (section dropdown,
   search, ⋮), mini player ↔ Now Playing (cover, seek, transport, surface
   toggles), album page (header + tracks + play).
   *Done 2026-10-20:* StackView + back (button / Esc / Back key), album page
@@ -60,7 +60,7 @@ could run.
   Offscreen screenshots need the GPU path:
   `QSG_RHI_BACKEND=opengl QT_QUICK_BACKEND=rhi` at scale 1 (2× garbles
   the readback).
-- [ ] **M2 — library:** artists, playlists, songs, genres, search, queue,
+- [x] **M2 — library:** artists, playlists, songs, genres, search, queue,
   lyrics, A–Z scrubber, swipe gestures, long-press menus (incl. Add to
   playlist).
   *Done 2026-10-21:* section dropdown (Albums / Artists / Playlists / Songs /

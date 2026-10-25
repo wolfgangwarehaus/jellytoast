@@ -56,6 +56,15 @@ for _mobile_var in ("PLASMA_PLATFORM", "QT_QUICK_CONTROLS_MOBILE"):
 if "PHOSH" in os.environ.get("XDG_CURRENT_DESKTOP", "").upper():
     os.environ["XDG_CURRENT_DESKTOP"] = "GNOME"
 
+# Tests must not depend on the developer's DISPLAY either: on a live Wayland
+# session the Qt Quick tests open real windows and need the compositor to
+# draw frames — with the monitor asleep (late-night runs) KWin stops, and
+# ~40 phone-UI tests time out waiting for a tap to land. Offscreen renders
+# and delivers input in-process, the same everywhere (CI included). Set
+# JT_TEST_REAL_DISPLAY=1 to run on the real display, e.g. to watch a test.
+if os.environ.get("JT_TEST_REAL_DISPLAY") != "1":
+    os.environ["QT_QPA_PLATFORM"] = "offscreen"
+
 # Tests must never reach the OS secret store. The HOME/XDG split above does
 # not move it: on macOS `keyring` talks to the real login Keychain, so a
 # `pytest -n auto` run has every worker × every credentials read (which
