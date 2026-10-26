@@ -505,6 +505,12 @@ class JtTopBar(QWidget):
                 # compact — e.g. a 600 px phone with the multi-library picker.
                 self._compact_need = self.width() + (left_edge - right_edge)
                 QTimer.singleShot(0, self._apply_compact)
+            elif self._compact and not self._overflow and laid_out:
+                # Still no room once compact — a desktop window at its minimum
+                # width, where the window controls share the bar. Second
+                # stage: the secondary buttons step into the ⋮ menu.
+                self._overflow_need = self.width() + (left_edge - right_edge)
+                QTimer.singleShot(0, self._apply_overflow)
         y = (self.height() - ch) // 2
         cluster.setGeometry(x, y, cw, ch)
 
@@ -519,6 +525,8 @@ class JtTopBar(QWidget):
     _COMPACT_WIDTH = 520
     _compact = False
     _compact_need = 0
+    _overflow = False
+    _overflow_need = 0
     _multi_library = False
 
     def _apply_compact(self):
@@ -531,17 +539,22 @@ class JtTopBar(QWidget):
         self._separator.setVisible(not compact)
         self.view_mode_btn.setVisible(not compact)
         self.title_label.setVisible(not compact and not self._multi_library)
-        self._apply_overflow()
+        self._apply_overflow(force=True)
 
     def _overflowing(self) -> bool:
         """Phone bar: compact on a touch shell, where 48 px targets leave
-        room for back, the view dropdown, search and the ⋮ menu only."""
+        room for back, the view dropdown, search and the ⋮ menu only. On a
+        desktop, only when the compact bar was measured not to fit
+        (_overflow_need, set by _position_center_cluster)."""
         from jellytoast.platform_compat import is_mobile_shell
 
-        return self._compact and is_mobile_shell()
+        return self._compact and (is_mobile_shell() or self.width() < self._overflow_need)
 
-    def _apply_overflow(self):
+    def _apply_overflow(self, force: bool = False):
         over = self._overflowing()
+        if over == self._overflow and not force:
+            return
+        self._overflow = over
         self.more_btn.setVisible(over)
         self.settings_btn.setVisible(not over)
         self.shuffle_all_btn.setVisible(not over)
@@ -628,6 +641,7 @@ class JtTopBar(QWidget):
     def resizeEvent(self, event):
         super().resizeEvent(event)
         self._apply_compact()
+        self._apply_overflow()
         # Re-fit the library title (the budget before the centred dropdown
         # shrinks with the window) — this also re-centres the cluster.
         self._fit_library_title()

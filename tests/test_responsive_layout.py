@@ -293,6 +293,51 @@ class TestRealDeviceFindings:
         finally:
             host.deleteLater()
 
+    def test_desktop_bar_at_minimum_width_overflows_instead_of_stacking(self, qapp, monkeypatch):
+        """august's desktop at the smallest window (2026-10-26): compact still
+        left settings, the library picker, shuffle, sort and the window
+        controls fighting the view dropdown. The second stage moves the
+        secondary buttons into ⋮ — on a desktop, not just a phone shell."""
+        from PySide6.QtWidgets import QWidget
+
+        from jellytoast.top_bar import JtTopBar
+
+        monkeypatch.setattr(pc, "is_mobile_shell", lambda: False)
+        host = QWidget()  # hosted: see TestTopBar.top
+        top = JtTopBar(host, titlebar_mode=True)
+        try:
+            top.set_collection("music")
+            top.set_title("Music")
+            top.set_available_libraries(
+                [{"Id": "a", "Name": "Music"}, {"Id": "b", "Name": "Audiobooks"}]
+            )
+            top.set_library_controls_visible(True)
+            host.show()
+            top.resize(380, 48)
+            for _ in range(3):
+                _settle(qapp)
+            assert top._compact and top._overflow
+            assert not top.more_btn.isHidden()
+            for w in (top.settings_btn, top.shuffle_all_btn, top.sort_btn, top.library_btn):
+                assert w.isHidden()
+            # Nothing overlaps: every visible control sits in its own slot.
+            boxes = [
+                w.geometry().translated(w.parentWidget().mapTo(top, w.pos()) - w.pos())
+                for w in top.findChildren(QWidget)
+                if w.isVisibleTo(top) and w.parentWidget() is not top and hasattr(w, "clicked")
+            ]
+            for i, a in enumerate(boxes):
+                for b in boxes[i + 1 :]:
+                    assert not a.intersects(b), (a, b)
+            # Room again → the buttons come back out of the menu.
+            top.resize(1400, 48)
+            for _ in range(2):
+                _settle(qapp)
+            assert not top._overflow and top.more_btn.isHidden()
+            assert not top.sort_btn.isHidden() and not top.settings_btn.isHidden()
+        finally:
+            host.deleteLater()
+
     def test_no_blur_body_is_opaque_on_a_mobile_shell(self, monkeypatch):
         from jellytoast.blur import BlurStatus
         from jellytoast.theme import body_color_for, get_active_theme
