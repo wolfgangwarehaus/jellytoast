@@ -620,7 +620,10 @@ class JtTopBar(QWidget):
         """The phone bar's overflow menu: everything _apply_overflow hid.
         Library-only rows appear only while a library grid is showing,
         exactly when their bar buttons would."""
-        menu = QMenu(self)
+        # opaque_menu like the view / sort / library dropdowns: a plain QMenu
+        # inherits the window's translucency on Wayland and showed the grid
+        # through it.
+        menu = opaque_menu(self, blur_corner_radius=8)
         menu.setStyleSheet(self._dropdown_menu_qss())
         # Sub-menus open from the ⋮ button once this menu has closed.
         later = lambda fn: lambda: QTimer.singleShot(0, fn)  # noqa: E731

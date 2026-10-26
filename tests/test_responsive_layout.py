@@ -379,6 +379,31 @@ class TestRealDeviceFindings:
         finally:
             host.deleteLater()
 
+    def test_more_menu_is_opaque_like_the_other_dropdowns(self, qapp, monkeypatch):
+        """august, 2026-10-26: the ⋮ menu was a plain QMenu, translucent
+        over the grid on Wayland, unlike the album dropdown beside it."""
+        from PySide6.QtWidgets import QMenu, QWidget
+
+        import jellytoast.top_bar as tb
+        from jellytoast.top_bar import JtTopBar
+
+        made = []
+
+        def _fake_opaque_menu(parent=None, **_kw):
+            m = QMenu(parent)
+            made.append(m)
+            return m
+
+        monkeypatch.setattr(tb, "opaque_menu", _fake_opaque_menu)
+        host = QWidget()
+        top = JtTopBar(host, titlebar_mode=True)
+        monkeypatch.setattr(top, "_exec_menu_with_kbd_grab", lambda *a, **k: None)
+        try:
+            top._show_more_menu()
+            assert made, "the ⋮ menu wasn't built with opaque_menu"
+        finally:
+            host.deleteLater()
+
     def test_no_blur_body_is_opaque_on_a_mobile_shell(self, monkeypatch):
         from jellytoast.blur import BlurStatus
         from jellytoast.theme import body_color_for, get_active_theme
