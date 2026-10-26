@@ -20,6 +20,8 @@ developer-facing history lives in [`docs/CHANGELOG.md`](docs/CHANGELOG.md).
 - **Artist pages follow your library picker.** With only some libraries
   selected, an artist's page no longer shows albums from the ones you
   switched off.
+- **No more doubled lists.** After your server's library changed, scrolling
+  to the bottom of Artists or Albums could repeat the whole list.
 - **Flatpak for ARM.** There's now an aarch64 Flatpak too, for Linux phones
   like the OnePlus 6T and ARM laptops.
 
