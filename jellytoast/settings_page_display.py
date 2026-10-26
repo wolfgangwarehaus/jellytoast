@@ -138,6 +138,10 @@ class _DisplayPageMixin:
         # selector sits at its fixed width, left-aligned — matching the Theme
         # combo on every platform.
         scaling_form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.FieldsStayAtSizeHint)
+        if getattr(self, "_compact", False):
+            # Narrow Settings: a field that doesn't fit beside its label
+            # ("Lyrics font size:" + a 185 px combo) drops below it.
+            scaling_form.setRowWrapPolicy(QFormLayout.RowWrapPolicy.WrapLongRows)
 
         def _left(widget):
             row = QHBoxLayout()
@@ -299,13 +303,14 @@ class _DisplayPageMixin:
         self._initial_language = self.s.language
         self._select_combo_by_data(self._language_combo, self._initial_language)
         self._language_combo.currentIndexChanged.connect(self._on_language_changed)
-        self._language_combo.setMinimumWidth(185)
+        self._language_combo.setMinimumWidth(155 if getattr(self, "_compact", False) else 185)
         lang_row.addWidget(
             self._field_label(QCoreApplication.translate("SettingsDialog", "Language:"))
         )
         lang_row.addWidget(self._language_combo)
         lang_hint = QLabel(QCoreApplication.translate("SettingsDialog", "(needs restart)"))
         lang_hint.setStyleSheet(f"color: {TEXT_FAINT}; {type_qss(TYPE_CAPTION)}")
+        lang_hint.setWordWrap(True)  # narrow Settings: wrap, don't overflow
         from jellytoast import quick as _quick
         from jellytoast.platform_compat import is_mobile_shell
 
@@ -378,6 +383,7 @@ class _DisplayPageMixin:
             nb_row.addWidget(self._native_border_check)
             nb_hint = QLabel(QCoreApplication.translate("SettingsDialog", "(needs restart)"))
             nb_hint.setStyleSheet(f"color: {TEXT_FAINT}; {type_qss(TYPE_CAPTION)}")
+            nb_hint.setWordWrap(True)
             nb_row.addWidget(nb_hint)
             nb_row.addStretch(1)
             v.addLayout(nb_row)
@@ -399,6 +405,7 @@ class _DisplayPageMixin:
         sc_row.addWidget(self._square_corners_check)
         sc_hint = QLabel(QCoreApplication.translate("SettingsDialog", "(needs restart)"))
         sc_hint.setStyleSheet(f"color: {TEXT_FAINT}; {type_qss(TYPE_CAPTION)}")
+        sc_hint.setWordWrap(True)
         sc_row.addWidget(sc_hint)
         sc_row.addStretch(1)
         v.addLayout(sc_row)

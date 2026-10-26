@@ -895,182 +895,182 @@ Esto libera el almacenamiento de inmediato. Tu biblioteca en el servidor no se v
 <context>
     <name>EqSettingsPage</name>
     <message>
-        <location filename="../settings_eq_page.py" line="115"/>
+        <location filename="../settings_eq_page.py" line="117"/>
         <source>EQUALIZER</source>
         <translation>ECUALIZADOR</translation>
     </message>
     <message>
-        <location filename="../settings_eq_page.py" line="125"/>
+        <location filename="../settings_eq_page.py" line="127"/>
         <source>Enable</source>
         <translation>Activar</translation>
     </message>
     <message>
-        <location filename="../settings_eq_page.py" line="138"/>
-        <location filename="../settings_eq_page.py" line="569"/>
+        <location filename="../settings_eq_page.py" line="140"/>
+        <location filename="../settings_eq_page.py" line="571"/>
         <source>Linear phase</source>
         <translation>Fase lineal</translation>
     </message>
     <message>
-        <location filename="../settings_eq_page.py" line="141"/>
+        <location filename="../settings_eq_page.py" line="143"/>
         <source>Linear-phase FIR EQ — see the ⓘ for the trade-offs.</source>
         <translation>EQ FIR de fase lineal — mira la ⓘ para los pros y contras.</translation>
     </message>
     <message>
-        <location filename="../settings_eq_page.py" line="153"/>
+        <location filename="../settings_eq_page.py" line="155"/>
         <source>About linear phase</source>
         <translation>Acerca de la fase lineal</translation>
     </message>
     <message>
-        <location filename="../settings_eq_page.py" line="164"/>
+        <location filename="../settings_eq_page.py" line="166"/>
         <source>Curve</source>
         <translation>Curva</translation>
     </message>
     <message>
-        <location filename="../settings_eq_page.py" line="168"/>
+        <location filename="../settings_eq_page.py" line="170"/>
         <source>Parametric curve editor — drag nodes on a log-frequency canvas. AutoEQ profiles allow horizontal drag (movable centres); graphic mode keeps freqs locked, gain only.</source>
         <translation>Editor de curva paramétrico — arrastra nodos sobre un lienzo de frecuencia logarítmica. Los perfiles AutoEQ permiten arrastre horizontal (centros móviles); el modo gráfico mantiene las frecuencias fijas, solo ganancia.</translation>
     </message>
     <message>
-        <location filename="../settings_eq_page.py" line="198"/>
+        <location filename="../settings_eq_page.py" line="200"/>
         <source>Preset:</source>
         <translation>Preajuste:</translation>
     </message>
     <message>
-        <location filename="../settings_eq_page.py" line="222"/>
+        <location filename="../settings_eq_page.py" line="224"/>
         <source>Save…</source>
         <translation>Guardar…</translation>
     </message>
     <message>
-        <location filename="../settings_eq_page.py" line="226"/>
-        <location filename="../settings_eq_page.py" line="1147"/>
+        <location filename="../settings_eq_page.py" line="228"/>
+        <location filename="../settings_eq_page.py" line="1149"/>
         <source>Delete</source>
         <translation>Eliminar</translation>
     </message>
     <message>
-        <location filename="../settings_eq_page.py" line="276"/>
+        <location filename="../settings_eq_page.py" line="278"/>
         <source>Pre</source>
         <translation>Pre</translation>
     </message>
     <message>
-        <location filename="../settings_eq_page.py" line="394"/>
-        <location filename="../settings_eq_page.py" line="583"/>
+        <location filename="../settings_eq_page.py" line="396"/>
+        <location filename="../settings_eq_page.py" line="585"/>
         <source>AutoEQ: not loaded</source>
         <translation>AutoEQ: sin cargar</translation>
     </message>
     <message>
-        <location filename="../settings_eq_page.py" line="399"/>
+        <location filename="../settings_eq_page.py" line="401"/>
         <source>Import…</source>
         <translation>Importar…</translation>
     </message>
     <message>
-        <location filename="../settings_eq_page.py" line="402"/>
+        <location filename="../settings_eq_page.py" line="404"/>
         <source>Clear</source>
         <translation>Limpiar</translation>
     </message>
     <message>
-        <location filename="../settings_eq_page.py" line="591"/>
-        <location filename="../settings_eq_page.py" line="682"/>
+        <location filename="../settings_eq_page.py" line="593"/>
+        <location filename="../settings_eq_page.py" line="684"/>
         <source>{0} bands</source>
         <translation>{0} bandas</translation>
     </message>
     <message>
-        <location filename="../settings_eq_page.py" line="593"/>
-        <location filename="../settings_eq_page.py" line="684"/>
+        <location filename="../settings_eq_page.py" line="595"/>
+        <location filename="../settings_eq_page.py" line="686"/>
         <source>preamp {0:+.1f} dB</source>
         <translation>preamplificación {0:+.1f} dB</translation>
     </message>
     <message>
-        <location filename="../settings_eq_page.py" line="595"/>
+        <location filename="../settings_eq_page.py" line="597"/>
         <source>{0} skipped</source>
         <translation>{0} omitidos</translation>
     </message>
     <message>
-        <location filename="../settings_eq_page.py" line="596"/>
+        <location filename="../settings_eq_page.py" line="598"/>
         <source>AutoEQ: {0}</source>
         <translation>AutoEQ: {0}</translation>
     </message>
     <message>
-        <location filename="../settings_eq_page.py" line="599"/>
+        <location filename="../settings_eq_page.py" line="601"/>
         <source>AutoEQ: (corrupt — Clear to reset)</source>
         <translation>AutoEQ: (dañado — Limpiar para restablecer)</translation>
     </message>
     <message>
-        <location filename="../settings_eq_page.py" line="617"/>
+        <location filename="../settings_eq_page.py" line="619"/>
         <source>Import AutoEQ profile</source>
         <translation>Importar perfil AutoEQ</translation>
     </message>
     <message>
-        <location filename="../settings_eq_page.py" line="624"/>
+        <location filename="../settings_eq_page.py" line="626"/>
         <source>Paste a ParametricEQ.txt-style profile from autoeq.app or your headphone correction source. Each line should look like: &lt;code&gt;Filter 1: ON PK Fc 105 Hz Gain 5.5 dB Q 1.41&lt;/code&gt;. Shelf filters (LSC / HSC) are skipped — most headphone profiles are predominantly peaking filters.</source>
         <translation>Pega un perfil tipo ParametricEQ.txt de autoeq.app o de tu fuente de corrección de auriculares. Cada línea debe verse así: &lt;code&gt;Filter 1: ON PK Fc 105 Hz Gain 5.5 dB Q 1.41&lt;/code&gt;. Los filtros shelf (LSC / HSC) se omiten — la mayoría de los perfiles de auriculares son predominantemente filtros de pico.</translation>
     </message>
     <message>
-        <location filename="../settings_eq_page.py" line="663"/>
+        <location filename="../settings_eq_page.py" line="665"/>
         <source>Import</source>
         <translation>Importar</translation>
     </message>
     <message>
-        <location filename="../settings_eq_page.py" line="677"/>
+        <location filename="../settings_eq_page.py" line="679"/>
         <source>No peaking filters detected — check the format.</source>
         <translation>No se detectaron filtros de pico — revisa el formato.</translation>
     </message>
     <message>
-        <location filename="../settings_eq_page.py" line="686"/>
+        <location filename="../settings_eq_page.py" line="688"/>
         <source>{0} non-peaking filters will be skipped</source>
         <translation>Se omitirán {0} filtros que no son de pico</translation>
     </message>
     <message>
-        <location filename="../settings_eq_page.py" line="687"/>
+        <location filename="../settings_eq_page.py" line="689"/>
         <source>Ready: {0}</source>
         <translation>Listo: {0}</translation>
     </message>
     <message>
-        <location filename="../settings_eq_page.py" line="932"/>
+        <location filename="../settings_eq_page.py" line="934"/>
         <source>Casting — EQ applies to local playback only and is inactive now.</source>
         <translation>Enviando — el EQ solo se aplica a la reproducción local y ahora está inactivo.</translation>
     </message>
     <message>
-        <location filename="../settings_eq_page.py" line="1102"/>
+        <location filename="../settings_eq_page.py" line="1104"/>
         <source>Save preset</source>
         <translation>Guardar preajuste</translation>
     </message>
     <message>
-        <location filename="../settings_eq_page.py" line="1102"/>
+        <location filename="../settings_eq_page.py" line="1104"/>
         <source>Preset name:</source>
         <translation>Nombre del preajuste:</translation>
     </message>
     <message>
-        <location filename="../settings_eq_page.py" line="1111"/>
+        <location filename="../settings_eq_page.py" line="1113"/>
         <source>Name taken</source>
         <translation>Nombre en uso</translation>
     </message>
     <message>
-        <location filename="../settings_eq_page.py" line="1112"/>
+        <location filename="../settings_eq_page.py" line="1114"/>
         <source>&apos;{0}&apos; is a built-in preset name. Pick a different name.</source>
         <translation>«{0}» es el nombre de un preajuste integrado. Elige otro nombre.</translation>
     </message>
     <message>
-        <location filename="../settings_eq_page.py" line="1119"/>
+        <location filename="../settings_eq_page.py" line="1121"/>
         <source>Overwrite preset</source>
         <translation>Sobrescribir preajuste</translation>
     </message>
     <message>
-        <location filename="../settings_eq_page.py" line="1120"/>
+        <location filename="../settings_eq_page.py" line="1122"/>
         <source>User preset &apos;{0}&apos; already exists. Overwrite?</source>
         <translation>El preajuste de usuario «{0}» ya existe. ¿Sobrescribirlo?</translation>
     </message>
     <message>
-        <location filename="../settings_eq_page.py" line="1121"/>
+        <location filename="../settings_eq_page.py" line="1123"/>
         <source>Overwrite</source>
         <translation>Sobrescribir</translation>
     </message>
     <message>
-        <location filename="../settings_eq_page.py" line="1145"/>
+        <location filename="../settings_eq_page.py" line="1147"/>
         <source>Delete preset</source>
         <translation>Eliminar preajuste</translation>
     </message>
     <message>
-        <location filename="../settings_eq_page.py" line="1146"/>
+        <location filename="../settings_eq_page.py" line="1148"/>
         <source>Delete user preset &apos;{0}&apos;?</source>
         <translation>¿Eliminar el preajuste de usuario «{0}»?</translation>
     </message>
@@ -1275,12 +1275,12 @@ Esto libera el almacenamiento de inmediato. Tu biblioteca en el servidor no se v
         <translation type="vanished">Hay otro audio sonando — la salida es compartida, no bit-perfect, hasta que la otra reproducción pare.</translation>
     </message>
     <message>
-        <location filename="../app.py" line="2424"/>
+        <location filename="../app.py" line="2438"/>
         <source>Missing dependency</source>
         <translation>Falta una dependencia</translation>
     </message>
     <message>
-        <location filename="../app.py" line="2425"/>
+        <location filename="../app.py" line="2439"/>
         <source>jellytoast requires libmpv.
 
 Install mpv from your system package manager, or download it from https://mpv.io.</source>
@@ -1289,12 +1289,12 @@ Install mpv from your system package manager, or download it from https://mpv.io
 Instala mpv desde el gestor de paquetes de tu sistema, o descárgalo de https://mpv.io.</translation>
     </message>
     <message>
-        <location filename="../app.py" line="2463"/>
+        <location filename="../app.py" line="2477"/>
         <source>No system tray</source>
         <translation>Sin bandeja del sistema</translation>
     </message>
     <message>
-        <location filename="../app.py" line="2464"/>
+        <location filename="../app.py" line="2478"/>
         <source>Your desktop doesn&apos;t appear to have a system tray, so jellytoast&apos;s tray icon won&apos;t show. Everything else works as usual.</source>
         <translation>Tu escritorio no parece tener bandeja del sistema, así que el icono de jellytoast no aparecerá ahí. Todo lo demás funciona con normalidad.</translation>
     </message>
@@ -1308,110 +1308,111 @@ jellytoast funcionará, pero las funciones de bandeja no estarán disponibles.</
 <context>
     <name>JtTopBar</name>
     <message>
-        <location filename="../top_bar.py" line="167"/>
+        <location filename="../top_bar.py" line="170"/>
         <source>Back</source>
         <translation>Atrás</translation>
     </message>
     <message>
-        <location filename="../top_bar.py" line="168"/>
+        <location filename="../top_bar.py" line="171"/>
         <source>Forward</source>
         <translation>Adelante</translation>
     </message>
     <message>
-        <location filename="../top_bar.py" line="169"/>
-        <location filename="../top_bar.py" line="574"/>
+        <location filename="../top_bar.py" line="172"/>
+        <location filename="../top_bar.py" line="640"/>
         <source>Home</source>
         <translation>Inicio</translation>
     </message>
     <message>
-        <location filename="../top_bar.py" line="170"/>
-        <location filename="../top_bar.py" line="576"/>
+        <location filename="../top_bar.py" line="173"/>
+        <location filename="../top_bar.py" line="642"/>
         <source>Settings</source>
         <translation>Ajustes</translation>
     </message>
     <message>
-        <location filename="../top_bar.py" line="207"/>
+        <location filename="../top_bar.py" line="210"/>
         <source>Choose which libraries to load</source>
         <translation>Elegir qué bibliotecas cargar</translation>
     </message>
     <message>
-        <location filename="../top_bar.py" line="258"/>
+        <location filename="../top_bar.py" line="261"/>
         <source>Switch library view</source>
         <translation>Cambiar la vista de biblioteca</translation>
     </message>
     <message>
-        <location filename="../top_bar.py" line="294"/>
-        <location filename="../top_bar.py" line="568"/>
+        <location filename="../top_bar.py" line="297"/>
+        <location filename="../top_bar.py" line="634"/>
         <source>Shuffle all</source>
         <translation>Reproducir todo aleatorio</translation>
     </message>
     <message>
-        <location filename="../top_bar.py" line="310"/>
+        <location filename="../top_bar.py" line="313"/>
         <source>Toggle grid / list</source>
         <translation>Alternar cuadrícula / lista</translation>
     </message>
     <message>
-        <location filename="../top_bar.py" line="378"/>
+        <location filename="../top_bar.py" line="381"/>
+        <location filename="../top_bar.py" line="628"/>
         <source>Search</source>
         <translation>Buscar</translation>
     </message>
     <message>
-        <location filename="../top_bar.py" line="386"/>
+        <location filename="../top_bar.py" line="389"/>
         <source>More</source>
         <translation>Más</translation>
     </message>
     <message>
-        <location filename="../top_bar.py" line="397"/>
+        <location filename="../top_bar.py" line="400"/>
         <source>Minimize</source>
         <translation>Minimizar</translation>
     </message>
     <message>
-        <location filename="../top_bar.py" line="399"/>
+        <location filename="../top_bar.py" line="402"/>
         <source>Maximize</source>
         <translation>Maximizar</translation>
     </message>
     <message>
-        <location filename="../top_bar.py" line="401"/>
+        <location filename="../top_bar.py" line="404"/>
         <source>Close</source>
         <translation>Cerrar</translation>
     </message>
     <message>
-        <location filename="../top_bar.py" line="565"/>
+        <location filename="../top_bar.py" line="631"/>
         <source>Libraries…</source>
         <translation>Bibliotecas…</translation>
     </message>
     <message>
-        <location filename="../top_bar.py" line="569"/>
+        <location filename="../top_bar.py" line="635"/>
         <source>Sort…</source>
         <translation>Ordenar…</translation>
     </message>
     <message>
-        <location filename="../top_bar.py" line="571"/>
+        <location filename="../top_bar.py" line="637"/>
         <source>Show as list</source>
         <translation>Ver como lista</translation>
     </message>
     <message>
-        <location filename="../top_bar.py" line="571"/>
+        <location filename="../top_bar.py" line="637"/>
         <source>Show as grid</source>
         <translation>Ver como cuadrícula</translation>
     </message>
     <message>
-        <location filename="../top_bar.py" line="841"/>
+        <location filename="../top_bar.py" line="908"/>
         <source>Ascending</source>
         <translation>Ascendente</translation>
     </message>
     <message>
-        <location filename="../top_bar.py" line="842"/>
+        <location filename="../top_bar.py" line="909"/>
         <source>Descending</source>
         <translation>Descendente</translation>
     </message>
     <message>
-        <location filename="../top_bar.py" line="885"/>
+        <location filename="../top_bar.py" line="952"/>
         <source>Sort: {0} ({1})</source>
         <translation>Orden: {0} ({1})</translation>
     </message>
     <message>
-        <location filename="../top_bar.py" line="1192"/>
+        <location filename="../top_bar.py" line="1259"/>
         <source>All libraries</source>
         <translation>Todas las bibliotecas</translation>
     </message>
@@ -1429,67 +1430,67 @@ jellytoast funcionará, pero las funciones de bandeja no estarán disponibles.</
         <translation>1 pista</translation>
     </message>
     <message>
-        <location filename="../library_grid.py" line="2353"/>
+        <location filename="../library_grid.py" line="2357"/>
         <source>Refresh</source>
         <translation>Actualizar</translation>
     </message>
     <message>
-        <location filename="../library_grid.py" line="2381"/>
+        <location filename="../library_grid.py" line="2385"/>
         <source>Loading more…</source>
         <translation>Cargando más…</translation>
     </message>
     <message>
-        <location filename="../library_grid.py" line="2611"/>
+        <location filename="../library_grid.py" line="2615"/>
         <source>No playlists yet</source>
         <translation>Aún no hay listas de reproducción</translation>
     </message>
     <message>
-        <location filename="../library_grid.py" line="2613"/>
+        <location filename="../library_grid.py" line="2617"/>
         <source>No artists yet</source>
         <translation>Aún no hay artistas</translation>
     </message>
     <message>
-        <location filename="../library_grid.py" line="2614"/>
+        <location filename="../library_grid.py" line="2618"/>
         <source>No albums yet</source>
         <translation>Aún no hay álbumes</translation>
     </message>
     <message>
-        <location filename="../library_grid.py" line="2624"/>
+        <location filename="../library_grid.py" line="2628"/>
         <source>No {0}s in this genre</source>
         <translation>No hay {0}s en este género</translation>
     </message>
     <message>
-        <location filename="../library_grid.py" line="2625"/>
+        <location filename="../library_grid.py" line="2629"/>
         <source>Try a different genre or refresh the library.</source>
         <translation>Prueba otro género o actualiza la biblioteca.</translation>
     </message>
     <message>
-        <location filename="../library_grid.py" line="2629"/>
+        <location filename="../library_grid.py" line="2633"/>
         <source>No {0}s from {1}</source>
         <translation>No hay {0}s de {1}</translation>
     </message>
     <message>
-        <location filename="../library_grid.py" line="2630"/>
+        <location filename="../library_grid.py" line="2634"/>
         <source>Try a different year or refresh the library.</source>
         <translation>Prueba otro año o actualiza la biblioteca.</translation>
     </message>
     <message>
-        <location filename="../library_grid.py" line="2635"/>
+        <location filename="../library_grid.py" line="2639"/>
         <source>Your library may still be loading, or it&apos;s empty. Refresh to retry.</source>
         <translation>Puede que tu biblioteca aún esté cargando, o que esté vacía. Actualiza para reintentar.</translation>
     </message>
     <message>
-        <location filename="../library_grid.py" line="2641"/>
+        <location filename="../library_grid.py" line="2645"/>
         <source>Loading artists…</source>
         <translation>Cargando artistas…</translation>
     </message>
     <message>
-        <location filename="../library_grid.py" line="2643"/>
+        <location filename="../library_grid.py" line="2647"/>
         <source>Loading playlists…</source>
         <translation>Cargando listas de reproducción…</translation>
     </message>
     <message>
-        <location filename="../library_grid.py" line="2644"/>
+        <location filename="../library_grid.py" line="2648"/>
         <source>Loading albums…</source>
         <translation>Cargando álbumes…</translation>
     </message>
@@ -3343,62 +3344,62 @@ Subsonic requiere permiso de administrador para crear / editar / eliminar.</tran
 <context>
     <name>SettingsDialog</name>
     <message>
-        <location filename="../settings_widgets.py" line="541"/>
+        <location filename="../settings_widgets.py" line="619"/>
         <source>Auto → ALSA</source>
         <translation>Auto → ALSA</translation>
     </message>
     <message>
-        <location filename="../settings_widgets.py" line="544"/>
+        <location filename="../settings_widgets.py" line="622"/>
         <source>Auto → PipeWire</source>
         <translation>Auto → PipeWire</translation>
     </message>
     <message>
-        <location filename="../settings_widgets.py" line="546"/>
+        <location filename="../settings_widgets.py" line="624"/>
         <source>Auto → Pulse</source>
         <translation>Auto → Pulse</translation>
     </message>
     <message>
-        <location filename="../settings_widgets.py" line="549"/>
+        <location filename="../settings_widgets.py" line="627"/>
         <source>sample-rate config installed.</source>
         <translation>configuración de frecuencia de muestreo instalada.</translation>
     </message>
     <message>
-        <location filename="../settings_widgets.py" line="551"/>
+        <location filename="../settings_widgets.py" line="629"/>
         <source>install the sample-rate config below.</source>
         <translation>instala abajo la configuración de frecuencia de muestreo.</translation>
     </message>
     <message>
-        <location filename="../settings_widgets.py" line="554"/>
+        <location filename="../settings_widgets.py" line="632"/>
         <source>&lt;br&gt;Sharing the playback device with other audio sources will degrade the bit-perfect path.</source>
         <translation>&lt;br&gt;Compartir el dispositivo de reproducción con otras fuentes de audio degradará la ruta bit-perfect.</translation>
     </message>
     <message>
-        <location filename="../settings_widgets.py" line="560"/>
+        <location filename="../settings_widgets.py" line="638"/>
         <source>selecting an ALSA device claims it exclusively — other audio sources won&apos;t play.</source>
         <translation>seleccionar un dispositivo ALSA lo reclama en exclusiva — otras fuentes de audio no sonarán.</translation>
     </message>
     <message>
-        <location filename="../settings_widgets.py" line="565"/>
+        <location filename="../settings_widgets.py" line="643"/>
         <source>no direct device detected on this system.</source>
         <translation>no se detectó un dispositivo directo en este sistema.</translation>
     </message>
     <message>
-        <location filename="../settings_widgets.py" line="579"/>
+        <location filename="../settings_widgets.py" line="657"/>
         <source>Exclusive output on — bit-perfect end to end.</source>
         <translation>Salida exclusiva activada — bit-perfect de extremo a extremo.</translation>
     </message>
     <message>
-        <location filename="../settings_widgets.py" line="590"/>
+        <location filename="../settings_widgets.py" line="668"/>
         <source>turn on Exclusive output — it hands jellytoast the device directly, skipping the Windows mixer.</source>
         <translation>activa la Salida exclusiva — entrega el dispositivo directamente a jellytoast, saltándose el mezclador de Windows.</translation>
     </message>
     <message>
-        <location filename="../settings_dialog.py" line="582"/>
+        <location filename="../settings_dialog.py" line="583"/>
         <source>Settings</source>
         <translation>Ajustes</translation>
     </message>
     <message>
-        <location filename="../settings_dialog.py" line="601"/>
+        <location filename="../settings_dialog.py" line="602"/>
         <source>About jellytoast</source>
         <translation>Acerca de jellytoast</translation>
     </message>
@@ -3424,13 +3425,13 @@ Subsonic requiere permiso de administrador para crear / editar / eliminar.</tran
     </message>
     <message>
         <location filename="../settings_page_general.py" line="99"/>
-        <location filename="../settings_page_general.py" line="528"/>
+        <location filename="../settings_page_general.py" line="520"/>
         <source>Not configured</source>
         <translation>Sin configurar</translation>
     </message>
     <message>
         <location filename="../settings_page_general.py" line="198"/>
-        <location filename="../settings_page_general.py" line="532"/>
+        <location filename="../settings_page_general.py" line="524"/>
         <source>Change server URL…</source>
         <translation>Cambiar URL del servidor…</translation>
     </message>
@@ -3480,59 +3481,59 @@ Subsonic requiere permiso de administrador para crear / editar / eliminar.</tran
         <translation>Mostrar una notificación al cambiar de pista</translation>
     </message>
     <message>
-        <location filename="../settings_page_general.py" line="329"/>
+        <location filename="../settings_page_general.py" line="321"/>
         <source>HOME PAGE</source>
         <translation>PÁGINA DE INICIO</translation>
     </message>
     <message>
-        <location filename="../settings_page_general.py" line="367"/>
+        <location filename="../settings_page_general.py" line="359"/>
         <source>UPDATES</source>
         <translation>ACTUALIZACIONES</translation>
     </message>
     <message>
-        <location filename="../settings_page_general.py" line="374"/>
-        <location filename="../settings_page_general.py" line="383"/>
+        <location filename="../settings_page_general.py" line="366"/>
+        <location filename="../settings_page_general.py" line="375"/>
         <source>Check for updates</source>
         <translation>Buscar actualizaciones</translation>
     </message>
     <message>
-        <location filename="../settings_page_general.py" line="384"/>
+        <location filename="../settings_page_general.py" line="376"/>
         <source>Once a day, jellytoast quietly checks GitHub for a newer release and shows a small chip in the top bar if one&apos;s out. Manual installs only — the Microsoft Store / Mac App Store builds update themselves. Uses GitHub&apos;s public API; no account or personal data.</source>
         <translation>Una vez al día, jellytoast consulta discretamente GitHub por si hay una versión más nueva y muestra un pequeño aviso en la barra superior si la hay. Solo para instalaciones manuales — las versiones de Microsoft Store / Mac App Store se actualizan solas. Usa la API pública de GitHub; sin cuenta ni datos personales.</translation>
     </message>
     <message>
-        <location filename="../settings_page_general.py" line="396"/>
+        <location filename="../settings_page_general.py" line="388"/>
         <source>Check now</source>
         <translation>Buscar ahora</translation>
     </message>
     <message>
-        <location filename="../settings_page_general.py" line="416"/>
+        <location filename="../settings_page_general.py" line="408"/>
         <source>DIAGNOSTICS</source>
         <translation>DIAGNÓSTICO</translation>
     </message>
     <message>
-        <location filename="../settings_page_general.py" line="423"/>
-        <location filename="../settings_page_general.py" line="429"/>
+        <location filename="../settings_page_general.py" line="415"/>
+        <location filename="../settings_page_general.py" line="421"/>
         <source>Copy diagnostics</source>
         <translation>Copiar diagnóstico</translation>
     </message>
     <message>
-        <location filename="../settings_page_general.py" line="430"/>
+        <location filename="../settings_page_general.py" line="422"/>
         <source>Copies a support report to your clipboard — app version, system and desktop, audio and theme details, plus the tail of the log — so you can paste it into a bug report. Your password, access token and scrobbling keys are never included, and the server address is trimmed to its host.</source>
         <translation>Copia un informe de soporte a tu portapapeles — versión de la app, sistema y escritorio, detalles de audio y tema, más el final del registro — para que puedas pegarlo en un informe de error. Tu contraseña, tu token de acceso y las claves de scrobbling nunca se incluyen, y la dirección del servidor se recorta a su host.</translation>
     </message>
     <message>
-        <location filename="../settings_page_general.py" line="465"/>
+        <location filename="../settings_page_general.py" line="457"/>
         <source>Diagnostics copied to clipboard.</source>
         <translation>Diagnóstico copiado al portapapeles.</translation>
     </message>
     <message>
-        <location filename="../settings_page_general.py" line="467"/>
+        <location filename="../settings_page_general.py" line="459"/>
         <source>Couldn&apos;t copy diagnostics.</source>
         <translation>No se pudo copiar el diagnóstico.</translation>
     </message>
     <message>
-        <location filename="../settings_page_general.py" line="507"/>
+        <location filename="../settings_page_general.py" line="499"/>
         <source>Save URL</source>
         <translation>Guardar URL</translation>
     </message>
@@ -3615,7 +3616,7 @@ Subsonic requiere permiso de administrador para crear / editar / eliminar.</tran
     </message>
     <message>
         <location filename="../settings_page_playback.py" line="330"/>
-        <location filename="../settings_page_playback.py" line="910"/>
+        <location filename="../settings_page_playback.py" line="915"/>
         <source>Normalization mode:
   Off — play untouched.
   Track — match each song to a common loudness target.
@@ -3697,17 +3698,17 @@ Subsonic requiere permiso de administrador para crear / editar / eliminar.</tran
         <translation>Omite el fundido entre pistas del mismo álbum para que los álbumes que fluyen como una sola pieza (directos, discos conceptuales) sigan siendo continuos.</translation>
     </message>
     <message>
-        <location filename="../settings_page_playback.py" line="520"/>
+        <location filename="../settings_page_playback.py" line="521"/>
         <source>Duration:</source>
         <translation>Duración:</translation>
     </message>
     <message>
-        <location filename="../settings_page_playback.py" line="576"/>
+        <location filename="../settings_page_playback.py" line="577"/>
         <source>{0:.1f} s</source>
         <translation>{0:.1f} s</translation>
     </message>
     <message>
-        <location filename="../settings_page_playback.py" line="601"/>
+        <location filename="../settings_page_playback.py" line="602"/>
         <source>Casting — crossfade applies to local playback only and is inactive now.</source>
         <translation>Enviando — el fundido cruzado solo se aplica a la reproducción local y ahora está inactivo.</translation>
     </message>
@@ -3767,57 +3768,67 @@ Subsonic requiere permiso de administrador para crear / editar / eliminar.</tran
         <translation>Enrutado del stream</translation>
     </message>
     <message>
-        <location filename="../settings_page_playback.py" line="878"/>
+        <location filename="../settings_page_playback.py" line="883"/>
         <source>Disabled while Bit-perfect mode is on.</source>
         <translation>Desactivado mientras el modo bit-perfect está activo.</translation>
     </message>
     <message>
-        <location filename="../settings_page_playback.py" line="890"/>
+        <location filename="../settings_page_playback.py" line="895"/>
         <source>Enable Bit-perfect mode to use exclusive output.</source>
         <translation>Activa el modo bit-perfect para usar la salida exclusiva.</translation>
     </message>
     <message>
-        <location filename="../settings_page_playback.py" line="896"/>
+        <location filename="../settings_page_playback.py" line="901"/>
         <source>Exclusive output requires audio quality &apos;Original&apos; — the server can&apos;t transcode and still ship bit-identical bits.</source>
         <translation>La salida exclusiva requiere calidad de audio «Original» — el servidor no puede transcodificar y aun así entregar bits idénticos.</translation>
     </message>
     <message>
-        <location filename="../settings_page_playback.py" line="984"/>
+        <location filename="../settings_page_playback.py" line="992"/>
+        <source>Remove config</source>
+        <translation>Quitar configuración</translation>
+    </message>
+    <message>
+        <location filename="../settings_page_playback.py" line="994"/>
         <source>Remove PipeWire bit-perfect config</source>
         <translation>Quitar configuración bit-perfect de PipeWire</translation>
     </message>
     <message>
-        <location filename="../settings_page_playback.py" line="987"/>
+        <location filename="../settings_page_playback.py" line="999"/>
         <source>Removes {0}. Restart pipewire to revert.</source>
         <translation>Elimina {0}. Reinicia pipewire para revertir.</translation>
     </message>
     <message>
-        <location filename="../settings_page_playback.py" line="993"/>
+        <location filename="../settings_page_playback.py" line="1005"/>
+        <source>Install config</source>
+        <translation>Instalar configuración</translation>
+    </message>
+    <message>
+        <location filename="../settings_page_playback.py" line="1007"/>
         <source>Install PipeWire bit-perfect config</source>
         <translation>Instalar configuración bit-perfect de PipeWire</translation>
     </message>
     <message>
-        <location filename="../settings_page_playback.py" line="996"/>
+        <location filename="../settings_page_playback.py" line="1012"/>
         <source>Writes {0} with rate-matching properties.</source>
         <translation>Escribe {0} con propiedades de ajuste de frecuencia.</translation>
     </message>
     <message>
-        <location filename="../settings_page_playback.py" line="1011"/>
+        <location filename="../settings_page_playback.py" line="1027"/>
         <source>Removed. Restart pipewire to revert the rate-matching properties.</source>
         <translation>Eliminada. Reinicia pipewire para revertir las propiedades de ajuste de frecuencia.</translation>
     </message>
     <message>
-        <location filename="../settings_page_playback.py" line="1019"/>
+        <location filename="../settings_page_playback.py" line="1035"/>
         <source>Did not remove — the file at that path wasn&apos;t installed by jellytoast. Edit it by hand if you want to revert.</source>
         <translation>No se eliminó — el archivo en esa ruta no lo instaló jellytoast. Edítalo a mano si quieres revertirlo.</translation>
     </message>
     <message>
-        <location filename="../settings_page_playback.py" line="1028"/>
+        <location filename="../settings_page_playback.py" line="1044"/>
         <source>Installed. Restart pipewire (or log out / in) for the rate-matching properties to take effect.</source>
         <translation>Instalada. Reinicia pipewire (o cierra y abre sesión) para que las propiedades de ajuste de frecuencia surtan efecto.</translation>
     </message>
     <message>
-        <location filename="../settings_page_playback.py" line="1034"/>
+        <location filename="../settings_page_playback.py" line="1050"/>
         <source>Install failed: {0}</source>
         <translation>Falló la instalación: {0}</translation>
     </message>
@@ -3837,173 +3848,173 @@ Subsonic requiere permiso de administrador para crear / editar / eliminar.</tran
         <translation>Escala</translation>
     </message>
     <message>
-        <location filename="../settings_page_display.py" line="163"/>
+        <location filename="../settings_page_display.py" line="167"/>
         <source>Font size:</source>
         <translation>Tamaño de letra:</translation>
     </message>
     <message>
-        <location filename="../settings_page_display.py" line="177"/>
-        <location filename="../settings_page_display.py" line="294"/>
+        <location filename="../settings_page_display.py" line="181"/>
+        <location filename="../settings_page_display.py" line="298"/>
         <source>System default</source>
         <translation>Predeterminado del sistema</translation>
     </message>
     <message>
-        <location filename="../settings_page_display.py" line="195"/>
+        <location filename="../settings_page_display.py" line="199"/>
         <source>Font:</source>
         <translation>Fuente:</translation>
     </message>
     <message>
-        <location filename="../settings_page_display.py" line="207"/>
+        <location filename="../settings_page_display.py" line="211"/>
         <source>Lyrics font size:</source>
         <translation>Tamaño de letra de las letras:</translation>
     </message>
     <message>
-        <location filename="../settings_page_display.py" line="223"/>
+        <location filename="../settings_page_display.py" line="227"/>
         <source>Now-playing info</source>
         <translation>Información de reproducción</translation>
     </message>
     <message>
-        <location filename="../settings_page_display.py" line="239"/>
+        <location filename="../settings_page_display.py" line="243"/>
         <source>Bit Perfect</source>
         <translation>Bit Perfect</translation>
     </message>
     <message>
-        <location filename="../settings_page_display.py" line="244"/>
+        <location filename="../settings_page_display.py" line="248"/>
         <source>Normalized</source>
         <translation>Normalizado</translation>
     </message>
     <message>
-        <location filename="../settings_page_display.py" line="248"/>
+        <location filename="../settings_page_display.py" line="252"/>
         <source>Crossfade</source>
         <translation>Fundido cruzado</translation>
     </message>
     <message>
-        <location filename="../settings_page_display.py" line="252"/>
+        <location filename="../settings_page_display.py" line="256"/>
         <source>Codec (FLAC, MP3, …)</source>
         <translation>Códec (FLAC, MP3, …)</translation>
     </message>
     <message>
-        <location filename="../settings_page_display.py" line="256"/>
+        <location filename="../settings_page_display.py" line="260"/>
         <source>Bitrate (kbps)</source>
         <translation>Tasa de bits (kbps)</translation>
     </message>
     <message>
-        <location filename="../settings_page_display.py" line="280"/>
+        <location filename="../settings_page_display.py" line="284"/>
         <source>Interface</source>
         <translation>Interfaz</translation>
     </message>
     <message>
-        <location filename="../settings_page_display.py" line="304"/>
+        <location filename="../settings_page_display.py" line="308"/>
         <source>Language:</source>
         <translation>Idioma:</translation>
     </message>
     <message>
-        <location filename="../settings_page_display.py" line="307"/>
-        <location filename="../settings_page_display.py" line="379"/>
-        <location filename="../settings_page_display.py" line="400"/>
+        <location filename="../settings_page_display.py" line="311"/>
+        <location filename="../settings_page_display.py" line="384"/>
+        <location filename="../settings_page_display.py" line="406"/>
         <source>(needs restart)</source>
         <translation>(requiere reinicio)</translation>
     </message>
     <message>
-        <location filename="../settings_page_display.py" line="323"/>
+        <location filename="../settings_page_display.py" line="328"/>
         <source>Show hover tooltips</source>
         <translation>Mostrar descripciones al pasar el cursor</translation>
     </message>
     <message>
-        <location filename="../settings_page_display.py" line="344"/>
+        <location filename="../settings_page_display.py" line="349"/>
         <source>Phone interface — restart to apply</source>
         <translation>Interfaz de teléfono — reinicia para aplicarla</translation>
     </message>
     <message>
-        <location filename="../settings_page_display.py" line="372"/>
+        <location filename="../settings_page_display.py" line="377"/>
         <source>Use native window border</source>
         <translation>Usar el borde de ventana nativo</translation>
     </message>
     <message>
-        <location filename="../settings_page_display.py" line="394"/>
+        <location filename="../settings_page_display.py" line="400"/>
         <source>Square corners</source>
         <translation>Esquinas rectas</translation>
     </message>
     <message>
-        <location filename="../settings_page_display.py" line="541"/>
+        <location filename="../settings_page_display.py" line="548"/>
         <source>Frosted glass needs compositor blur — {0}.</source>
         <translation>El cristal esmerilado necesita desenfoque del compositor — {0}.</translation>
     </message>
     <message>
-        <location filename="../settings_page_display.py" line="601"/>
-        <location filename="../settings_page_display.py" line="723"/>
+        <location filename="../settings_page_display.py" line="608"/>
+        <location filename="../settings_page_display.py" line="730"/>
         <source>Import…</source>
         <translation>Importar…</translation>
     </message>
     <message>
-        <location filename="../settings_page_display.py" line="605"/>
+        <location filename="../settings_page_display.py" line="612"/>
         <source>Import a base16 .yaml colour scheme (≈250 community themes)</source>
         <translation>Importa un esquema de color base16 .yaml (≈250 temas de la comunidad)</translation>
     </message>
     <message>
-        <location filename="../settings_page_display.py" line="626"/>
+        <location filename="../settings_page_display.py" line="633"/>
         <source>Mode:</source>
         <translation>Modo:</translation>
     </message>
     <message>
-        <location filename="../settings_page_display.py" line="637"/>
+        <location filename="../settings_page_display.py" line="644"/>
         <source>Frosted glass</source>
         <translation>Cristal esmerilado</translation>
     </message>
     <message>
-        <location filename="../settings_page_display.py" line="641"/>
+        <location filename="../settings_page_display.py" line="648"/>
         <source>Translucent, blurred body (Frosted) vs a solid opaque body.</source>
         <translation>Cuerpo translúcido y desenfocado (esmerilado) frente a un cuerpo sólido opaco.</translation>
     </message>
     <message>
-        <location filename="../settings_page_display.py" line="658"/>
+        <location filename="../settings_page_display.py" line="665"/>
         <source>Accent color</source>
         <translation>Color de acento</translation>
     </message>
     <message>
-        <location filename="../settings_page_display.py" line="662"/>
+        <location filename="../settings_page_display.py" line="669"/>
         <source>Follow system accent</source>
         <translation>Seguir el acento del sistema</translation>
     </message>
     <message>
-        <location filename="../settings_page_display.py" line="666"/>
+        <location filename="../settings_page_display.py" line="673"/>
         <source>Adopt your desktop&apos;s accent colour (KDE Plasma / GNOME 47+ / Windows / macOS).</source>
         <translation>Adopta el color de acento de tu escritorio (KDE Plasma / GNOME 47+ / Windows / macOS).</translation>
     </message>
     <message>
-        <location filename="../settings_page_display.py" line="682"/>
+        <location filename="../settings_page_display.py" line="689"/>
         <source>Palette</source>
         <translation>Paleta</translation>
     </message>
     <message>
-        <location filename="../settings_page_display.py" line="691"/>
-        <location filename="../settings_page_display.py" line="701"/>
+        <location filename="../settings_page_display.py" line="698"/>
+        <location filename="../settings_page_display.py" line="708"/>
         <source>Follow pywal / wallust</source>
         <translation>Seguir pywal / wallust</translation>
     </message>
     <message>
-        <location filename="../settings_page_display.py" line="702"/>
+        <location filename="../settings_page_display.py" line="709"/>
         <source>pywal / wallust are tools that build themes from your wallpaper.</source>
         <translation>pywal / wallust son herramientas que crean temas a partir de tu fondo de pantalla.</translation>
     </message>
     <message>
-        <location filename="../settings_page_display.py" line="724"/>
-        <location filename="../settings_page_display.py" line="780"/>
+        <location filename="../settings_page_display.py" line="731"/>
+        <location filename="../settings_page_display.py" line="787"/>
         <source>Default</source>
         <translation>Predeterminado</translation>
     </message>
     <message>
-        <location filename="../settings_page_display.py" line="753"/>
+        <location filename="../settings_page_display.py" line="760"/>
         <source>Glass opacity</source>
         <translation>Opacidad del cristal</translation>
     </message>
     <message>
-        <location filename="../settings_page_display.py" line="784"/>
+        <location filename="../settings_page_display.py" line="791"/>
         <source>Reset glass opacity to this theme&apos;s default</source>
         <translation>Restablecer la opacidad del cristal al valor por defecto del tema</translation>
     </message>
     <message>
-        <location filename="../settings_page_display.py" line="883"/>
+        <location filename="../settings_page_display.py" line="890"/>
         <source>Imported scheme</source>
         <translation>Esquema importado</translation>
     </message>
@@ -4058,12 +4069,12 @@ Subsonic requiere permiso de administrador para crear / editar / eliminar.</tran
         <translation>Las teclas multimedia pasan por MPRIS y por los ajustes de atajos de tu escritorio — aquí no se pueden reasignar.</translation>
     </message>
     <message>
-        <location filename="../settings_page_hotkeys.py" line="146"/>
+        <location filename="../settings_page_hotkeys.py" line="150"/>
         <source>Reset</source>
         <translation>Restablecer</translation>
     </message>
     <message>
-        <location filename="../settings_page_hotkeys.py" line="183"/>
+        <location filename="../settings_page_hotkeys.py" line="187"/>
         <source>Already used by “{0}” — pick another.</source>
         <translation>Ya lo usa «{0}» — elige otro.</translation>
     </message>
@@ -4252,17 +4263,17 @@ Subsonic requiere permiso de administrador para crear / editar / eliminar.</tran
         <translation>Conexión cancelada.</translation>
     </message>
     <message>
-        <location filename="../settings_dialog.py" line="735"/>
+        <location filename="../settings_dialog.py" line="736"/>
         <source>About {0}</source>
         <translation>Acerca de {0}</translation>
     </message>
     <message>
-        <location filename="../settings_page_casting.py" line="258"/>
+        <location filename="../settings_page_casting.py" line="259"/>
         <source>your local subnet</source>
         <translation>tu subred local</translation>
     </message>
     <message>
-        <location filename="../settings_page_casting.py" line="261"/>
+        <location filename="../settings_page_casting.py" line="262"/>
         <source>AirPlay and DLNA devices are found by sending discovery requests on your local network. A firewall can allow the request out but block the reply, so those devices never appear. If Chromecast works but AirPlay/DLNA don&apos;t, a firewall is the likely cause.
 
 </source>
@@ -4271,21 +4282,21 @@ Subsonic requiere permiso de administrador para crear / editar / eliminar.</tran
 </translation>
     </message>
     <message>
-        <location filename="../settings_page_casting.py" line="269"/>
+        <location filename="../settings_page_casting.py" line="270"/>
         <source>Windows
 When Windows asks on first launch, click “Allow access” for private networks. To change it later: Windows Security → Firewall &amp; network protection → Allow an app through firewall → enable jellytoast on Private networks.</source>
         <translation>Windows
 Cuando Windows pregunte en el primer arranque, pulsa «Permitir acceso» para redes privadas. Para cambiarlo después: Seguridad de Windows → Firewall y protección de red → Permitir una aplicación a través del firewall → habilita jellytoast en redes privadas.</translation>
     </message>
     <message>
-        <location filename="../settings_page_casting.py" line="278"/>
+        <location filename="../settings_page_casting.py" line="279"/>
         <source>macOS
 System Settings → Network → Firewall → Options → allow incoming connections for jellytoast (or click “Allow” if prompted on launch).</source>
         <translation>macOS
 Ajustes del Sistema → Red → Firewall → Opciones → permite conexiones entrantes para jellytoast (o pulsa «Permitir» si aparece al arrancar).</translation>
     </message>
     <message>
-        <location filename="../settings_page_casting.py" line="286"/>
+        <location filename="../settings_page_casting.py" line="287"/>
         <source>Linux — ufw
     sudo ufw allow from {0}
 
@@ -4300,7 +4311,7 @@ Linux — firewalld
     sudo firewall-cmd --reload</translation>
     </message>
     <message>
-        <location filename="../settings_page_casting.py" line="294"/>
+        <location filename="../settings_page_casting.py" line="295"/>
         <source>
 
 Ports used: UDP 5353 (mDNS / AirPlay), UDP 1900 (SSDP / DLNA), TCP {0} (cast proxy).</source>
@@ -4309,22 +4320,22 @@ Ports used: UDP 5353 (mDNS / AirPlay), UDP 1900 (SSDP / DLNA), TCP {0} (cast pro
 Puertos usados: UDP 5353 (mDNS / AirPlay), UDP 1900 (SSDP / DLNA), TCP {0} (proxy de envío).</translation>
     </message>
     <message>
-        <location filename="../settings_page_display.py" line="1134"/>
+        <location filename="../settings_page_display.py" line="1141"/>
         <source>Import a base16 theme</source>
         <translation>Importar un tema base16</translation>
     </message>
     <message>
-        <location filename="../settings_page_display.py" line="1136"/>
+        <location filename="../settings_page_display.py" line="1143"/>
         <source>base16 schemes (*.yaml *.yml);;All files (*)</source>
         <translation>Esquemas base16 (*.yaml *.yml);;Todos los archivos (*)</translation>
     </message>
     <message>
-        <location filename="../settings_page_display.py" line="1148"/>
+        <location filename="../settings_page_display.py" line="1155"/>
         <source>Import failed</source>
         <translation>Fallo al importar</translation>
     </message>
     <message>
-        <location filename="../settings_page_display.py" line="1149"/>
+        <location filename="../settings_page_display.py" line="1156"/>
         <source>Couldn&apos;t read that as a base16 colour scheme:
 
 {0}</source>
@@ -4333,12 +4344,12 @@ Puertos usados: UDP 5353 (mDNS / AirPlay), UDP 1900 (SSDP / DLNA), TCP {0} (prox
 {0}</translation>
     </message>
     <message>
-        <location filename="../settings_page_display.py" line="1194"/>
+        <location filename="../settings_page_display.py" line="1201"/>
         <source>Couldn&apos;t apply that theme</source>
         <translation>No se pudo aplicar ese tema</translation>
     </message>
     <message>
-        <location filename="../settings_page_display.py" line="1195"/>
+        <location filename="../settings_page_display.py" line="1202"/>
         <source>Couldn&apos;t read {0} as a base16 colour scheme:
 
 {1}</source>
@@ -4347,12 +4358,12 @@ Puertos usados: UDP 5353 (mDNS / AirPlay), UDP 1900 (SSDP / DLNA), TCP {0} (prox
 {1}</translation>
     </message>
     <message>
-        <location filename="../settings_page_display.py" line="1243"/>
+        <location filename="../settings_page_display.py" line="1250"/>
         <source>pywal palette not found</source>
         <translation>No se encontró la paleta de pywal</translation>
     </message>
     <message>
-        <location filename="../settings_page_display.py" line="1244"/>
+        <location filename="../settings_page_display.py" line="1251"/>
         <source>{0}
 
 Run pywal (or wallust) once so it generates a palette, then turn this back on.</source>
@@ -4361,12 +4372,12 @@ Run pywal (or wallust) once so it generates a palette, then turn this back on.</
 Ejecuta pywal (o wallust) una vez para que genere una paleta, y vuelve a activar esto.</translation>
     </message>
     <message>
-        <location filename="../settings_page_display.py" line="1271"/>
+        <location filename="../settings_page_display.py" line="1278"/>
         <source>No system accent</source>
         <translation>Sin acento del sistema</translation>
     </message>
     <message>
-        <location filename="../settings_page_display.py" line="1272"/>
+        <location filename="../settings_page_display.py" line="1279"/>
         <source>Your desktop didn&apos;t report an accent colour — this works on KDE Plasma and GNOME 47+.</source>
         <translation>Tu escritorio no informó de un color de acento — esto funciona en KDE Plasma y GNOME 47+.</translation>
     </message>
@@ -5326,17 +5337,17 @@ La carátula por pista no se modifica con esta escritura masiva.</translation>
 <context>
     <name>_AboutDialog</name>
     <message>
-        <location filename="../settings_widgets.py" line="323"/>
+        <location filename="../settings_widgets.py" line="401"/>
         <source>Native desktop client for Jellyfin and Subsonic / Navidrome — all-PySide6 surfaces with bit-perfect mpv playback, MPRIS2, system tray, floating mini player, and Chromecast/AirPlay casting.</source>
         <translation>Cliente de escritorio nativo para Jellyfin y Subsonic / Navidrome — interfaz completamente PySide6 con reproducción bit-perfect por mpv, MPRIS2, bandeja del sistema, mini reproductor flotante y envío por Chromecast/AirPlay.</translation>
     </message>
     <message>
-        <location filename="../settings_widgets.py" line="335"/>
+        <location filename="../settings_widgets.py" line="413"/>
         <source>Close</source>
         <translation>Cerrar</translation>
     </message>
     <message>
-        <location filename="../settings_widgets.py" line="360"/>
+        <location filename="../settings_widgets.py" line="438"/>
         <source>About jellytoast</source>
         <translation>Acerca de jellytoast</translation>
     </message>
@@ -5475,7 +5486,7 @@ La carátula por pista no se modifica con esta escritura masiva.</translation>
 <context>
     <name>_EyedropperSwatch</name>
     <message>
-        <location filename="../settings_widgets.py" line="134"/>
+        <location filename="../settings_widgets.py" line="212"/>
         <source>Pick a colour from the screen</source>
         <translation>Elegir un color desde la pantalla</translation>
     </message>
@@ -5510,71 +5521,71 @@ La carátula por pista no se modifica con esta escritura masiva.</translation>
     <name>_LibraryListView</name>
     <message>
         <location filename="../library_grid.py" line="1930"/>
-        <location filename="../library_grid.py" line="3247"/>
+        <location filename="../library_grid.py" line="3251"/>
         <source>this {0}</source>
         <translation>este {0}</translation>
     </message>
     <message>
         <location filename="../library_grid.py" line="1933"/>
-        <location filename="../library_grid.py" line="3208"/>
-        <location filename="../library_grid.py" line="3250"/>
+        <location filename="../library_grid.py" line="3212"/>
+        <location filename="../library_grid.py" line="3254"/>
         <source>Remove download</source>
         <translation>Eliminar descarga</translation>
     </message>
     <message>
         <location filename="../library_grid.py" line="1934"/>
-        <location filename="../library_grid.py" line="3251"/>
+        <location filename="../library_grid.py" line="3255"/>
         <source>Remove the downloaded files for “{0}”?</source>
         <translation>¿Eliminar los archivos descargados de «{0}»?</translation>
     </message>
     <message>
         <location filename="../library_grid.py" line="1935"/>
-        <location filename="../library_grid.py" line="3252"/>
+        <location filename="../library_grid.py" line="3256"/>
         <source>Remove</source>
         <translation>Eliminar</translation>
     </message>
     <message>
-        <location filename="../library_grid.py" line="3168"/>
+        <location filename="../library_grid.py" line="3172"/>
         <source>Play</source>
         <translation>Reproducir</translation>
     </message>
     <message>
-        <location filename="../library_grid.py" line="3171"/>
+        <location filename="../library_grid.py" line="3175"/>
         <source>Remove from favorites</source>
         <translation>Quitar de favoritos</translation>
     </message>
     <message>
-        <location filename="../library_grid.py" line="3173"/>
+        <location filename="../library_grid.py" line="3177"/>
         <source>Favorite</source>
         <translation>Favorito</translation>
     </message>
     <message>
-        <location filename="../library_grid.py" line="3191"/>
+        <location filename="../library_grid.py" line="3195"/>
         <source>Start album radio</source>
         <translation>Iniciar radio del álbum</translation>
     </message>
     <message>
-        <location filename="../library_grid.py" line="3193"/>
+        <location filename="../library_grid.py" line="3197"/>
         <source>Start artist radio</source>
         <translation>Iniciar radio del artista</translation>
     </message>
     <message>
-        <location filename="../library_grid.py" line="3200"/>
+        <location filename="../library_grid.py" line="3204"/>
         <source>Create smart playlist: More like {0}</source>
         <translation>Crear lista inteligente: Más como {0}</translation>
     </message>
     <message>
-        <location filename="../library_grid.py" line="3202"/>
+        <location filename="../library_grid.py" line="3206"/>
         <source>Create smart playlist: Deep Cuts: {0}</source>
         <translation>Crear lista inteligente: Rarezas: {0}</translation>
     </message>
     <message>
-        <location filename="../library_grid.py" line="3210"/>
+        <location filename="../library_grid.py" line="3214"/>
         <source>Download</source>
         <translation>Descargar</translation>
     </message>
     <message>
-        <location filename="../library_grid.py" line="3218"/>
+        <location filename="../library_grid.py" line="3222"/>
         <source>Delete playlist…</source>
         <translation>Eliminar lista de reproducción…</translation>
     </message>

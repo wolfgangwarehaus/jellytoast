@@ -391,7 +391,7 @@ class _GeneralPageMixin:
             v.addLayout(up_row)
             from jellytoast.platform_compat import is_mobile_shell
 
-            if is_mobile_shell():
+            if getattr(self, "_compact", False) or is_mobile_shell():
                 # No room beside the checkbox at phone width — its own line.
                 v.addSpacing(6)
                 v.addWidget(self._update_check_now, 0, Qt.AlignmentFlag.AlignLeft)

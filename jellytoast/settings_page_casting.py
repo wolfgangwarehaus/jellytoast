@@ -218,6 +218,7 @@ class _CastingPageMixin:
                 # doesn't render rich text) so it reads dim grey.
                 hint_lbl = QLabel(hint)
                 hint_lbl.setStyleSheet(f"color: {TEXT_FAINT}; {type_qss(TYPE_CAPTION)}")
+                hint_lbl.setWordWrap(True)  # narrow Settings: wrap, don't overflow
                 routing_grid.addWidget(hint_lbl, r, 1, Qt.AlignmentFlag.AlignVCenter)
             self._cast_routing_radios[key] = rb
         v.addLayout(routing_grid)

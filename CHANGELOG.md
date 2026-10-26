@@ -15,8 +15,9 @@ developer-facing history lives in [`docs/CHANGELOG.md`](docs/CHANGELOG.md).
 - **Install and update through Flatpak.** Add jellytoast's own signed Flatpak
   repo once and updates show up in GNOME Software, KDE Discover or
   `flatpak update`. See wolfgangwarehaus.com/flatpak.
-- **Tidier top bar in a small window.** Shrink jellytoast right down and the
-  extra buttons tuck into a ⋮ menu instead of piling on top of each other.
+- **Tidier at small sizes.** Shrink jellytoast right down and the extra
+  top-bar buttons tuck into a ⋮ menu instead of piling on top of each other,
+  and Settings fits a narrow window without scrolling sideways.
 - **Artist pages follow your library picker.** With only some libraries
   selected, an artist's page no longer shows albums from the ones you
   switched off.

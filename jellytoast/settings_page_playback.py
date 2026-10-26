@@ -511,8 +511,9 @@ class _PlaybackPageMixin:
         # boundary and mirrors what the preset row below uses.
         from jellytoast.platform_compat import is_mobile_shell
 
-        # mirrors preset_row's trailing pad (none on a phone)
-        _CONTENT_RIGHT_PAD = 0 if is_mobile_shell() else 46
+        # mirrors preset_row's trailing pad (none on a phone or narrow window)
+        narrow = getattr(self, "_compact", False) or is_mobile_shell()
+        _CONTENT_RIGHT_PAD = 0 if narrow else 46
         dur_row = QHBoxLayout()
         dur_row.setContentsMargins(0, 0, _CONTENT_RIGHT_PAD, 0)
         dur_row.setSpacing(16)
@@ -628,7 +629,11 @@ class _PlaybackPageMixin:
         """
         from jellytoast.settings_eq_page import EqSettingsPage
 
-        self._eq_page = EqSettingsPage(self.s, label_col_w=self._playback_label_w)
+        self._eq_page = EqSettingsPage(
+            self.s,
+            label_col_w=self._playback_label_w,
+            narrow=getattr(self, "_compact", False),
+        )
         self._eq_enabled_check = self._eq_page._eq_enabled_check
         self._eq_linear_phase_check = self._eq_page._eq_linear_phase_check
         self._eq_advanced_check = self._eq_page._eq_advanced_check
@@ -979,9 +984,16 @@ class _PlaybackPageMixin:
             return
         from jellytoast import pipewire_setup as _pws
 
+        # Narrow Settings: the full label (wider still in Spanish) can't fit
+        # 360 px; the BIT-PERFECT header and the tooltip carry the rest.
+        narrow = getattr(self, "_compact", False)
         if _pws.is_installed():
             self._pw_install_btn.setText(
-                QCoreApplication.translate("SettingsDialog", "Remove PipeWire bit-perfect config")
+                QCoreApplication.translate("SettingsDialog", "Remove config")
+                if narrow
+                else QCoreApplication.translate(
+                    "SettingsDialog", "Remove PipeWire bit-perfect config"
+                )
             )
             self._pw_install_btn.setToolTip(
                 QCoreApplication.translate(
@@ -990,7 +1002,11 @@ class _PlaybackPageMixin:
             )
         else:
             self._pw_install_btn.setText(
-                QCoreApplication.translate("SettingsDialog", "Install PipeWire bit-perfect config")
+                QCoreApplication.translate("SettingsDialog", "Install config")
+                if narrow
+                else QCoreApplication.translate(
+                    "SettingsDialog", "Install PipeWire bit-perfect config"
+                )
             )
             self._pw_install_btn.setToolTip(
                 QCoreApplication.translate(

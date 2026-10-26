@@ -125,12 +125,16 @@ class _HotkeysPageMixin:
         # as a column rather than a strip of edge-aligned widgets.
         from jellytoast.platform_compat import is_mobile_shell
 
-        row.setContentsMargins(0, 0, 0 if is_mobile_shell() else 140, 0)
+        # Narrow Settings (a phone, or opened from a narrow window) needs
+        # the room, so no trailing indent there.
+        narrow = getattr(self, "_compact", False) or is_mobile_shell()
+        row.setContentsMargins(0, 0, 0 if narrow else 140, 0)
         row.setSpacing(8)
         name = QLabel(entry["label"])
         name.setStyleSheet(f"color: {TEXT}; {type_qss(TYPE_BODY)}")
-        row.addWidget(name)
-        row.addStretch(1)
+        # Wraps rather than forcing the row past a narrow page.
+        name.setWordWrap(True)
+        row.addWidget(name, 1)
 
         edit = QKeySequenceEdit()
         try:
@@ -139,7 +143,7 @@ class _HotkeysPageMixin:
         except (AttributeError, TypeError):
             pass  # Qt < 6.5 — multi-chord accepted, harmless
         edit.setKeySequence(_hotkeys.get_sequence(action_id, entry["default_seq"]))
-        edit.setMaximumWidth(120 if is_mobile_shell() else 170)
+        edit.setMaximumWidth(150 if narrow else 170)
         edit.editingFinished.connect(lambda aid=action_id: self._on_hotkey_edited(aid))
         row.addWidget(edit)
 
@@ -225,7 +229,10 @@ class _HotkeysPageMixin:
         # than drifting all the way to the page's right edge.
         from jellytoast.platform_compat import is_mobile_shell
 
-        row.setContentsMargins(0, 0, 0 if is_mobile_shell() else 140, 0)
+        # Narrow Settings (a phone, or opened from a narrow window) needs
+        # the room, so no trailing indent there.
+        narrow = getattr(self, "_compact", False) or is_mobile_shell()
+        row.setContentsMargins(0, 0, 0 if narrow else 140, 0)
         name = QLabel(label)
         name.setStyleSheet(f"color: {TEXT}; {type_qss(TYPE_BODY)}")
         row.addWidget(name)

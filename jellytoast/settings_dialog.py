@@ -107,9 +107,10 @@ class SettingsDialog(
         super().__init__(parent)
         from jellytoast.platform_compat import is_mobile_shell
 
-        if is_mobile_shell():
-            # The theme row (combo + Import) must fit a ~370 px phone page.
-            self._THEME_COMBO_W = 220
+        if is_mobile_shell() or self._compact:
+            # The theme row (combo + Import) must fit a ~370 px phone page
+            # (or Settings opened from a narrow desktop window).
+            self._THEME_COMBO_W = 205
         # Delete the C++ object when the dialog finishes. It's rebuilt
         # fresh on every open (jellytoast.app._open_settings drops its ref on
         # finished) and several pages connect bound-method slots to the
@@ -431,7 +432,9 @@ class SettingsDialog(
         # to the nav text. Matching that here makes the two columns
         # read as peer rows starting at the same baseline rather
         # than the right pane drifting up or down.
-        v.setContentsMargins(20, 15, 20, 14)
+        # Narrow Settings (360 px): 12 px sides so the pages' widest rows fit.
+        side = 12 if self._compact else 20
+        v.setContentsMargins(side, 15, side, 14)
         v.setSpacing(0)
         if expand:
             self.stack.addWidget(wrap)

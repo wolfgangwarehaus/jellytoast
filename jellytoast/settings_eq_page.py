@@ -22,7 +22,6 @@ import json
 
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtWidgets import (
-    QCheckBox,
     QComboBox,
     QDialog,
     QDialogButtonBox,
@@ -48,6 +47,7 @@ from jellytoast.design_tokens import (
 )
 from jellytoast.player_state import PlayerBus
 from jellytoast.selector import Selector as _Selector
+from jellytoast.settings_widgets import WrapCheckBox
 from jellytoast.ui_helpers import (
     DISABLED_FG,
     TEXT_DIM,
@@ -80,10 +80,12 @@ class EqSettingsPage(QWidget):
     """The Equalizer section of the Settings → Playback page, as a
     standalone widget. See module docstring for the seam contract."""
 
-    def __init__(self, settings, *, label_col_w: int = 130, parent=None):
+    def __init__(self, settings, *, label_col_w: int = 130, narrow: bool = False, parent=None):
         super().__init__(parent)
         self.s = settings
         self._label_col_w = int(label_col_w)
+        # Phone-width layout: a phone shell, or Settings opened narrow.
+        self._narrow = bool(narrow)
         # Initialised here (the in-dialog version relied on getattr(...,
         # False) defaults before the first event set them).
         self._eq_cast_blocking = False
@@ -120,9 +122,12 @@ class EqSettingsPage(QWidget):
         # master toggle plus EQ T2's opt-in mode. "Enable" reads
         # rather than "Equalizer" since the section header already
         # labels the section.
+        from jellytoast.platform_compat import is_mobile_shell
+
         eq_toggle_row = QHBoxLayout()
-        eq_toggle_row.setSpacing(20)
-        self._eq_enabled_check = QCheckBox(self.tr("Enable"))
+        # Tighter on a narrow page so Enable / Linear phase / Curve fit 328 px.
+        eq_toggle_row.setSpacing(12 if (self._narrow or is_mobile_shell()) else 20)
+        self._eq_enabled_check = WrapCheckBox(self.tr("Enable"))
         self._eq_enabled_check.setChecked(self.s.eq_enabled)
         self._eq_enabled_check.toggled.connect(self._on_eq_enabled_toggled)
         eq_toggle_row.addWidget(self._eq_enabled_check)
@@ -135,7 +140,7 @@ class EqSettingsPage(QWidget):
         # built-in side margin like the _info_button IconButtons).
         lp_row.setSpacing(12)
         lp_row.setContentsMargins(0, 0, 0, 0)
-        self._eq_linear_phase_check = QCheckBox(self.tr("Linear phase"))
+        self._eq_linear_phase_check = WrapCheckBox(self.tr("Linear phase"))
         self._eq_linear_phase_check.setChecked(self.s.eq_linear_phase)
         self._eq_linear_phase_check.setToolTip(
             self.tr("Linear-phase FIR EQ — see the ⓘ for the trade-offs.")
@@ -161,7 +166,7 @@ class EqSettingsPage(QWidget):
         # slider strip with the parametric curve editor; same band
         # data, different surface. Settings persists the choice so the
         # user's preferred view comes back next session.
-        self._eq_advanced_check = QCheckBox(self.tr("Curve"))
+        self._eq_advanced_check = WrapCheckBox(self.tr("Curve"))
         self._eq_advanced_check.setChecked(self.s.eq_view_advanced)
         self._eq_advanced_check.setToolTip(
             self.tr(
@@ -190,7 +195,7 @@ class EqSettingsPage(QWidget):
         # the row, and Save / Delete drop to a row of their own below.
         from jellytoast.platform_compat import is_mobile_shell
 
-        phone = is_mobile_shell()
+        phone = self._narrow or is_mobile_shell()
         preset_row = QHBoxLayout()
         preset_row.setContentsMargins(0, 0, 0 if phone else 46, 0)
         preset_row.setSpacing(16)
@@ -354,8 +359,8 @@ class EqSettingsPage(QWidget):
 
             if phone:
                 # Eleven fixed 42 px columns are 526 px — wider than a phone.
-                # Share the width instead (≈ 30 px each at 360).
-                col_widget.setMinimumWidth(26)
+                # Share the width instead (≈ 28 px each at 360).
+                col_widget.setMinimumWidth(24)
                 sf_layout.addWidget(col_widget, 1)
             else:
                 col_widget.setFixedWidth(42)
@@ -395,6 +400,7 @@ class EqSettingsPage(QWidget):
         self._autoeq_status.setStyleSheet(
             f"color: {TEXT_DIM}; {type_qss(TYPE_CAPTION)}"
         )
+        self._autoeq_status.setWordWrap(True)  # a long profile name wraps
         autoeq_row.addWidget(self._autoeq_status, 1)
         self._autoeq_import_btn = QPushButton(self.tr("Import…"))
         self._autoeq_import_btn.clicked.connect(self._on_autoeq_import_clicked)
