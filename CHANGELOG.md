@@ -17,6 +17,9 @@ developer-facing history lives in [`docs/CHANGELOG.md`](docs/CHANGELOG.md).
   `flatpak update`. See wolfgangwarehaus.com/flatpak.
 - **Tidier top bar in a small window.** Shrink jellytoast right down and the
   extra buttons tuck into a ⋮ menu instead of piling on top of each other.
+- **Artist pages follow your library picker.** With only some libraries
+  selected, an artist's page no longer shows albums from the ones you
+  switched off.
 - **Flatpak for ARM.** There's now an aarch64 Flatpak too, for Linux phones
   like the OnePlus 6T and ARM laptops.
 
