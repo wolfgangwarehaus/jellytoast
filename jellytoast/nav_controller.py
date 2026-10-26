@@ -266,6 +266,7 @@ class _NavMixin:
             ("_smart_playlists_view", "Smart playlists"),
             ("_downloads_lib_view", "Downloads"),
             ("_radio_view", "Radio"),
+            ("search_view", "Search"),
         )
         for attr, label in surfaces:
             if getattr(self, attr, None) is widget:
@@ -679,6 +680,8 @@ class _NavMixin:
         self.np_bar.set_left_cluster_visible(True)
         # Search is its own surface — no library controls apply.
         self.top_bar.set_library_controls_visible(False)
+        # ...and its own title: it kept the last page's ("Suggestions").
+        self.top_bar.set_active_tab("Search")
         self.search_view.focus_input()
         self._push_nav(lambda: self._show_search_view())
 

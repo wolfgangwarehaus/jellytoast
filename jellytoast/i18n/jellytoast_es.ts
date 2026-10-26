@@ -181,7 +181,7 @@
     </message>
     <message>
         <location filename="../artist_page.py" line="246"/>
-        <location filename="../artist_page.py" line="610"/>
+        <location filename="../artist_page.py" line="613"/>
         <source>Loading…</source>
         <translation>Cargando…</translation>
     </message>
@@ -201,22 +201,22 @@
         <translation>El artista está en tu biblioteca pero no aparecen álbumes — prueba a actualizar o volver atrás.</translation>
     </message>
     <message>
-        <location filename="../artist_page.py" line="672"/>
+        <location filename="../artist_page.py" line="675"/>
         <source>{0} albums</source>
         <translation>{0} álbumes</translation>
     </message>
     <message>
-        <location filename="../artist_page.py" line="672"/>
+        <location filename="../artist_page.py" line="675"/>
         <source>1 album</source>
         <translation>1 álbum</translation>
     </message>
     <message>
-        <location filename="../artist_page.py" line="680"/>
+        <location filename="../artist_page.py" line="683"/>
         <source>Couldn&apos;t load artist</source>
         <translation>No se pudo cargar el artista</translation>
     </message>
     <message>
-        <location filename="../artist_page.py" line="683"/>
+        <location filename="../artist_page.py" line="686"/>
         <source>Unknown</source>
         <translation>Desconocido</translation>
     </message>
@@ -900,177 +900,177 @@ Esto libera el almacenamiento de inmediato. Tu biblioteca en el servidor no se v
         <translation>ECUALIZADOR</translation>
     </message>
     <message>
-        <location filename="../settings_eq_page.py" line="127"/>
+        <location filename="../settings_eq_page.py" line="130"/>
         <source>Enable</source>
         <translation>Activar</translation>
     </message>
     <message>
-        <location filename="../settings_eq_page.py" line="140"/>
-        <location filename="../settings_eq_page.py" line="571"/>
+        <location filename="../settings_eq_page.py" line="143"/>
+        <location filename="../settings_eq_page.py" line="575"/>
         <source>Linear phase</source>
         <translation>Fase lineal</translation>
     </message>
     <message>
-        <location filename="../settings_eq_page.py" line="143"/>
+        <location filename="../settings_eq_page.py" line="146"/>
         <source>Linear-phase FIR EQ — see the ⓘ for the trade-offs.</source>
         <translation>EQ FIR de fase lineal — mira la ⓘ para los pros y contras.</translation>
     </message>
     <message>
-        <location filename="../settings_eq_page.py" line="155"/>
+        <location filename="../settings_eq_page.py" line="158"/>
         <source>About linear phase</source>
         <translation>Acerca de la fase lineal</translation>
     </message>
     <message>
-        <location filename="../settings_eq_page.py" line="166"/>
+        <location filename="../settings_eq_page.py" line="169"/>
         <source>Curve</source>
         <translation>Curva</translation>
     </message>
     <message>
-        <location filename="../settings_eq_page.py" line="170"/>
+        <location filename="../settings_eq_page.py" line="173"/>
         <source>Parametric curve editor — drag nodes on a log-frequency canvas. AutoEQ profiles allow horizontal drag (movable centres); graphic mode keeps freqs locked, gain only.</source>
         <translation>Editor de curva paramétrico — arrastra nodos sobre un lienzo de frecuencia logarítmica. Los perfiles AutoEQ permiten arrastre horizontal (centros móviles); el modo gráfico mantiene las frecuencias fijas, solo ganancia.</translation>
     </message>
     <message>
-        <location filename="../settings_eq_page.py" line="200"/>
+        <location filename="../settings_eq_page.py" line="203"/>
         <source>Preset:</source>
         <translation>Preajuste:</translation>
     </message>
     <message>
-        <location filename="../settings_eq_page.py" line="224"/>
+        <location filename="../settings_eq_page.py" line="227"/>
         <source>Save…</source>
         <translation>Guardar…</translation>
     </message>
     <message>
-        <location filename="../settings_eq_page.py" line="228"/>
-        <location filename="../settings_eq_page.py" line="1149"/>
+        <location filename="../settings_eq_page.py" line="231"/>
+        <location filename="../settings_eq_page.py" line="1153"/>
         <source>Delete</source>
         <translation>Eliminar</translation>
     </message>
     <message>
-        <location filename="../settings_eq_page.py" line="278"/>
+        <location filename="../settings_eq_page.py" line="281"/>
         <source>Pre</source>
         <translation>Pre</translation>
     </message>
     <message>
-        <location filename="../settings_eq_page.py" line="396"/>
-        <location filename="../settings_eq_page.py" line="585"/>
+        <location filename="../settings_eq_page.py" line="399"/>
+        <location filename="../settings_eq_page.py" line="589"/>
         <source>AutoEQ: not loaded</source>
         <translation>AutoEQ: sin cargar</translation>
     </message>
     <message>
-        <location filename="../settings_eq_page.py" line="401"/>
+        <location filename="../settings_eq_page.py" line="405"/>
         <source>Import…</source>
         <translation>Importar…</translation>
     </message>
     <message>
-        <location filename="../settings_eq_page.py" line="404"/>
+        <location filename="../settings_eq_page.py" line="408"/>
         <source>Clear</source>
         <translation>Limpiar</translation>
     </message>
     <message>
-        <location filename="../settings_eq_page.py" line="593"/>
-        <location filename="../settings_eq_page.py" line="684"/>
+        <location filename="../settings_eq_page.py" line="597"/>
+        <location filename="../settings_eq_page.py" line="688"/>
         <source>{0} bands</source>
         <translation>{0} bandas</translation>
     </message>
     <message>
-        <location filename="../settings_eq_page.py" line="595"/>
-        <location filename="../settings_eq_page.py" line="686"/>
+        <location filename="../settings_eq_page.py" line="599"/>
+        <location filename="../settings_eq_page.py" line="690"/>
         <source>preamp {0:+.1f} dB</source>
         <translation>preamplificación {0:+.1f} dB</translation>
     </message>
     <message>
-        <location filename="../settings_eq_page.py" line="597"/>
+        <location filename="../settings_eq_page.py" line="601"/>
         <source>{0} skipped</source>
         <translation>{0} omitidos</translation>
     </message>
     <message>
-        <location filename="../settings_eq_page.py" line="598"/>
+        <location filename="../settings_eq_page.py" line="602"/>
         <source>AutoEQ: {0}</source>
         <translation>AutoEQ: {0}</translation>
     </message>
     <message>
-        <location filename="../settings_eq_page.py" line="601"/>
+        <location filename="../settings_eq_page.py" line="605"/>
         <source>AutoEQ: (corrupt — Clear to reset)</source>
         <translation>AutoEQ: (dañado — Limpiar para restablecer)</translation>
     </message>
     <message>
-        <location filename="../settings_eq_page.py" line="619"/>
+        <location filename="../settings_eq_page.py" line="623"/>
         <source>Import AutoEQ profile</source>
         <translation>Importar perfil AutoEQ</translation>
     </message>
     <message>
-        <location filename="../settings_eq_page.py" line="626"/>
+        <location filename="../settings_eq_page.py" line="630"/>
         <source>Paste a ParametricEQ.txt-style profile from autoeq.app or your headphone correction source. Each line should look like: &lt;code&gt;Filter 1: ON PK Fc 105 Hz Gain 5.5 dB Q 1.41&lt;/code&gt;. Shelf filters (LSC / HSC) are skipped — most headphone profiles are predominantly peaking filters.</source>
         <translation>Pega un perfil tipo ParametricEQ.txt de autoeq.app o de tu fuente de corrección de auriculares. Cada línea debe verse así: &lt;code&gt;Filter 1: ON PK Fc 105 Hz Gain 5.5 dB Q 1.41&lt;/code&gt;. Los filtros shelf (LSC / HSC) se omiten — la mayoría de los perfiles de auriculares son predominantemente filtros de pico.</translation>
     </message>
     <message>
-        <location filename="../settings_eq_page.py" line="665"/>
+        <location filename="../settings_eq_page.py" line="669"/>
         <source>Import</source>
         <translation>Importar</translation>
     </message>
     <message>
-        <location filename="../settings_eq_page.py" line="679"/>
+        <location filename="../settings_eq_page.py" line="683"/>
         <source>No peaking filters detected — check the format.</source>
         <translation>No se detectaron filtros de pico — revisa el formato.</translation>
     </message>
     <message>
-        <location filename="../settings_eq_page.py" line="688"/>
+        <location filename="../settings_eq_page.py" line="692"/>
         <source>{0} non-peaking filters will be skipped</source>
         <translation>Se omitirán {0} filtros que no son de pico</translation>
     </message>
     <message>
-        <location filename="../settings_eq_page.py" line="689"/>
+        <location filename="../settings_eq_page.py" line="693"/>
         <source>Ready: {0}</source>
         <translation>Listo: {0}</translation>
     </message>
     <message>
-        <location filename="../settings_eq_page.py" line="934"/>
+        <location filename="../settings_eq_page.py" line="938"/>
         <source>Casting — EQ applies to local playback only and is inactive now.</source>
         <translation>Enviando — el EQ solo se aplica a la reproducción local y ahora está inactivo.</translation>
     </message>
     <message>
-        <location filename="../settings_eq_page.py" line="1104"/>
+        <location filename="../settings_eq_page.py" line="1108"/>
         <source>Save preset</source>
         <translation>Guardar preajuste</translation>
     </message>
     <message>
-        <location filename="../settings_eq_page.py" line="1104"/>
+        <location filename="../settings_eq_page.py" line="1108"/>
         <source>Preset name:</source>
         <translation>Nombre del preajuste:</translation>
     </message>
     <message>
-        <location filename="../settings_eq_page.py" line="1113"/>
+        <location filename="../settings_eq_page.py" line="1117"/>
         <source>Name taken</source>
         <translation>Nombre en uso</translation>
     </message>
     <message>
-        <location filename="../settings_eq_page.py" line="1114"/>
+        <location filename="../settings_eq_page.py" line="1118"/>
         <source>&apos;{0}&apos; is a built-in preset name. Pick a different name.</source>
         <translation>«{0}» es el nombre de un preajuste integrado. Elige otro nombre.</translation>
     </message>
     <message>
-        <location filename="../settings_eq_page.py" line="1121"/>
+        <location filename="../settings_eq_page.py" line="1125"/>
         <source>Overwrite preset</source>
         <translation>Sobrescribir preajuste</translation>
     </message>
     <message>
-        <location filename="../settings_eq_page.py" line="1122"/>
+        <location filename="../settings_eq_page.py" line="1126"/>
         <source>User preset &apos;{0}&apos; already exists. Overwrite?</source>
         <translation>El preajuste de usuario «{0}» ya existe. ¿Sobrescribirlo?</translation>
     </message>
     <message>
-        <location filename="../settings_eq_page.py" line="1123"/>
+        <location filename="../settings_eq_page.py" line="1127"/>
         <source>Overwrite</source>
         <translation>Sobrescribir</translation>
     </message>
     <message>
-        <location filename="../settings_eq_page.py" line="1147"/>
+        <location filename="../settings_eq_page.py" line="1151"/>
         <source>Delete preset</source>
         <translation>Eliminar preajuste</translation>
     </message>
     <message>
-        <location filename="../settings_eq_page.py" line="1148"/>
+        <location filename="../settings_eq_page.py" line="1152"/>
         <source>Delete user preset &apos;{0}&apos;?</source>
         <translation>¿Eliminar el preajuste de usuario «{0}»?</translation>
     </message>
@@ -1109,7 +1109,7 @@ Esto libera el almacenamiento de inmediato. Tu biblioteca en el servidor no se v
     </message>
     <message>
         <location filename="../mini_player.py" line="1600"/>
-        <source>Nothing Playing</source>
+        <source>Nothing playing</source>
         <translation>Nada en reproducción</translation>
     </message>
 </context>
@@ -1319,13 +1319,13 @@ jellytoast funcionará, pero las funciones de bandeja no estarán disponibles.</
     </message>
     <message>
         <location filename="../top_bar.py" line="172"/>
-        <location filename="../top_bar.py" line="640"/>
+        <location filename="../top_bar.py" line="650"/>
         <source>Home</source>
         <translation>Inicio</translation>
     </message>
     <message>
         <location filename="../top_bar.py" line="173"/>
-        <location filename="../top_bar.py" line="642"/>
+        <location filename="../top_bar.py" line="652"/>
         <source>Settings</source>
         <translation>Ajustes</translation>
     </message>
@@ -1341,7 +1341,7 @@ jellytoast funcionará, pero las funciones de bandeja no estarán disponibles.</
     </message>
     <message>
         <location filename="../top_bar.py" line="297"/>
-        <location filename="../top_bar.py" line="634"/>
+        <location filename="../top_bar.py" line="644"/>
         <source>Shuffle all</source>
         <translation>Reproducir todo aleatorio</translation>
     </message>
@@ -1352,7 +1352,7 @@ jellytoast funcionará, pero las funciones de bandeja no estarán disponibles.</
     </message>
     <message>
         <location filename="../top_bar.py" line="381"/>
-        <location filename="../top_bar.py" line="628"/>
+        <location filename="../top_bar.py" line="638"/>
         <source>Search</source>
         <translation>Buscar</translation>
     </message>
@@ -1377,42 +1377,42 @@ jellytoast funcionará, pero las funciones de bandeja no estarán disponibles.</
         <translation>Cerrar</translation>
     </message>
     <message>
-        <location filename="../top_bar.py" line="631"/>
+        <location filename="../top_bar.py" line="641"/>
         <source>Libraries…</source>
         <translation>Bibliotecas…</translation>
     </message>
     <message>
-        <location filename="../top_bar.py" line="635"/>
+        <location filename="../top_bar.py" line="645"/>
         <source>Sort…</source>
         <translation>Ordenar…</translation>
     </message>
     <message>
-        <location filename="../top_bar.py" line="637"/>
+        <location filename="../top_bar.py" line="647"/>
         <source>Show as list</source>
         <translation>Ver como lista</translation>
     </message>
     <message>
-        <location filename="../top_bar.py" line="637"/>
+        <location filename="../top_bar.py" line="647"/>
         <source>Show as grid</source>
         <translation>Ver como cuadrícula</translation>
     </message>
     <message>
-        <location filename="../top_bar.py" line="908"/>
+        <location filename="../top_bar.py" line="930"/>
         <source>Ascending</source>
         <translation>Ascendente</translation>
     </message>
     <message>
-        <location filename="../top_bar.py" line="909"/>
+        <location filename="../top_bar.py" line="931"/>
         <source>Descending</source>
         <translation>Descendente</translation>
     </message>
     <message>
-        <location filename="../top_bar.py" line="952"/>
+        <location filename="../top_bar.py" line="974"/>
         <source>Sort: {0} ({1})</source>
         <translation>Orden: {0} ({1})</translation>
     </message>
     <message>
-        <location filename="../top_bar.py" line="1259"/>
+        <location filename="../top_bar.py" line="1302"/>
         <source>All libraries</source>
         <translation>Todas las bibliotecas</translation>
     </message>
@@ -2028,7 +2028,7 @@ jellytoast funcionará, pero las funciones de bandeja no estarán disponibles.</
         <location filename="../now_playing_bar.py" line="736"/>
         <location filename="../now_playing_bar.py" line="776"/>
         <location filename="../now_playing_bar.py" line="1810"/>
-        <source>Nothing Playing</source>
+        <source>Nothing playing</source>
         <translation>Nada en reproducción</translation>
     </message>
     <message>
@@ -2232,7 +2232,7 @@ jellytoast funcionará, pero las funciones de bandeja no estarán disponibles.</
         <location filename="../now_playing_page.py" line="1182"/>
         <location filename="../np_phone.py" line="490"/>
         <location filename="../np_phone.py" line="617"/>
-        <source>Nothing Playing</source>
+        <source>Nothing playing</source>
         <translation>Nada en reproducción</translation>
     </message>
     <message>
@@ -3087,80 +3087,80 @@ Revisa el PIN — la causa más común es una errata o un código caducado (el r
 <context>
     <name>RadioView</name>
     <message>
-        <location filename="../radio_view.py" line="85"/>
+        <location filename="../radio_view.py" line="86"/>
         <source>Edit station</source>
         <translation>Editar emisora</translation>
     </message>
     <message>
-        <location filename="../radio_view.py" line="87"/>
-        <location filename="../radio_view.py" line="488"/>
+        <location filename="../radio_view.py" line="88"/>
+        <location filename="../radio_view.py" line="491"/>
         <source>Add station</source>
         <translation>Añadir emisora</translation>
     </message>
     <message>
-        <location filename="../radio_view.py" line="235"/>
+        <location filename="../radio_view.py" line="236"/>
         <source>Popular stations</source>
         <translation>Emisoras populares</translation>
     </message>
     <message>
-        <location filename="../radio_view.py" line="484"/>
+        <location filename="../radio_view.py" line="487"/>
         <source>Browse popular</source>
         <translation>Explorar populares</translation>
     </message>
     <message>
-        <location filename="../radio_view.py" line="516"/>
+        <location filename="../radio_view.py" line="519"/>
         <source>No radio stations yet.
 Use “Add station” to paste in a stream URL — SomaFM, NTS, your local public radio&apos;s stream, …</source>
         <translation>Aún no hay emisoras de radio.
 Pulsa «Añadir emisora» y pega la URL de un stream — SomaFM, NTS, el stream de tu radio pública local, …</translation>
     </message>
     <message>
-        <location filename="../radio_view.py" line="635"/>
+        <location filename="../radio_view.py" line="638"/>
         <source>Couldn&apos;t load stations</source>
         <translation>No se pudieron cargar las emisoras</translation>
     </message>
     <message>
-        <location filename="../radio_view.py" line="636"/>
-        <location filename="../radio_view.py" line="814"/>
+        <location filename="../radio_view.py" line="639"/>
+        <location filename="../radio_view.py" line="817"/>
         <source>The provider returned an error:
 {0}</source>
         <translation>El proveedor devolvió un error:
 {0}</translation>
     </message>
     <message>
-        <location filename="../radio_view.py" line="767"/>
+        <location filename="../radio_view.py" line="770"/>
         <source>this station</source>
         <translation>esta emisora</translation>
     </message>
     <message>
-        <location filename="../radio_view.py" line="770"/>
+        <location filename="../radio_view.py" line="773"/>
         <source>Remove station</source>
         <translation>Eliminar emisora</translation>
     </message>
     <message>
-        <location filename="../radio_view.py" line="771"/>
+        <location filename="../radio_view.py" line="774"/>
         <source>Remove “{0}” from your radio list?</source>
         <translation>¿Quitar «{0}» de tu lista de radio?</translation>
     </message>
     <message>
-        <location filename="../radio_view.py" line="772"/>
+        <location filename="../radio_view.py" line="775"/>
         <source>Remove</source>
         <translation>Quitar</translation>
     </message>
     <message>
-        <location filename="../radio_view.py" line="803"/>
+        <location filename="../radio_view.py" line="806"/>
         <source>Not supported</source>
         <translation>No compatible</translation>
     </message>
     <message>
-        <location filename="../radio_view.py" line="805"/>
+        <location filename="../radio_view.py" line="808"/>
         <source>This server doesn&apos;t support managing radio stations.
 Subsonic requires admin permission for create / edit / delete.</source>
         <translation>Este servidor no permite gestionar emisoras de radio.
 Subsonic requiere permiso de administrador para crear / editar / eliminar.</translation>
     </message>
     <message>
-        <location filename="../radio_view.py" line="813"/>
+        <location filename="../radio_view.py" line="816"/>
         <source>Couldn&apos;t {0} station</source>
         <translation>No se pudo {0} la emisora</translation>
     </message>
@@ -3394,12 +3394,12 @@ Subsonic requiere permiso de administrador para crear / editar / eliminar.</tran
         <translation>activa la Salida exclusiva — entrega el dispositivo directamente a jellytoast, saltándose el mezclador de Windows.</translation>
     </message>
     <message>
-        <location filename="../settings_dialog.py" line="583"/>
+        <location filename="../settings_dialog.py" line="585"/>
         <source>Settings</source>
         <translation>Ajustes</translation>
     </message>
     <message>
-        <location filename="../settings_dialog.py" line="602"/>
+        <location filename="../settings_dialog.py" line="604"/>
         <source>About jellytoast</source>
         <translation>Acerca de jellytoast</translation>
     </message>
@@ -4263,7 +4263,7 @@ Subsonic requiere permiso de administrador para crear / editar / eliminar.</tran
         <translation>Conexión cancelada.</translation>
     </message>
     <message>
-        <location filename="../settings_dialog.py" line="736"/>
+        <location filename="../settings_dialog.py" line="738"/>
         <source>About {0}</source>
         <translation>Acerca de {0}</translation>
     </message>
@@ -5200,9 +5200,13 @@ La carátula por pista no se modifica con esta escritura masiva.</translation>
         <translation>⏸  Pausar</translation>
     </message>
     <message>
+        <source>─── Nothing Playing ───</source>
+        <translation type="vanished">─── Nada en reproducción ───</translation>
+    </message>
+    <message>
         <location filename="../tray.py" line="57"/>
         <location filename="../tray.py" line="217"/>
-        <source>─── Nothing Playing ───</source>
+        <source>─── Nothing playing ───</source>
         <translation>─── Nada en reproducción ───</translation>
     </message>
     <message>
@@ -5252,24 +5256,24 @@ La carátula por pista no se modifica con esta escritura masiva.</translation>
         <translation>No se pudo actualizar el favorito — comprueba tu conexión.</translation>
     </message>
     <message>
-        <location filename="../ui_helpers.py" line="3096"/>
+        <location filename="../ui_helpers.py" line="3126"/>
         <source>Deep Cuts: {0}</source>
         <translation>Rarezas: {0}</translation>
     </message>
     <message>
-        <location filename="../ui_helpers.py" line="3099"/>
-        <location filename="../ui_helpers.py" line="3113"/>
+        <location filename="../ui_helpers.py" line="3129"/>
+        <location filename="../ui_helpers.py" line="3143"/>
         <source>More like {0}</source>
         <translation>Más como {0}</translation>
     </message>
     <message>
-        <location filename="../ui_helpers.py" line="3105"/>
-        <location filename="../ui_helpers.py" line="3115"/>
+        <location filename="../ui_helpers.py" line="3135"/>
+        <location filename="../ui_helpers.py" line="3145"/>
         <source>{0} has no genre tags, add some to help suggestions.</source>
         <translation>{0} no tiene etiquetas de género; añade algunas para mejorar las sugerencias.</translation>
     </message>
     <message>
-        <location filename="../ui_helpers.py" line="3110"/>
+        <location filename="../ui_helpers.py" line="3140"/>
         <source>{0} Discoveries</source>
         <translation>Descubrimientos de {0}</translation>
     </message>
@@ -5423,7 +5427,7 @@ La carátula por pista no se modifica con esta escritura masiva.</translation>
     </message>
     <message>
         <location filename="../mini_player.py" line="279"/>
-        <source>Nothing Playing</source>
+        <source>Nothing playing</source>
         <translation>Nada en reproducción</translation>
     </message>
 </context>
@@ -5479,7 +5483,7 @@ La carátula por pista no se modifica con esta escritura masiva.</translation>
     </message>
     <message>
         <location filename="../mini_player.py" line="488"/>
-        <source>Nothing Playing</source>
+        <source>Nothing playing</source>
         <translation>Nada en reproducción</translation>
     </message>
 </context>
@@ -5629,14 +5633,14 @@ La carátula por pista no se modifica con esta escritura masiva.</translation>
         <translation type="obsolete">Temporizador de apagado</translation>
     </message>
     <message>
-        <source>Nothing Playing</source>
+        <source>Nothing playing</source>
         <translation type="obsolete">Nada en reproducción</translation>
     </message>
 </context>
 <context>
     <name>_PopularPickerDialog</name>
     <message>
-        <location filename="../radio_view.py" line="252"/>
+        <location filename="../radio_view.py" line="253"/>
         <source>Hand-picked publicly-streaming stations. Add one to copy it into your library — you can edit or remove it later.</source>
         <translation>Emisoras públicas seleccionadas a mano. Añade una para copiarla a tu biblioteca — luego puedes editarla o quitarla.</translation>
     </message>
@@ -5644,13 +5648,13 @@ La carátula por pista no se modifica con esta escritura masiva.</translation>
 <context>
     <name>_PopularStationRow</name>
     <message>
-        <location filename="../radio_view.py" line="204"/>
-        <location filename="../radio_view.py" line="215"/>
+        <location filename="../radio_view.py" line="205"/>
+        <location filename="../radio_view.py" line="216"/>
         <source>Added</source>
         <translation>Añadida</translation>
     </message>
     <message>
-        <location filename="../radio_view.py" line="204"/>
+        <location filename="../radio_view.py" line="205"/>
         <source>Add</source>
         <translation>Añadir</translation>
     </message>
@@ -5762,42 +5766,42 @@ La carátula por pista no se modifica con esta escritura masiva.</translation>
 <context>
     <name>_StationFormDialog</name>
     <message>
-        <location filename="../radio_view.py" line="106"/>
+        <location filename="../radio_view.py" line="107"/>
         <source>Name</source>
         <translation>Nombre</translation>
     </message>
     <message>
-        <location filename="../radio_view.py" line="108"/>
+        <location filename="../radio_view.py" line="109"/>
         <source>e.g. SomaFM Groove Salad</source>
         <translation>p. ej. SomaFM Groove Salad</translation>
     </message>
     <message>
-        <location filename="../radio_view.py" line="111"/>
+        <location filename="../radio_view.py" line="112"/>
         <source>Stream URL</source>
         <translation>URL del stream</translation>
     </message>
     <message>
-        <location filename="../radio_view.py" line="116"/>
+        <location filename="../radio_view.py" line="117"/>
         <source>Home page URL (optional)</source>
         <translation>URL de la página (opcional)</translation>
     </message>
     <message>
-        <location filename="../radio_view.py" line="135"/>
+        <location filename="../radio_view.py" line="136"/>
         <source>Missing name</source>
         <translation>Falta el nombre</translation>
     </message>
     <message>
-        <location filename="../radio_view.py" line="135"/>
+        <location filename="../radio_view.py" line="136"/>
         <source>Give the station a name.</source>
         <translation>Ponle un nombre a la emisora.</translation>
     </message>
     <message>
-        <location filename="../radio_view.py" line="144"/>
+        <location filename="../radio_view.py" line="145"/>
         <source>Stream URL required</source>
         <translation>Se necesita la URL del stream</translation>
     </message>
     <message>
-        <location filename="../radio_view.py" line="145"/>
+        <location filename="../radio_view.py" line="146"/>
         <source>Paste a direct stream URL — http:// or https://.</source>
         <translation>Pega una URL directa del stream — http:// o https://.</translation>
     </message>
@@ -5805,18 +5809,18 @@ La carátula por pista no se modifica con esta escritura masiva.</translation>
 <context>
     <name>_StationRow</name>
     <message>
-        <location filename="../radio_view.py" line="358"/>
-        <location filename="../radio_view.py" line="419"/>
+        <location filename="../radio_view.py" line="361"/>
+        <location filename="../radio_view.py" line="422"/>
         <source>Unnamed station</source>
         <translation>Emisora sin nombre</translation>
     </message>
     <message>
-        <location filename="../radio_view.py" line="365"/>
+        <location filename="../radio_view.py" line="368"/>
         <source>Edit</source>
         <translation>Editar</translation>
     </message>
     <message>
-        <location filename="../radio_view.py" line="370"/>
+        <location filename="../radio_view.py" line="373"/>
         <source>Remove</source>
         <translation>Quitar</translation>
     </message>

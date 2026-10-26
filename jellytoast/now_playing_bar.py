@@ -278,9 +278,9 @@ class NowPlayingBar(QWidget):
         # cluster enough that "Artist · Album (Anniversary edition…)"
         # would otherwise get cut off mid-word. Stays static when the
         # text fits.
-        self.title = MarqueeLabel(self.tr("Nothing Playing"))
+        self.title = MarqueeLabel(self.tr("Nothing playing"))
         # Idle title color matches the inactive icon color
-        # (icons.ICON_DIM = #a8a8a8) so "Nothing Playing" reads at
+        # (icons.ICON_DIM = #a8a8a8) so "Nothing playing" reads at
         # the same visual weight as the transport buttons next to
         # it. _apply_text_mode flips back to TEXT on an active track.
         self.title.setStyleSheet(f"color: {IDLE_TEXT}; {type_qss(TYPE_SUBHEAD)} letter-spacing: 0.1px;")
@@ -733,7 +733,7 @@ class NowPlayingBar(QWidget):
         text.setContentsMargins(0, 0, 0, 0)
         text.setSpacing(4)
         text.addStretch(1)
-        self.mini_title = MarqueeLabel(self.tr("Nothing Playing"))
+        self.mini_title = MarqueeLabel(self.tr("Nothing playing"))
         self.mini_artist = MarqueeLabel("")
         text.addWidget(self.mini_title)
         text.addWidget(self.mini_artist)
@@ -773,7 +773,7 @@ class NowPlayingBar(QWidget):
     def _refresh_mini(self) -> None:
         if not hasattr(self, "mini_title"):
             return  # mid-construction
-        self.mini_title.setText(self._track_title or self.tr("Nothing Playing"))
+        self.mini_title.setText(self._track_title or self.tr("Nothing playing"))
         self.mini_artist.setText(self._track_subtitle or "")
         self.mini_artist.setVisible(bool(self._track_subtitle))
         self._style_mini()
@@ -1807,7 +1807,7 @@ class NowPlayingBar(QWidget):
         # Text content per mode. Title always carries the song name (or
         # the placeholder) so the row is never blank when visible.
         is_idle = not bool(self._track_title)
-        self.title.setText(self._track_title or self.tr("Nothing Playing"))
+        self.title.setText(self._track_title or self.tr("Nothing playing"))
         # Idle title matches the inactive icon color (#a8a8a8 — see
         # icons.ICON_DIM) so the placeholder visually pairs with the
         # transport buttons next to it instead of competing with real

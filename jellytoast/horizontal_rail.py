@@ -16,10 +16,11 @@ void.
 from typing import Dict, List
 
 from PySide6.QtCore import Qt, Signal
-from PySide6.QtGui import QPalette
+from PySide6.QtGui import QBrush, QColor, QLinearGradient, QPalette
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QFrame,
+    QGraphicsOpacityEffect,
     QLabel,
     QListView,
     QVBoxLayout,
@@ -113,6 +114,42 @@ class _RailListView(QListView):
         vp.setAutoFillBackground(False)
         vp.setBackgroundRole(QPalette.ColorRole.NoRole)
         self.setStyleSheet("QListView { background: transparent; border: none; }")
+        # Edge fade: a tile past the viewport edge dissolves instead of being
+        # cut mid-word ("Rosalía Vila Tobe"), so the rail reads as
+        # scrollable. Only on an edge that has more to scroll to.
+        self._edge_fade = None
+        sb = self.horizontalScrollBar()
+        sb.rangeChanged.connect(lambda *_: self._update_edge_fade())
+        sb.valueChanged.connect(lambda *_: self._update_edge_fade())
+
+    _FADE_PX = 32
+
+    def resizeEvent(self, e):  # noqa: N802 — Qt naming
+        super().resizeEvent(e)
+        self._update_edge_fade()
+
+    def _update_edge_fade(self) -> None:
+        sb = self.horizontalScrollBar()
+        vp = self.viewport()
+        w = vp.width()
+        left = sb.value() > sb.minimum()
+        right = sb.value() < sb.maximum()
+        if not (left or right) or w <= 3 * self._FADE_PX:
+            if self._edge_fade is not None:
+                vp.setGraphicsEffect(None)  # deletes the effect
+                self._edge_fade = None
+            return
+        if self._edge_fade is None:
+            self._edge_fade = QGraphicsOpacityEffect(vp)
+            vp.setGraphicsEffect(self._edge_fade)
+        f = self._FADE_PX / w
+        clear, solid = QColor(0, 0, 0, 0), QColor(0, 0, 0, 255)
+        g = QLinearGradient(0, 0, w, 0)
+        g.setColorAt(0.0, clear if left else solid)
+        g.setColorAt(f, solid)
+        g.setColorAt(1.0 - f, solid)
+        g.setColorAt(1.0, clear if right else solid)
+        self._edge_fade.setOpacityMask(QBrush(g))
 
     def wheelEvent(self, e):
         """Wheel handling: vertical scroll (no modifier) goes to the
@@ -336,6 +373,11 @@ class HorizontalRail(QWidget):
         for row, item in enumerate(items):
             cover_id = item.get("Id", "")
             if not cover_id:
+                continue
+            tags = item.get("ImageTags")
+            if isinstance(tags, dict) and not tags.get("Primary"):
+                # No image on the server (Subsonic: no coverArt) — keep the
+                # themed placeholder; asking fetched Navidrome's white star.
                 continue
             cover_url = api.get_image_url(cover_id, "Primary", server_px)
             if not cover_url:

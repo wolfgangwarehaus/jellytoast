@@ -54,7 +54,7 @@ class TrayController(QObject):
         # only held by a local variable, the Python wrapper gets garbage-
         # collected and the menu silently loses the item — even though
         # menu.addAction() supposedly reparents it. Pass self.menu as parent.
-        self.now_playing = QAction(self.tr("─── Nothing Playing ───"), self.menu)
+        self.now_playing = QAction(self.tr("─── Nothing playing ───"), self.menu)
         self.now_playing.setEnabled(False)
         self.menu.addAction(self.now_playing)
 
@@ -214,6 +214,6 @@ class TrayController(QObject):
 
     @Slot()
     def _on_stopped(self):
-        self.now_playing.setText(self.tr("─── Nothing Playing ───"))
+        self.now_playing.setText(self.tr("─── Nothing playing ───"))
         self.tray.setToolTip("jellytoast")
         self.play_action.setText(self.tr("▶  Play"))

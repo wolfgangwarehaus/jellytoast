@@ -487,7 +487,7 @@ class _PhonePlayerMixin:
         if not self._phone_built:
             return
         np = get_now_playing()
-        title = np.title or QCoreApplication.translate("NowPlayingPage", "Nothing Playing")
+        title = np.title or QCoreApplication.translate("NowPlayingPage", "Nothing playing")
         artist = np.subtitle or ""
         self._phone_title.setText(title)
         self._phone_artist_full = artist  # stays visible (empty) so nothing shifts
@@ -614,7 +614,7 @@ class _PhonePlayerMixin:
         if self._preview_id or not self._phone_built:
             return
         # The queue ran out: match the page's idle state.
-        idle = QCoreApplication.translate("NowPlayingPage", "Nothing Playing")
+        idle = QCoreApplication.translate("NowPlayingPage", "Nothing playing")
         for lbl in (self._phone_title, self._phone_h_title):
             lbl.setText(idle)
         self._phone_artist_full = ""

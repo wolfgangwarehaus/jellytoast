@@ -540,8 +540,14 @@ class JtTopBar(QWidget):
         """Width the bar needs as it stands: both side columns and the
         centre cluster at their natural size, with the clamp's gaps."""
         m = self.layout().contentsMargins()
+        # The library button is width-capped to its budget; count the room
+        # its title really needs so a cut title reads as "doesn't fit".
+        lib_short = 0
+        if self.library_btn.isVisibleTo(self):
+            lib_short = max(0, self._library_btn_natural - self.library_btn.width())
         return (
             m.left()
+            + lib_short
             + self._left_col.sizeHint().width()
             + self._CLUSTER_GAP
             + self._center_cluster.sizeHint().width()
@@ -566,6 +572,7 @@ class JtTopBar(QWidget):
     _tight = False
     _tight_need = 0
     _floor_need = 0
+    _library_btn_natural = 0
     _applying_stage = False
     _multi_library = False
 
@@ -692,7 +699,19 @@ class JtTopBar(QWidget):
             getattr(self, "_right_col", None),
         ):
             self._position_center_cluster()
+            if obj is getattr(self, "_right_col", None) and not self._refit_pending:
+                # The title was fitted against the right column's old spot;
+                # once it settles, fit again (one coalesced pass) so a title
+                # cut short mid-resize gets its full text back.
+                self._refit_pending = True
+                QTimer.singleShot(0, self._deferred_refit)
         return super().eventFilter(obj, event)
+
+    _refit_pending = False
+
+    def _deferred_refit(self):
+        self._refit_pending = False
+        self._fit_library_title()
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
@@ -1160,6 +1179,18 @@ class JtTopBar(QWidget):
             return 260  # not laid out yet — permissive default
         vb_w = self.view_btn.sizeHint().width() if self.view_btn.isVisible() else 0
         center_left = bar_w // 2 - vb_w // 2 - self._CLUSTER_GAP
+        # The centre cluster slides right (off-centre) before it would hit
+        # the right column — _position_center_cluster's clamp — so the
+        # title may use that slack too instead of being cut short.
+        right = getattr(self, "_right_col", None)
+        cluster = getattr(self, "_center_cluster", None)
+        if right is not None and cluster is not None and right.geometry().left() > 0:
+            slid_left = (
+                right.geometry().left()
+                - cluster.sizeHint().width()
+                - 2 * self._CLUSTER_GAP
+            )
+            center_left = max(center_left, slid_left)
         btn_left = self.library_btn.mapTo(self, self.library_btn.rect().topLeft()).x()
         if btn_left <= 0:
             return min(260, max(70, center_left))
@@ -1187,8 +1218,17 @@ class JtTopBar(QWidget):
                     chosen, chosen_w = form, w
                     break
             self.library_btn.setText(chosen)
-            if chosen_w is None:  # even the most compact form overflows — clamp
-                chosen_w = min(self.library_btn.sizeHint().width(), budget)
+            # What the shortest form needs in full — _required_width counts
+            # this, so the bar goes compact before the title has to be cut.
+            self._library_btn_natural = self.library_btn.sizeHint().width()
+            if chosen_w is None:
+                # Even the most compact form overflows: end it with "…"
+                # rather than letting the clamp cut it ("Music Libr").
+                fm = self.library_btn.fontMetrics()
+                chrome = self.library_btn.sizeHint().width() - fm.horizontalAdvance(chosen)
+                room = max(fm.horizontalAdvance("M…"), max(70, budget) - chrome)
+                self.library_btn.setText(fm.elidedText(chosen, Qt.TextElideMode.ElideRight, room))
+                chosen_w = min(self.library_btn.sizeHint().width(), max(70, budget))
             self.library_btn.setMaximumWidth(max(70, int(chosen_w)))
         finally:
             self._fitting_library_title = False

@@ -24,7 +24,7 @@ from typing import Dict, List, Optional
 from PySide6.QtCore import QCoreApplication, QEvent, QSize, Qt, Signal, Slot
 
 logger = logging.getLogger(__name__)
-from PySide6.QtGui import QPalette, QPixmap
+from PySide6.QtGui import QPainter, QPalette, QPixmap
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QFrame,
@@ -602,6 +602,9 @@ class ArtistPage(QWidget):
             return
         self._artist_id = artist_id
         self._artist_meta = {}
+        # The previous artist's photo stayed up until the new one landed
+        # (and forever for an artist with no photo).
+        self._show_cover_placeholder()
         self._model.set_items([])
         # Reset the stack to the grid page so a previous artist's
         # empty state doesn't linger on the new artist's load.
@@ -699,6 +702,11 @@ class ArtistPage(QWidget):
         # artist that derives every DPR locally. See
         # docs/research/dpr_cache_keys.md.
         server_px = self.HEADER_COVER * 3
+        tags = meta.get("ImageTags")
+        if isinstance(tags, dict) and not tags.get("Primary"):
+            # The server has no photo: keep the themed placeholder rather
+            # than fetching its generic stand-in (Navidrome's white star).
+            return
         url = self.api.get_image_url(artist_id, "Primary", server_px)
         if url:
             # Gate the async header callback on the still-current artist so a
@@ -754,6 +762,25 @@ class ArtistPage(QWidget):
             source_label=self._artist_meta.get("Name") or "",
         )
         PlayerBus.get().queue_play_now.emit(list(items), start_idx, ctx)
+
+    def _show_cover_placeholder(self) -> None:
+        """The grids' art-less look (faint wash + person glyph), as a
+        circle, so a missing photo matches every other artist tile."""
+        from PySide6.QtCore import QRect
+
+        from jellytoast.library_grid import _paint_cover_placeholder
+
+        dpr = screen_dpr(self)
+        size = int(round(self.HEADER_COVER * dpr))
+        pix = QPixmap(size, size)
+        pix.fill(Qt.GlobalColor.transparent)
+        p = QPainter(pix)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        _paint_cover_placeholder(p, QRect(0, 0, size, size), size / 2, "artist")
+        p.end()
+        pix.setDevicePixelRatio(dpr)
+        self._cover_orig = None
+        self._cover.setPixmap(pix)
 
     @Slot(object)
     def _on_cover_loaded(self, pix: QPixmap):

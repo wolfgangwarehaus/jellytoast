@@ -59,6 +59,7 @@ from jellytoast.ui_helpers import (
     TEXT,
     TEXT_DIM,
     TEXT_FAINT,
+    ElidedLabel,
     install_autofade_scrollbars,
 )
 
@@ -355,8 +356,10 @@ class _StationRow(QFrame):
 
         text_col = QVBoxLayout()
         text_col.setSpacing(2)
-        self._name = QLabel(self._station.get("name") or self.tr("Unnamed station"))
-        self._sub = QLabel(self._station.get("streamUrl") or "")
+        # Elided: a long name or stream URL shortens with "…" instead of
+        # pushing the row past a narrow page's edge.
+        self._name = ElidedLabel(self._station.get("name") or self.tr("Unnamed station"))
+        self._sub = ElidedLabel(self._station.get("streamUrl") or "")
         self._sub.setTextInteractionFlags(Qt.TextInteractionFlag.NoTextInteraction)
         text_col.addWidget(self._name)
         text_col.addWidget(self._sub)

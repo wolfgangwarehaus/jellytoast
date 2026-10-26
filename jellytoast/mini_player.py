@@ -276,12 +276,12 @@ class _CompactBar(QWidget):
         # whole right side reads as a tidy card. Marquees only when the title
         # is too long for the strip.
         self.title = _MarqueeLabel()
-        self.title.setText(self.tr("Nothing Playing"))
+        self.title.setText(self.tr("Nothing playing"))
         # TYPE_CAPTION carries the 12px size; the 500-weight override
         # gives the title a slight emphasis over the subtitle without
         # promoting it to TYPE_BODY (which would push to 13px). Idle
         # color matches the inactive icon color (icons.ICON_DIM =
-        # #a8a8a8) so "Nothing Playing" visually pairs with the
+        # #a8a8a8) so "Nothing playing" visually pairs with the
         # transport buttons; FloatingMiniPlayer._on_started swaps to
         # TEXT when a real track lands.
         self.title.setStyleSheet(f"color: {IDLE_TEXT}; {type_qss(TYPE_CAPTION)} font-weight: 500;")
@@ -485,7 +485,7 @@ class _ExpandedPanel(QWidget):
         right.setSpacing(2)
 
         self.title = _MarqueeLabel()
-        self.title.setText(self.tr("Nothing Playing"))
+        self.title.setText(self.tr("Nothing playing"))
         # Mirrors the compact panel's idle styling — matches the
         # inactive icon color (#a8a8a8) so the placeholder pairs
         # visually with the transport buttons. FloatingMiniPlayer
@@ -1275,7 +1275,7 @@ class FloatingMiniPlayer(QWidget):
         self.bus.playback_paused.connect(self._on_paused)
         self.bus.playback_resumed.connect(self._on_resumed)
         # Launch-time resume: render the restored track (paused) instead of
-        # leaving the mini on "Nothing Playing" until the user presses play.
+        # leaving the mini on "Nothing playing" until the user presses play.
         self.bus.playback_restored.connect(self._on_restored)
         self.bus.position_updated.connect(self._on_position)
         self.bus.duration_set.connect(self._on_duration)
@@ -1582,7 +1582,7 @@ class FloatingMiniPlayer(QWidget):
         """Render the launch-time resume state: track + saved position +
         duration, paused. Same UI as _on_started but the play icon stays
         'play' (mpv hasn't loaded yet) — mirrors now_playing_bar._on_restored.
-        Without this the mini shows 'Nothing Playing' for a resumed session
+        Without this the mini shows 'Nothing playing' for a resumed session
         until the user presses play."""
         self._on_started(np)
         for panel in (self.compact, self.expanded):
@@ -1597,7 +1597,7 @@ class FloatingMiniPlayer(QWidget):
     @Slot()
     def _on_stopped(self):
         for panel in (self.compact, self.expanded):
-            panel.title.setText(self.tr("Nothing Playing"))
+            panel.title.setText(self.tr("Nothing playing"))
             # Idle state — match inactive icon color (#a8a8a8) so
             # the title pairs with the transport buttons next to it.
             panel.title.setStyleSheet(f"color: {IDLE_TEXT}; {type_qss(TYPE_CAPTION)} font-weight: 500;")

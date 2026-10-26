@@ -2181,6 +2181,36 @@ class ScrubbableSlider(QSlider):
 # ── Marquee label ────────────────────────────────────────────────────────
 
 
+class ElidedLabel(QLabel):
+    """One-line QLabel that ends its text with "…" when it's narrower than
+    the text, and may shrink to a few characters — a plain QLabel's
+    minimum width is its whole text, so a long stream URL pushed its row
+    past the page edge (Radio at 378 px). ``text()`` stays the full text;
+    the full text is the tooltip whenever it's cut."""
+
+    def minimumSizeHint(self) -> QSize:  # noqa: N802 — Qt naming
+        fm = self.fontMetrics()
+        m = self.contentsMargins()
+        return QSize(
+            fm.horizontalAdvance("M…") + m.left() + m.right(),
+            super().minimumSizeHint().height(),
+        )
+
+    def paintEvent(self, _e):  # noqa: N802 — Qt naming
+        p = QPainter(self)
+        r = self.contentsRect()
+        fm = self.fontMetrics()
+        full = self.text()
+        shown = fm.elidedText(full, Qt.TextElideMode.ElideRight, r.width())
+        cut = shown != full
+        if cut != bool(self.property("jtElided")):
+            self.setProperty("jtElided", cut)
+            self.setToolTip(full if cut else "")
+        self.style().drawItemText(
+            p, r, int(self.alignment()), self.palette(), self.isEnabled(), shown, self.foregroundRole()
+        )
+
+
 class MarqueeLabel(QLabel):
     """QLabel that scrolls its text horizontally when the text exceeds
     the label's width. Pauses briefly at the start of each cycle so the

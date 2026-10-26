@@ -639,7 +639,7 @@ class NowPlayingPage(_PhonePlayerMixin, _LeftPaneMixin, _LyricsMixin, QWidget):
         # QLabel's default Preferred vertical policy lets them grow into
         # any unclaimed space (e.g. when lyrics are hidden), pulling
         # them away from the cover and away from the CTAs below them.
-        self._title = QLabel(self.tr("Nothing Playing"))
+        self._title = QLabel(self.tr("Nothing playing"))
         self._title.setFont(font(TYPE_TITLE))
         # Idle styling — TEXT_DIM-equivalent so the placeholder reads
         # as inactive. _refresh_now_playing swaps to the bright
@@ -1179,7 +1179,7 @@ class NowPlayingPage(_PhonePlayerMixin, _LeftPaneMixin, _LyricsMixin, QWidget):
             return
         from jellytoast import ui_helpers as _u
 
-        self._title.setText(self.tr("Nothing Playing"))
+        self._title.setText(self.tr("Nothing playing"))
         # Re-dim the title to the idle styling (the active-track
         # path in _refresh_now_playing brightens it back). Read the live
         # ui_helpers token so a dark↔light flip while idle re-stamps it.
@@ -1370,7 +1370,7 @@ class NowPlayingPage(_PhonePlayerMixin, _LeftPaneMixin, _LyricsMixin, QWidget):
             return
         self._title.setText(np.title or self.tr("Unknown"))
         # Brighten the title — _on_playback_stopped dims it for the
-        # "Nothing Playing" idle state; an active track needs the
+        # "Nothing playing" idle state; an active track needs the
         # full-weight color.
         self._title.setStyleSheet(f"color: {ink_alpha(0.95)};")
         bits = []

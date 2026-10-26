@@ -404,6 +404,40 @@ class TestRealDeviceFindings:
         finally:
             host.deleteLater()
 
+    def test_library_title_is_never_cut_without_an_ellipsis(self, qapp, monkeypatch):
+        """QA 2026-10-26: at ~600 px the library picker read "Music Libr" —
+        its width was clamped below the text. Every width shows the full
+        title, or one ending in "…", and never runs into the dropdown."""
+        from PySide6.QtWidgets import QWidget
+
+        from jellytoast.top_bar import JtTopBar
+
+        monkeypatch.setattr(pc, "is_mobile_shell", lambda: False)
+        for w in (560, 600, 640, 700, 730, 760, 820, 1000):
+            host = QWidget()
+            top = JtTopBar(host, titlebar_mode=True)
+            try:
+                top.set_available_libraries(
+                    [{"Id": "1", "Name": "Music Library"}, {"Id": "2", "Name": "Discovery"}]
+                )
+                top.set_title("Music Library")
+                top.set_collection("music")
+                top.set_library_controls_visible(True)
+                host.show()
+                top.resize(w, 48)
+                for _ in range(4):
+                    _settle(qapp)
+                b = top.library_btn
+                if not b.isVisibleTo(top):
+                    continue  # stepped into ⋮
+                text = b.text()
+                assert text == "Music Library" or text.endswith("…"), (w, text)
+                assert b.sizeHint().width() <= b.width() + 1, (w, text)
+                right = b.mapTo(top, b.rect().topRight()).x()
+                assert right < top.view_btn.mapTo(top, top.view_btn.rect().topLeft()).x(), w
+            finally:
+                host.deleteLater()
+
     def test_no_blur_body_is_opaque_on_a_mobile_shell(self, monkeypatch):
         from jellytoast.blur import BlurStatus
         from jellytoast.theme import body_color_for, get_active_theme
