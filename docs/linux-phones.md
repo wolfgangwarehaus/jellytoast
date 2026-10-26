@@ -36,9 +36,14 @@ doas apk upgrade --repository ~/packages/packaging jellytoast
   aren't packaged in Alpine. Chromecast and Google speaker groups work.
 - **Nura Duranium** (the immutable edition) keeps the system read-only and
   installs apps as Flatpaks; `apk` is for the regular edition. From jellytoast
-  0.2.5 each release includes an ARM Flatpak: download
-  `jellytoast-aarch64.flatpak` from the latest release and run
-  `flatpak install ./jellytoast-aarch64.flatpak`.
+  0.2.5 there's an ARM Flatpak in our [Flatpak repository](https://wolfgangwarehaus.com/flatpak/):
+
+  ```bash
+  flatpak install --user https://wolfgangwarehaus.com/flatpak/io.github.wolfgangwarehaus.jellytoast.flatpakref
+  ```
+
+  After that, jellytoast shows up in GNOME Software / KDE Discover and updates
+  with everything else.
 
 ## Arch Linux ARM
 

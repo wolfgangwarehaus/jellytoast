@@ -852,8 +852,10 @@ jobs:
     # Self-distributed .flatpak bundle (NOT a Flathub submission — see the
     # manifest header; Flathub's AI policy path is a separate, deliberate
     # future step). One file users install with
-    # `flatpak install ./jellytoast-X.Y.Z.flatpak`; a self-hosted OSTree
-    # repo for auto-updates is the planned follow-up.
+    # `flatpak install ./jellytoast-X.Y.Z.flatpak`. The signed, auto-updating
+    # repo at wolfgangwarehaus.com/flatpak is built FROM these bundles once the
+    # release is published (wolfgangwarehaus/flatpak's publish workflow, every
+    # 6 h or on demand; packaging/flatpak/build_repo.sh).
     #
     # Two architectures: x86_64, and aarch64 for Linux phones (the OnePlus 6T
     # on Nura's immutable Duranium edition, which installs apps as Flatpaks

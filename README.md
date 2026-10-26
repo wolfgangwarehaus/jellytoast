@@ -44,7 +44,8 @@ Latest builds are on [**Releases**][rel].
 - **Linux**
   - [AppImage][dl-appimage]
   - [.deb][dl-deb]
-  - [Flatpak][dl-flatpak]
+  - [Flatpak][dl-flatpak], or from our [Flatpak repo](https://wolfgangwarehaus.com/flatpak/) so it updates
+    like any other app: `flatpak install --user https://wolfgangwarehaus.com/flatpak/io.github.wolfgangwarehaus.jellytoast.flatpakref`
   - [AUR][aur] — `yay -S jellytoast`
 - **Linux phones** (Plasma Mobile, Phosh) — Nura / postmarketOS and Arch Linux ARM:
   see [Linux phones](docs/linux-phones.md)
