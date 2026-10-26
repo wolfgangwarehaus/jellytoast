@@ -12,6 +12,12 @@ developer-facing history lives in [`docs/CHANGELOG.md`](docs/CHANGELOG.md).
      should stand alone: the Store "What's new" shows just the title (+ first
      sentence in --detail mode). -->
 
+- **Install and update through Flatpak.** Add jellytoast's own signed Flatpak
+  repo once and updates show up in GNOME Software, KDE Discover or
+  `flatpak update`. See wolfgangwarehaus.com/flatpak.
+- **Flatpak for ARM.** There's now an aarch64 Flatpak too, for Linux phones
+  like the OnePlus 6T and ARM laptops.
+
 ## [0.2.4] — 2026-10-25
 
 - **New phone interface.** On Plasma Mobile and Phosh jellytoast now opens a
