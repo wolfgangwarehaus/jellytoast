@@ -341,7 +341,35 @@ class JellyfinProvider(MediaProvider):
         return self.api.get_album_tracks(album_id)
 
     def get_artist_albums(self, artist_id: str) -> List[Dict[str, Any]]:
-        return self.api.get_artist_albums(artist_id)
+        albums = self.api.get_artist_albums(artist_id)
+        hidden = self._album_ids_in_excluded_libraries(artist_id)
+        if not hidden:
+            return albums
+        return [a for a in albums if a.get("Id") not in hidden]
+
+    def _album_ids_in_excluded_libraries(self, artist_id: str) -> set:
+        """The artist's albums in libraries the user switched off, so the
+        artist page follows the library dropdown like the Albums grid
+        does. Anything the lookup can't place stays visible."""
+        from jellytoast import library_selection
+
+        hidden: set = set()
+        for lib in library_selection.excluded_ids():
+            try:
+                items = self.api._get(
+                    "/Items",
+                    {
+                        "AlbumArtistIds": artist_id,
+                        "ParentId": lib,
+                        "UserId": self.api.user_id,
+                        "IncludeItemTypes": "MusicAlbum",
+                        "Recursive": True,
+                    },
+                ).get("Items", [])
+            except Exception:
+                continue
+            hidden.update(i.get("Id") for i in items)
+        return hidden
 
     def get_artists(
         self, limit: int = 200, start_index: int = 0, parent_id: str = ""

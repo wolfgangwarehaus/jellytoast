@@ -981,7 +981,40 @@ class SubsonicProvider(MediaProvider):
             return []
         artist = resp.get("artist") or {}
         albums = artist.get("album") or []
-        return [self._adapt_album(a) for a in albums]
+        hidden = self._album_ids_in_excluded_libraries(artist.get("name") or "")
+        return [self._adapt_album(a) for a in albums if str(a.get("id")) not in hidden]
+
+    def _album_ids_in_excluded_libraries(self, artist_name: str) -> set:
+        """Ids of this artist's albums that live in a library the user has
+        switched off. getArtist ignores ``musicFolderId`` (checked on
+        Navidrome 0.64), so without this the artist page showed albums
+        from every library: a Discovery download of one LUX track turned
+        into a second and third "LUX" next to the real one. A
+        folder-scoped search3 on the artist's name finds what each
+        excluded library holds; anything it can't place stays visible."""
+        from jellytoast import library_selection
+
+        excluded = library_selection.excluded_ids()
+        if not excluded or not artist_name:
+            return set()
+        hidden: set = set()
+        for fid in excluded:
+            try:
+                resp = self._request(
+                    "search3",
+                    {
+                        "query": artist_name,
+                        "artistCount": 0,
+                        "songCount": 0,
+                        "albumCount": 500,
+                        "musicFolderId": fid,
+                    },
+                )
+            except Exception:
+                continue
+            for a in (resp.get("searchResult3") or {}).get("album") or []:
+                hidden.add(str(a.get("id")))
+        return hidden
 
     def get_artists(
         self, limit: int = 200, start_index: int = 0, parent_id: str = ""

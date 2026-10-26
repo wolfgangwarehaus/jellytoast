@@ -179,6 +179,20 @@ def is_filtered() -> bool:
     return bool(_effective_key(selected_ids()))
 
 
+def excluded_ids() -> List[str]:
+    """The libraries the user has switched OFF — empty when the selection
+    is 'all' or the server's libraries aren't known yet. For surfaces whose
+    server call can't be scoped to a library (an artist's albums: Subsonic
+    ``getArtist`` ignores ``musicFolderId``), so they drop what is known to
+    live in an excluded library instead. Excluding rather than including
+    means an album the lookup can't place still shows."""
+    sel = selected_ids()
+    if not _effective_key(sel):
+        return []
+    chosen = set(sel)
+    return [lid for lid in _available_ids() if lid not in chosen]
+
+
 def selection_cache_key() -> str:
     """A stable string identifying the active selection for the disk-cache
     scope, so different selections cache to different files and switching
