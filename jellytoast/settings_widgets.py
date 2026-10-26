@@ -1,13 +1,18 @@
 """Widgets + helpers shared by the Settings dialog and its page modules
 (split out of ``settings_dialog.py``; re-exported there for old imports)."""
 
-from PySide6.QtCore import QCoreApplication, QPointF, QSize, Qt
-from PySide6.QtGui import QColor, QPainter, QPainterPath
+from PySide6.QtCore import QCoreApplication, QPointF, QRect, QSize, Qt
+from PySide6.QtGui import QColor, QPainter, QPainterPath, QPalette
 from PySide6.QtWidgets import (
+    QCheckBox,
     QDialog,
     QHBoxLayout,
     QLabel,
     QPushButton,
+    QSizePolicy,
+    QStyle,
+    QStyleOptionButton,
+    QStylePainter,
     QVBoxLayout,
     QWidget,
 )
@@ -32,6 +37,79 @@ from jellytoast.ui_helpers import (
     TEXT_DIM,
 )
 from jellytoast.version import __version__
+
+
+class WrapCheckBox(QCheckBox):
+    """A QCheckBox whose label wraps onto more lines when the dialog is
+    narrow. Qt's own draws the label on one line, so at 360 px Settings
+    clipped "Hide to system tray when windo". Paints the stylesheet's
+    indicator itself (beside the first line) and the label word-wrapped
+    after it; the whole row stays clickable."""
+
+    def __init__(self, text: str = "", parent=None):
+        super().__init__(text, parent)
+        sp = self.sizePolicy()
+        sp.setHorizontalPolicy(QSizePolicy.Policy.Preferred)
+        # Not QCheckBox's Fixed: a fixed height makes the layout ignore
+        # heightForWidth, and the wrapped second line was cut off.
+        sp.setVerticalPolicy(QSizePolicy.Policy.Minimum)
+        sp.setHeightForWidth(True)
+        self.setSizePolicy(sp)
+
+    def _option(self) -> QStyleOptionButton:
+        opt = QStyleOptionButton()
+        self.initStyleOption(opt)
+        return opt
+
+    def _text_x(self) -> int:
+        opt = self._option()
+        style = self.style()
+        ind = style.subElementRect(QStyle.SubElement.SE_CheckBoxIndicator, opt, self)
+        gap = style.pixelMetric(QStyle.PixelMetric.PM_CheckBoxLabelSpacing, opt, self)
+        return ind.right() + 1 + gap
+
+    def _line_height(self) -> int:
+        opt = self._option()
+        ind = self.style().subElementRect(QStyle.SubElement.SE_CheckBoxIndicator, opt, self)
+        return max(self.fontMetrics().height(), ind.height()) + 4
+
+    def _text_height(self, width: int) -> int:
+        box = QRect(0, 0, max(1, width - self._text_x()), 100000)
+        return self.fontMetrics().boundingRect(box, Qt.TextFlag.TextWordWrap, self.text()).height()
+
+    def hasHeightForWidth(self) -> bool:  # noqa: N802 — Qt naming
+        return True
+
+    def heightForWidth(self, width: int) -> int:  # noqa: N802 — Qt naming
+        line = self._line_height()
+        return max(line, self._text_height(width) + (line - self.fontMetrics().height()))
+
+    def minimumSizeHint(self) -> QSize:  # noqa: N802 — Qt naming
+        fm = self.fontMetrics()
+        longest = max((fm.horizontalAdvance(w) for w in self.text().split()), default=0)
+        return QSize(self._text_x() + longest, self._line_height())
+
+    def hitButton(self, pos) -> bool:  # noqa: N802 — Qt naming
+        return self.rect().contains(pos)
+
+    def paintEvent(self, _e):  # noqa: N802 — Qt naming
+        p = QStylePainter(self)
+        opt = self._option()
+        opt.text = ""
+        line = self._line_height()
+        opt.rect = QRect(0, 0, self.width(), line)
+        p.drawControl(QStyle.ControlElement.CE_CheckBox, opt)
+        top = (line - self.fontMetrics().height()) // 2
+        text_rect = QRect(self._text_x(), top, self.width() - self._text_x(), self.height() - top)
+        self.style().drawItemText(
+            p,
+            text_rect,
+            int(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop | Qt.TextFlag.TextWordWrap),
+            self.palette(),
+            self.isEnabled(),
+            self.text(),
+            QPalette.ColorRole.WindowText,
+        )
 
 
 class _AccentSwatch(QPushButton):

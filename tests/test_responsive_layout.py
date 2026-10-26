@@ -338,6 +338,47 @@ class TestRealDeviceFindings:
         finally:
             host.deleteLater()
 
+    def test_now_playing_title_clears_search_at_minimum_width(self, qapp, monkeypatch):
+        """august, 2026-10-26: shrunk all the way down, the "Now Playing"
+        title ran into search even with the secondary buttons in ⋮. Third
+        stage: search joins the menu, and returns once there's room. If
+        even that can't fit, the bar asks the window for a wider floor."""
+        from PySide6.QtGui import QFontDatabase
+        from PySide6.QtWidgets import QWidget
+
+        from jellytoast.top_bar import JtTopBar
+
+        monkeypatch.setattr(pc, "is_mobile_shell", lambda: False)
+        host = QWidget()  # hosted: see TestTopBar.top
+        top = JtTopBar(host, titlebar_mode=True)
+        mono = QFontDatabase.systemFont(QFontDatabase.SystemFont.FixedFont)
+        top.setFont(mono)
+        try:
+            top.set_collection("music")
+            top.set_now_playing_mode(True)
+            floors = []
+            top.min_width_needed.connect(floors.append)
+            host.show()
+            top.resize(360, 48)
+            for _ in range(6):
+                _settle(qapp)
+            if floors:
+                # Nothing left to hide — the bar asked for a wider window.
+                top.resize(floors[-1], 48)
+                for _ in range(3):
+                    _settle(qapp)
+            title = top.view_btn.geometry().translated(top._center_cluster.pos())
+            for b in (top.search_btn, top.more_btn, top.min_btn):
+                if b.isVisibleTo(top):
+                    box = b.geometry().translated(b.parentWidget().mapTo(top, b.pos()) - b.pos())
+                    assert not title.intersects(box), (b.toolTip(), title, box)
+            top.resize(1000, 48)
+            for _ in range(3):
+                _settle(qapp)
+            assert not top._tight and not top.search_btn.isHidden()
+        finally:
+            host.deleteLater()
+
     def test_no_blur_body_is_opaque_on_a_mobile_shell(self, monkeypatch):
         from jellytoast.blur import BlurStatus
         from jellytoast.theme import body_color_for, get_active_theme

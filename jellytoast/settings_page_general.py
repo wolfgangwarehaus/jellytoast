@@ -10,7 +10,6 @@ runtime.
 
 from PySide6.QtCore import QCoreApplication, Qt
 from PySide6.QtWidgets import (
-    QCheckBox,
     QHBoxLayout,
     QLabel,
     QLineEdit,
@@ -41,6 +40,7 @@ from jellytoast.selector import (
 )
 from jellytoast.settings_widgets import (
     HOME_DESTINATIONS,
+    WrapCheckBox,
 )
 from jellytoast.ui_helpers import (
     TEXT,
@@ -229,14 +229,14 @@ class _GeneralPageMixin:
         # fulfil the toggle (Windows/macOS) — a no-op checkbox reads
         # as a broken one.
         if _autostart.is_supported():
-            self._autostart_check = QCheckBox(
+            self._autostart_check = WrapCheckBox(
                 QCoreApplication.translate("SettingsDialog", "Launch jellytoast at login")
             )
             self._autostart_check.setChecked(_autostart.is_enabled())
             self._autostart_check.toggled.connect(self._on_autostart_toggled)
             v.addWidget(self._autostart_check)
 
-        self._mini_check = QCheckBox(
+        self._mini_check = WrapCheckBox(
             QCoreApplication.translate("SettingsDialog", "Show mini player on startup")
         )
         self._mini_check.setChecked(self.s.show_mini_on_start)
@@ -264,7 +264,7 @@ class _GeneralPageMixin:
         # (On Windows / macOS this row will be replaced by the host-OS
         # equivalent when those backends land.)
         if keep_above_supported():
-            self._keep_above_check = QCheckBox(
+            self._keep_above_check = WrapCheckBox(
                 QCoreApplication.translate("SettingsDialog", "Keep mini player on top")
             )
             self._keep_above_check.setChecked(self.s.mini_player_keep_above)
@@ -276,7 +276,7 @@ class _GeneralPageMixin:
         # toggle of the group (kills the close-X exit semantics) so it
         # gets the bottom slot where the eye naturally lands on a
         # "biggest commitment" row.
-        self._tray_check = QCheckBox(
+        self._tray_check = WrapCheckBox(
             QCoreApplication.translate(
                 "SettingsDialog", "Hide to system tray when window is closed"
             )
@@ -302,7 +302,7 @@ class _GeneralPageMixin:
             v.addWidget(
                 self._section_header(QCoreApplication.translate("SettingsDialog", "NOTIFICATIONS"))
             )
-            self._track_notify_check = QCheckBox(
+            self._track_notify_check = WrapCheckBox(
                 QCoreApplication.translate(
                     "SettingsDialog", "Show a notification when the track changes"
                 )
@@ -311,15 +311,7 @@ class _GeneralPageMixin:
             self._track_notify_check.toggled.connect(
                 lambda val: setattr(self.s, "notify_on_track_change", val)
             )
-            # A sentence-long label: on a phone it wraps (a QCheckBox can't).
-            from jellytoast.platform_compat import is_mobile_shell
-            from jellytoast.ui_helpers import wrapping_checkbox
-
-            v.addWidget(
-                wrapping_checkbox(self._track_notify_check)
-                if is_mobile_shell()
-                else self._track_notify_check
-            )
+            v.addWidget(self._track_notify_check)
 
             v.addSpacing(12)
 
@@ -370,7 +362,7 @@ class _GeneralPageMixin:
             up_row = QHBoxLayout()
             up_row.setContentsMargins(0, 0, 0, 0)
             up_row.setSpacing(10)
-            self._update_check = QCheckBox(
+            self._update_check = WrapCheckBox(
                 QCoreApplication.translate("SettingsDialog", "Check for updates")
             )
             self._update_check.setChecked(self.s.check_for_updates_enabled)

@@ -10,7 +10,6 @@ runtime.
 
 from PySide6.QtCore import QCoreApplication, Qt
 from PySide6.QtWidgets import (
-    QCheckBox,
     QFormLayout,
     QFrame,
     QHBoxLayout,
@@ -34,6 +33,7 @@ from jellytoast.selector import (
 from jellytoast.settings_widgets import (
     AUDIO_QUALITIES,
     REPLAYGAIN_MODES,
+    WrapCheckBox,
     audio_family_dot_color,
     bit_perfect_path_hint,
 )
@@ -140,7 +140,7 @@ class _PlaybackPageMixin:
         bp_row = QHBoxLayout()
         bp_row.setContentsMargins(0, 0, 0, 0)
         bp_row.setSpacing(10)
-        self._bit_perfect_check = QCheckBox(
+        self._bit_perfect_check = WrapCheckBox(
             QCoreApplication.translate("SettingsDialog", "Bit-perfect mode")
         )
         self._bit_perfect_check.setChecked(self.s.bit_perfect_mode)
@@ -182,7 +182,7 @@ class _PlaybackPageMixin:
             excl_row = QHBoxLayout()
             excl_row.setContentsMargins(0, 0, 0, 0)  # aligned under Bit-perfect mode
             excl_row.setSpacing(10)
-            self._audio_exclusive_check = QCheckBox(
+            self._audio_exclusive_check = WrapCheckBox(
                 QCoreApplication.translate("SettingsDialog", "Exclusive output")
             )
             self._audio_exclusive_check.setChecked(self.s.audio_exclusive)
@@ -402,7 +402,7 @@ class _PlaybackPageMixin:
         mk_row = QHBoxLayout()
         mk_row.setContentsMargins(0, 0, 0, 0)
         mk_row.setSpacing(10)
-        self._media_integration_check = QCheckBox(
+        self._media_integration_check = WrapCheckBox(
             QCoreApplication.translate("SettingsDialog", "OS media integration")
         )
         self._media_integration_check.setChecked(self.s.media_integration_enabled)
@@ -467,14 +467,14 @@ class _PlaybackPageMixin:
         # the sub-option reads as a distinct choice rather than
         # crowding the parent label.
         toggle_row.setSpacing(6 if _mobile() else 28)
-        self._xf_enabled = QCheckBox(
+        self._xf_enabled = WrapCheckBox(
             QCoreApplication.translate("SettingsDialog", "Crossfade between tracks")
         )
         self._xf_enabled.setChecked(self.s.crossfade_enabled)
         self._xf_enabled.toggled.connect(self._on_xf_enabled_toggled)
         toggle_row.addWidget(self._xf_enabled)
 
-        self._xf_smart_album = QCheckBox(
+        self._xf_smart_album = WrapCheckBox(
             QCoreApplication.translate("SettingsDialog", "Skip on albums")
         )
         self._xf_smart_album.setToolTip(

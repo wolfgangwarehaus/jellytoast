@@ -272,31 +272,27 @@ class TestPhoneScale:
         assert self._run(env, True) == "2"
 
 
-def test_wrapping_checkbox_label_wraps_and_toggles(qapp):
-    from PySide6.QtCore import QPointF, Qt
-    from PySide6.QtGui import QMouseEvent
-    from PySide6.QtWidgets import QCheckBox
+def test_settings_checkbox_label_wraps_and_toggles(qapp):
+    """Settings at 360 px (august, 2026-10-26) clipped one-line labels:
+    "Hide to system tray when windo". WrapCheckBox wraps instead, and the
+    whole row, label included, still toggles it."""
+    from PySide6.QtCore import QPoint, Qt
+    from PySide6.QtTest import QTest
 
-    from jellytoast.ui_helpers import wrapping_checkbox
+    from jellytoast.settings_widgets import WrapCheckBox
 
-    cb = QCheckBox("Show a notification when the track changes")
-    row = wrapping_checkbox(cb)
-    label = row._jt_label
-    assert cb.text() == "" and label.wordWrap() and "notification" in label.text()
-
-    def press():
-        ev = QMouseEvent(
-            QMouseEvent.Type.MouseButtonPress, QPointF(2, 2), QPointF(2, 2),
-            Qt.MouseButton.LeftButton, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier,
-        )
-        label.mousePressEvent(ev)
-
-    press()
-    assert cb.isChecked()
+    cb = WrapCheckBox("Show a notification when the track changes")
+    one_line = cb.heightForWidth(2000)
+    assert cb.heightForWidth(150) > one_line  # wraps when narrow
+    assert cb.minimumSizeHint().width() < cb.sizeHint().width()
+    cb.resize(150, cb.heightForWidth(150))
+    cb.show()
+    QTest.mouseClick(cb, Qt.MouseButton.LeftButton, pos=QPoint(140, cb.height() - 4))
+    assert cb.isChecked()  # a click on the wrapped label's last line
     cb.setEnabled(False)
-    press()
-    assert cb.isChecked()  # a disabled option's label doesn't toggle it
-    row.deleteLater()
+    QTest.mouseClick(cb, Qt.MouseButton.LeftButton, pos=QPoint(140, 4))
+    assert cb.isChecked()  # a disabled option doesn't toggle
+    cb.deleteLater()
 
 
 _SETTINGS_PAGES = ["General", "Playback", "Casting", "Display", "Hotkeys", "Scrobbling"]

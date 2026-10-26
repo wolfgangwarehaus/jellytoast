@@ -10,7 +10,6 @@ runtime.
 
 from PySide6.QtCore import QCoreApplication, QTimer
 from PySide6.QtWidgets import (
-    QCheckBox,
     QDialog,
     QHBoxLayout,
     QLabel,
@@ -26,6 +25,7 @@ from jellytoast.design_tokens import (
     rad,
     type_qss,
 )
+from jellytoast.settings_widgets import WrapCheckBox
 from jellytoast.theme import _hex_to_rgb
 from jellytoast.ui_helpers import (
     TEXT,
@@ -202,7 +202,7 @@ class _ScrobblingPageMixin:
         # ── ListenBrainz ──────────────────────────────────────────────
         v.addWidget(self._section_header("ListenBrainz"))
 
-        self._lb_enabled = QCheckBox(
+        self._lb_enabled = WrapCheckBox(
             QCoreApplication.translate("SettingsDialog", "Enable ListenBrainz scrobbling")
         )
         self._lb_enabled.setChecked(self.s.listenbrainz_enabled)
@@ -223,7 +223,7 @@ class _ScrobblingPageMixin:
             # Escape hatch: if the detected 'other' scrobbler is actually a
             # different app (not this server), the user can force jellytoast
             # to scrobble anyway (accepting duplicates).
-            self._lb_override = QCheckBox(
+            self._lb_override = WrapCheckBox(
                 QCoreApplication.translate("SettingsDialog", "Scrobble from jellytoast anyway")
             )
             self._lb_override.setChecked(self.s.scrobble_in_app_anyway)
@@ -303,7 +303,7 @@ class _ScrobblingPageMixin:
         # ListenBrainz above is the supported scrobbling path.
         if _lastfm.is_configured():
             v.addWidget(self._section_header("Last.fm"))
-            self._lf_enabled = QCheckBox(
+            self._lf_enabled = WrapCheckBox(
                 QCoreApplication.translate("SettingsDialog", "Enable Last.fm scrobbling")
             )
             self._lf_enabled.setChecked(self.s.lastfm_enabled)

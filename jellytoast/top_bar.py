@@ -116,6 +116,9 @@ class JtTopBar(QWidget):
     # the full list of selected library-id strings (empty = all). The host
     # persists + normalizes it (the widget stays a dumb view).
     libraries_selected = Signal(list)
+    # The narrowest this bar fits with every control in ⋮ — the window
+    # raises its minimum width to it (see _position_center_cluster).
+    min_width_needed = Signal(int)
 
     def __init__(self, parent=None, titlebar_mode: bool = False):
         super().__init__(parent)
@@ -495,24 +498,57 @@ class JtTopBar(QWidget):
             x = max(left_edge, min(x, right_edge))
         else:  # no room — sit flush against the left cluster
             x = left_edge
-            # Only trust the overlap once both side columns have real geometry
-            # (during the first layout pass the right column still sits at x=0,
-            # which reads as a huge overflow and pins the bar compact).
-            laid_out = right.geometry().left() > left.geometry().right()
-            if not self._compact and laid_out:
-                # It would overlap the right cluster (sort / search): this bar
-                # needs more width than it has. Remember how much, and go
-                # compact — e.g. a 600 px phone with the multi-library picker.
-                self._compact_need = self.width() + (left_edge - right_edge)
+        # Shed controls by what the bar NEEDS (its parts' natural widths),
+        # not by where they sit: mid-resize the side columns' geometry is
+        # stale, and measuring it overstated each stage — search stepped
+        # into ⋮ at 657 px and the window floor jumped to 613.
+        need = self._required_width()
+        # Mid-flip (a stage showing ⋮ before hiding what it replaces) the
+        # bar is half-applied; showing a button re-enters here through the
+        # column event filter, and that reading pinned the window at 616 px.
+        if need > self.width() and not self._applying_stage:
+            if not self._compact:
+                # The full bar doesn't fit (sort / search would be covered):
+                # go compact — e.g. a 600 px phone with the library picker.
+                self._compact_need = need
                 QTimer.singleShot(0, self._apply_compact)
-            elif self._compact and not self._overflow and laid_out:
+            elif not self._overflow:
                 # Still no room once compact — a desktop window at its minimum
                 # width, where the window controls share the bar. Second
                 # stage: the secondary buttons step into the ⋮ menu.
-                self._overflow_need = self.width() + (left_edge - right_edge)
+                self._overflow_need = need
                 QTimer.singleShot(0, self._apply_overflow)
+            elif not self._tight:
+                # Third stage: a long centre title ("Now Playing" in a wide
+                # font) still runs into search, so search joins the ⋮ menu.
+                self._tight_need = need
+                QTimer.singleShot(0, self._apply_overflow)
+            elif need != self._floor_need:
+                # Nothing left to hide: ask the window for a wider floor.
+                self._floor_need = need
+                self.min_width_needed.emit(need)
+        elif self._tight and not self._applying_stage and need != self._floor_need:
+            # Fully shed and it fits: let the floor follow the bar back
+            # down (a shorter title, a status chip gone) instead of keeping
+            # the widest need it ever saw.
+            self._floor_need = need
+            self.min_width_needed.emit(need)
         y = (self.height() - ch) // 2
         cluster.setGeometry(x, y, cw, ch)
+
+    def _required_width(self) -> int:
+        """Width the bar needs as it stands: both side columns and the
+        centre cluster at their natural size, with the clamp's gaps."""
+        m = self.layout().contentsMargins()
+        return (
+            m.left()
+            + self._left_col.sizeHint().width()
+            + self._CLUSTER_GAP
+            + self._center_cluster.sizeHint().width()
+            + self._CLUSTER_GAP
+            + self._right_col.sizeHint().width()
+            + m.right()
+        )
 
     # Phone width: forward, home (the view dropdown beside it already
     # switches sections), the decorative section title (+ its separator) and
@@ -527,6 +563,10 @@ class JtTopBar(QWidget):
     _compact_need = 0
     _overflow = False
     _overflow_need = 0
+    _tight = False
+    _tight_need = 0
+    _floor_need = 0
+    _applying_stage = False
     _multi_library = False
 
     def _apply_compact(self):
@@ -534,11 +574,15 @@ class JtTopBar(QWidget):
         if compact == self._compact:
             return
         self._compact = compact
-        self.fwd_btn.setVisible(not compact)
-        self.home_btn.setVisible(not compact)
-        self._separator.setVisible(not compact)
-        self.view_mode_btn.setVisible(not compact)
-        self.title_label.setVisible(not compact and not self._multi_library)
+        self._applying_stage = True
+        try:
+            self.fwd_btn.setVisible(not compact)
+            self.home_btn.setVisible(not compact)
+            self._separator.setVisible(not compact)
+            self.view_mode_btn.setVisible(not compact)
+            self.title_label.setVisible(not compact and not self._multi_library)
+        finally:
+            self._applying_stage = False
         self._apply_overflow(force=True)
 
     def _overflowing(self) -> bool:
@@ -552,14 +596,21 @@ class JtTopBar(QWidget):
 
     def _apply_overflow(self, force: bool = False):
         over = self._overflowing()
-        if over == self._overflow and not force:
+        tight = over and self.width() < self._tight_need
+        if over == self._overflow and tight == self._tight and not force:
             return
         self._overflow = over
-        self.more_btn.setVisible(over)
-        self.settings_btn.setVisible(not over)
-        self.shuffle_all_btn.setVisible(not over)
-        self.sort_btn.setVisible(not over)
-        self.library_btn.setVisible(self._multi_library and not over)
+        self._tight = tight
+        self._applying_stage = True
+        try:
+            self.more_btn.setVisible(over)
+            self.search_btn.setVisible(not tight)
+            self.settings_btn.setVisible(not over)
+            self.shuffle_all_btn.setVisible(not over)
+            self.sort_btn.setVisible(not over)
+            self.library_btn.setVisible(self._multi_library and not over)
+        finally:
+            self._applying_stage = False
         # Re-centre once the layout has settled: geometry is stale mid-flip,
         # and measuring it now reads as overflow (pinning the bar compact).
         # Without it the dropdown keeps the pre-flip position until a resize.
@@ -573,6 +624,8 @@ class JtTopBar(QWidget):
         menu.setStyleSheet(self._dropdown_menu_qss())
         # Sub-menus open from the ⋮ button once this menu has closed.
         later = lambda fn: lambda: QTimer.singleShot(0, fn)  # noqa: E731
+        if self._tight:
+            menu.addAction(self.tr("Search"), lambda: self.nav_requested.emit("search"))
         if self._multi_library:
             menu.addAction(
                 self.tr("Libraries…"), later(lambda: self._show_library_menu(self.more_btn))

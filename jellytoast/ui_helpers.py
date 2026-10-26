@@ -3292,32 +3292,3 @@ def install_autofade_scrollbars(scroll_area: QScrollArea):
             + "QScrollArea { background: transparent; border: none; }"
         )
     return v, h
-
-
-def wrapping_checkbox(cb) -> "QWidget":
-    """``cb`` with a label that WRAPS: QCheckBox draws its text on one line,
-    so a sentence-long option ran off a phone-width page. Returns a row of
-    the bare box + a word-wrapped label; tapping the label toggles the box
-    (and follows its enabled state), so it still reads and acts as one
-    control."""
-    from PySide6.QtWidgets import QHBoxLayout, QLabel
-
-    text = cb.text()
-    cb.setText("")
-    row = QWidget()
-    h = QHBoxLayout(row)
-    h.setContentsMargins(0, 0, 0, 0)
-    h.setSpacing(8)
-    label = QLabel(text)
-    label.setWordWrap(True)
-    label.setBuddy(cb)
-
-    def _press(e, cb=cb):
-        if cb.isEnabled() and e.button() == Qt.MouseButton.LeftButton:
-            cb.toggle()
-
-    label.mousePressEvent = _press
-    h.addWidget(cb, 0, Qt.AlignmentFlag.AlignTop)
-    h.addWidget(label, 1)
-    row._jt_label = label
-    return row

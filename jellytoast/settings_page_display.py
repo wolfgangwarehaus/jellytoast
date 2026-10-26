@@ -12,7 +12,6 @@ import sys
 
 from PySide6.QtCore import QCoreApplication, QSize, Qt, QTimer
 from PySide6.QtWidgets import (
-    QCheckBox,
     QFormLayout,
     QHBoxLayout,
     QLabel,
@@ -36,6 +35,7 @@ from jellytoast.selector import (
 from jellytoast.settings_widgets import (
     _THEME_MODE_CHOICES,
     LYRICS_FONT_SIZES,
+    WrapCheckBox,
     _AccentSwatch,
     _EyedropperSwatch,
 )
@@ -223,8 +223,8 @@ class _DisplayPageMixin:
             self._section_header(QCoreApplication.translate("SettingsDialog", "Now-playing info"))
         )
 
-        def _badge_toggle(attr: str, label: str) -> QCheckBox:
-            cb = QCheckBox(label)
+        def _badge_toggle(attr: str, label: str) -> WrapCheckBox:
+            cb = WrapCheckBox(label)
             cb.setChecked(bool(getattr(self.s, attr)))
 
             def _on(val, name=attr):
@@ -319,7 +319,7 @@ class _DisplayPageMixin:
             lang_row.addStretch(1)
             v.addLayout(lang_row)
 
-        self._tooltips_check = QCheckBox(
+        self._tooltips_check = WrapCheckBox(
             QCoreApplication.translate("SettingsDialog", "Show hover tooltips")
         )
         self._tooltips_check.setChecked(self.s.show_tooltips)
@@ -340,7 +340,7 @@ class _DisplayPageMixin:
         from jellytoast.platform_compat import is_mobile_shell
 
         if is_mobile_shell() and _quick.available():
-            self._phone_quick_check = QCheckBox(
+            self._phone_quick_check = WrapCheckBox(
                 QCoreApplication.translate(
                     "SettingsDialog", "Phone interface — restart to apply"
                 )
@@ -368,7 +368,7 @@ class _DisplayPageMixin:
             nb_row = QHBoxLayout()
             nb_row.setContentsMargins(0, 0, 0, 0)
             nb_row.setSpacing(10)
-            self._native_border_check = QCheckBox(
+            self._native_border_check = WrapCheckBox(
                 QCoreApplication.translate("SettingsDialog", "Use native window border")
             )
             self._native_border_check.setChecked(self.s.native_window_border)
@@ -390,7 +390,7 @@ class _DisplayPageMixin:
         sc_row = QHBoxLayout()
         sc_row.setContentsMargins(0, 0, 0, 0)
         sc_row.setSpacing(10)
-        self._square_corners_check = QCheckBox(
+        self._square_corners_check = WrapCheckBox(
             QCoreApplication.translate("SettingsDialog", "Square corners")
         )
         self._initial_square_corners = self.s.square_corners
@@ -633,7 +633,7 @@ class _DisplayPageMixin:
             self._mode_combo = None
 
         # Frosted / Opaque — always present.
-        self._frosted_check = QCheckBox(
+        self._frosted_check = WrapCheckBox(
             QCoreApplication.translate("SettingsDialog", "Frosted glass")
         )
         self._frosted_check.setChecked(self.s.frosted)
@@ -658,7 +658,7 @@ class _DisplayPageMixin:
                 self._section_header(QCoreApplication.translate("SettingsDialog", "Accent color"))
             )
             box.addLayout(self._build_accent_row())
-            self._follow_accent_check = QCheckBox(
+            self._follow_accent_check = WrapCheckBox(
                 QCoreApplication.translate("SettingsDialog", "Follow system accent")
             )
             self._follow_accent_check.setChecked(self.s.follow_system_accent)
@@ -687,7 +687,7 @@ class _DisplayPageMixin:
         # re-themes onto the imported family on the next wallpaper change). The
         # ⓘ carries the "what is this" so the label stays terse.
         if sys.platform.startswith("linux"):
-            self._follow_pywal_check = QCheckBox(
+            self._follow_pywal_check = WrapCheckBox(
                 QCoreApplication.translate("SettingsDialog", "Follow pywal / wallust")
             )
             self._follow_pywal_check.setChecked(self.s.follow_pywal)

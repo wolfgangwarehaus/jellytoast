@@ -856,6 +856,7 @@ class JellytoastWindow(_NavMixin, _SessionMixin, _CastDispatcherMixin, _ShuffleP
         # reload ping to every browse surface (queued so a burst doesn't
         # re-enter a grid mid-load).
         self.top_bar.libraries_selected.connect(self._on_libraries_selected)
+        self.top_bar.min_width_needed.connect(self._on_top_bar_min_width)
         PlayerBus.get().libraries_changed.connect(
             self._on_libraries_changed,
             Qt.ConnectionType.QueuedConnection,
@@ -1537,7 +1538,20 @@ class JellytoastWindow(_NavMixin, _SessionMixin, _CastDispatcherMixin, _ShuffleP
         # responsive.COMPACT_BELOW instead of the window refusing to shrink.
         min_w = round(360 * (1.0 + (FONT_SCALE - 1.0) * 0.25) * mono)
         min_h = round(420 * (1.0 + (FONT_SCALE - 1.0) * 0.4))
+        # The top bar's measured floor: its shortest form (back, title, ⋮,
+        # window controls) didn't fit — e.g. "Now Playing" in a wide font.
+        min_w = max(min_w, getattr(self, "_top_bar_floor", 0))
         self.setMinimumSize(min_w, min_h)
+
+    def _on_top_bar_min_width(self, need: int):
+        # The bar may sit inside the window's frame/margins: add both sides
+        # back. From its offset, not width() - top_bar.width(): mid-layout
+        # the bar's width is stale and that pinned the window at 738 px.
+        from PySide6.QtCore import QPoint
+
+        inset = max(0, self.top_bar.mapTo(self, QPoint(0, 0)).x())
+        self._top_bar_floor = need + 2 * inset
+        self._apply_adaptive_min_size()
 
     def resizeEvent(self, e):
         super().resizeEvent(e)

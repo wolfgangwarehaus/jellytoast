@@ -11,7 +11,6 @@ runtime.
 from PySide6.QtCore import QCoreApplication, Qt
 from PySide6.QtWidgets import (
     QButtonGroup,
-    QCheckBox,
     QGridLayout,
     QHBoxLayout,
     QLabel,
@@ -26,6 +25,7 @@ from jellytoast.design_tokens import (
 )
 from jellytoast.settings_widgets import (
     CAST_ROUTING_MODES,
+    WrapCheckBox,
 )
 from jellytoast.ui_helpers import (
     TEXT_FAINT,
@@ -105,7 +105,7 @@ class _CastingPageMixin:
         dt_grid.setColumnStretch(2, 1)
         self._cast_type_checks: dict = {}
         for r, (label, attr) in enumerate(cast_types):
-            cb = QCheckBox(label)
+            cb = WrapCheckBox(label)
             cb.setChecked(bool(getattr(self.s, attr)))
             cb.toggled.connect(lambda val, a=attr: setattr(self.s, a, val))
             self._cast_type_checks[attr] = cb
