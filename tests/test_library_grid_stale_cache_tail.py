@@ -309,3 +309,46 @@ def test_on_newest_probe_unknown_id_kicks_rebuild(grid, monkeypatch):
     grid._load_gen = 1
     grid._on_newest_probe({"Items": [{"Id": "fresh"}]}, gen=1)
     assert len(shots) == 1
+
+
+def test_scrolling_during_a_rebuild_never_repeats_the_list(grid, monkeypatch):
+    """august, 2026-10-26: after artists were renamed server-side, the
+    Artists grid listed every artist once and then every artist again.
+    The page-1 refresh saw the change and started the silent rebuild,
+    which refetches from offset 0 into the buffer the scroll-to-bottom
+    drain appends onto the grid. Scrolling mid-rebuild appended the
+    whole list a second time."""
+    server = _albums(136, start=1)  # renamed: page 1's ids changed
+    monkeypatch.setattr(
+        _disk_cache, "load", lambda *a, **k: {"items": _albums(136), "complete": True}
+    )
+    run_q, timer_q = [], []
+    monkeypatch.setattr(
+        lp, "run_async",
+        lambda fn, *a, on_result=None, on_error=None, **k: run_q.append(
+            (fn, a, k, on_result)
+        ),
+    )
+    monkeypatch.setattr(lg.QTimer, "singleShot", staticmethod(lambda _d, cb: timer_q.append(cb)))
+    grid.api.get_items.side_effect = lambda parent, item_type, limit, offset, *a, **k: {
+        "Items": list(server[offset : offset + limit])
+    }
+    grid._save_cache_async = lambda items, complete: None
+    bar = grid._view.verticalScrollBar()
+    monkeypatch.setattr(bar, "maximum", lambda: 1000)
+
+    grid.load_items("p", "")
+    assert len(_ids(grid)) == 136
+    for _ in range(200):
+        if run_q:
+            fn, a, k, on_result = run_q.pop(0)
+            r = fn(*a, **k)
+            if on_result:
+                on_result(r)
+        elif timer_q:
+            timer_q.pop(0)()
+        else:
+            break
+        grid._maybe_load_more(1000)  # the user sits at the bottom throughout
+    ids = _ids(grid)
+    assert len(ids) == len(set(ids)) == 136, "the grid repeated rows"

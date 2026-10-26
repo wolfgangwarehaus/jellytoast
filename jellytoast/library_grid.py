@@ -2210,6 +2210,10 @@ class LibraryGrid(_PaginatorMixin, QWidget):
         # payload back to disk with complete=True — next launch
         # renders everything in one paint.
         self._partial_cache_buffer: List[Dict] = []
+        # The silent full-list rebuild's own buffer (from offset 0). Kept
+        # apart from the top-up buffer above, which scrolling drains onto
+        # the grid's tail — sharing it appended the whole list again.
+        self._rebuild_buffer: List[Dict] = []
         # True while a silent fill/rebuild is in flight. Gates the
         # two paths so a cache-hit-triggered top-up doesn't try to
         # share the buffer with a refresh-triggered full rebuild.

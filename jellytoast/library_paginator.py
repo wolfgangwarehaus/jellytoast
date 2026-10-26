@@ -85,6 +85,7 @@ class _PaginatorMixin:
         # mid-fill sort/library switch wrote a cross-scope-poisoned cache.)
         self._silent_fetch_in_flight = False
         self._partial_cache_buffer = []
+        self._rebuild_buffer = []
         # Offline mode short-circuit — render only user-requested
         # downloads for this kind. Pagination, disk cache, refresh
         # round-trip are all bypassed since the source of truth lives
@@ -250,6 +251,7 @@ class _PaginatorMixin:
         self._auto_paginate = False
         self._completing_partial_cache = False
         self._partial_cache_buffer = []
+        self._rebuild_buffer = []
         self._refresh_scope = {}
         self._items_loaded.emit({"Items": items, "_complete": True})
 
@@ -442,6 +444,13 @@ class _PaginatorMixin:
         if self._partial_cache_buffer:
             buffered = self._partial_cache_buffer
             self._partial_cache_buffer = []
+            # Only ever rows past the rendered tail: never repeat one that
+            # is already on screen (august, 2026-10-26: every artist listed
+            # twice after the full-list rebuild shared this buffer).
+            shown = self._items_signature(self._model.items())
+            buffered = [it for it in buffered if it.get("Id", "") not in shown]
+            if not buffered:
+                return
             # Apply the same client-side article resort every other append path
             # runs (_on_page_loaded / _on_items_loaded), or the drained buffer
             # lands unsorted relative to the already-rendered head.
@@ -781,7 +790,7 @@ class _PaginatorMixin:
         # this, the prior implementation called _clear() +
         # _on_items_loaded with just page 1, which re-triggered
         # visible chunked pagination on every launch.
-        self._partial_cache_buffer = []
+        self._rebuild_buffer = []
         QTimer.singleShot(200, lambda g=gen: self._silent_rebuild_tick(g))
 
     def _probe_tail_growth(self, gen=None):
@@ -830,7 +839,7 @@ class _PaginatorMixin:
         if not items:
             self._probe_newest(gen)
             return
-        self._partial_cache_buffer = []
+        self._rebuild_buffer = []
         QTimer.singleShot(200, lambda g=gen: self._silent_rebuild_tick(g))
 
     # How many of the server's most-recently-added albums the newest
@@ -879,7 +888,7 @@ class _PaginatorMixin:
         cached = self._items_signature(self._model.items())
         if all(it.get("Id") in cached for it in items):
             return
-        self._partial_cache_buffer = []
+        self._rebuild_buffer = []
         QTimer.singleShot(200, lambda g=gen: self._silent_rebuild_tick(g))
 
     def _silent_rebuild_tick(self, gen=None):
@@ -893,14 +902,14 @@ class _PaginatorMixin:
             return  # union scope renders complete; per-folder offsets don't apply
         if not self._refresh_scope:
             return
-        if self._silent_fetch_in_flight and len(self._partial_cache_buffer) == 0:
+        if self._silent_fetch_in_flight and len(self._rebuild_buffer) == 0:
             # Concurrent silent fill is using the buffer; wait it
             # out. This is rare — the cache hit path schedules
             # _silent_buffered_fill at 500 ms and the page-1 refresh
             # is usually quicker — but be defensive.
             return
         self._silent_fetch_in_flight = True
-        offset = len(self._partial_cache_buffer)
+        offset = len(self._rebuild_buffer)
         item_type = self._ITEM_TYPE.get(self.kind, "")
         sort_by = self._sort_for_kind(self._sort_by, self.kind)
         run_async(
@@ -924,15 +933,15 @@ class _PaginatorMixin:
         items = (resp or {}).get("Items") or []
         if not items:
             if self._refresh_scope:
-                self._save_cache_async(self._partial_cache_buffer, True)
-            self._partial_cache_buffer = []
+                self._save_cache_async(self._rebuild_buffer, True)
+            self._rebuild_buffer = []
             self._silent_fetch_in_flight = False
             return
-        self._partial_cache_buffer.extend(items)
+        self._rebuild_buffer.extend(items)
         if len(items) < self.PAGE_SIZE:
             if self._refresh_scope:
-                self._save_cache_async(self._partial_cache_buffer, True)
-            self._partial_cache_buffer = []
+                self._save_cache_async(self._rebuild_buffer, True)
+            self._rebuild_buffer = []
             self._silent_fetch_in_flight = False
             return
         self._silent_fetch_in_flight = False
@@ -962,4 +971,5 @@ class _PaginatorMixin:
         self._completing_partial_cache = False
         self._silent_fetch_in_flight = False
         self._partial_cache_buffer = []
+        self._rebuild_buffer = []
         self._letter_to_row = {}
