@@ -314,18 +314,20 @@ Drawer {
                 Layout.preferredHeight: 60
                 focusPolicy: Qt.NoFocus
                 hoverEnabled: false
+                // Same geometry as SheetRow (the other sheets' rows): 22 px
+                // glyph, 16 px gap, 10 px corners — plus a detail line.
+                leftPadding: 4
                 background: Rectangle {
-                    radius: 12
+                    radius: 10
                     color: drow.current ? theme.accent : theme.text
                     opacity: drow.current ? 0.12 : (drow.pressed ? 0.08 : 0)
                 }
                 contentItem: RowLayout {
-                    spacing: 14
+                    spacing: 16
                     Icon {
-                        Layout.leftMargin: 2
                         name: drow.glyph
                         tint: drow.current ? theme.accent : theme.textDim
-                        size: 24
+                        size: 22
                     }
                     ColumnLayout {
                         Layout.fillWidth: true
