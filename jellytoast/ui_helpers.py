@@ -421,10 +421,13 @@ def _build_global_style() -> str:
 QMainWindow, QDialog, QWidget {{
     background: {BG};
 }}
-QCheckBox {{
+/* Option labels match the buttons and dropdowns beside them (body text);
+   unsized they took the larger app font (QA 2026-10-26). */
+QCheckBox, QRadioButton {{
     color: {TEXT};
     spacing: 8px;
     background: transparent;
+    {type_qss(TYPE_BODY)}
 }}
 QCheckBox::indicator {{
     width: 16px;

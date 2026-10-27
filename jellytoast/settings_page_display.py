@@ -310,7 +310,7 @@ class _DisplayPageMixin:
         lang_row.addWidget(self._language_combo)
         lang_hint = QLabel(QCoreApplication.translate("SettingsDialog", "(needs restart)"))
         lang_hint.setStyleSheet(f"color: {TEXT_FAINT}; {type_qss(TYPE_CAPTION)}")
-        lang_hint.setWordWrap(True)  # narrow Settings: wrap, don't overflow
+        lang_hint.setWordWrap(bool(getattr(self, "_compact", False)))  # narrow only
         from jellytoast import quick as _quick
         from jellytoast.platform_compat import is_mobile_shell
 
@@ -383,7 +383,7 @@ class _DisplayPageMixin:
             nb_row.addWidget(self._native_border_check)
             nb_hint = QLabel(QCoreApplication.translate("SettingsDialog", "(needs restart)"))
             nb_hint.setStyleSheet(f"color: {TEXT_FAINT}; {type_qss(TYPE_CAPTION)}")
-            nb_hint.setWordWrap(True)
+            nb_hint.setWordWrap(bool(getattr(self, "_compact", False)))  # narrow only
             nb_row.addWidget(nb_hint)
             nb_row.addStretch(1)
             v.addLayout(nb_row)
@@ -405,7 +405,7 @@ class _DisplayPageMixin:
         sc_row.addWidget(self._square_corners_check)
         sc_hint = QLabel(QCoreApplication.translate("SettingsDialog", "(needs restart)"))
         sc_hint.setStyleSheet(f"color: {TEXT_FAINT}; {type_qss(TYPE_CAPTION)}")
-        sc_hint.setWordWrap(True)
+        sc_hint.setWordWrap(bool(getattr(self, "_compact", False)))  # narrow only
         sc_row.addWidget(sc_hint)
         sc_row.addStretch(1)
         v.addLayout(sc_row)

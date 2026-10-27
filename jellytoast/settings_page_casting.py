@@ -218,7 +218,10 @@ class _CastingPageMixin:
                 # doesn't render rich text) so it reads dim grey.
                 hint_lbl = QLabel(hint)
                 hint_lbl.setStyleSheet(f"color: {TEXT_FAINT}; {type_qss(TYPE_CAPTION)}")
-                hint_lbl.setWordWrap(True)  # narrow Settings: wrap, don't overflow
+                # Narrow Settings only: wrap, don't overflow. On the desktop
+                # page the grid gives this column its minimum, so wrapping
+                # there broke "(offline, special case)" onto two lines.
+                hint_lbl.setWordWrap(bool(getattr(self, "_compact", False)))
                 routing_grid.addWidget(hint_lbl, r, 1, Qt.AlignmentFlag.AlignVCenter)
             self._cast_routing_radios[key] = rb
         v.addLayout(routing_grid)

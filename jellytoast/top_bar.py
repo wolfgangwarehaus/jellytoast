@@ -254,7 +254,7 @@ class JtTopBar(QWidget):
         # tracks the currently active tab (e.g. "Albums"); clicking
         # opens a menu of all tabs for the current collection.
         # Visible only on library pages.
-        self.view_btn = QPushButton("Albums")
+        self.view_btn = QPushButton(self.tr("Albums"))
         self.view_btn.setIcon(icon("chevron_down"))
         self.view_btn.setIconSize(QSize(14, 14))
         self.view_btn.setLayoutDirection(Qt.LayoutDirection.RightToLeft)
@@ -542,16 +542,43 @@ class JtTopBar(QWidget):
             self._floor_need = need
             self.min_width_needed.emit(need)
 
+    def _tab_display(self, key: str) -> str:
+        """The translated title for a page key. Keys stay English — the host
+        and the view menu match on them — and only what's shown is
+        translated (the top bar read "Albums" in Spanish, QA 2026-10-27).
+        Literal tr() calls so lupdate collects them."""
+        names = getattr(self, "_tab_names", None)
+        if names is None:
+            names = self._tab_names = {
+                "Albums": self.tr("Albums"),
+                "Suggestions": self.tr("Suggestions"),
+                "Artists": self.tr("Artists"),
+                "Playlists": self.tr("Playlists"),
+                "Smart playlists": self.tr("Smart playlists"),
+                "Songs": self.tr("Songs"),
+                "Genres": self.tr("Genres"),
+                "Radio": self.tr("Radio"),
+                "Downloads": self.tr("Downloads"),
+                "Search": self.tr("Search"),
+                "Now Playing": self.tr("Now Playing"),
+                "Browsing": self.tr("Browsing"),
+            }
+        return names.get(key, key)
+
+    def _shown_view_title(self) -> str:
+        return self._tab_display(self._view_title)
+
     def _set_view_title(self, text: str) -> None:
-        """The centre dropdown's full title; _fit_view_title may show it
-        shortened with "…" when the bar is at its tightest."""
+        """The centre dropdown's page key (English); the button shows its
+        translation, shortened with "…" by _fit_view_title when the bar is
+        at its tightest."""
         self._view_title = text or ""
-        self.view_btn.setText(self._view_title)
+        self.view_btn.setText(self._shown_view_title())
         self._view_title_natural = self.view_btn.sizeHint().width()
 
     def _view_title_min_w(self) -> int:
         """The dropdown's width with its title cut to two letters + "…"."""
-        full = self._view_title
+        full = self._shown_view_title()
         if len(full) <= 3 or not self._view_title_natural:
             return self._view_title_natural
         fm = self.view_btn.fontMetrics()
@@ -566,7 +593,7 @@ class JtTopBar(QWidget):
     def _fit_view_title(self) -> None:
         """Full title, unless the bar is fully shed and still short of room:
         then end it with "…" just enough to fit (never below two letters)."""
-        full = self._view_title
+        full = self._shown_view_title()
         if not self._view_title_natural:
             self._view_title_natural = self.view_btn.sizeHint().width()
         shown = full
@@ -1488,7 +1515,7 @@ class JtTopBar(QWidget):
         current_label = self._view_title.strip().lower()
         active_action = None
         for idx, label in enumerate(tabs):
-            act = QAction(label, menu)
+            act = QAction(self._tab_display(label), menu)
             if label.lower() == current_label:
                 active_action = act
             act.triggered.connect(

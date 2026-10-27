@@ -440,7 +440,7 @@ firewalld:
 <context>
     <name>ClassicalWork</name>
     <message>
-        <location filename="../ui_helpers.py" line="1161"/>
+        <location filename="../ui_helpers.py" line="1164"/>
         <source>Movement {0} of {1}</source>
         <translation>Movimiento {0} de {1}</translation>
     </message>
@@ -1327,13 +1327,13 @@ jellytoast funcionará, pero las funciones de bandeja no estarán disponibles.</
     </message>
     <message>
         <location filename="../top_bar.py" line="172"/>
-        <location filename="../top_bar.py" line="650"/>
+        <location filename="../top_bar.py" line="726"/>
         <source>Home</source>
         <translation>Inicio</translation>
     </message>
     <message>
         <location filename="../top_bar.py" line="173"/>
-        <location filename="../top_bar.py" line="652"/>
+        <location filename="../top_bar.py" line="728"/>
         <source>Settings</source>
         <translation>Ajustes</translation>
     </message>
@@ -1343,13 +1343,19 @@ jellytoast funcionará, pero las funciones de bandeja no estarán disponibles.</
         <translation>Elegir qué bibliotecas cargar</translation>
     </message>
     <message>
+        <location filename="../top_bar.py" line="257"/>
+        <location filename="../top_bar.py" line="553"/>
+        <source>Albums</source>
+        <translation>Álbumes</translation>
+    </message>
+    <message>
         <location filename="../top_bar.py" line="261"/>
         <source>Switch library view</source>
         <translation>Cambiar la vista de biblioteca</translation>
     </message>
     <message>
         <location filename="../top_bar.py" line="297"/>
-        <location filename="../top_bar.py" line="644"/>
+        <location filename="../top_bar.py" line="720"/>
         <source>Shuffle all</source>
         <translation>Reproducir todo aleatorio</translation>
     </message>
@@ -1360,7 +1366,8 @@ jellytoast funcionará, pero las funciones de bandeja no estarán disponibles.</
     </message>
     <message>
         <location filename="../top_bar.py" line="381"/>
-        <location filename="../top_bar.py" line="638"/>
+        <location filename="../top_bar.py" line="562"/>
+        <location filename="../top_bar.py" line="714"/>
         <source>Search</source>
         <translation>Buscar</translation>
     </message>
@@ -1385,42 +1392,92 @@ jellytoast funcionará, pero las funciones de bandeja no estarán disponibles.</
         <translation>Cerrar</translation>
     </message>
     <message>
-        <location filename="../top_bar.py" line="641"/>
+        <location filename="../top_bar.py" line="554"/>
+        <source>Suggestions</source>
+        <translation>Sugerencias</translation>
+    </message>
+    <message>
+        <location filename="../top_bar.py" line="555"/>
+        <source>Artists</source>
+        <translation>Artistas</translation>
+    </message>
+    <message>
+        <location filename="../top_bar.py" line="556"/>
+        <source>Playlists</source>
+        <translation>Listas</translation>
+    </message>
+    <message>
+        <location filename="../top_bar.py" line="557"/>
+        <source>Smart playlists</source>
+        <translation>Listas inteligentes</translation>
+    </message>
+    <message>
+        <location filename="../top_bar.py" line="558"/>
+        <source>Songs</source>
+        <translation>Canciones</translation>
+    </message>
+    <message>
+        <location filename="../top_bar.py" line="559"/>
+        <source>Genres</source>
+        <translation>Géneros</translation>
+    </message>
+    <message>
+        <location filename="../top_bar.py" line="560"/>
+        <source>Radio</source>
+        <translation>Radio</translation>
+    </message>
+    <message>
+        <location filename="../top_bar.py" line="561"/>
+        <source>Downloads</source>
+        <translation>Descargas</translation>
+    </message>
+    <message>
+        <location filename="../top_bar.py" line="563"/>
+        <source>Now Playing</source>
+        <translation>En reproducción</translation>
+    </message>
+    <message>
+        <location filename="../top_bar.py" line="564"/>
+        <source>Browsing</source>
+        <translation>Explorando</translation>
+    </message>
+    <message>
+        <location filename="../top_bar.py" line="717"/>
         <source>Libraries…</source>
         <translation>Bibliotecas…</translation>
     </message>
     <message>
-        <location filename="../top_bar.py" line="645"/>
+        <location filename="../top_bar.py" line="721"/>
         <source>Sort…</source>
         <translation>Ordenar…</translation>
     </message>
     <message>
-        <location filename="../top_bar.py" line="647"/>
+        <location filename="../top_bar.py" line="723"/>
         <source>Show as list</source>
         <translation>Ver como lista</translation>
     </message>
     <message>
-        <location filename="../top_bar.py" line="647"/>
+        <location filename="../top_bar.py" line="723"/>
         <source>Show as grid</source>
         <translation>Ver como cuadrícula</translation>
     </message>
     <message>
-        <location filename="../top_bar.py" line="930"/>
+        <location filename="../top_bar.py" line="1008"/>
         <source>Ascending</source>
         <translation>Ascendente</translation>
     </message>
     <message>
-        <location filename="../top_bar.py" line="931"/>
+        <location filename="../top_bar.py" line="1009"/>
         <source>Descending</source>
         <translation>Descendente</translation>
     </message>
     <message>
-        <location filename="../top_bar.py" line="974"/>
+        <location filename="../top_bar.py" line="1052"/>
         <source>Sort: {0} ({1})</source>
         <translation>Orden: {0} ({1})</translation>
     </message>
     <message>
-        <location filename="../top_bar.py" line="1302"/>
+        <location filename="../top_bar.py" line="1380"/>
         <source>All libraries</source>
         <translation>Todas las bibliotecas</translation>
     </message>
@@ -5264,29 +5321,29 @@ La carátula por pista no se modifica con esta escritura masiva.</translation>
 <context>
     <name>UiHelpers</name>
     <message>
-        <location filename="../ui_helpers.py" line="1572"/>
+        <location filename="../ui_helpers.py" line="1575"/>
         <source>Couldn&apos;t update favorite — check your connection.</source>
         <translation>No se pudo actualizar el favorito — comprueba tu conexión.</translation>
     </message>
     <message>
-        <location filename="../ui_helpers.py" line="3130"/>
+        <location filename="../ui_helpers.py" line="3133"/>
         <source>Deep Cuts: {0}</source>
         <translation>Rarezas: {0}</translation>
     </message>
     <message>
-        <location filename="../ui_helpers.py" line="3133"/>
-        <location filename="../ui_helpers.py" line="3147"/>
+        <location filename="../ui_helpers.py" line="3136"/>
+        <location filename="../ui_helpers.py" line="3150"/>
         <source>More like {0}</source>
         <translation>Más como {0}</translation>
     </message>
     <message>
-        <location filename="../ui_helpers.py" line="3139"/>
-        <location filename="../ui_helpers.py" line="3149"/>
+        <location filename="../ui_helpers.py" line="3142"/>
+        <location filename="../ui_helpers.py" line="3152"/>
         <source>{0} has no genre tags, add some to help suggestions.</source>
         <translation>{0} no tiene etiquetas de género; añade algunas para mejorar las sugerencias.</translation>
     </message>
     <message>
-        <location filename="../ui_helpers.py" line="3144"/>
+        <location filename="../ui_helpers.py" line="3147"/>
         <source>{0} Discoveries</source>
         <translation>Descubrimientos de {0}</translation>
     </message>

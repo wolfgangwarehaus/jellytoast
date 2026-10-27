@@ -86,3 +86,27 @@ class TestInstall:
         for code, _en, _native in i18n.SHIPPED_LANGUAGES:
             qm = res.files("jellytoast.i18n").joinpath(f"jellytoast_{code}.qm")
             assert qm.is_file(), f"no compiled catalog for {code!r}"
+
+
+def test_top_bar_page_titles_are_translated(qapp, isolated_settings):
+    """QA 2026-10-27: the centre title read "Albums" / "Suggestions" in a
+    Spanish UI. It shows the translation; the host and the view menu
+    still speak in the English page keys."""
+    from PySide6.QtWidgets import QWidget
+
+    from jellytoast.top_bar import JtTopBar
+
+    isolated_settings.language = "es"
+    try:
+        assert i18n.install(qapp) == "es"
+        host = QWidget()
+        top = JtTopBar(host, titlebar_mode=True)
+        top.set_collection("music")
+        top.set_active_tab("Smart playlists")
+        assert top.view_btn.text() == "Listas inteligentes"
+        assert top._view_title == "Smart playlists"  # the key is unchanged
+        top.set_now_playing_mode(True)
+        assert top.view_btn.text() == "En reproducción"
+        host.deleteLater()
+    finally:
+        _uninstall_all(qapp)

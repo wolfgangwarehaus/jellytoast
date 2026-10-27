@@ -932,6 +932,7 @@ class SettingsDialog(
             }}
             QCheckBox {{
                 color: {TEXT}; spacing: 8px; background: transparent;
+                {type_qss(TYPE_BODY)}
             }}
             QCheckBox::indicator {{
                 width: 16px; height: 16px;
@@ -967,6 +968,7 @@ class SettingsDialog(
             }}
             QRadioButton {{
                 color: {TEXT}; spacing: 8px; background: transparent;
+                {type_qss(TYPE_BODY)}
             }}
             QRadioButton::indicator {{
                 width: 16px; height: 16px;

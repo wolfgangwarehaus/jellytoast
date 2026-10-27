@@ -161,3 +161,22 @@ def test_primary_and_ghost_buttons_share_a_height():
 
     heights = {t.name: t.height_px for t in dt.BUTTON.values() if t.name != "icon"}
     assert len(set(heights.values())) == 1, heights
+
+
+def test_checkbox_and_radio_labels_use_body_text(qapp):
+    """Option labels took the larger app font beside 13 px buttons."""
+    from PySide6.QtGui import QFontInfo
+    from PySide6.QtWidgets import QCheckBox, QRadioButton, QWidget
+
+    from jellytoast import design_tokens as dt
+    from jellytoast.settings_widgets import WrapCheckBox
+    from jellytoast.ui_helpers import _build_global_style
+
+    host = QWidget()
+    host.setStyleSheet(_build_global_style())
+    boxes = [QCheckBox("Enable", host), QRadioButton("Auto", host), WrapCheckBox("Wrap", host)]
+    host.show()
+    qapp.processEvents()
+    for b in boxes:
+        assert QFontInfo(b.font()).pixelSize() == dt.TYPE_BODY.size_px, type(b).__name__
+    host.deleteLater()
