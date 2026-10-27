@@ -18,6 +18,12 @@ developer-facing history lives in [`docs/CHANGELOG.md`](docs/CHANGELOG.md).
 - **Tidier at small sizes.** Shrink jellytoast right down and the extra
   top-bar buttons tuck into a ⋮ menu instead of piling on top of each other,
   and Settings fits a narrow window without scrolling sideways.
+- **A more consistent look.** Buttons are one size everywhere, every dialog
+  puts Cancel first, and checkbox labels match the buttons beside them.
+- **Artists without a photo** get a proper placeholder instead of a bright
+  white star, and the Search page is titled "Search".
+- **Spanish page titles.** The page name at the top of the window is
+  translated now too.
 - **Artist pages follow your library picker.** With only some libraries
   selected, an artist's page no longer shows albums from the ones you
   switched off.
