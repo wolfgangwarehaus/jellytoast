@@ -27,15 +27,7 @@ Item {
             spacing: 8
             topPadding: 4
 
-            PillButton {
-                objectName: "shuffleLibrary"
-                anchors.horizontalCenter: parent.horizontalCenter
-                iconName: "shuffle"
-                filled: true
-                text: qsTr("Shuffle my library")
-                onClicked: actions.shuffleLibrary()
-            }
-
+            // (Shuffle my library lives in the ⋮ menu — "Shuffle all".)
             Repeater {
                 model: [
                     { kind: "latest", label: qsTr("Recently added") },
@@ -93,6 +85,37 @@ Item {
                             if (Math.abs(target - contentX) > 0.5) {
                                 snapAnim.to = target
                                 snapAnim.restart()
+                            }
+                        }
+                        // Edge vignette: the peeking neighbours fade toward the
+                        // page background (75% at the screen edge, so they still
+                        // read as "more this way") up to where the whole tiles
+                        // start. Parented to the view itself, not
+                        // its content, so they stay put while it scrolls.
+                        Rectangle {
+                            parent: row
+                            z: 2
+                            anchors.left: parent.left
+                            anchors.top: parent.top
+                            anchors.bottom: parent.bottom
+                            width: Math.round(row.centredX)
+                            gradient: Gradient {
+                                orientation: Gradient.Horizontal
+                                GradientStop { position: 0.0; color: Qt.rgba(theme.background.r, theme.background.g, theme.background.b, 0.75) }
+                                GradientStop { position: 1.0; color: "transparent" }
+                            }
+                        }
+                        Rectangle {
+                            parent: row
+                            z: 2
+                            anchors.right: parent.right
+                            anchors.top: parent.top
+                            anchors.bottom: parent.bottom
+                            width: Math.round(row.centredX)
+                            gradient: Gradient {
+                                orientation: Gradient.Horizontal
+                                GradientStop { position: 0.0; color: "transparent" }
+                                GradientStop { position: 1.0; color: Qt.rgba(theme.background.r, theme.background.g, theme.background.b, 0.75) }
                             }
                         }
                         onMovementStarted: snapAnim.stop()  // a new grab wins

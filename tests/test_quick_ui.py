@@ -826,7 +826,11 @@ def test_home_rails_and_shuffle_library(quick):
     assert quick.find("rail_favAlbums") is not None
     spy = _Spy("queue_play_now")
     try:
-        quick.tap("shuffleLibrary")
+        # Home's own button went; Shuffle all lives in the ⋮ menu.
+        assert quick.find("shuffleLibrary") is None
+        quick.tap("moreButton")
+        quick.wait_for("shuffleAllRow")
+        quick.tap("shuffleAllRow")
         quick.wait_until(lambda: spy.got["queue_play_now"])
     finally:
         spy.close()
