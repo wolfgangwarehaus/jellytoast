@@ -278,16 +278,19 @@ class ButtonTier:
 def _make_button_tokens(body: TypeTier, caption: TypeTier) -> "tuple[ButtonTier, ...]":
     """Build the button tiers from raw base geometry through ``_fs()`` (so they
     rebuild on a font-scale change) against the CURRENT type + radius tokens."""
+    # One standard text-button height (QA 2026-10-26): primary / secondary /
+    # destructive match ghost and the dropdowns at 32 px, so a dialog's
+    # Save & Play no longer stands taller than the Save beside it.
     return (
-        ButtonTier("primary", height_px=_fs(36), pad_x=_fs(14), pad_y=_fs(8),
+        ButtonTier("primary", height_px=_fs(32), pad_x=_fs(14), pad_y=_fs(6),
                    radius=RADIUS_LG, type_tier=body),
-        ButtonTier("secondary", height_px=_fs(36), pad_x=_fs(14), pad_y=_fs(8),
+        ButtonTier("secondary", height_px=_fs(32), pad_x=_fs(14), pad_y=_fs(6),
                    radius=RADIUS_LG, type_tier=body),
         ButtonTier("ghost", height_px=_fs(32), pad_x=_fs(12), pad_y=_fs(6),
                    radius=RADIUS_MD, type_tier=body),
         ButtonTier("icon", height_px=_fs(32), pad_x=_fs(8), pad_y=_fs(8),
                    radius=RADIUS_PILL, type_tier=caption),
-        ButtonTier("destructive", height_px=_fs(36), pad_x=_fs(14), pad_y=_fs(8),
+        ButtonTier("destructive", height_px=_fs(32), pad_x=_fs(14), pad_y=_fs(6),
                    radius=RADIUS_LG, type_tier=body),
     )
 
@@ -351,7 +354,9 @@ def button_qss(tier: ButtonTier) -> str:
     geom = (
         f"border-radius: {tier.radius}px; "
         f"padding: {tier.pad_y}px {tier.pad_x}px; "
-        f"min-height: {tier.height_px - 2 * tier.pad_y}px;"
+        # − 2 for the 1 px border, so height_px is the button's real
+        # height (a primary came out at 34 beside 32 px plain buttons).
+        f"min-height: {tier.height_px - 2 * tier.pad_y - 2}px;"
     )
 
     if tier.name == "primary":

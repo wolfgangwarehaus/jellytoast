@@ -24,7 +24,6 @@ from PySide6.QtCore import Qt, QTimer
 from PySide6.QtWidgets import (
     QComboBox,
     QDialog,
-    QDialogButtonBox,
     QFrame,
     QHBoxLayout,
     QInputDialog,
@@ -661,12 +660,11 @@ class EqSettingsPage(QWidget):
         preview.setWordWrap(True)
         layout.addWidget(preview)
 
-        btns = QDialogButtonBox(
-            QDialogButtonBox.StandardButton.Cancel
-            | QDialogButtonBox.StandardButton.Ok
-        )
-        ok_btn = btns.button(QDialogButtonBox.StandardButton.Ok)
-        ok_btn.setText(self.tr("Import"))
+        from jellytoast.frosted_dialog import DialogButtons
+
+        # Cancel then Import, like every other dialog (not the desktop's order).
+        btns = DialogButtons(self.tr("Import"))
+        ok_btn = btns.accept_button
         ok_btn.setEnabled(False)
         layout.addWidget(btns)
 

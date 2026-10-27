@@ -438,6 +438,36 @@ class TestRealDeviceFindings:
             finally:
                 host.deleteLater()
 
+    def test_a_long_page_title_shortens_instead_of_widening_the_window(self, qapp, monkeypatch):
+        """QA 2026-10-26: "Smart playlists" pinned the window at 430 px while
+        other pages went to 378. At the tightest stage the title ends in
+        "…" and the floor counts it at its shortest; with room it's whole."""
+        from PySide6.QtWidgets import QWidget
+
+        from jellytoast.top_bar import JtTopBar
+
+        monkeypatch.setattr(pc, "is_mobile_shell", lambda: False)
+        host = QWidget()
+        top = JtTopBar(host, titlebar_mode=True)
+        try:
+            top.set_collection("music")
+            top.set_active_tab("Smart playlists")
+            floors = []
+            top.min_width_needed.connect(floors.append)
+            host.show()
+            top.resize(360, 48)
+            for _ in range(5):
+                _settle(qapp)
+            assert top.view_btn.text().endswith("…")
+            assert top.view_btn.text() != "Smart playlists"
+            assert not floors or floors[-1] <= 360
+            top.resize(1000, 48)
+            for _ in range(4):
+                _settle(qapp)
+            assert top.view_btn.text() == "Smart playlists"
+        finally:
+            host.deleteLater()
+
     def test_no_blur_body_is_opaque_on_a_mobile_shell(self, monkeypatch):
         from jellytoast.blur import BlurStatus
         from jellytoast.theme import body_color_for, get_active_theme

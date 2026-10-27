@@ -16,7 +16,6 @@ from PySide6.QtCore import Qt, QTimer, Signal, Slot
 from PySide6.QtGui import QKeyEvent, QPainter, QPainterPath
 from PySide6.QtWidgets import (
     QDialog,
-    QDialogButtonBox,
     QFrame,
     QHBoxLayout,
     QLabel,
@@ -223,10 +222,10 @@ class _AlternateUrlsDialog(QDialog):
         outer.addWidget(self._add_btn, 0, Qt.AlignmentFlag.AlignLeft)
         outer.addStretch(1)
 
-        buttons = QDialogButtonBox(
-            QDialogButtonBox.StandardButton.Save
-            | QDialogButtonBox.StandardButton.Cancel
-        )
+        from jellytoast.frosted_dialog import DialogButtons
+
+        # Cancel then Save, like every other dialog (not the desktop's order).
+        buttons = DialogButtons(self.tr("Save"))
         buttons.accepted.connect(self._on_accept)
         buttons.rejected.connect(self.reject)
         outer.addWidget(buttons)

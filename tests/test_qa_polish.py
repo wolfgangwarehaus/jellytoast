@@ -100,3 +100,64 @@ def test_artist_without_a_photo_keeps_the_themed_placeholder(qapp, monkeypatch):
     assert asked == []
     assert page._cover.pixmap().cacheKey() == placeholder
     page.deleteLater()
+
+
+# ── Buttons: one size, one dialog order (QA items 6 + 7) ────────────────────
+
+
+def test_dialog_buttons_are_cancel_then_accent_action(qapp):
+    from PySide6.QtWidgets import QDialogButtonBox
+
+    from jellytoast.frosted_dialog import DialogButtons
+
+    row = DialogButtons("Save")
+    row.resize(400, 40)
+    row.show()
+    qapp.processEvents()
+    cancel, save = row.cancel_button, row.accept_button
+    assert cancel.geometry().right() < save.geometry().left()  # Cancel first
+    assert save.objectName() == "accent" and save.isDefault()
+    sb = QDialogButtonBox.StandardButton
+    assert row.button(sb.Save) is save and row.button(sb.Cancel) is cancel
+    fired = []
+    row.accepted.connect(lambda: fired.append("ok"))
+    row.rejected.connect(lambda: fired.append("cancel"))
+    save.click()
+    cancel.click()
+    assert fired == ["ok", "cancel"]
+    row.deleteLater()
+
+
+def test_station_dialog_uses_the_app_button_order(qapp):
+    from jellytoast.frosted_dialog import DialogButtons
+    from jellytoast.radio_view import _StationFormDialog
+
+    dlg = _StationFormDialog(None)
+    assert isinstance(dlg._buttons, DialogButtons)
+    dlg.deleteLater()
+
+
+def test_a_plain_button_is_the_standard_size(qapp):
+    """A plain QPushButton took the app font + 8 px padding: 16 px text in a
+    40 px button beside 32 px dropdowns. It now uses body text, ~32 px."""
+    from PySide6.QtGui import QFontInfo
+    from PySide6.QtWidgets import QPushButton, QWidget
+
+    from jellytoast import design_tokens as dt
+    from jellytoast.ui_helpers import _build_global_style
+
+    host = QWidget()
+    host.setStyleSheet(_build_global_style())
+    btn = QPushButton("Check now", host)
+    host.show()
+    qapp.processEvents()
+    assert QFontInfo(btn.font()).pixelSize() == dt.TYPE_BODY.size_px
+    assert btn.sizeHint().height() <= 34
+    host.deleteLater()
+
+
+def test_primary_and_ghost_buttons_share_a_height():
+    from jellytoast import design_tokens as dt
+
+    heights = {t.name: t.height_px for t in dt.BUTTON.values() if t.name != "icon"}
+    assert len(set(heights.values())) == 1, heights

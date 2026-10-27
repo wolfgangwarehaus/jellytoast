@@ -35,7 +35,6 @@ from PySide6.QtGui import QPixmap
 from PySide6.QtWidgets import (
     QCheckBox,
     QDialog,
-    QDialogButtonBox,
     QFileDialog,
     QFormLayout,
     QFrame,
@@ -162,10 +161,10 @@ class TagEditorDialog(QDialog):
         self._tinted.append((self._status, "TEXT_DIM"))
         outer.addWidget(self._status)
 
-        self._buttons = QDialogButtonBox(
-            QDialogButtonBox.StandardButton.Save
-            | QDialogButtonBox.StandardButton.Cancel
-        )
+        from jellytoast.frosted_dialog import DialogButtons
+
+        # Cancel then Save, like every other dialog (not the desktop's order).
+        self._buttons = DialogButtons(self.tr("Save"))
         self._buttons.accepted.connect(self._on_save)
         self._buttons.rejected.connect(self.reject)
         outer.addWidget(self._buttons)

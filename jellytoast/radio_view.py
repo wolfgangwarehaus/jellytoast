@@ -46,6 +46,7 @@ from jellytoast.design_tokens import (
     type_qss,
 )
 from jellytoast.frosted_dialog import (
+    DialogButtons,
     FrostedDialog,
     frosted_confirm,
     frosted_info,
@@ -120,9 +121,8 @@ class _StationFormDialog(FrostedDialog):
         v.addWidget(self._home)
 
         v.addSpacing(SPACE_SM)
-        buttons = QDialogButtonBox(
-            QDialogButtonBox.StandardButton.Save | QDialogButtonBox.StandardButton.Cancel
-        )
+        # Cancel then Save, like every other dialog (not the desktop's order).
+        buttons = DialogButtons(self.tr("Save"))
         buttons.accepted.connect(self._on_accept)
         buttons.rejected.connect(self.reject)
         v.addWidget(buttons)
@@ -585,15 +585,17 @@ class RadioView(QWidget):
             TEXT_FAINT as _TEXT_FAINT,
         )
 
+        # Page actions take the standard (body) button size; the rows'
+        # Edit / Remove keep the small caption size for in-row actions.
         self._browse_btn.setStyleSheet(
-            f"QPushButton {{ {type_qss(TYPE_CAPTION)} color: {_TEXT_DIM}; "
+            f"QPushButton {{ {type_qss(TYPE_BODY)} color: {_TEXT_DIM}; "
             f"background: transparent; border: 1px solid {_TEXT_FAINT}; "
             f"border-radius: {RADIUS_LG}px; padding: 6px 14px; }} "
             f"QPushButton:hover {{ color: {_TEXT}; border-color: {_TEXT_DIM}; }} "
         )
         self._add_btn.setStyleSheet(
-            f"QPushButton {{ {type_qss(TYPE_CAPTION)} color: {_TEXT}; "
-            f"background: {_ACCENT}; border: none; border-radius: "
+            f"QPushButton {{ {type_qss(TYPE_BODY)} color: {_TEXT}; "
+            f"background: {_ACCENT}; border: 1px solid {_ACCENT}; border-radius: "
             f"{RADIUS_LG}px; padding: 6px 14px; }} "
             f"QPushButton:hover {{ background: {_ACCENT}; }} "
         )

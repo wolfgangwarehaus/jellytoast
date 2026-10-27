@@ -473,6 +473,7 @@ class JtTopBar(QWidget):
         right = getattr(self, "_right_col", None)
         if cluster is None or left is None or right is None:
             return
+        self._fit_view_title()
         cluster.raise_()
         cw = cluster.sizeHint().width()
         ch = cluster.sizeHint().height()
@@ -523,18 +524,61 @@ class JtTopBar(QWidget):
                 # font) still runs into search, so search joins the ⋮ menu.
                 self._tight_need = need
                 QTimer.singleShot(0, self._apply_overflow)
-            elif need != self._floor_need:
-                # Nothing left to hide: ask the window for a wider floor.
-                self._floor_need = need
-                self.min_width_needed.emit(need)
-        elif self._tight and not self._applying_stage and need != self._floor_need:
-            # Fully shed and it fits: let the floor follow the bar back
-            # down (a shorter title, a status chip gone) instead of keeping
-            # the widest need it ever saw.
-            self._floor_need = need
-            self.min_width_needed.emit(need)
+            elif need - self._view_title_slack() > self.width():
+                # Nothing left to hide or shorten: ask the window for a
+                # wider floor.
+                self._emit_floor(need - self._view_title_slack())
+        if self._tight and not self._applying_stage:
+            # Fully shed: the floor follows the bar both ways (a shorter
+            # title, a status chip gone), counting the title at its
+            # shortest — a long one ("Smart playlists") ends in "…" rather
+            # than widening the window.
+            self._emit_floor(need - self._view_title_slack())
         y = (self.height() - ch) // 2
         cluster.setGeometry(x, y, cw, ch)
+
+    def _emit_floor(self, need: int) -> None:
+        if need != self._floor_need:
+            self._floor_need = need
+            self.min_width_needed.emit(need)
+
+    def _set_view_title(self, text: str) -> None:
+        """The centre dropdown's full title; _fit_view_title may show it
+        shortened with "…" when the bar is at its tightest."""
+        self._view_title = text or ""
+        self.view_btn.setText(self._view_title)
+        self._view_title_natural = self.view_btn.sizeHint().width()
+
+    def _view_title_min_w(self) -> int:
+        """The dropdown's width with its title cut to two letters + "…"."""
+        full = self._view_title
+        if len(full) <= 3 or not self._view_title_natural:
+            return self._view_title_natural
+        fm = self.view_btn.fontMetrics()
+        chrome = self._view_title_natural - fm.horizontalAdvance(full)
+        return chrome + fm.horizontalAdvance(full[:2] + "…")
+
+    def _view_title_slack(self) -> int:
+        if not self.view_btn.isVisibleTo(self):
+            return 0
+        return max(0, self._view_title_natural - self._view_title_min_w())
+
+    def _fit_view_title(self) -> None:
+        """Full title, unless the bar is fully shed and still short of room:
+        then end it with "…" just enough to fit (never below two letters)."""
+        full = self._view_title
+        if not self._view_title_natural:
+            self._view_title_natural = self.view_btn.sizeHint().width()
+        shown = full
+        if self._tight and self.view_btn.isVisibleTo(self):
+            excess = self._required_width() - self.width()
+            if excess > 0:
+                fm = self.view_btn.fontMetrics()
+                chrome = self._view_title_natural - fm.horizontalAdvance(full)
+                btn_w = max(self._view_title_min_w(), self._view_title_natural - excess)
+                shown = fm.elidedText(full, Qt.TextElideMode.ElideRight, btn_w - chrome)
+        if self.view_btn.text() != shown:
+            self.view_btn.setText(shown)
 
     def _required_width(self) -> int:
         """Width the bar needs as it stands: both side columns and the
@@ -545,6 +589,9 @@ class JtTopBar(QWidget):
         lib_short = 0
         if self.library_btn.isVisibleTo(self):
             lib_short = max(0, self._library_btn_natural - self.library_btn.width())
+        # Likewise the centre title, if _fit_view_title has shortened it.
+        if self.view_btn.isVisibleTo(self):
+            lib_short += max(0, self._view_title_natural - self.view_btn.sizeHint().width())
         return (
             m.left()
             + lib_short
@@ -573,6 +620,8 @@ class JtTopBar(QWidget):
     _tight_need = 0
     _floor_need = 0
     _library_btn_natural = 0
+    _view_title = "Albums"
+    _view_title_natural = 0
     _applying_stage = False
     _multi_library = False
 
@@ -740,6 +789,8 @@ class JtTopBar(QWidget):
             QEvent.Type.FontChange,
             QEvent.Type.ApplicationFontChange,
         ):
+            # Re-measure the centre title's full width in the new font too.
+            QTimer.singleShot(0, lambda: self._set_view_title(self._view_title))
             QTimer.singleShot(0, self._fit_library_title)
 
     def set_library_controls_visible(self, visible: bool):
@@ -1379,8 +1430,8 @@ class JtTopBar(QWidget):
         # Default the label to the first tab whenever we land on a new
         # library — get refined later by set_active_tab once we've
         # polled the DOM for the actually-selected tab.
-        if tabs and self.view_btn.text() not in tabs:
-            self.view_btn.setText(tabs[0])
+        if tabs and self._view_title not in tabs:
+            self._set_view_title(tabs[0])
         self._position_center_cluster()
 
     def set_now_playing_mode(self, active: bool, label: str = "Now Playing"):
@@ -1393,7 +1444,7 @@ class JtTopBar(QWidget):
         """
         self._now_playing_mode = active
         if active:
-            self.view_btn.setText(label)
+            self._set_view_title(label)
             self.view_btn.show()
         else:
             # Reapply the active library label if we're still on a
@@ -1406,8 +1457,8 @@ class JtTopBar(QWidget):
             # so the user immediately sees which surface they're on.
             # The host's set_active_tab call (if any) will refine to
             # the actual active surface.
-            if tabs and self.view_btn.text() not in tabs:
-                self.view_btn.setText(tabs[0])
+            if tabs and self._view_title not in tabs:
+                self._set_view_title(tabs[0])
         self._position_center_cluster()
 
     def set_active_tab(self, label: str):
@@ -1425,7 +1476,7 @@ class JtTopBar(QWidget):
         # about yet), show what the DOM gave us verbatim.
         target = label.strip().lower()
         canonical = next((c for c in tabs if c.lower() == target), None)
-        self.view_btn.setText(canonical if canonical is not None else label.strip())
+        self._set_view_title(canonical if canonical is not None else label.strip())
         self._position_center_cluster()
 
     def _show_view_menu(self):
@@ -1434,7 +1485,7 @@ class JtTopBar(QWidget):
             return
         menu = opaque_menu(self, blur_corner_radius=8)
         menu.setStyleSheet(self._dropdown_menu_qss())
-        current_label = self.view_btn.text().strip().lower()
+        current_label = self._view_title.strip().lower()
         active_action = None
         for idx, label in enumerate(tabs):
             act = QAction(label, menu)

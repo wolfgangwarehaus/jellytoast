@@ -440,7 +440,7 @@ firewalld:
 <context>
     <name>ClassicalWork</name>
     <message>
-        <location filename="../ui_helpers.py" line="1157"/>
+        <location filename="../ui_helpers.py" line="1161"/>
         <source>Movement {0} of {1}</source>
         <translation>Movimiento {0} de {1}</translation>
     </message>
@@ -639,6 +639,14 @@ La reproducción bit-perfect reclama el dispositivo en exclusiva — detén el o
         <location filename="../device_busy_dialog.py" line="67"/>
         <source>OK</source>
         <translation>Aceptar</translation>
+    </message>
+</context>
+<context>
+    <name>DialogButtons</name>
+    <message>
+        <location filename="../frosted_dialog.py" line="203"/>
+        <source>Cancel</source>
+        <translation>Cancelar</translation>
     </message>
 </context>
 <context>
@@ -895,182 +903,182 @@ Esto libera el almacenamiento de inmediato. Tu biblioteca en el servidor no se v
 <context>
     <name>EqSettingsPage</name>
     <message>
-        <location filename="../settings_eq_page.py" line="117"/>
+        <location filename="../settings_eq_page.py" line="116"/>
         <source>EQUALIZER</source>
         <translation>ECUALIZADOR</translation>
     </message>
     <message>
-        <location filename="../settings_eq_page.py" line="130"/>
+        <location filename="../settings_eq_page.py" line="129"/>
         <source>Enable</source>
         <translation>Activar</translation>
     </message>
     <message>
-        <location filename="../settings_eq_page.py" line="143"/>
-        <location filename="../settings_eq_page.py" line="575"/>
+        <location filename="../settings_eq_page.py" line="142"/>
+        <location filename="../settings_eq_page.py" line="574"/>
         <source>Linear phase</source>
         <translation>Fase lineal</translation>
     </message>
     <message>
-        <location filename="../settings_eq_page.py" line="146"/>
+        <location filename="../settings_eq_page.py" line="145"/>
         <source>Linear-phase FIR EQ — see the ⓘ for the trade-offs.</source>
         <translation>EQ FIR de fase lineal — mira la ⓘ para los pros y contras.</translation>
     </message>
     <message>
-        <location filename="../settings_eq_page.py" line="158"/>
+        <location filename="../settings_eq_page.py" line="157"/>
         <source>About linear phase</source>
         <translation>Acerca de la fase lineal</translation>
     </message>
     <message>
-        <location filename="../settings_eq_page.py" line="169"/>
+        <location filename="../settings_eq_page.py" line="168"/>
         <source>Curve</source>
         <translation>Curva</translation>
     </message>
     <message>
-        <location filename="../settings_eq_page.py" line="173"/>
+        <location filename="../settings_eq_page.py" line="172"/>
         <source>Parametric curve editor — drag nodes on a log-frequency canvas. AutoEQ profiles allow horizontal drag (movable centres); graphic mode keeps freqs locked, gain only.</source>
         <translation>Editor de curva paramétrico — arrastra nodos sobre un lienzo de frecuencia logarítmica. Los perfiles AutoEQ permiten arrastre horizontal (centros móviles); el modo gráfico mantiene las frecuencias fijas, solo ganancia.</translation>
     </message>
     <message>
-        <location filename="../settings_eq_page.py" line="203"/>
+        <location filename="../settings_eq_page.py" line="202"/>
         <source>Preset:</source>
         <translation>Preajuste:</translation>
     </message>
     <message>
-        <location filename="../settings_eq_page.py" line="227"/>
+        <location filename="../settings_eq_page.py" line="226"/>
         <source>Save…</source>
         <translation>Guardar…</translation>
     </message>
     <message>
-        <location filename="../settings_eq_page.py" line="231"/>
-        <location filename="../settings_eq_page.py" line="1153"/>
+        <location filename="../settings_eq_page.py" line="230"/>
+        <location filename="../settings_eq_page.py" line="1151"/>
         <source>Delete</source>
         <translation>Eliminar</translation>
     </message>
     <message>
-        <location filename="../settings_eq_page.py" line="281"/>
+        <location filename="../settings_eq_page.py" line="280"/>
         <source>Pre</source>
         <translation>Pre</translation>
     </message>
     <message>
-        <location filename="../settings_eq_page.py" line="399"/>
-        <location filename="../settings_eq_page.py" line="589"/>
+        <location filename="../settings_eq_page.py" line="398"/>
+        <location filename="../settings_eq_page.py" line="588"/>
         <source>AutoEQ: not loaded</source>
         <translation>AutoEQ: sin cargar</translation>
     </message>
     <message>
-        <location filename="../settings_eq_page.py" line="405"/>
+        <location filename="../settings_eq_page.py" line="404"/>
         <source>Import…</source>
         <translation>Importar…</translation>
     </message>
     <message>
-        <location filename="../settings_eq_page.py" line="408"/>
+        <location filename="../settings_eq_page.py" line="407"/>
         <source>Clear</source>
         <translation>Limpiar</translation>
     </message>
     <message>
-        <location filename="../settings_eq_page.py" line="597"/>
-        <location filename="../settings_eq_page.py" line="688"/>
+        <location filename="../settings_eq_page.py" line="596"/>
+        <location filename="../settings_eq_page.py" line="686"/>
         <source>{0} bands</source>
         <translation>{0} bandas</translation>
     </message>
     <message>
-        <location filename="../settings_eq_page.py" line="599"/>
-        <location filename="../settings_eq_page.py" line="690"/>
+        <location filename="../settings_eq_page.py" line="598"/>
+        <location filename="../settings_eq_page.py" line="688"/>
         <source>preamp {0:+.1f} dB</source>
         <translation>preamplificación {0:+.1f} dB</translation>
     </message>
     <message>
-        <location filename="../settings_eq_page.py" line="601"/>
+        <location filename="../settings_eq_page.py" line="600"/>
         <source>{0} skipped</source>
         <translation>{0} omitidos</translation>
     </message>
     <message>
-        <location filename="../settings_eq_page.py" line="602"/>
+        <location filename="../settings_eq_page.py" line="601"/>
         <source>AutoEQ: {0}</source>
         <translation>AutoEQ: {0}</translation>
     </message>
     <message>
-        <location filename="../settings_eq_page.py" line="605"/>
+        <location filename="../settings_eq_page.py" line="604"/>
         <source>AutoEQ: (corrupt — Clear to reset)</source>
         <translation>AutoEQ: (dañado — Limpiar para restablecer)</translation>
     </message>
     <message>
-        <location filename="../settings_eq_page.py" line="623"/>
+        <location filename="../settings_eq_page.py" line="622"/>
         <source>Import AutoEQ profile</source>
         <translation>Importar perfil AutoEQ</translation>
     </message>
     <message>
-        <location filename="../settings_eq_page.py" line="630"/>
+        <location filename="../settings_eq_page.py" line="629"/>
         <source>Paste a ParametricEQ.txt-style profile from autoeq.app or your headphone correction source. Each line should look like: &lt;code&gt;Filter 1: ON PK Fc 105 Hz Gain 5.5 dB Q 1.41&lt;/code&gt;. Shelf filters (LSC / HSC) are skipped — most headphone profiles are predominantly peaking filters.</source>
         <translation>Pega un perfil tipo ParametricEQ.txt de autoeq.app o de tu fuente de corrección de auriculares. Cada línea debe verse así: &lt;code&gt;Filter 1: ON PK Fc 105 Hz Gain 5.5 dB Q 1.41&lt;/code&gt;. Los filtros shelf (LSC / HSC) se omiten — la mayoría de los perfiles de auriculares son predominantemente filtros de pico.</translation>
     </message>
     <message>
-        <location filename="../settings_eq_page.py" line="669"/>
+        <location filename="../settings_eq_page.py" line="666"/>
         <source>Import</source>
         <translation>Importar</translation>
     </message>
     <message>
-        <location filename="../settings_eq_page.py" line="683"/>
+        <location filename="../settings_eq_page.py" line="681"/>
         <source>No peaking filters detected — check the format.</source>
         <translation>No se detectaron filtros de pico — revisa el formato.</translation>
     </message>
     <message>
-        <location filename="../settings_eq_page.py" line="692"/>
+        <location filename="../settings_eq_page.py" line="690"/>
         <source>{0} non-peaking filters will be skipped</source>
         <translation>Se omitirán {0} filtros que no son de pico</translation>
     </message>
     <message>
-        <location filename="../settings_eq_page.py" line="693"/>
+        <location filename="../settings_eq_page.py" line="691"/>
         <source>Ready: {0}</source>
         <translation>Listo: {0}</translation>
     </message>
     <message>
-        <location filename="../settings_eq_page.py" line="938"/>
+        <location filename="../settings_eq_page.py" line="936"/>
         <source>Casting — EQ applies to local playback only and is inactive now.</source>
         <translation>Enviando — el EQ solo se aplica a la reproducción local y ahora está inactivo.</translation>
     </message>
     <message>
-        <location filename="../settings_eq_page.py" line="1108"/>
+        <location filename="../settings_eq_page.py" line="1106"/>
         <source>Save preset</source>
         <translation>Guardar preajuste</translation>
     </message>
     <message>
-        <location filename="../settings_eq_page.py" line="1108"/>
+        <location filename="../settings_eq_page.py" line="1106"/>
         <source>Preset name:</source>
         <translation>Nombre del preajuste:</translation>
     </message>
     <message>
-        <location filename="../settings_eq_page.py" line="1117"/>
+        <location filename="../settings_eq_page.py" line="1115"/>
         <source>Name taken</source>
         <translation>Nombre en uso</translation>
     </message>
     <message>
-        <location filename="../settings_eq_page.py" line="1118"/>
+        <location filename="../settings_eq_page.py" line="1116"/>
         <source>&apos;{0}&apos; is a built-in preset name. Pick a different name.</source>
         <translation>«{0}» es el nombre de un preajuste integrado. Elige otro nombre.</translation>
     </message>
     <message>
-        <location filename="../settings_eq_page.py" line="1125"/>
+        <location filename="../settings_eq_page.py" line="1123"/>
         <source>Overwrite preset</source>
         <translation>Sobrescribir preajuste</translation>
     </message>
     <message>
-        <location filename="../settings_eq_page.py" line="1126"/>
+        <location filename="../settings_eq_page.py" line="1124"/>
         <source>User preset &apos;{0}&apos; already exists. Overwrite?</source>
         <translation>El preajuste de usuario «{0}» ya existe. ¿Sobrescribirlo?</translation>
     </message>
     <message>
-        <location filename="../settings_eq_page.py" line="1127"/>
+        <location filename="../settings_eq_page.py" line="1125"/>
         <source>Overwrite</source>
         <translation>Sobrescribir</translation>
     </message>
     <message>
-        <location filename="../settings_eq_page.py" line="1151"/>
+        <location filename="../settings_eq_page.py" line="1149"/>
         <source>Delete preset</source>
         <translation>Eliminar preajuste</translation>
     </message>
     <message>
-        <location filename="../settings_eq_page.py" line="1152"/>
+        <location filename="../settings_eq_page.py" line="1150"/>
         <source>Delete user preset &apos;{0}&apos;?</source>
         <translation>¿Eliminar el preajuste de usuario «{0}»?</translation>
     </message>
@@ -1536,126 +1544,126 @@ jellytoast funcionará, pero las funciones de bandeja no estarán disponibles.</
 <context>
     <name>LoginView</name>
     <message>
-        <location filename="../login_view.py" line="373"/>
+        <location filename="../login_view.py" line="372"/>
         <source>Sign in to your music server</source>
         <translation>Inicia sesión en tu servidor de música</translation>
     </message>
     <message>
-        <location filename="../login_view.py" line="383"/>
+        <location filename="../login_view.py" line="382"/>
         <source>SERVER TYPE</source>
         <translation>TIPO DE SERVIDOR</translation>
     </message>
     <message>
-        <location filename="../login_view.py" line="410"/>
-        <location filename="../login_view.py" line="435"/>
+        <location filename="../login_view.py" line="409"/>
+        <location filename="../login_view.py" line="434"/>
         <source>Server URL</source>
         <translation>URL del servidor</translation>
     </message>
     <message>
-        <location filename="../login_view.py" line="415"/>
-        <location filename="../login_view.py" line="455"/>
+        <location filename="../login_view.py" line="414"/>
+        <location filename="../login_view.py" line="454"/>
         <source>Username</source>
         <translation>Usuario</translation>
     </message>
     <message>
-        <location filename="../login_view.py" line="420"/>
-        <location filename="../login_view.py" line="457"/>
+        <location filename="../login_view.py" line="419"/>
+        <location filename="../login_view.py" line="456"/>
         <source>Password</source>
         <translation>Contraseña</translation>
     </message>
     <message>
-        <location filename="../login_view.py" line="473"/>
+        <location filename="../login_view.py" line="472"/>
         <source>QUICK CONNECT CODE</source>
         <translation>CÓDIGO DE QUICK CONNECT</translation>
     </message>
     <message>
-        <location filename="../login_view.py" line="486"/>
+        <location filename="../login_view.py" line="485"/>
         <source>On a device that&apos;s already signed in to this server, open your profile → Quick Connect and enter this code. Waiting…</source>
         <translation>En un dispositivo que ya tenga la sesión iniciada en este servidor, abre tu perfil → Quick Connect e introduce este código. Esperando…</translation>
     </message>
     <message>
-        <location filename="../login_view.py" line="493"/>
+        <location filename="../login_view.py" line="492"/>
         <source>Cancel</source>
         <translation>Cancelar</translation>
     </message>
     <message>
-        <location filename="../login_view.py" line="502"/>
-        <location filename="../login_view.py" line="988"/>
+        <location filename="../login_view.py" line="501"/>
+        <location filename="../login_view.py" line="987"/>
         <source>Sign in</source>
         <translation>Iniciar sesión</translation>
     </message>
     <message>
-        <location filename="../login_view.py" line="511"/>
+        <location filename="../login_view.py" line="510"/>
         <source>Sign in with Quick Connect</source>
         <translation>Iniciar sesión con Quick Connect</translation>
     </message>
     <message>
-        <location filename="../login_view.py" line="522"/>
+        <location filename="../login_view.py" line="521"/>
         <source>No server? Try a demo →</source>
         <translation>¿Sin servidor? Prueba una demo →</translation>
     </message>
     <message>
-        <location filename="../login_view.py" line="675"/>
+        <location filename="../login_view.py" line="674"/>
         <source>Alternate URLs · {0}</source>
         <translation>URLs alternativas · {0}</translation>
     </message>
     <message>
-        <location filename="../login_view.py" line="676"/>
+        <location filename="../login_view.py" line="675"/>
         <source>+ Add alternate URL</source>
         <translation>+ Añadir URL alternativa</translation>
     </message>
     <message>
-        <location filename="../login_view.py" line="698"/>
+        <location filename="../login_view.py" line="697"/>
         <source>No demo server is available for this server type.</source>
         <translation>No hay servidor de demostración disponible para este tipo de servidor.</translation>
     </message>
     <message>
-        <location filename="../login_view.py" line="716"/>
+        <location filename="../login_view.py" line="715"/>
         <source>Please fill in the server URL and username.</source>
         <translation>Completa la URL del servidor y el usuario.</translation>
     </message>
     <message>
-        <location filename="../login_view.py" line="811"/>
+        <location filename="../login_view.py" line="810"/>
         <source>Please fill in the server URL.</source>
         <translation>Completa la URL del servidor.</translation>
     </message>
     <message>
-        <location filename="../login_view.py" line="841"/>
+        <location filename="../login_view.py" line="840"/>
         <source>Waiting for approval…</source>
         <translation>Esperando la aprobación…</translation>
     </message>
     <message>
-        <location filename="../login_view.py" line="895"/>
+        <location filename="../login_view.py" line="894"/>
         <source>Quick Connect is turned off on this server. An admin can turn it on in Dashboard → General, or sign in with your password.</source>
         <translation>Quick Connect está desactivado en este servidor. Un administrador puede activarlo en Panel → General, o inicia sesión con tu contraseña.</translation>
     </message>
     <message>
-        <location filename="../login_view.py" line="899"/>
+        <location filename="../login_view.py" line="898"/>
         <source>Couldn&apos;t find a Jellyfin server at that URL.</source>
         <translation>No se encontró ningún servidor Jellyfin en esa URL.</translation>
     </message>
     <message>
-        <location filename="../login_view.py" line="901"/>
+        <location filename="../login_view.py" line="900"/>
         <source>That code expired. Start Quick Connect again to get a new one.</source>
         <translation>Ese código caducó. Vuelve a iniciar Quick Connect para obtener uno nuevo.</translation>
     </message>
     <message>
-        <location filename="../login_view.py" line="903"/>
+        <location filename="../login_view.py" line="902"/>
         <source>The Quick Connect request wasn&apos;t approved.</source>
         <translation>La solicitud de Quick Connect no se aprobó.</translation>
     </message>
     <message>
-        <location filename="../login_view.py" line="907"/>
+        <location filename="../login_view.py" line="906"/>
         <source>Quick Connect didn&apos;t work: {0}</source>
         <translation>Quick Connect no funcionó: {0}</translation>
     </message>
     <message>
-        <location filename="../login_view.py" line="936"/>
+        <location filename="../login_view.py" line="935"/>
         <source>Sign in to your Subsonic / Navidrome server</source>
         <translation>Inicia sesión en tu servidor Subsonic / Navidrome</translation>
     </message>
     <message>
-        <location filename="../login_view.py" line="939"/>
+        <location filename="../login_view.py" line="938"/>
         <source>Sign in to your Jellyfin server</source>
         <translation>Inicia sesión en tu servidor Jellyfin</translation>
     </message>
@@ -1664,12 +1672,12 @@ jellytoast funcionará, pero las funciones de bandeja no estarán disponibles.</
         <translation type="vanished">Esa URL respondió pero no parece un servidor {0}.</translation>
     </message>
     <message>
-        <location filename="../login_view.py" line="761"/>
+        <location filename="../login_view.py" line="760"/>
         <source>The public demo looks offline right now — it&apos;s a shared server run by the Navidrome / Jellyfin projects, not by jellytoast. Try again later, or sign in to your own server above.</source>
         <translation>La demo pública parece estar fuera de línea — es un servidor compartido gestionado por los proyectos Navidrome / Jellyfin, no por jellytoast. Inténtalo más tarde, o inicia sesión en tu propio servidor arriba.</translation>
     </message>
     <message>
-        <location filename="../login_view.py" line="905"/>
+        <location filename="../login_view.py" line="904"/>
         <source>Couldn&apos;t reach the server. Check the URL and your network.</source>
         <translation>No se pudo conectar con el servidor. Comprueba la URL y tu red.</translation>
     </message>
@@ -1690,7 +1698,7 @@ jellytoast funcionará, pero las funciones de bandeja no estarán disponibles.</
         <translation type="vanished">No se encontró un servidor en esa URL.</translation>
     </message>
     <message>
-        <location filename="../login_view.py" line="988"/>
+        <location filename="../login_view.py" line="987"/>
         <source>Signing in…</source>
         <translation>Iniciando sesión…</translation>
     </message>
@@ -3087,12 +3095,12 @@ Revisa el PIN — la causa más común es una errata o un código caducado (el r
 <context>
     <name>RadioView</name>
     <message>
-        <location filename="../radio_view.py" line="86"/>
+        <location filename="../radio_view.py" line="87"/>
         <source>Edit station</source>
         <translation>Editar emisora</translation>
     </message>
     <message>
-        <location filename="../radio_view.py" line="88"/>
+        <location filename="../radio_view.py" line="89"/>
         <location filename="../radio_view.py" line="491"/>
         <source>Add station</source>
         <translation>Añadir emisora</translation>
@@ -3115,52 +3123,52 @@ Use “Add station” to paste in a stream URL — SomaFM, NTS, your local publi
 Pulsa «Añadir emisora» y pega la URL de un stream — SomaFM, NTS, el stream de tu radio pública local, …</translation>
     </message>
     <message>
-        <location filename="../radio_view.py" line="638"/>
+        <location filename="../radio_view.py" line="640"/>
         <source>Couldn&apos;t load stations</source>
         <translation>No se pudieron cargar las emisoras</translation>
     </message>
     <message>
-        <location filename="../radio_view.py" line="639"/>
-        <location filename="../radio_view.py" line="817"/>
+        <location filename="../radio_view.py" line="641"/>
+        <location filename="../radio_view.py" line="819"/>
         <source>The provider returned an error:
 {0}</source>
         <translation>El proveedor devolvió un error:
 {0}</translation>
     </message>
     <message>
-        <location filename="../radio_view.py" line="770"/>
+        <location filename="../radio_view.py" line="772"/>
         <source>this station</source>
         <translation>esta emisora</translation>
     </message>
     <message>
-        <location filename="../radio_view.py" line="773"/>
+        <location filename="../radio_view.py" line="775"/>
         <source>Remove station</source>
         <translation>Eliminar emisora</translation>
     </message>
     <message>
-        <location filename="../radio_view.py" line="774"/>
+        <location filename="../radio_view.py" line="776"/>
         <source>Remove “{0}” from your radio list?</source>
         <translation>¿Quitar «{0}» de tu lista de radio?</translation>
     </message>
     <message>
-        <location filename="../radio_view.py" line="775"/>
+        <location filename="../radio_view.py" line="777"/>
         <source>Remove</source>
         <translation>Quitar</translation>
     </message>
     <message>
-        <location filename="../radio_view.py" line="806"/>
+        <location filename="../radio_view.py" line="808"/>
         <source>Not supported</source>
         <translation>No compatible</translation>
     </message>
     <message>
-        <location filename="../radio_view.py" line="808"/>
+        <location filename="../radio_view.py" line="810"/>
         <source>This server doesn&apos;t support managing radio stations.
 Subsonic requires admin permission for create / edit / delete.</source>
         <translation>Este servidor no permite gestionar emisoras de radio.
 Subsonic requiere permiso de administrador para crear / editar / eliminar.</translation>
     </message>
     <message>
-        <location filename="../radio_view.py" line="816"/>
+        <location filename="../radio_view.py" line="818"/>
         <source>Couldn&apos;t {0} station</source>
         <translation>No se pudo {0} la emisora</translation>
     </message>
@@ -5028,102 +5036,107 @@ Ejecuta pywal (o wallust) una vez para que genere una paleta, y vuelve a activar
 <context>
     <name>TagEditorDialog</name>
     <message>
-        <location filename="../tag_editor.py" line="102"/>
+        <location filename="../tag_editor.py" line="101"/>
         <source>Edit tags</source>
         <translation>Editar etiquetas</translation>
     </message>
     <message>
-        <location filename="../tag_editor.py" line="138"/>
+        <location filename="../tag_editor.py" line="137"/>
         <source>Artists and Genres are comma-separated. 0 leaves a number unset.</source>
         <translation>Artistas y Géneros van separados por comas. 0 deja un número sin definir.</translation>
     </message>
     <message>
-        <location filename="../tag_editor.py" line="151"/>
+        <location filename="../tag_editor.py" line="150"/>
         <source>Apply changes to all tracks on this album</source>
         <translation>Aplicar los cambios a todas las pistas de este álbum</translation>
     </message>
     <message>
-        <location filename="../tag_editor.py" line="241"/>
+        <location filename="../tag_editor.py" line="167"/>
+        <source>Save</source>
+        <translation>Guardar</translation>
+    </message>
+    <message>
+        <location filename="../tag_editor.py" line="240"/>
         <source>Replace cover…</source>
         <translation>Reemplazar carátula…</translation>
     </message>
     <message>
-        <location filename="../tag_editor.py" line="275"/>
+        <location filename="../tag_editor.py" line="274"/>
         <source>Title</source>
         <translation>Título</translation>
     </message>
     <message>
-        <location filename="../tag_editor.py" line="276"/>
+        <location filename="../tag_editor.py" line="275"/>
         <source>Artists</source>
         <translation>Artistas</translation>
     </message>
     <message>
-        <location filename="../tag_editor.py" line="277"/>
+        <location filename="../tag_editor.py" line="276"/>
         <source>Album</source>
         <translation>Álbum</translation>
     </message>
     <message>
-        <location filename="../tag_editor.py" line="278"/>
+        <location filename="../tag_editor.py" line="277"/>
         <source>Album artist</source>
         <translation>Artista del álbum</translation>
     </message>
     <message>
-        <location filename="../tag_editor.py" line="279"/>
+        <location filename="../tag_editor.py" line="278"/>
         <source>Genres</source>
         <translation>Géneros</translation>
     </message>
     <message>
-        <location filename="../tag_editor.py" line="280"/>
+        <location filename="../tag_editor.py" line="279"/>
         <source>Track no.</source>
         <translation>N.º de pista</translation>
     </message>
     <message>
-        <location filename="../tag_editor.py" line="281"/>
+        <location filename="../tag_editor.py" line="280"/>
         <source>Year</source>
         <translation>Año</translation>
     </message>
     <message>
-        <location filename="../tag_editor.py" line="297"/>
+        <location filename="../tag_editor.py" line="296"/>
         <source>No cover</source>
         <translation>Sin carátula</translation>
     </message>
     <message>
-        <location filename="../tag_editor.py" line="350"/>
+        <location filename="../tag_editor.py" line="349"/>
         <source>Choose cover image</source>
         <translation>Elegir imagen de carátula</translation>
     </message>
     <message>
-        <location filename="../tag_editor.py" line="352"/>
+        <location filename="../tag_editor.py" line="351"/>
         <source>Images (*.png *.jpg *.jpeg *.webp)</source>
         <translation>Imágenes (*.png *.jpg *.jpeg *.webp)</translation>
     </message>
     <message>
-        <location filename="../tag_editor.py" line="359"/>
+        <location filename="../tag_editor.py" line="358"/>
         <source>Couldn&apos;t read that file: {0}</source>
         <translation>No se pudo leer ese archivo: {0}</translation>
     </message>
     <message>
-        <location filename="../tag_editor.py" line="366"/>
+        <location filename="../tag_editor.py" line="365"/>
         <source>That image is over 25 MB — pick something smaller.</source>
         <translation>Esa imagen supera los 25 MB — elige algo más pequeño.</translation>
     </message>
     <message>
-        <location filename="../tag_editor.py" line="374"/>
+        <location filename="../tag_editor.py" line="373"/>
         <source>Couldn&apos;t decode that image — try a different file.</source>
         <translation>No se pudo decodificar esa imagen — prueba con otro archivo.</translation>
     </message>
     <message>
-        <location filename="../tag_editor.py" line="380"/>
+        <location filename="../tag_editor.py" line="379"/>
         <source>Cover will be uploaded when you save.</source>
         <translation>La carátula se subirá al guardar.</translation>
     </message>
     <message>
-        <location filename="../tag_editor.py" line="425"/>
+        <location filename="../tag_editor.py" line="424"/>
         <source>(none)</source>
         <translation>(ninguna)</translation>
     </message>
     <message>
-        <location filename="../tag_editor.py" line="427"/>
+        <location filename="../tag_editor.py" line="426"/>
         <source>Apply these field changes to every track on the album &quot;{0}&quot;?
 
 Fields: {1}
@@ -5136,42 +5149,42 @@ Campos: {1}
 La carátula por pista no se modifica con esta escritura masiva.</translation>
     </message>
     <message>
-        <location filename="../tag_editor.py" line="436"/>
+        <location filename="../tag_editor.py" line="435"/>
         <source>Apply to whole album</source>
         <translation>Aplicar a todo el álbum</translation>
     </message>
     <message>
-        <location filename="../tag_editor.py" line="438"/>
+        <location filename="../tag_editor.py" line="437"/>
         <source>Apply</source>
         <translation>Aplicar</translation>
     </message>
     <message>
-        <location filename="../tag_editor.py" line="443"/>
+        <location filename="../tag_editor.py" line="442"/>
         <source>This track has no id — can&apos;t save.</source>
         <translation>Esta pista no tiene id — no se puede guardar.</translation>
     </message>
     <message>
-        <location filename="../tag_editor.py" line="459"/>
+        <location filename="../tag_editor.py" line="458"/>
         <source>Saving…</source>
         <translation>Guardando…</translation>
     </message>
     <message>
-        <location filename="../tag_editor.py" line="518"/>
+        <location filename="../tag_editor.py" line="517"/>
         <source>Saved {0} of {1} tracks ({2} failed); cover upload also failed.</source>
         <translation>Guardadas {0} de {1} pistas ({2} fallaron); la subida de la carátula también falló.</translation>
     </message>
     <message>
-        <location filename="../tag_editor.py" line="527"/>
+        <location filename="../tag_editor.py" line="526"/>
         <source>Saved {0} of {1} tracks — {2} failed. See server logs.</source>
         <translation>Guardadas {0} de {1} pistas — {2} fallaron. Mira los registros del servidor.</translation>
     </message>
     <message>
-        <location filename="../tag_editor.py" line="535"/>
+        <location filename="../tag_editor.py" line="534"/>
         <source>Metadata saved, but the cover upload failed.</source>
         <translation>Metadatos guardados, pero falló la subida de la carátula.</translation>
     </message>
     <message>
-        <location filename="../tag_editor.py" line="544"/>
+        <location filename="../tag_editor.py" line="543"/>
         <source>Couldn&apos;t save — the server rejected the edit (admin rights are required to edit metadata on Jellyfin).</source>
         <translation>No se pudo guardar — el servidor rechazó la edición (en Jellyfin se necesitan permisos de administrador para editar metadatos).</translation>
     </message>
@@ -5251,29 +5264,29 @@ La carátula por pista no se modifica con esta escritura masiva.</translation>
 <context>
     <name>UiHelpers</name>
     <message>
-        <location filename="../ui_helpers.py" line="1568"/>
+        <location filename="../ui_helpers.py" line="1572"/>
         <source>Couldn&apos;t update favorite — check your connection.</source>
         <translation>No se pudo actualizar el favorito — comprueba tu conexión.</translation>
     </message>
     <message>
-        <location filename="../ui_helpers.py" line="3126"/>
+        <location filename="../ui_helpers.py" line="3130"/>
         <source>Deep Cuts: {0}</source>
         <translation>Rarezas: {0}</translation>
     </message>
     <message>
-        <location filename="../ui_helpers.py" line="3129"/>
-        <location filename="../ui_helpers.py" line="3143"/>
+        <location filename="../ui_helpers.py" line="3133"/>
+        <location filename="../ui_helpers.py" line="3147"/>
         <source>More like {0}</source>
         <translation>Más como {0}</translation>
     </message>
     <message>
-        <location filename="../ui_helpers.py" line="3135"/>
-        <location filename="../ui_helpers.py" line="3145"/>
+        <location filename="../ui_helpers.py" line="3139"/>
+        <location filename="../ui_helpers.py" line="3149"/>
         <source>{0} has no genre tags, add some to help suggestions.</source>
         <translation>{0} no tiene etiquetas de género; añade algunas para mejorar las sugerencias.</translation>
     </message>
     <message>
-        <location filename="../ui_helpers.py" line="3140"/>
+        <location filename="../ui_helpers.py" line="3144"/>
         <source>{0} Discoveries</source>
         <translation>Descubrimientos de {0}</translation>
     </message>
@@ -5359,19 +5372,24 @@ La carátula por pista no se modifica con esta escritura masiva.</translation>
 <context>
     <name>_AlternateUrlsDialog</name>
     <message>
-        <location filename="../login_view.py" line="192"/>
+        <location filename="../login_view.py" line="191"/>
         <source>Alternate server URLs</source>
         <translation>URLs alternativas del servidor</translation>
     </message>
     <message>
-        <location filename="../login_view.py" line="203"/>
+        <location filename="../login_view.py" line="202"/>
         <source>Extra addresses for the same account — handy for a Tailscale name vs. a LAN IP. jellytoast probes these in order when the main Server URL stops responding, and switches back when it recovers.</source>
         <translation>Direcciones adicionales para la misma cuenta — útil para un nombre de Tailscale frente a una IP local. jellytoast las prueba en orden cuando la URL principal deja de responder, y vuelve a ella cuando se recupera.</translation>
     </message>
     <message>
-        <location filename="../login_view.py" line="219"/>
+        <location filename="../login_view.py" line="218"/>
         <source>+ Add URL</source>
         <translation>+ Añadir URL</translation>
+    </message>
+    <message>
+        <location filename="../login_view.py" line="228"/>
+        <source>Save</source>
+        <translation>Guardar</translation>
     </message>
 </context>
 <context>
@@ -5766,24 +5784,29 @@ La carátula por pista no se modifica con esta escritura masiva.</translation>
 <context>
     <name>_StationFormDialog</name>
     <message>
-        <location filename="../radio_view.py" line="107"/>
+        <location filename="../radio_view.py" line="108"/>
         <source>Name</source>
         <translation>Nombre</translation>
     </message>
     <message>
-        <location filename="../radio_view.py" line="109"/>
+        <location filename="../radio_view.py" line="110"/>
         <source>e.g. SomaFM Groove Salad</source>
         <translation>p. ej. SomaFM Groove Salad</translation>
     </message>
     <message>
-        <location filename="../radio_view.py" line="112"/>
+        <location filename="../radio_view.py" line="113"/>
         <source>Stream URL</source>
         <translation>URL del stream</translation>
     </message>
     <message>
-        <location filename="../radio_view.py" line="117"/>
+        <location filename="../radio_view.py" line="118"/>
         <source>Home page URL (optional)</source>
         <translation>URL de la página (opcional)</translation>
+    </message>
+    <message>
+        <location filename="../radio_view.py" line="125"/>
+        <source>Save</source>
+        <translation>Guardar</translation>
     </message>
     <message>
         <location filename="../radio_view.py" line="136"/>
@@ -5849,7 +5872,7 @@ La carátula por pista no se modifica con esta escritura masiva.</translation>
 <context>
     <name>_UrlRow</name>
     <message>
-        <location filename="../login_view.py" line="153"/>
+        <location filename="../login_view.py" line="152"/>
         <source>Label (optional)</source>
         <translation>Etiqueta (opcional)</translation>
     </message>

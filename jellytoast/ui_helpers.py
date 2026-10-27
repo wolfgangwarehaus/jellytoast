@@ -401,7 +401,7 @@ def _build_global_style() -> str:
     # rad(N) handles the few non-token literals (a 3px checkbox tick, 1px
     # slider groove). The circular slider HANDLE is left at a fixed radius so
     # it stays a round dot when corners are squared.
-    from jellytoast.design_tokens import RADIUS_LG, RADIUS_MD, RADIUS_SM, rad
+    from jellytoast.design_tokens import RADIUS_LG, RADIUS_MD, RADIUS_SM, TYPE_BODY, rad, type_qss
 
     ar, ag, ab = _accent_rgb_tuple()
     # Regenerate the check-mark PNG for the current accent (lazy +
@@ -477,7 +477,11 @@ QPushButton {{
     color: {TEXT};
     border: 1px solid {BORDER};
     border-radius: {RADIUS_LG}px;
-    padding: 8px 14px;
+    /* One standard button size (QA 2026-10-26): body text, ~32 px tall —
+       the height of the dropdowns beside them. Unsized, a plain button
+       took the app font + 8 px padding (40 px) and dwarfed its row. */
+    padding: 6px 14px;
+    {type_qss(TYPE_BODY)}
 }}
 QPushButton:hover {{ background: rgba({ar},{ag},{ab},0.15); border-color: {BORDER_ACCENT}; }}
 QPushButton:pressed {{ background: rgba({ar},{ag},{ab},0.3); }}

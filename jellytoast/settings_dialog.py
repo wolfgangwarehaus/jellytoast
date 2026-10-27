@@ -837,6 +837,8 @@ class SettingsDialog(
                still win. */
             QPushButton {{
                 color: {TEXT};
+                padding: 6px 14px;
+                {type_qss(TYPE_BODY)}
             }}
             /* _Selector — QPushButton + QMenu replacement for combos.
                Visual treatment matches QComboBox above; the trailing

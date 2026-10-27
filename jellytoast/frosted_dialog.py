@@ -21,10 +21,11 @@ from __future__ import annotations
 
 from typing import Optional
 
-from PySide6.QtCore import QSize, Qt, QTimer
+from PySide6.QtCore import QCoreApplication, QSize, Qt, QTimer, Signal
 from PySide6.QtGui import QColor, QPainter, QPainterPath
 from PySide6.QtWidgets import (
     QDialog,
+    QDialogButtonBox,
     QHBoxLayout,
     QLabel,
     QPushButton,
@@ -176,6 +177,57 @@ class FrostedDialog(QDialog):
             p.drawPath(path)
         finally:
             p.end()
+
+
+class DialogButtons(QWidget):
+    """A dialog's footer in the app's one order: Cancel, then the main
+    action in accent, right-aligned — what FrostedConfirmDialog and the
+    smart-playlist editor already do. QDialogButtonBox follows the desktop's
+    order instead (KDE puts Save before Cancel), so dialogs disagreed (QA
+    2026-10-26). Drop-in for the box: ``accepted`` / ``rejected`` and
+    ``button(QDialogButtonBox.StandardButton.Save | Ok | Cancel)``."""
+
+    accepted = Signal()
+    rejected = Signal()
+
+    def __init__(self, accept_text: str, cancel_text: str = "", parent=None):
+        super().__init__(parent)
+        from jellytoast.design_tokens import BTN_PRIMARY, button_qss
+        from jellytoast.player_state import PlayerBus
+
+        row = QHBoxLayout(self)
+        row.setContentsMargins(0, 0, 0, 0)
+        row.setSpacing(8)
+        row.addStretch(1)
+        self.cancel_button = QPushButton(
+            cancel_text or QCoreApplication.translate("DialogButtons", "Cancel")
+        )
+        self.cancel_button.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.cancel_button.clicked.connect(self.rejected.emit)
+        row.addWidget(self.cancel_button)
+        self.accept_button = QPushButton(accept_text)
+        self.accept_button.setObjectName("accent")
+        # Per-widget too, like FrostedMessageDialog's OK: the #accent rule
+        # alone loses to Breeze's native default-button paint.
+        self.accept_button.setStyleSheet(button_qss(BTN_PRIMARY))
+        self.accept_button.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.accept_button.setDefault(True)
+        self.accept_button.clicked.connect(self.accepted.emit)
+        row.addWidget(self.accept_button)
+        PlayerBus.get().theme_changed.connect(self._restamp)
+
+    def _restamp(self, *_a) -> None:
+        from jellytoast.design_tokens import BTN_PRIMARY, button_qss
+
+        self.accept_button.setStyleSheet(button_qss(BTN_PRIMARY))
+
+    def button(self, which):
+        sb = QDialogButtonBox.StandardButton
+        if which == sb.Cancel:
+            return self.cancel_button
+        if which in (sb.Save, sb.Ok, sb.Apply, sb.Yes):
+            return self.accept_button
+        return None
 
 
 class FrostedMessageDialog(FrostedDialog):
