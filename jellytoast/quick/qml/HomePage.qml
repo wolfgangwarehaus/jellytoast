@@ -54,7 +54,8 @@ Item {
                     Component.onCompleted: lib.reload()
 
                     Label {
-                        leftPadding: 16
+                        // Lined up with the tiles below it.
+                        leftPadding: Math.round(row.centredX)
                         topPadding: 10
                         text: rail.modelData.label
                         color: theme.text
@@ -68,14 +69,14 @@ Item {
                         id: row
                         objectName: "rail_" + rail.modelData.kind
                         width: parent.width
-                        // Whole tiles plus a peek of the next album, so the rail
+                        // Whole tiles plus a peek of the neighbours, so the rail
                         // reads as scrollable (august, 2026-10-27): `cols` tiles
-                        // and ~a third of the next one fit from the left margin.
-                        // Off the start, a swipe settles with the tiles centred,
-                        // so an edge shows on BOTH sides; at the end the last
-                        // tile meets the right margin.
-                        readonly property int cols: Math.max(2, Math.floor((width - leftMargin) / 175))
-                        readonly property real tileW: (width - leftMargin - cols * spacing) / (cols + 0.35)
+                        // centred, ~a sixth of a tile showing past each side.
+                        // The side margins ARE that centred offset, so the first
+                        // pair, every swipe and the last pair all sit in the same
+                        // place — everything always lines up.
+                        readonly property int cols: Math.max(2, Math.floor(width / 175))
+                        readonly property real tileW: (width - (cols + 1) * spacing) / (cols + 0.36)
                         readonly property real pitch: tileW + spacing
                         // Where a settled tile starts, mid-rail: the group of
                         // `cols` tiles centred in the view.
@@ -83,8 +84,8 @@ Item {
                         height: Math.round(tileW) + 50
                         orientation: ListView.Horizontal
                         spacing: 14
-                        leftMargin: 16
-                        rightMargin: 16
+                        leftMargin: centredX
+                        rightMargin: centredX
                         function settle() {
                             var maxX = Math.max(-leftMargin, contentWidth + rightMargin - width)
                             var i = Math.round((contentX + centredX) / pitch)

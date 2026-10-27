@@ -17,22 +17,22 @@ def _section(quick, key):
 
 
 def test_home_rails_show_whole_tiles_and_a_peek(quick):
-    """Whole tiles (2 on a phone) plus ~a third of the next one, so the
-    rail reads as scrollable; mid-rail a swipe settles with the tiles
-    centred, an edge showing on both sides."""
+    """Two whole tiles centred, a slice of the neighbours past each side,
+    and the SAME position before any scroll, after a swipe and at the end
+    (august: "everything always lined up")."""
     for w in (360, 412):
         _settle(quick, w, 800)
         _section(quick, "home")
         rail = quick.wait_for("rail_latest")
         cols, tile = rail.property("cols"), rail.property("tileW")
-        sp, lm = rail.property("spacing"), rail.property("leftMargin")
+        sp, cx = rail.property("spacing"), rail.property("centredX")
         assert cols == 2
-        peek = w - (lm + cols * (tile + sp))  # the next tile's visible part
-        assert 0.25 * tile < peek < 0.45 * tile
-        # Centred mid-rail: equal room either side of the `cols` tiles.
-        cx = rail.property("centredX")
+        # Centred: equal room either side of the pair.
         assert abs(cx - (w - cols * tile - (cols - 1) * sp - cx)) < 1
-        assert cx > sp  # a neighbour's edge is visible on the left too
+        assert 0.12 * tile < cx - sp < 0.25 * tile  # the visible peek
+        # The start IS the centred position: margins == the centred offset.
+        assert rail.property("leftMargin") == cx == rail.property("rightMargin")
+        assert abs(rail.property("contentX") + cx) < 1
 
 
 def test_radio_actions_fit_a_360px_phone(quick):
