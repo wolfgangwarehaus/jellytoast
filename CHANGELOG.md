@@ -18,6 +18,10 @@ developer-facing history lives in [`docs/CHANGELOG.md`](docs/CHANGELOG.md).
 - **Tidier at small sizes.** Shrink jellytoast right down and the extra
   top-bar buttons tuck into a ⋮ menu instead of piling on top of each other,
   and Settings fits a narrow window without scrolling sideways.
+- **The phone app fits your screen.** Home rows show whole albums, icons
+  stay the right size on high-resolution phones (the cast menu was a mess),
+  Radio's buttons fit small screens, and landscape puts the art beside the
+  controls.
 - **A more consistent look.** Buttons are one size everywhere, every dialog
   puts Cancel first, and checkbox labels match the buttons beside them.
 - **Artists without a photo** get a proper placeholder instead of a bright
