@@ -118,6 +118,45 @@ Item {
                 value: prefs.themeMode
                 onPicked: v => prefs.setThemeMode(v)
             }
+            // Accent: the desktop's swatches (built-in theme only — a preset
+            // family brings its own accent).
+            RowLayout {
+                objectName: "accentRow"
+                visible: prefs.theme === "jellytoast"
+                Layout.fillWidth: true
+                Layout.leftMargin: 20; Layout.rightMargin: 20
+                Layout.topMargin: 6; Layout.bottomMargin: 6
+                Label {
+                    Layout.fillWidth: true
+                    text: qsTr("Accent")
+                    color: theme.text
+                    font.pixelSize: 16
+                }
+                Repeater {
+                    model: prefs.accentPresets
+                    AbstractButton {
+                        required property var modelData
+                        objectName: "accent_" + modelData.label
+                        readonly property bool current: prefs.accent === modelData.value.toLowerCase()
+                        Layout.preferredWidth: 32; Layout.preferredHeight: 32
+                        focusPolicy: Qt.NoFocus
+                        Accessible.name: modelData.label
+                        background: Rectangle {
+                            radius: width / 2
+                            color: "transparent"
+                            border.width: parent.current ? 2 : 0
+                            border.color: theme.text
+                            Rectangle {
+                                anchors.centerIn: parent
+                                width: parent.width - 8; height: width
+                                radius: width / 2
+                                color: modelData.value
+                            }
+                        }
+                        onClicked: prefs.setAccent(modelData.value)
+                    }
+                }
+            }
             SwitchRow {
                 objectName: "frostedSwitch"
                 Layout.fillWidth: true

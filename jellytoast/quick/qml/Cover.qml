@@ -16,6 +16,9 @@ Item {
     // Faint glyph on the placeholder (art missing or still loading), like
     // the desktop grids: "user" for artists, a music note otherwise.
     property string glyph: "music_note"
+    // A gentle pulse while the art is on its way, so "loading" doesn't read
+    // as "missing"; it settles after a while (art that never comes).
+    property bool pulse: true
 
     component Art: Image {
         id: img
@@ -71,10 +74,26 @@ Item {
     }
 
     Rectangle {  // placeholder until the art arrives
+        id: ph
         anchors.fill: parent
         radius: root.radius
         color: theme.surface
         visible: main.status !== Image.Ready
+        property bool gaveUp: false
+        readonly property bool loading: root.pulse && String(root.source) !== ""
+                                        && main.status !== Image.Ready && !gaveUp
+        Connections {
+            target: root
+            function onSourceChanged() { ph.gaveUp = false }
+        }
+        Timer { interval: 12000; running: ph.loading; onTriggered: ph.gaveUp = true }
+        SequentialAnimation {
+            running: ph.loading && ph.visible
+            loops: Animation.Infinite
+            onRunningChanged: if (!running) ph.opacity = 1
+            OpacityAnimator { target: ph; from: 1; to: 0.55; duration: 750; easing.type: Easing.InOutSine }
+            OpacityAnimator { target: ph; from: 0.55; to: 1; duration: 750; easing.type: Easing.InOutSine }
+        }
         Icon {
             anchors.centerIn: parent
             visible: root.glyph !== ""

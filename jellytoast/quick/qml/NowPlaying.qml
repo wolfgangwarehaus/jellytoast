@@ -30,42 +30,11 @@ Rectangle {
     // Swallow taps so nothing underneath reacts.
     MouseArea { anchors.fill: parent }
 
-    // Backdrop: the playing cover blown up and heavily blurred under a
-    // theme-coloured wash, so each album sets the mood (the desktop's glass,
-    // with the art as what's "behind"). The small cover is plenty once
-    // blurred.
-    Item {
-        id: backdrop
+    // Backdrop: the playing cover, blown up and blurred (BlurBackdrop).
+    BlurBackdrop {
         objectName: "npBackdrop"
         anchors.fill: parent
-        clip: true
-        visible: player.cover !== "" && prefs.frosted
-        Cover {
-            id: backArt
-            anchors.centerIn: parent
-            width: Math.max(parent.width, parent.height) * 1.25
-            height: width
-            radius: 0
-            pixels: 160
-            glyph: ""
-            source: player.cover
-            fallback: player.cover
-            layer.enabled: true
-            visible: false
-        }
-        MultiEffect {
-            anchors.fill: backArt
-            source: backArt
-            blurEnabled: true
-            blur: 1.0
-            blurMax: 64
-            saturation: 0.15
-        }
-        Rectangle {
-            anchors.fill: parent
-            color: theme.background
-            opacity: 0.6
-        }
+        source: player.cover
     }
 
     DragHandler {

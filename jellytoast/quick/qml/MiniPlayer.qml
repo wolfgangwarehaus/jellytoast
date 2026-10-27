@@ -2,6 +2,7 @@
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
+import QtQuick.Effects
 
 Rectangle {
     id: mini
@@ -12,6 +13,7 @@ Rectangle {
 
     height: player.hasTrack ? 76 : 0
     visible: player.hasTrack
+    clip: true  // keeps the cover's glow inside the bar
     color: frostBehind ? "transparent" : theme.surface
 
     FrostedPane {
@@ -22,9 +24,18 @@ Rectangle {
         tintOpacity: 0.55
     }
 
-    Rectangle {  // progress hairline
+    // Progress: a rounded 3 px bar over a faint track, along the top edge.
+    Rectangle {
         anchors.top: parent.top
-        height: 2
+        width: parent.width
+        height: 3
+        color: theme.textFaint
+        opacity: 0.35
+    }
+    Rectangle {
+        anchors.top: parent.top
+        height: 3
+        radius: 1.5
         width: player.duration > 0 ? parent.width * player.position / player.duration : 0
         color: theme.accent
     }
@@ -43,12 +54,30 @@ Rectangle {
         anchors.rightMargin: 4
         spacing: 12
 
-        Cover {
+        Item {
             Layout.preferredWidth: 52
             Layout.preferredHeight: 52
-            radius: 6
-            pixels: 160
-            source: player.cover
+            // A soft glow of the album's own colours behind the cover
+            // (with Frosted glass; it's the cover itself, blurred).
+            MultiEffect {
+                anchors.centerIn: parent
+                width: 84; height: 84
+                visible: prefs.frosted && player.cover !== ""
+                source: miniCover
+                blurEnabled: true
+                blur: 1.0
+                blurMax: 32
+                saturation: 0.3
+                opacity: 0.75
+            }
+            Cover {
+                id: miniCover
+                anchors.fill: parent
+                radius: 6
+                pixels: 160
+                source: player.cover
+                layer.enabled: true
+            }
         }
         ColumnLayout {
             Layout.fillWidth: true

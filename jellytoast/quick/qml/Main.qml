@@ -70,7 +70,8 @@ ApplicationWindow {
         if (kind === "album" || kind === "playlist")
             stack.push(albumPage, { album: Object.assign({ kind: kind }, item) })
         else if (kind === "artist")
-            stack.push(gridPage, { kind: "artistAlbums", parentId: item.id, title: item.name })
+            stack.push(gridPage, { kind: "artistAlbums", parentId: item.id, title: item.name,
+                                   cover: item.cover || "" })
         else if (kind === "genre")
             stack.push(gridPage, { kind: "genreAlbums", parentId: item.id, title: item.name })
         else if (kind === "likedSongs")

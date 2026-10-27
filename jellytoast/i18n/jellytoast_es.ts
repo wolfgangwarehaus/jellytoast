@@ -119,7 +119,7 @@
 <context>
     <name>AlbumPage</name>
     <message>
-        <location filename="../quick/qml/AlbumPage.qml" line="89"/>
+        <location filename="../quick/qml/AlbumPage.qml" line="103"/>
         <source>Play</source>
         <translation>Reproducir</translation>
     </message>
@@ -128,13 +128,13 @@
         <translation type="obsolete">Aleatorio</translation>
     </message>
     <message>
-        <location filename="../quick/qml/AlbumPage.qml" line="123"/>
-        <location filename="../quick/qml/AlbumPage.qml" line="133"/>
+        <location filename="../quick/qml/AlbumPage.qml" line="138"/>
+        <location filename="../quick/qml/AlbumPage.qml" line="148"/>
         <source>Added to queue</source>
         <translation>Añadido a la cola</translation>
     </message>
     <message>
-        <location filename="../quick/qml/AlbumPage.qml" line="133"/>
+        <location filename="../quick/qml/AlbumPage.qml" line="148"/>
         <source>Playing next</source>
         <translation>Se reproducirá a continuación</translation>
     </message>
@@ -1567,32 +1567,32 @@ jellytoast funcionará, pero las funciones de bandeja no estarán disponibles.</
         <translation>Álbumes</translation>
     </message>
     <message>
-        <location filename="../quick/qml/LibraryGridPage.qml" line="48"/>
+        <location filename="../quick/qml/LibraryGridPage.qml" line="50"/>
         <source>Nothing here yet</source>
         <translation>Aún no hay nada aquí</translation>
     </message>
     <message>
-        <location filename="../quick/qml/LibraryGridPage.qml" line="59"/>
+        <location filename="../quick/qml/LibraryGridPage.qml" line="61"/>
         <source>Couldn&apos;t reach the server</source>
         <translation>No se pudo conectar con el servidor</translation>
     </message>
     <message>
-        <location filename="../quick/qml/LibraryGridPage.qml" line="64"/>
+        <location filename="../quick/qml/LibraryGridPage.qml" line="66"/>
         <source>Try again</source>
         <translation>Reintentar</translation>
     </message>
     <message>
-        <location filename="../quick/qml/LibraryGridPage.qml" line="172"/>
+        <location filename="../quick/qml/LibraryGridPage.qml" line="176"/>
         <source>Liked songs</source>
         <translation>Canciones que me gustan</translation>
     </message>
     <message>
-        <location filename="../quick/qml/LibraryGridPage.qml" line="186"/>
+        <location filename="../quick/qml/LibraryGridPage.qml" line="216"/>
         <source>Play</source>
         <translation>Reproducir</translation>
     </message>
     <message>
-        <location filename="../quick/qml/LibraryGridPage.qml" line="191"/>
+        <location filename="../quick/qml/LibraryGridPage.qml" line="220"/>
         <source>Shuffle</source>
         <translation>Aleatorio</translation>
     </message>
@@ -1948,7 +1948,7 @@ jellytoast funcionará, pero las funciones de bandeja no estarán disponibles.</
         <translation>Descargas</translation>
     </message>
     <message>
-        <location filename="../quick/qml/Main.qml" line="77"/>
+        <location filename="../quick/qml/Main.qml" line="78"/>
         <source>Liked songs</source>
         <translation>Canciones que me gustan</translation>
     </message>
@@ -1997,17 +1997,17 @@ jellytoast funcionará, pero las funciones de bandeja no estarán disponibles.</
         <translation type="obsolete">Ajustes</translation>
     </message>
     <message>
-        <location filename="../quick/qml/Main.qml" line="232"/>
+        <location filename="../quick/qml/Main.qml" line="233"/>
         <source>Offline — showing your downloads</source>
         <translation>Sin conexión — mostrando tus descargas</translation>
     </message>
     <message>
-        <location filename="../quick/qml/Main.qml" line="366"/>
+        <location filename="../quick/qml/Main.qml" line="367"/>
         <source>BROWSE</source>
         <translation>EXPLORAR</translation>
     </message>
     <message>
-        <location filename="../quick/qml/Main.qml" line="424"/>
+        <location filename="../quick/qml/Main.qml" line="425"/>
         <source>Cast failed</source>
         <translation>Falló la transmisión</translation>
     </message>
@@ -2015,67 +2015,67 @@ jellytoast funcionará, pero las funciones de bandeja no estarán disponibles.</
 <context>
     <name>NowPlaying</name>
     <message>
-        <location filename="../quick/qml/NowPlaying.qml" line="121"/>
+        <location filename="../quick/qml/NowPlaying.qml" line="90"/>
         <source>PLAYING FROM</source>
         <translation>REPRODUCIENDO DESDE</translation>
     </message>
     <message>
-        <location filename="../quick/qml/NowPlaying.qml" line="526"/>
+        <location filename="../quick/qml/NowPlaying.qml" line="495"/>
         <source>Add to playlist…</source>
         <translation>Añadir a lista de reproducción…</translation>
     </message>
     <message>
-        <location filename="../quick/qml/NowPlaying.qml" line="537"/>
+        <location filename="../quick/qml/NowPlaying.qml" line="506"/>
         <source>Go to artist</source>
         <translation>Ir al artista</translation>
     </message>
     <message>
-        <location filename="../quick/qml/NowPlaying.qml" line="548"/>
+        <location filename="../quick/qml/NowPlaying.qml" line="517"/>
         <source>Go to album</source>
         <translation>Ir al álbum</translation>
     </message>
     <message>
-        <location filename="../quick/qml/NowPlaying.qml" line="299"/>
+        <location filename="../quick/qml/NowPlaying.qml" line="268"/>
         <source>Casting</source>
         <translation>Transmitiendo</translation>
     </message>
     <message>
-        <location filename="../quick/qml/NowPlaying.qml" line="188"/>
+        <location filename="../quick/qml/NowPlaying.qml" line="157"/>
         <source>Playing on %1</source>
         <translation>Reproduciendo en %1</translation>
     </message>
     <message>
-        <location filename="../quick/qml/NowPlaying.qml" line="325"/>
+        <location filename="../quick/qml/NowPlaying.qml" line="294"/>
         <source>LIVE</source>
         <translation>EN VIVO</translation>
     </message>
     <message>
-        <location filename="../quick/qml/NowPlaying.qml" line="438"/>
+        <location filename="../quick/qml/NowPlaying.qml" line="407"/>
         <source>end of song</source>
         <translation>final de la canción</translation>
     </message>
     <message>
-        <location filename="../quick/qml/NowPlaying.qml" line="452"/>
+        <location filename="../quick/qml/NowPlaying.qml" line="421"/>
         <source>%1 minutes</source>
         <translation>%1 minutos</translation>
     </message>
     <message>
-        <location filename="../quick/qml/NowPlaying.qml" line="453"/>
+        <location filename="../quick/qml/NowPlaying.qml" line="422"/>
         <source>1 hour</source>
         <translation>1 hora</translation>
     </message>
     <message>
-        <location filename="../quick/qml/NowPlaying.qml" line="453"/>
+        <location filename="../quick/qml/NowPlaying.qml" line="422"/>
         <source>1 h 30 min</source>
         <translation>1 h 30 min</translation>
     </message>
     <message>
-        <location filename="../quick/qml/NowPlaying.qml" line="458"/>
+        <location filename="../quick/qml/NowPlaying.qml" line="427"/>
         <source>After this song</source>
         <translation>Después de esta canción</translation>
     </message>
     <message>
-        <location filename="../quick/qml/NowPlaying.qml" line="462"/>
+        <location filename="../quick/qml/NowPlaying.qml" line="431"/>
         <source>Turn off timer</source>
         <translation>Desactivar temporizador</translation>
     </message>
@@ -3030,22 +3030,22 @@ Revisa el PIN — la causa más común es una errata o un código caducado (el r
         <translation>Seguir el sistema</translation>
     </message>
     <message>
-        <location filename="../quick/prefs.py" line="235"/>
+        <location filename="../quick/prefs.py" line="265"/>
         <source>Small</source>
         <translation>Pequeño</translation>
     </message>
     <message>
-        <location filename="../quick/prefs.py" line="236"/>
+        <location filename="../quick/prefs.py" line="266"/>
         <source>Default</source>
         <translation>Predeterminado</translation>
     </message>
     <message>
-        <location filename="../quick/prefs.py" line="237"/>
+        <location filename="../quick/prefs.py" line="267"/>
         <source>Large</source>
         <translation>Grande</translation>
     </message>
     <message>
-        <location filename="../quick/prefs.py" line="238"/>
+        <location filename="../quick/prefs.py" line="268"/>
         <source>Largest</source>
         <translation>Muy grande</translation>
     </message>
@@ -4484,165 +4484,170 @@ Ejecuta pywal (o wallust) una vez para que genere una paleta, y vuelve a activar
         <translation>Aspecto</translation>
     </message>
     <message>
-        <location filename="../quick/qml/SettingsPage.qml" line="125"/>
+        <location filename="../quick/qml/SettingsPage.qml" line="131"/>
+        <source>Accent</source>
+        <translation>Acento</translation>
+    </message>
+    <message>
+        <location filename="../quick/qml/SettingsPage.qml" line="164"/>
         <source>Frosted glass</source>
         <translation>Cristal esmerilado</translation>
     </message>
     <message>
-        <location filename="../quick/qml/SettingsPage.qml" line="130"/>
+        <location filename="../quick/qml/SettingsPage.qml" line="169"/>
         <source>PLAYBACK</source>
         <translation>REPRODUCCIÓN</translation>
     </message>
     <message>
-        <location filename="../quick/qml/SettingsPage.qml" line="134"/>
+        <location filename="../quick/qml/SettingsPage.qml" line="173"/>
         <source>Streaming quality</source>
         <translation>Calidad de streaming</translation>
     </message>
     <message>
-        <location filename="../quick/qml/SettingsPage.qml" line="142"/>
+        <location filename="../quick/qml/SettingsPage.qml" line="181"/>
         <source>Download quality</source>
         <translation>Calidad de descarga</translation>
     </message>
     <message>
-        <location filename="../quick/qml/SettingsPage.qml" line="150"/>
+        <location filename="../quick/qml/SettingsPage.qml" line="189"/>
         <source>Normalization</source>
         <translation>Normalización</translation>
     </message>
     <message>
-        <location filename="../quick/qml/SettingsPage.qml" line="159"/>
+        <location filename="../quick/qml/SettingsPage.qml" line="198"/>
         <source>Lock screen &amp; media controls</source>
         <translation>Pantalla de bloqueo y controles multimedia</translation>
     </message>
     <message>
-        <location filename="../quick/qml/SettingsPage.qml" line="166"/>
+        <location filename="../quick/qml/SettingsPage.qml" line="205"/>
         <source>Takes effect next time jellytoast starts.</source>
         <translation>Se aplica la próxima vez que se inicie jellytoast.</translation>
     </message>
     <message>
-        <location filename="../quick/qml/SettingsPage.qml" line="171"/>
+        <location filename="../quick/qml/SettingsPage.qml" line="210"/>
         <source>SOUND</source>
         <translation>SONIDO</translation>
     </message>
     <message>
-        <location filename="../quick/qml/SettingsPage.qml" line="177"/>
+        <location filename="../quick/qml/SettingsPage.qml" line="216"/>
         <source>Bit-perfect playback is on, so the equalizer and crossfade are off.</source>
         <translation>La reproducción bit-perfect está activada, así que el ecualizador y el fundido cruzado están desactivados.</translation>
     </message>
     <message>
-        <location filename="../quick/qml/SettingsPage.qml" line="186"/>
+        <location filename="../quick/qml/SettingsPage.qml" line="225"/>
         <source>Equalizer</source>
         <translation>Ecualizador</translation>
     </message>
     <message>
-        <location filename="../quick/qml/SettingsPage.qml" line="194"/>
+        <location filename="../quick/qml/SettingsPage.qml" line="233"/>
         <source>Preset</source>
         <translation>Preajuste</translation>
     </message>
     <message>
-        <location filename="../quick/qml/SettingsPage.qml" line="195"/>
+        <location filename="../quick/qml/SettingsPage.qml" line="234"/>
         <source>Custom</source>
         <translation>Personalizado</translation>
     </message>
     <message>
-        <location filename="../quick/qml/SettingsPage.qml" line="240"/>
+        <location filename="../quick/qml/SettingsPage.qml" line="279"/>
         <source>Crossfade between songs</source>
         <translation>Fundido cruzado entre canciones</translation>
     </message>
     <message>
-        <location filename="../quick/qml/SettingsPage.qml" line="258"/>
+        <location filename="../quick/qml/SettingsPage.qml" line="297"/>
         <source>%1 s</source>
         <translation>%1 s</translation>
     </message>
     <message>
-        <location filename="../quick/qml/SettingsPage.qml" line="267"/>
+        <location filename="../quick/qml/SettingsPage.qml" line="306"/>
         <source>Lyrics size</source>
         <translation>Tamaño de la letra</translation>
     </message>
     <message>
-        <location filename="../quick/qml/SettingsPage.qml" line="273"/>
+        <location filename="../quick/qml/SettingsPage.qml" line="312"/>
         <source>SCROBBLING</source>
         <translation>SCROBBLING</translation>
     </message>
     <message>
-        <location filename="../quick/qml/SettingsPage.qml" line="286"/>
-        <location filename="../quick/qml/SettingsPage.qml" line="314"/>
+        <location filename="../quick/qml/SettingsPage.qml" line="325"/>
+        <location filename="../quick/qml/SettingsPage.qml" line="353"/>
         <source>Connected as %1</source>
         <translation>Conectado como %1</translation>
     </message>
     <message>
-        <location filename="../quick/qml/SettingsPage.qml" line="295"/>
-        <location filename="../quick/qml/SettingsPage.qml" line="324"/>
+        <location filename="../quick/qml/SettingsPage.qml" line="334"/>
+        <location filename="../quick/qml/SettingsPage.qml" line="363"/>
         <source>Disconnect</source>
         <translation>Desconectar</translation>
     </message>
     <message>
-        <location filename="../quick/qml/SettingsPage.qml" line="296"/>
+        <location filename="../quick/qml/SettingsPage.qml" line="335"/>
         <source>Cancel</source>
         <translation>Cancelar</translation>
     </message>
     <message>
-        <location filename="../quick/qml/SettingsPage.qml" line="296"/>
-        <location filename="../quick/qml/SettingsPage.qml" line="349"/>
+        <location filename="../quick/qml/SettingsPage.qml" line="335"/>
+        <location filename="../quick/qml/SettingsPage.qml" line="388"/>
         <source>Connect</source>
         <translation>Conectar</translation>
     </message>
     <message>
-        <location filename="../quick/qml/SettingsPage.qml" line="338"/>
+        <location filename="../quick/qml/SettingsPage.qml" line="377"/>
         <source>User token (listenbrainz.org/settings)</source>
         <translation>Token de usuario (listenbrainz.org/settings)</translation>
     </message>
     <message>
-        <location filename="../quick/qml/SettingsPage.qml" line="355"/>
+        <location filename="../quick/qml/SettingsPage.qml" line="394"/>
         <source>OFFLINE</source>
         <translation>SIN CONEXIÓN</translation>
     </message>
     <message>
-        <location filename="../quick/qml/SettingsPage.qml" line="360"/>
+        <location filename="../quick/qml/SettingsPage.qml" line="399"/>
         <source>Offline mode — only play downloads</source>
         <translation>Modo sin conexión — solo reproducir descargas</translation>
     </message>
     <message>
-        <location filename="../quick/qml/SettingsPage.qml" line="368"/>
+        <location filename="../quick/qml/SettingsPage.qml" line="407"/>
         <source>Download on Wi-Fi only</source>
         <translation>Descargar solo con Wi-Fi</translation>
     </message>
     <message>
-        <location filename="../quick/qml/SettingsPage.qml" line="373"/>
+        <location filename="../quick/qml/SettingsPage.qml" line="412"/>
         <source>CASTING</source>
         <translation>TRANSMISIÓN</translation>
     </message>
     <message>
-        <location filename="../quick/qml/SettingsPage.qml" line="387"/>
+        <location filename="../quick/qml/SettingsPage.qml" line="426"/>
         <source>INTERFACE</source>
         <translation>INTERFAZ</translation>
     </message>
     <message>
-        <location filename="../quick/qml/SettingsPage.qml" line="392"/>
+        <location filename="../quick/qml/SettingsPage.qml" line="431"/>
         <source>This is the phone interface. You can go back to the classic one any time.</source>
         <translation>Esta es la interfaz de teléfono. Puedes volver a la clásica cuando quieras.</translation>
     </message>
     <message>
-        <location filename="../quick/qml/SettingsPage.qml" line="400"/>
+        <location filename="../quick/qml/SettingsPage.qml" line="439"/>
         <source>Use the classic interface</source>
         <translation>Usar la interfaz clásica</translation>
     </message>
     <message>
-        <location filename="../quick/qml/SettingsPage.qml" line="403"/>
+        <location filename="../quick/qml/SettingsPage.qml" line="442"/>
         <source>Restart jellytoast to switch</source>
         <translation>Reinicia jellytoast para cambiar</translation>
     </message>
     <message>
-        <location filename="../quick/qml/SettingsPage.qml" line="407"/>
+        <location filename="../quick/qml/SettingsPage.qml" line="446"/>
         <source>ABOUT</source>
         <translation>ACERCA DE</translation>
     </message>
     <message>
-        <location filename="../quick/qml/SettingsPage.qml" line="424"/>
+        <location filename="../quick/qml/SettingsPage.qml" line="463"/>
         <source>Sign out?</source>
         <translation>¿Cerrar sesión?</translation>
     </message>
     <message>
-        <location filename="../quick/qml/SettingsPage.qml" line="430"/>
+        <location filename="../quick/qml/SettingsPage.qml" line="469"/>
         <source>Playback stops, the queue is cleared and pending downloads are cancelled.</source>
         <translation>La reproducción se detiene, la cola se vacía y se cancelan las descargas pendientes.</translation>
     </message>

@@ -116,6 +116,36 @@ class Prefs(QObject):
     themeMode = Property(str, _theme_mode, notify=changed)
     themeHasModes = Property(bool, _theme_has_modes, notify=changed)
 
+    # ── accent (the desktop's accent swatches; the built-in theme only —
+    #    a preset family brings its own accent) ──
+    def _accent_presets(self):
+        from jellytoast.theme import ACCENT_PRESETS
+
+        return [{"label": self.tr(name), "value": hex_} for name, hex_ in ACCENT_PRESETS]
+
+    accentPresets = Property("QVariantList", _accent_presets, constant=True)
+    accent = Property(str, lambda self: (_settings().accent_color or "").lower(), notify=changed)
+
+    @Slot(str)
+    def setAccent(self, hex_value: str) -> None:  # noqa: N802
+        """Same steps as the desktop's swatch pick (settings_page_display.
+        _on_accent_picked): persist, drop accent-derived colour overrides,
+        refresh the theme constants, broadcast."""
+        from jellytoast import icons as _icons
+        from jellytoast import ui_helpers as _uih
+        from jellytoast.settings_migration import open_qsettings
+
+        st = _settings()
+        st.accent_color = hex_value
+        st.follow_system_accent = False  # a pick replaces following the system
+        qs = open_qsettings()
+        for tok in ("ACCENT", "ACCENT_DEEP", "BORDER_ACCENT"):
+            qs.remove(f"debug/colors/{tok}")
+        _uih.refresh_theme()
+        _icons.refresh_theme()
+        PlayerBus.get().theme_changed.emit()
+        self.changed.emit()
+
     @Slot(str)
     def setTheme(self, family: str) -> None:  # noqa: N802
         from jellytoast.theme_presets import apply_theme_family

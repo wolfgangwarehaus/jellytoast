@@ -65,3 +65,44 @@ def test_now_playing_has_a_blurred_art_backdrop(quick):
         assert not quick.find("npBackdrop")
     finally:
         quick.eval("prefs.setFrosted(true)")
+
+
+def test_album_and_artist_pages_get_a_blurred_art_header(quick):
+    quick.tap("text:Album 001")
+    quick.wait_for("trackList")
+    quick.wait_idle()
+    assert quick.get("albumBackdrop").isVisible()
+    quick.key("esc")
+    quick.wait_idle()
+    quick.eval("win.openItem('artist', {id: 'ar1', name: 'Artist 1', cover: 'image://cover/ar1/256'})")
+    quick.wait_idle()
+    assert quick.get("artistBackdrop").isVisible()
+    assert quick.get("artistPortrait").isVisible()
+
+
+def test_accent_swatches_set_the_shared_accent(quick, isolated_settings):
+    quick.eval("stack.push(settingsPage)")
+    quick.wait_idle()
+    row = quick.wait_for("accentRow")
+    assert row.isVisible()  # built-in theme
+    quick.tap("accent_Teal")
+    quick.wait_idle()
+    assert isolated_settings.accent_color.lower() == "#1eb1ab"
+    assert quick.eval("theme.accent.toString()").lower() == "#1eb1ab"
+
+
+def test_a_loading_cover_pulses_then_settles(quick):
+    # A cover whose art never arrives pulses, then stops (gaveUp).
+    quick.eval(
+        "Qt.createQmlObject('Cover { objectName: \\'probeCover\\'; width: 40; height: 40;"
+        " source: \\'image://cover/none/80\\' }', stack, 'probe') !== null"
+    )
+    quick.wait_idle()
+    probe = quick.get("probeCover")
+    ph = next(c for c in probe.childItems() if c.property("gaveUp") is not None)
+    assert ph.property("loading") is True
+    ph.setProperty("gaveUp", True)
+    quick.wait_idle()
+    assert ph.property("loading") is False
+    assert ph.opacity() == 1
+    probe.deleteLater()

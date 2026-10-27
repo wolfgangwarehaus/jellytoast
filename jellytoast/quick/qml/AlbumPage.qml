@@ -32,8 +32,22 @@ Item {
         topMargin: page.insetTop
         bottomMargin: 12 + page.insetBottom
 
-        header: Column {
+        header: Item {
             width: list.width
+            height: hcol.implicitHeight
+            // The album's art blurred behind its header, reaching up under
+            // the frosted top bar and fading into the track list.
+            BlurBackdrop {
+                objectName: "albumBackdrop"
+                anchors.fill: parent
+                anchors.topMargin: -page.insetTop
+                source: page.album.cover || ""
+                wash: 0.5
+                fadeBottom: true
+            }
+        Column {
+            id: hcol
+            width: parent.width
             topPadding: 4
             bottomPadding: 12
             spacing: 10
@@ -107,6 +121,7 @@ Item {
                 running: tracks ? tracks.loading : false
                 visible: running
             }
+        }
         }
 
         delegate: TrackRow {

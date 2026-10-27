@@ -21,6 +21,8 @@ Item {
     }
     property string parentId: ""
     property string title: qsTr("Albums")
+    // The artist's picture (artist pages: its header).
+    property string cover: ""
     property var source: null           // a ready LibraryModel (Albums uses the shared one)
     readonly property var lib: source ? source : own
     readonly property bool loading: lib.loading
@@ -73,7 +75,9 @@ Item {
         anchors.leftMargin: page.gutter
         anchors.rightMargin: page.gutter
         visible: session.signedIn && !page.listMode
-        clip: true
+        // Not clipped: the artist header's backdrop reaches past the gutters
+        // to the screen edges (the page area clips).
+        clip: false
         model: visible ? page.lib : null
         cellWidth: width / page.columns
         cellHeight: cellWidth + (page.round ? 34 : 46)
@@ -176,20 +180,46 @@ Item {
     }
     Component {
         id: artistHeader
-        Row {
+        // The artist's photo blurred behind a round portrait (reaching up
+        // under the frosted top bar), then Play / Shuffle.
+        Item {
             width: grid.width
-            height: 64
-            spacing: 12
-            leftPadding: (width - 252) / 2
-            PillButton {
-                anchors.verticalCenter: parent.verticalCenter
-                iconName: "play"; text: qsTr("Play"); filled: true
-                onClicked: actions.run("artist", page.parentId, page.title, "play")
+            height: page.cover !== "" ? 196 : 64
+            BlurBackdrop {
+                objectName: "artistBackdrop"
+                anchors.fill: parent
+                anchors.topMargin: -page.insetTop
+                anchors.leftMargin: -page.gutter
+                anchors.rightMargin: -page.gutter
+                source: page.cover
+                wash: 0.5
+                fadeBottom: true
             }
-            PillButton {
-                anchors.verticalCenter: parent.verticalCenter
-                iconName: "shuffle"; text: qsTr("Shuffle")
-                onClicked: actions.run("artist", page.parentId, page.title, "shuffle")
+            Cover {
+                objectName: "artistPortrait"
+                visible: page.cover !== ""
+                anchors.horizontalCenter: parent.horizontalCenter
+                anchors.top: parent.top
+                anchors.topMargin: 12
+                width: 112; height: 112
+                radius: 56
+                glyph: "user"
+                pixels: 336
+                source: page.cover
+            }
+            Row {
+                anchors.bottom: parent.bottom
+                anchors.bottomMargin: 10
+                anchors.horizontalCenter: parent.horizontalCenter
+                spacing: 12
+                PillButton {
+                    iconName: "play"; text: qsTr("Play"); filled: true
+                    onClicked: actions.run("artist", page.parentId, page.title, "play")
+                }
+                PillButton {
+                    iconName: "shuffle"; text: qsTr("Shuffle")
+                    onClicked: actions.run("artist", page.parentId, page.title, "shuffle")
+                }
             }
         }
     }
