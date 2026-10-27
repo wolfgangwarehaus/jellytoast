@@ -38,9 +38,24 @@ _MAX = 400  # decoded covers kept for QML (the pipeline has its own caches too)
 _RETRY_DELAYS_S = (3, 10, 30)
 
 
-def cover_source(item_id: str, px: int) -> str:
-    """The QML ``source`` for an item's art at ``px`` (device pixels)."""
-    return f"image://cover/{item_id}/{int(px)}" if item_id else ""
+def cover_source(item_id: str, px: int, tag: str = "") -> str:
+    """The QML ``source`` for an item's art at ``px`` (device pixels).
+
+    ``tag`` is the server's art VERSION (Navidrome ``coverArt`` /
+    Jellyfin ``ImageTags.Primary``), folded into the identity as
+    ``<id>@<tag>`` like the desktop's ``art_stem``. Covers were cached by
+    id alone, so a picture replaced on the server kept showing the old one
+    (Navidrome's white-star stand-in for artists, august 2026-10-27)."""
+    if not item_id:
+        return ""
+    tag = (tag or "").strip()
+    ident = f"{item_id}@{tag}" if tag and "/" not in tag else item_id
+    return f"image://cover/{ident}/{int(px)}"
+
+
+def _item_id(ident: str) -> str:
+    """The server item id inside a cover identity (``<id>[@<tag>]``)."""
+    return ident.split("@", 1)[0]
 
 
 class Covers(QObject):
@@ -97,9 +112,10 @@ class Covers(QObject):
             from jellytoast.providers import get_provider
             from jellytoast.ui_helpers import load_image_async
 
-            url = get_provider().get_image_url(item_id, "Primary", size)
+            url = get_provider().get_image_url(_item_id(item_id), "Primary", size)
             # `<identity>|<consumer>` — the pipeline shares decoded art
-            # across sizes by the part before the first "|".
+            # across sizes by the part before the first "|". The identity
+            # carries the art version, so new art gets a fresh cache slot.
             load_image_async(
                 f"{item_id}|quick",
                 url,

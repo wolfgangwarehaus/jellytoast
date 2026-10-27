@@ -56,6 +56,12 @@ def _letter(name: str) -> str:
     return up if len(up) == 1 and "A" <= up <= "Z" else "#"
 
 
+
+def _album_art_tag(it: Dict) -> str:
+    """The server's art version for a track's album cover (Subsonic
+    ``coverArt`` / Jellyfin ``AlbumPrimaryImageTag``), for cover_source."""
+    return str(it.get("AlbumPrimaryImageTag") or "")
+
 class LibraryModel(QAbstractListModel):
     """One library section, A–Z, loaded a page at a time.
 
@@ -439,13 +445,17 @@ class LibraryModel(QAbstractListModel):
                     continue
                 if kind in ("song", "favSongs"):
                     src = it.get("AlbumId") or it.get("Id", "")
-                    it["_cover"] = cover_source(src, 160)
+                    it["_cover"] = cover_source(src, 160, _album_art_tag(it))
                 else:
                     tags = it.get("ImageTags")
                     # No image on the server (Jellyfin ImageTags / Subsonic
                     # coverArt): leave the placeholder rather than ask for one.
                     has_art = not isinstance(tags, dict) or bool(tags.get("Primary"))
-                    it["_cover"] = cover_source(it.get("Id", ""), COVER_PX) if has_art else ""
+                    it["_cover"] = (
+                        cover_source(it.get("Id", ""), COVER_PX, (tags or {}).get("Primary", ""))
+                        if has_art
+                        else ""
+                    )
             return items
 
         run_async = async_io.run_async  # resolved at call time (tests patch it)
@@ -837,7 +847,7 @@ class QueueModel(QAbstractListModel):
         src = it.get("AlbumId") or it.get("Id", "")
         if not src:
             return ""
-        return cover_source(src, 160)
+        return cover_source(src, 160, _album_art_tag(it))
 
     def data(self, index, role=Qt.ItemDataRole.DisplayRole):
         if not index.isValid() or not (0 <= index.row() < len(self._items)):
@@ -1083,6 +1093,7 @@ class SearchModel(QAbstractListModel):
                         src, sub, px = it.get("Id", ""), it.get("AlbumArtist", ""), 256
                     else:
                         src, sub, px = it.get("Id", ""), "", 256
+                    tag = _album_art_tag(it) if kind == "track" else ""
                     if kind != "track":
                         # No image on the server (Subsonic: no coverArt) —
                         # keep the placeholder; asking fetched Navidrome's
@@ -1090,6 +1101,8 @@ class SearchModel(QAbstractListModel):
                         tags = it.get("ImageTags")
                         if isinstance(tags, dict) and not tags.get("Primary"):
                             src = ""
+                        elif isinstance(tags, dict):
+                            tag = tags.get("Primary", "")
                     rows.append(
                         {
                             "section": label,
@@ -1098,7 +1111,7 @@ class SearchModel(QAbstractListModel):
                             "name": it.get("Name", ""),
                             "subtitle": sub,
                             "year": str(it.get("ProductionYear") or ""),
-                            "cover": cover_source(src, px),
+                            "cover": cover_source(src, px, tag),
                             "_raw": it,
                         }
                     )

@@ -209,13 +209,21 @@ class PlayerController(QObject):
         np = get_now_playing()
         return np.image_id or str((np.raw or {}).get("AlbumId") or "")
 
+    @staticmethod
+    def _art_tag(art: str) -> str:
+        """The playing cover's art version (see covers.cover_source)."""
+        from jellytoast.ui_helpers import np_art_stem
+
+        stem = np_art_stem(get_now_playing())
+        return stem[len(art) + 1 :] if stem.startswith(art + "@") else ""
+
     def _cover(self) -> str:
         from jellytoast.quick.covers import cover_source
 
         if self._radio is not None:
             return self._radio.art_url or self._radio.station_logo_url or ""
         art = self._art_id()
-        return cover_source(art, 160) if art else (get_now_playing().thumb_url or "")
+        return cover_source(art, 160, self._art_tag(art)) if art else (get_now_playing().thumb_url or "")
 
     def _big_cover(self) -> str:
         from jellytoast.quick.covers import cover_source
@@ -223,7 +231,7 @@ class PlayerController(QObject):
         if self._radio is not None:
             return self._radio.art_url or self._radio.station_logo_url or ""
         art = self._art_id()
-        return cover_source(art, 1024) if art else (get_now_playing().thumb_url or "")
+        return cover_source(art, 1024, self._art_tag(art)) if art else (get_now_playing().thumb_url or "")
 
     def _album_id(self) -> str:
         raw = get_now_playing().raw or {}

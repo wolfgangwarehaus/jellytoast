@@ -73,3 +73,31 @@ def test_landscape_grid_tiles_fit_the_height(quick):
     grid = quick.wait_for("albumGrid")
     # Old: 3 columns, ~298 px tiles in a ~304 px page — titles off screen.
     assert grid.property("cellHeight") < 0.85 * grid.height()
+
+
+def test_cover_cache_follows_the_servers_art_version(qapp, monkeypatch):
+    """A picture replaced on the server showed the old (cached) one forever:
+    covers were cached by item id alone. The art version now rides in the
+    identity, so new art lands on a fresh cache slot; the URL still asks
+    for the plain item id."""
+    from jellytoast.quick import covers as cv
+
+    assert cv.cover_source("ar-1", 256) == "image://cover/ar-1/256"
+    assert cv.cover_source("ar-1", 256, "ar-1_abc") == "image://cover/ar-1@ar-1_abc/256"
+    assert cv.cover_source("", 256, "x") == ""
+
+    asked, keys = [], []
+
+    class _Prov:
+        def get_image_url(self, item_id, *_a):
+            asked.append(item_id)
+            return "http://x/img"
+
+    monkeypatch.setattr("jellytoast.providers.get_provider", lambda: _Prov())
+    monkeypatch.setattr(
+        "jellytoast.ui_helpers.load_image_async", lambda key, *a, **k: keys.append(key)
+    )
+    c = cv.Covers()
+    c.request("ar-1@ar-1_new/256/12")
+    assert asked == ["ar-1"]
+    assert keys == ["ar-1@ar-1_new|quick"]
