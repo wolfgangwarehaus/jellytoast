@@ -92,6 +92,7 @@ Item {
             required cover
             width: list.width
             trackId: kind === "track" ? itemId : ""
+            coverGlyph: kind === "artist" ? "user" : "music_note"
             title: name
             showCover: true
             swipe.enabled: kind === "track"

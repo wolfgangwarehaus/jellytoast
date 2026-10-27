@@ -41,6 +41,7 @@ Sheet {
             width: 56; height: 56
             anchors.verticalCenter: parent.verticalCenter
             radius: menu.item.kind === "artist" ? 28 : 8
+            glyph: menu.item.kind === "artist" ? "user" : "music_note"
             pixels: 168
             source: menu.item.cover || ""
         }

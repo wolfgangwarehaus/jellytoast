@@ -68,11 +68,22 @@ Item {
                         id: row
                         objectName: "rail_" + rail.modelData.kind
                         width: parent.width
-                        height: 190
+                        // Whole tiles across the screen, evenly spaced: as many
+                        // columns as fit at >= 116 px (2 on a 360 px phone, 3 at
+                        // 412), sized to fill the width exactly. A fixed 140 px
+                        // tile left the third one cut off at the edge (august,
+                        // 2026-10-27). Swipes snap to a tile edge so the rail
+                        // stays aligned after scrolling.
+                        readonly property int cols: Math.max(2, Math.floor((width - leftMargin - rightMargin + spacing) / (116 + spacing)))
+                        readonly property real tileW: (width - leftMargin - rightMargin - (cols - 1) * spacing) / cols
+                        height: Math.round(tileW) + 50
                         orientation: ListView.Horizontal
-                        spacing: 12
+                        // Gap == side margin, so the next tile starts exactly
+                        // at the screen edge instead of showing a sliver.
+                        spacing: 16
                         leftMargin: 16
                         rightMargin: 16
+                        snapMode: ListView.SnapToItem
                         clip: true
                         model: lib
                         boundsBehavior: Flickable.DragAndOvershootBounds
@@ -84,7 +95,7 @@ Item {
                             required property string subtitle
                             required property string year
                             required property string cover
-                            width: 140
+                            width: row.tileW
                             height: row.height
                             function info() {
                                 return { kind: "album", id: tile.itemId, name: tile.name, artist: tile.subtitle,
@@ -95,7 +106,10 @@ Item {
                                 spacing: 4
                                 scale: tap.pressed ? 0.97 : 1
                                 Behavior on scale { NumberAnimation { duration: 90 } }
-                                Cover { width: 140; height: 140; source: tile.cover; pixels: 280 }
+                                Cover {
+                                    width: row.tileW; height: row.tileW; source: tile.cover
+                                    pixels: row.tileW > 140 ? 400 : 280
+                                }
                                 Label {
                                     width: parent.width
                                     text: tile.name

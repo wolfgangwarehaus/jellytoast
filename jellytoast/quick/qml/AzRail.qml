@@ -11,6 +11,10 @@ Item {
     property var model            // a LibraryModel (seekLetter / letterFound)
     property var view             // the GridView / ListView to position
     property bool reversed: false // the list runs Z → A
+    // Distance from the page's right edge to the centre of the line: half
+    // the gap between the content and the edge, so the rail sits centred
+    // in it (it hugged the grid side, august 2026-10-27).
+    property real inset: 12
     readonly property var letters: {
         var l = "#ABCDEFGHIJKLMNOPQRSTUVWXYZ".split("")
         return reversed ? l.reverse() : l
@@ -37,7 +41,7 @@ Item {
     Rectangle {
         id: track
         anchors.right: parent.right
-        anchors.rightMargin: 6
+        anchors.rightMargin: rail.inset - width / 2
         anchors.verticalCenter: parent.verticalCenter
         height: Math.min(parent.height * 0.6, 460)
         width: rail.engaged ? 6 : 4

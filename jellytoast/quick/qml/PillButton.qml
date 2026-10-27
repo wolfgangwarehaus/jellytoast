@@ -6,9 +6,15 @@ AbstractButton {
     id: root
     property string iconName
     property bool filled: false
+    // Compact: no icon and tighter padding, for a row of pills that
+    // wouldn't otherwise fit a narrow phone (Radio at 360 px).
+    property bool compact: false
+    // Width with the icon and full padding, whatever `compact` is — so a
+    // caller can decide on compact without a binding loop.
+    readonly property real fullWidth: Math.max(96, label.implicitWidth + (iconName !== "" ? 26 : 0) + 40)
     focusPolicy: Qt.NoFocus
     hoverEnabled: false
-    implicitWidth: Math.max(96, content.implicitWidth + 40)
+    implicitWidth: compact ? Math.max(80, label.implicitWidth + 28) : fullWidth
     implicitHeight: 44
 
     background: Rectangle {
@@ -25,12 +31,13 @@ AbstractButton {
             spacing: 8
             Icon {
                 anchors.verticalCenter: parent.verticalCenter
-                visible: root.iconName !== ""
+                visible: root.iconName !== "" && !root.compact
                 name: root.iconName
                 size: 18
                 tint: root.filled ? theme.onAccent : theme.text
             }
             Label {
+                id: label
                 anchors.verticalCenter: parent.verticalCenter
                 text: root.text
                 color: root.filled ? theme.onAccent : theme.text

@@ -35,7 +35,9 @@ Item {
 
             Cover {
                 anchors.horizontalCenter: parent.horizontalCenter
-                width: Math.min(parent.width - 96, 320)
+                // ≤ ~55% of the page height too: in landscape the cover
+                // filled the screen and pushed the title + tracks below it.
+                width: Math.min(parent.width - 96, 320, Math.max(140, list.height * 0.55))
                 height: width
                 radius: 12
                 source: page.album.cover || ""

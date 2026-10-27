@@ -22,13 +22,20 @@ Item {
         anchors.horizontalCenter: parent.horizontalCenter
         anchors.topMargin: 4
         spacing: 10
+        // Both pills at full size ran off both edges of a 360 px phone:
+        // drop their icons and trim padding when they wouldn't fit.
+        readonly property bool tight: browsePill.fullWidth + addPill.fullWidth + spacing > parent.width - 32
         PillButton {
+            id: browsePill
+            compact: actionsRow.tight
             objectName: "browsePopular"
             iconName: "search"
             text: qsTr("Browse popular")
             onClicked: popularSheet.open()
         }
         PillButton {
+            id: addPill
+            compact: actionsRow.tight
             objectName: "addStation"
             iconName: "music_note"
             text: qsTr("Add station")
@@ -87,7 +94,7 @@ Item {
                     Layout.preferredHeight: 48
                     Rectangle { anchors.fill: parent; radius: 8; color: theme.surface }
                     Icon { anchors.centerIn: parent; name: "volume"; size: 22; tint: theme.textDim; visible: srow.cover === "" }
-                    Cover { anchors.fill: parent; radius: 8; pixels: 144; source: srow.cover; visible: srow.cover !== "" }
+                    Cover { anchors.fill: parent; radius: 8; pixels: 144; glyph: "volume"; source: srow.cover; visible: srow.cover !== "" }
                 }
                 ColumnLayout {
                     Layout.fillWidth: true

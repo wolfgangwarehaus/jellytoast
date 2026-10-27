@@ -49,7 +49,10 @@ Item {
         anchors.right: parent.right
         anchors.top: parent.top
         anchors.bottom: parent.bottom
-        anchors.margins: 4
+        anchors.topMargin: 4
+        anchors.bottomMargin: 4
+        // Centred in the rows' 16 px right padding.
+        inset: 8
         model: lib
         view: list
     }

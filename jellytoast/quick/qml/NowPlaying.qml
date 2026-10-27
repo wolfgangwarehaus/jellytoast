@@ -46,16 +46,25 @@ Rectangle {
     }
 
     readonly property int side: 24
+    // Landscape: the art (or lyrics / queue) on the left, the title and
+    // controls beside it. One column it lost the cover entirely and the
+    // queue / lyrics squeezed under the header (QA 2026-10-27).
+    readonly property bool landscape: width > height
 
-    ColumnLayout {
+    GridLayout {
         anchors.fill: parent
         anchors.leftMargin: np.side
         anchors.rightMargin: np.side
-        anchors.bottomMargin: 24
-        spacing: 0
+        anchors.bottomMargin: np.landscape ? 12 : 24
+        columns: np.landscape ? 2 : 1
+        rowSpacing: 0
+        columnSpacing: np.landscape ? 24 : 0
 
         // ── top row ──
         RowLayout {
+            Layout.row: 0
+            Layout.column: 0
+            Layout.columnSpan: np.landscape ? 2 : 1
             Layout.fillWidth: true
             Layout.preferredHeight: 56
             Layout.leftMargin: -12
@@ -105,6 +114,9 @@ Rectangle {
             id: castPill
             objectName: "castPill"
             visible: cast.active !== ""
+            Layout.row: 1
+            Layout.column: 0
+            Layout.columnSpan: np.landscape ? 2 : 1
             Layout.alignment: Qt.AlignHCenter
             Layout.preferredHeight: 34
             Layout.preferredWidth: Math.min(pillIcon.width + 8 + pillText.implicitWidth + 32, parent.width)
@@ -145,7 +157,13 @@ Rectangle {
         // ── surface: cover, or lyrics / queue in its place; never resized by text ──
         Item {
             id: surfaceBox
-            Layout.fillWidth: true
+            Layout.row: 2
+            Layout.column: 0
+            Layout.rowSpan: np.landscape ? 8 : 1
+            Layout.fillWidth: !np.landscape
+            // Landscape: a square as tall as the screen allows, at most
+            // ~45% of the width; the controls take the rest.
+            Layout.preferredWidth: np.landscape ? Math.min(np.height - 56 - 12, (np.width - 2 * np.side) * 0.45) : -1
             Layout.fillHeight: true
             Cover {
                 id: art
@@ -172,7 +190,8 @@ Rectangle {
             QueueView {
                 anchors.fill: parent
                 anchors.leftMargin: -np.side + 4
-                anchors.rightMargin: -np.side + 4
+                // Landscape: stop at the column gap, not under the controls.
+                anchors.rightMargin: np.landscape ? 0 : -np.side + 4
                 active: np.surface === "queue" && np.shown
                 opacity: np.surface === "queue" ? 1 : 0
                 visible: opacity > 0
@@ -180,8 +199,18 @@ Rectangle {
             }
         }
 
+        // Landscape: centres the right column's controls vertically.
+        Item {
+            visible: np.landscape
+            Layout.row: 2
+            Layout.column: 1
+            Layout.fillHeight: true
+        }
+
         // ── title row: heart · title / artist · (spacer) ──
         RowLayout {
+            Layout.row: 3
+            Layout.column: np.landscape ? 1 : 0
             Layout.fillWidth: true
             Layout.preferredHeight: 64
             Layout.leftMargin: -12
@@ -222,6 +251,8 @@ Rectangle {
         // Format line — fixed height so it never moves the cover.
         Label {
             objectName: "formatLine"
+            Layout.row: 4
+            Layout.column: np.landscape ? 1 : 0
             Layout.fillWidth: true
             Layout.preferredHeight: 18
             horizontalAlignment: Text.AlignHCenter
@@ -235,6 +266,8 @@ Rectangle {
         // (same height, so the cover never moves).
         Item {
             objectName: "liveBadge"
+            Layout.row: 5
+            Layout.column: np.landscape ? 1 : 0
             Layout.fillWidth: true
             Layout.preferredHeight: 48
             Layout.topMargin: 6
@@ -261,6 +294,8 @@ Rectangle {
         SeekBar {
             objectName: "seekBar"
             visible: !player.live
+            Layout.row: 6
+            Layout.column: np.landscape ? 1 : 0
             Layout.fillWidth: true
             Layout.topMargin: 6
             position: player.position
@@ -270,8 +305,10 @@ Rectangle {
 
         // ── transport ──
         RowLayout {
+            Layout.row: 7
+            Layout.column: np.landscape ? 1 : 0
             Layout.fillWidth: true
-            Layout.preferredHeight: 88
+            Layout.preferredHeight: np.landscape ? 72 : 88
             Layout.topMargin: 4
             IconButton {
                 iconName: "shuffle"
@@ -325,6 +362,8 @@ Rectangle {
 
         // ── surface toggles ──
         RowLayout {
+            Layout.row: 8
+            Layout.column: np.landscape ? 1 : 0
             Layout.fillWidth: true
             Layout.preferredHeight: 48
             Layout.leftMargin: -12
@@ -395,6 +434,13 @@ Rectangle {
                 tint: np.surface === "queue" ? theme.accent : theme.textDim
                 onClicked: np.toggleSurface("queue")
             }
+        }
+
+        Item {
+            visible: np.landscape
+            Layout.row: 9
+            Layout.column: 1
+            Layout.fillHeight: true
         }
     }
 

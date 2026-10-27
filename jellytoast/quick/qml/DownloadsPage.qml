@@ -98,6 +98,7 @@ Item {
                 Cover {
                     Layout.preferredWidth: 48; Layout.preferredHeight: 48
                     radius: drow.kind === "artist" ? 24 : 6
+                    glyph: drow.kind === "artist" ? "user" : "music_note"
                     pixels: 144
                     source: drow.cover
                 }

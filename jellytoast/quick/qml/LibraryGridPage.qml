@@ -28,7 +28,10 @@ Item {
     signal openItem(string kind, var item)
 
     readonly property int gutter: 12
-    readonly property int columns: Math.max(2, Math.floor(width / 200))
+    // By width, and never so few that a tile is taller than ~¾ of the page:
+    // in landscape three 250 px tiles left every title below the fold.
+    readonly property int columns: Math.max(2, Math.floor(width / 200),
+                                            Math.ceil((width - 2 * gutter) / Math.max(120, height * 0.75)))
     readonly property string itemKind: kind === "artist" ? "artist" : kind === "playlist" ? "playlist" : "album"
 
     LibraryModel { id: own; kind: page.kind; parentId: page.parentId }
@@ -78,7 +81,11 @@ Item {
         reuseItems: true
         bottomMargin: 8
 
-        header: page.kind === "artistAlbums" ? artistHeader : page.kind === "favAlbums" ? favHeader : null
+        // An artist with nothing to play gets no Play / Shuffle (they did
+        // nothing over "Nothing here yet"); kept while loading so the page
+        // doesn't jump when the albums land.
+        header: page.kind === "artistAlbums" && (page.lib.count > 0 || page.lib.loading) ? artistHeader
+              : page.kind === "favAlbums" ? favHeader : null
 
         delegate: Item {
             id: cell
@@ -107,6 +114,7 @@ Item {
                     width: parent.width
                     height: width
                     radius: page.round ? width / 2 : 8
+                    glyph: page.round ? "user" : "music_note"
                     source: cell.cover
                 }
                 Label {
@@ -222,6 +230,7 @@ Item {
                     width: 52; height: 52
                     anchors.verticalCenter: parent.verticalCenter
                     radius: page.round ? width / 2 : 6
+                    glyph: page.round ? "user" : "music_note"
                     pixels: 156
                     source: lrow.cover
                 }
@@ -258,7 +267,10 @@ Item {
         anchors.right: parent.right
         anchors.top: parent.top
         anchors.bottom: parent.bottom
-        anchors.margins: 4
+        anchors.topMargin: 4
+        anchors.bottomMargin: 4
+        // Centred in the gap right of the art: grid gutter + tile padding.
+        inset: (page.gutter + 6) / 2
         // Letters mean something in name / album-artist order (not dates).
         visible: page.scrubbable && page.lib.scrubbable
         model: page.lib

@@ -1083,6 +1083,13 @@ class SearchModel(QAbstractListModel):
                         src, sub, px = it.get("Id", ""), it.get("AlbumArtist", ""), 256
                     else:
                         src, sub, px = it.get("Id", ""), "", 256
+                    if kind != "track":
+                        # No image on the server (Subsonic: no coverArt) —
+                        # keep the placeholder; asking fetched Navidrome's
+                        # white star stand-in (QA 2026-10-27).
+                        tags = it.get("ImageTags")
+                        if isinstance(tags, dict) and not tags.get("Primary"):
+                            src = ""
                     rows.append(
                         {
                             "section": label,

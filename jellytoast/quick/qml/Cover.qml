@@ -13,6 +13,9 @@ Item {
     property url fallback
     property int radius: 8
     property int pixels: 512
+    // Faint glyph on the placeholder (art missing or still loading), like
+    // the desktop grids: "user" for artists, a music note otherwise.
+    property string glyph: "music_note"
 
     component Art: Image {
         id: img
@@ -72,6 +75,14 @@ Item {
         radius: root.radius
         color: theme.surface
         visible: main.status !== Image.Ready
+        Icon {
+            anchors.centerIn: parent
+            visible: root.glyph !== ""
+            name: root.glyph
+            size: Math.max(14, Math.round(Math.min(root.width, root.height) * 0.32))
+            tint: theme.text
+            opacity: 0.34
+        }
     }
     Art {
         anchors.fill: parent
