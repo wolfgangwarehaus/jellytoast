@@ -17,14 +17,20 @@ Drawer {
     dim: true
     Overlay.modal: Rectangle { color: "#80000000" }
 
-    background: Rectangle {
-        color: theme.surface
-        radius: 18
-        Rectangle {  // square off the bottom corners
-            anchors.bottom: parent.bottom
-            width: parent.width
-            height: 18
-            color: theme.surface
+    // Frosted glass over the app (the window's content; the sheet lives in
+    // the overlay, so it never samples itself). Runs past the bottom edge so
+    // only the top corners are rounded; `track` follows the slide-in.
+    background: Item {
+        FrostedPane {
+            anchors.fill: parent
+            anchors.bottomMargin: -18
+            // Only while open: a sheet keeping the window's content as its
+            // texture source crashed window teardown.
+            behind: sheet.visible ? ApplicationWindow.contentItem : null
+            track: sheet.position
+            radius: 18
+            tint: theme.surface
+            tintOpacity: 0.78
         }
     }
 

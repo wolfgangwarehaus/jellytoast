@@ -7,10 +7,20 @@ Rectangle {
     id: mini
     objectName: "miniPlayer"
     signal open()
+    // What the bar floats over (the page stack): shows through, frosted.
+    property Item frostBehind: null
 
     height: player.hasTrack ? 76 : 0
     visible: player.hasTrack
-    color: theme.surface
+    color: frostBehind ? "transparent" : theme.surface
+
+    FrostedPane {
+        anchors.fill: parent
+        visible: mini.frostBehind !== null
+        behind: mini.frostBehind
+        tint: theme.surface
+        tintOpacity: 0.55
+    }
 
     Rectangle {  // progress hairline
         anchors.top: parent.top

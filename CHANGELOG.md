@@ -18,6 +18,10 @@ developer-facing history lives in [`docs/CHANGELOG.md`](docs/CHANGELOG.md).
 - **Tidier at small sizes.** Shrink jellytoast right down and the extra
   top-bar buttons tuck into a ⋮ menu instead of piling on top of each other,
   and Settings fits a narrow window without scrolling sideways.
+- **Frosted glass on phones.** The top bar, mini player and menus are frosted
+  glass now, with your albums blurring underneath as you scroll, and Now Playing
+  sits on a soft blur of the album art. Turn it off under Settings → Frosted
+  glass if your phone struggles.
 - **The phone app fits your screen.** Home rows show whole albums, icons
   stay the right size on high-resolution phones (the cast menu was a mess),
   Radio's buttons fit small screens, and landscape puts the art beside the

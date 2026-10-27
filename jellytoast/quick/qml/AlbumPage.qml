@@ -5,6 +5,10 @@ import QtQuick.Controls
 import Jellytoast
 
 Item {
+    // The top bar and mini player float over the page as frosted glass, so
+    // content scrolls under them; these keep it clear at rest (see Main).
+    readonly property real insetTop: StackView.view ? StackView.view.insetTop : 0
+    readonly property real insetBottom: StackView.view ? StackView.view.insetBottom : 0
     id: page
     property var album: ({})
     property string kind: album.kind === "playlist" ? "playlist" : "album"
@@ -25,7 +29,8 @@ Item {
         maximumFlickVelocity: theme.scrollMaxVelocity
         flickDeceleration: theme.scrollDeceleration
         pressDelay: 100  // a scroll that starts at once never "presses" the item under it
-        bottomMargin: 12
+        topMargin: page.insetTop
+        bottomMargin: 12 + page.insetBottom
 
         header: Column {
             width: list.width

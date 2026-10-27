@@ -117,15 +117,31 @@ ApplicationWindow {
         onActivated: win.openSearch()
     }
 
-    ColumnLayout {
+    // The pages fill the window; the top bar and mini player float over
+    // them as frosted glass, and pages scroll underneath (insetTop /
+    // insetBottom keep their content clear at rest).
+    Item {
         anchors.fill: parent
-        spacing: 0
+
+        FrostedPane {
+            objectName: "topFrost"
+            anchors.fill: topArea
+            z: 1
+            behind: stack
+            tintOpacity: 0.5
+        }
+        Column {
+            id: topArea
+            z: 2
+            anchors.top: parent.top
+            anchors.left: parent.left
+            anchors.right: parent.right
 
         Item {
             id: topBar
             objectName: "topBar"
-            Layout.fillWidth: true
-            Layout.preferredHeight: 52
+            width: parent.width
+            height: 52
             readonly property bool root: stack.depth <= 1
 
             IconButton {
@@ -207,10 +223,10 @@ ApplicationWindow {
 
         Rectangle {
             objectName: "offlineBanner"
-            Layout.fillWidth: true
-            Layout.preferredHeight: visible ? 30 : 0
+            width: parent.width
+            height: visible ? 30 : 0
             visible: prefs.offlineMode && session.signedIn
-            color: theme.surface
+            color: "transparent"
             Label {
                 anchors.centerIn: parent
                 text: qsTr("Offline — showing your downloads")
@@ -219,11 +235,15 @@ ApplicationWindow {
             }
         }
 
+        }  // topArea
+
         StackView {
             id: stack
             objectName: "stack"
-            Layout.fillWidth: true
-            Layout.fillHeight: true
+            anchors.fill: parent
+            z: 0
+            readonly property real insetTop: topArea.height
+            readonly property real insetBottom: mini.visible ? mini.height : 0
             clip: true
             Component.onCompleted: {
                 if (session.signedIn)
@@ -267,8 +287,12 @@ ApplicationWindow {
         }
 
         MiniPlayer {
-            Layout.fillWidth: true
-            Layout.preferredHeight: height
+            id: mini
+            z: 2
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.bottom: parent.bottom
+            frostBehind: stack
             onOpen: nowPlaying.open()
         }
     }

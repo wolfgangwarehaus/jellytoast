@@ -4,6 +4,10 @@ import QtQuick.Controls
 import Jellytoast
 
 Item {
+    // The top bar and mini player float over the page as frosted glass, so
+    // content scrolls under them; these keep it clear at rest (see Main).
+    readonly property real insetTop: StackView.view ? StackView.view.insetTop : 0
+    readonly property real insetBottom: StackView.view ? StackView.view.insetBottom : 0
     id: page
     property string kind: "album"
 
@@ -79,7 +83,8 @@ Item {
         flickDeceleration: theme.scrollDeceleration
         pressDelay: 100  // a scroll that starts at once never "presses" the item under it
         reuseItems: true
-        bottomMargin: 8
+        topMargin: page.insetTop
+        bottomMargin: 8 + page.insetBottom
 
         // An artist with nothing to play gets no Play / Shuffle (they did
         // nothing over "Nothing here yet"); kept while loading so the page
@@ -195,6 +200,8 @@ Item {
         anchors.fill: parent
         visible: session.signedIn && page.listMode
         clip: true
+        topMargin: page.insetTop
+        bottomMargin: page.insetBottom
         model: visible ? page.lib : null
         boundsBehavior: Flickable.DragAndOvershootBounds
         maximumFlickVelocity: theme.scrollMaxVelocity
@@ -267,8 +274,8 @@ Item {
         anchors.right: parent.right
         anchors.top: parent.top
         anchors.bottom: parent.bottom
-        anchors.topMargin: 4
-        anchors.bottomMargin: 4
+        anchors.topMargin: 4 + page.insetTop
+        anchors.bottomMargin: 4 + page.insetBottom
         // Centred in the gap right of the art: grid gutter + tile padding.
         inset: (page.gutter + 6) / 2
         // Letters mean something in name / album-artist order (not dates).

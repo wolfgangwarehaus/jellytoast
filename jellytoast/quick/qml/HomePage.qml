@@ -5,6 +5,10 @@ import QtQuick.Controls
 import Jellytoast
 
 Item {
+    // The top bar and mini player float over the page as frosted glass, so
+    // content scrolls under them; these keep it clear at rest (see Main).
+    readonly property real insetTop: StackView.view ? StackView.view.insetTop : 0
+    readonly property real insetBottom: StackView.view ? StackView.view.insetBottom : 0
     id: page
     objectName: "homePage"
     property string title: qsTr("Home")
@@ -14,7 +18,7 @@ Item {
     Flickable {
         id: flick
         anchors.fill: parent
-        contentHeight: col.implicitHeight + 24
+        contentHeight: page.insetTop + col.implicitHeight + 24 + page.insetBottom
         boundsBehavior: Flickable.DragAndOvershootBounds
         maximumFlickVelocity: theme.scrollMaxVelocity
         flickDeceleration: theme.scrollDeceleration
@@ -23,6 +27,7 @@ Item {
 
         Column {
             id: col
+            y: page.insetTop
             width: flick.width
             spacing: 8
             topPadding: 4

@@ -5,6 +5,10 @@ import QtQuick.Layouts
 import Jellytoast
 
 Item {
+    // The top bar and mini player float over the page as frosted glass, so
+    // content scrolls under them; these keep it clear at rest (see Main).
+    readonly property real insetTop: StackView.view ? StackView.view.insetTop : 0
+    readonly property real insetBottom: StackView.view ? StackView.view.insetBottom : 0
     id: page
     property string title: qsTr("Search")
     readonly property bool loading: results.loading
@@ -21,6 +25,7 @@ Item {
         anchors.left: parent.left
         anchors.right: parent.right
         anchors.margins: 12
+        anchors.topMargin: 12 + page.insetTop
         height: 48
         placeholderText: qsTr("Artists, albums, songs")
         placeholderTextColor: theme.textFaint
@@ -62,6 +67,7 @@ Item {
         anchors.left: parent.left
         anchors.right: parent.right
         anchors.bottom: parent.bottom
+        bottomMargin: page.insetBottom
         clip: true
         model: results
         boundsBehavior: Flickable.DragAndOvershootBounds

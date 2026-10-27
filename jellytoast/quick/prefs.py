@@ -124,6 +124,20 @@ class Prefs(QObject):
         apply_theme_family(family, st.theme_mode or "dark", bool(st.frosted))
         self.changed.emit()
 
+    # Frosted glass — the desktop's Frosted / Opaque switch. On the phone it
+    # turns the frosted top bar, mini player and sheets plus the blurred
+    # album backdrop on Now Playing on or off (off is lighter on a slow GPU).
+    frosted = Property(bool, lambda self: bool(_settings().frosted), notify=changed)
+
+    @Slot(bool)
+    def setFrosted(self, on: bool) -> None:  # noqa: N802
+        from jellytoast.theme_presets import apply_theme_family
+
+        st = _settings()
+        st.frosted = bool(on)
+        apply_theme_family(st.theme_family or "jellytoast", st.theme_mode or "dark", bool(on))
+        self.changed.emit()
+
     @Slot(str)
     def setThemeMode(self, mode: str) -> None:  # noqa: N802
         from jellytoast.theme_presets import apply_theme_family

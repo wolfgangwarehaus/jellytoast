@@ -4,6 +4,10 @@ import QtQuick.Controls
 import QtQuick.Layouts
 
 Item {
+    // The top bar and mini player float over the page as frosted glass, so
+    // content scrolls under them; these keep it clear at rest (see Main).
+    readonly property real insetTop: StackView.view ? StackView.view.insetTop : 0
+    readonly property real insetBottom: StackView.view ? StackView.view.insetBottom : 0
     id: page
     objectName: "settingsPage"
     property string title: qsTr("Settings")
@@ -61,12 +65,13 @@ Item {
         pressDelay: 100  // a scroll that starts at once never "presses" the item under it
         maximumFlickVelocity: theme.scrollMaxVelocity
         anchors.fill: parent
-        contentHeight: col.implicitHeight + 32
+        contentHeight: page.insetTop + col.implicitHeight + 32 + page.insetBottom
         boundsBehavior: Flickable.DragAndOvershootBounds
         clip: true
 
         ColumnLayout {
             id: col
+            y: page.insetTop
             width: parent.width
             spacing: 0
 
@@ -112,6 +117,14 @@ Item {
                 options: prefs.themeModes
                 value: prefs.themeMode
                 onPicked: v => prefs.setThemeMode(v)
+            }
+            SwitchRow {
+                objectName: "frostedSwitch"
+                Layout.fillWidth: true
+                Layout.leftMargin: 12; Layout.rightMargin: 12
+                text: qsTr("Frosted glass")
+                checked: prefs.frosted
+                onToggled: prefs.setFrosted(checked)
             }
 
             Heading { text: qsTr("PLAYBACK") }
