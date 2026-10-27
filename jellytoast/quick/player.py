@@ -9,6 +9,7 @@ from __future__ import annotations
 import logging
 
 from PySide6.QtCore import Property, QObject, Signal, Slot
+from PySide6.QtGui import QColor
 
 from jellytoast import async_io
 from jellytoast.player_state import PlayerBus, QueueContext, QueueKind, get_now_playing
@@ -24,6 +25,7 @@ class PlayerController(QObject):
     sleepChanged = Signal()
     formatChanged = Signal()
     contextChanged = Signal()
+    toneChanged = Signal()
 
     def __init__(self, parent=None, queue=None):
         super().__init__(parent)
@@ -58,6 +60,10 @@ class PlayerController(QObject):
         b.streaming_info_updated.connect(self._on_streaming_info)
         b.cast_started.connect(self._on_cast_started)
         b.cast_stopped.connect(self._on_cast_stopped)
+        # A colour picked from the playing cover (Now Playing's backdrop).
+        self._tone = QColor()
+        self._tone_key = ""
+        self.changed.connect(self._update_tone)
         b.sleep_timer_started.connect(self._on_sleep_started)
         b.sleep_timer_cancelled.connect(self._on_sleep_ended)
         b.sleep_timer_fired.connect(self._on_sleep_ended)
@@ -233,6 +239,39 @@ class PlayerController(QObject):
         art = self._art_id()
         return cover_source(art, 1024, self._art_tag(art)) if art else (get_now_playing().thumb_url or "")
 
+    # ── art tone: one colour picked from the cover, for Now Playing ──
+    def _update_tone(self) -> None:
+        """Load a small copy of the cover (shares the cover cache) and pick
+        its colour; no-op while the cover is unchanged."""
+        src = self._cover()
+        if src == self._tone_key:
+            return
+        self._tone_key = src
+        if not src.startswith("image://cover/"):
+            # Radio logos and such: no tone, Now Playing uses the page colour.
+            self._set_tone(QColor())
+            return
+        from jellytoast.providers import get_provider
+        from jellytoast.quick.covers import _item_id
+        from jellytoast.ui_helpers import load_image_async
+
+        ident = src[len("image://cover/") :].rsplit("/", 1)[0]
+        try:
+            url = get_provider().get_image_url(_item_id(ident), "Primary", 64)
+        except Exception:
+            return
+
+        def _landed(pix, key=src):
+            if key == self._tone_key and pix is not None and not pix.isNull():
+                self._set_tone(pick_tone(pix.toImage()))
+
+        load_image_async(f"{ident}|quick", url, 64, 64, _landed)
+
+    def _set_tone(self, c: QColor) -> None:
+        if c != self._tone:
+            self._tone = c
+            self.toneChanged.emit()
+
     def _album_id(self) -> str:
         raw = get_now_playing().raw or {}
         return str(raw.get("AlbumId") or "")
@@ -257,6 +296,10 @@ class PlayerController(QObject):
     albumId = Property(str, _album_id, notify=changed)
     artistId = Property(str, _artist_id, notify=changed)
     bigCover = Property(str, _big_cover, notify=changed)
+    # The cover's picked colour (invalid until known / for radio).
+    artTone = Property(QColor, lambda self: self._tone, notify=toneChanged)
+    # QML sees an invalid QColor as opaque black, so say it outright.
+    hasTone = Property(bool, lambda self: self._tone.isValid(), notify=toneChanged)
     favorite = Property(bool, lambda self: bool(get_now_playing().is_favorite), notify=changed)
     repeat = Property(str, lambda self: self._repeat, notify=modesChanged)
     shuffle = Property(bool, lambda self: self._shuffle, notify=modesChanged)
@@ -357,3 +400,35 @@ class PlayerController(QObject):
             on_result=_go,
             on_error=lambda e: logger.warning("play album %s failed: %s", album_id, e),
         )
+
+
+def pick_tone(img) -> QColor:
+    """The colour that best stands for an album cover: the most present
+    vivid hue (weighted by saturation x brightness), averaged within that
+    hue; a greyscale cover gives its average grey. A plain average turned
+    navy-and-gold covers into mud."""
+    small = img.scaled(24, 24)
+    buckets: dict = {}
+    total = [0.0, 0.0, 0.0, 0]
+    for y in range(small.height()):
+        for x in range(small.width()):
+            c = small.pixelColor(x, y)
+            total[0] += c.redF()
+            total[1] += c.greenF()
+            total[2] += c.blueF()
+            total[3] += 1
+            h, s, v = c.hsvHueF(), c.hsvSaturationF(), c.valueF()
+            if h < 0 or s < 0.2 or v < 0.15:
+                continue
+            w = s * v
+            b = buckets.setdefault(int(h * 12) % 12, [0.0, 0.0, 0.0, 0.0])
+            b[0] += c.redF() * w
+            b[1] += c.greenF() * w
+            b[2] += c.blueF() * w
+            b[3] += w
+    if buckets:
+        r, g, bl, w = max(buckets.values(), key=lambda b: b[3])
+        if w > 15:  # ~5% of the cover, vividly (of 576 pixels)
+            return QColor.fromRgbF(r / w, g / w, bl / w)
+    n = max(1, total[3])
+    return QColor.fromRgbF(total[0] / n, total[1] / n, total[2] / n)

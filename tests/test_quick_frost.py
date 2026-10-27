@@ -54,10 +54,32 @@ def test_sheets_sample_the_app_only_while_open(quick):
     assert sheet is not None
 
 
-def test_now_playing_has_a_blurred_art_backdrop(quick):
+def test_pick_tone_finds_the_covers_colour(qapp):
+    """One vivid colour that stands for the cover (not a muddy average); a
+    greyscale cover stays grey."""
+    from PySide6.QtGui import QColor, QImage, QPainter
+
+    from jellytoast.quick.player import pick_tone
+
+    img = QImage(64, 64, QImage.Format.Format_RGB32)
+    img.fill(QColor("#1a2550"))  # navy, like Savage Hills Ballroom
+    p = QPainter(img)
+    p.fillRect(8, 24, 48, 8, QColor("#e3b23c"))  # a band of gold text
+    p.end()
+    navy = pick_tone(img)
+    assert 200 <= navy.hslHue() <= 250 and navy.hslSaturation() > 60
+
+    grey = QImage(64, 64, QImage.Format.Format_RGB32)
+    grey.fill(QColor("#3a3a3a"))
+    g = pick_tone(grey)
+    assert g.hslSaturation() < 20
+
+
+def test_now_playing_takes_a_colour_from_the_cover(quick):
     quick.fake_now_playing("Song", "Someone", "Album 004", album_id="al4")
     quick.eval("nowPlaying.open()")
     quick.wait_idle()
+    quick.wait_until(lambda: quick.eval("player.hasTone"), 5)
     assert quick.get("npBackdrop").isVisible()
     quick.eval("prefs.setFrosted(false)")
     try:

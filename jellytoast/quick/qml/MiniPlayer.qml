@@ -2,7 +2,6 @@
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
-import QtQuick.Effects
 
 Rectangle {
     id: mini
@@ -13,7 +12,6 @@ Rectangle {
 
     height: player.hasTrack ? 76 : 0
     visible: player.hasTrack
-    clip: true  // keeps the cover's glow inside the bar
     color: frostBehind ? "transparent" : theme.surface
 
     FrostedPane {
@@ -54,30 +52,12 @@ Rectangle {
         anchors.rightMargin: 4
         spacing: 12
 
-        Item {
+        Cover {
             Layout.preferredWidth: 52
             Layout.preferredHeight: 52
-            // A soft glow of the album's own colours behind the cover
-            // (with Frosted glass; it's the cover itself, blurred).
-            MultiEffect {
-                anchors.centerIn: parent
-                width: 84; height: 84
-                visible: prefs.frosted && player.cover !== ""
-                source: miniCover
-                blurEnabled: true
-                blur: 1.0
-                blurMax: 32
-                saturation: 0.3
-                opacity: 0.75
-            }
-            Cover {
-                id: miniCover
-                anchors.fill: parent
-                radius: 6
-                pixels: 160
-                source: player.cover
-                layer.enabled: true
-            }
+            radius: 6
+            pixels: 160
+            source: player.cover
         }
         ColumnLayout {
             Layout.fillWidth: true
