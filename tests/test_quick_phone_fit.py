@@ -16,17 +16,23 @@ def _section(quick, key):
     quick.wait_idle()
 
 
-def test_home_rails_fit_whole_tiles(quick):
-    for w, cols in ((360, 2), (412, 3)):
+def test_home_rails_show_whole_tiles_and_a_peek(quick):
+    """Whole tiles (2 on a phone) plus ~a third of the next one, so the
+    rail reads as scrollable; mid-rail a swipe settles with the tiles
+    centred, an edge showing on both sides."""
+    for w in (360, 412):
         _settle(quick, w, 800)
         _section(quick, "home")
         rail = quick.wait_for("rail_latest")
-        assert rail.property("cols") == cols
-        tile = rail.property("tileW")
-        # n tiles + gaps + side margins == the full width: no cut-off tile.
-        span = cols * tile + (cols - 1) * rail.property("spacing")
-        assert abs(span + rail.property("leftMargin") + rail.property("rightMargin") - rail.width()) < 1
-        assert rail.property("spacing") == rail.property("rightMargin")
+        cols, tile = rail.property("cols"), rail.property("tileW")
+        sp, lm = rail.property("spacing"), rail.property("leftMargin")
+        assert cols == 2
+        peek = w - (lm + cols * (tile + sp))  # the next tile's visible part
+        assert 0.25 * tile < peek < 0.45 * tile
+        # Centred mid-rail: equal room either side of the `cols` tiles.
+        cx = rail.property("centredX")
+        assert abs(cx - (w - cols * tile - (cols - 1) * sp - cx)) < 1
+        assert cx > sp  # a neighbour's edge is visible on the left too
 
 
 def test_radio_actions_fit_a_360px_phone(quick):

@@ -68,22 +68,40 @@ Item {
                         id: row
                         objectName: "rail_" + rail.modelData.kind
                         width: parent.width
-                        // Whole tiles across the screen, evenly spaced: as many
-                        // columns as fit at >= 116 px (2 on a 360 px phone, 3 at
-                        // 412), sized to fill the width exactly. A fixed 140 px
-                        // tile left the third one cut off at the edge (august,
-                        // 2026-10-27). Swipes snap to a tile edge so the rail
-                        // stays aligned after scrolling.
-                        readonly property int cols: Math.max(2, Math.floor((width - leftMargin - rightMargin + spacing) / (116 + spacing)))
-                        readonly property real tileW: (width - leftMargin - rightMargin - (cols - 1) * spacing) / cols
+                        // Whole tiles plus a peek of the next album, so the rail
+                        // reads as scrollable (august, 2026-10-27): `cols` tiles
+                        // and ~a third of the next one fit from the left margin.
+                        // Off the start, a swipe settles with the tiles centred,
+                        // so an edge shows on BOTH sides; at the end the last
+                        // tile meets the right margin.
+                        readonly property int cols: Math.max(2, Math.floor((width - leftMargin) / 175))
+                        readonly property real tileW: (width - leftMargin - cols * spacing) / (cols + 0.35)
+                        readonly property real pitch: tileW + spacing
+                        // Where a settled tile starts, mid-rail: the group of
+                        // `cols` tiles centred in the view.
+                        readonly property real centredX: (width - cols * tileW - (cols - 1) * spacing) / 2
                         height: Math.round(tileW) + 50
                         orientation: ListView.Horizontal
-                        // Gap == side margin, so the next tile starts exactly
-                        // at the screen edge instead of showing a sliver.
-                        spacing: 16
+                        spacing: 14
                         leftMargin: 16
                         rightMargin: 16
-                        snapMode: ListView.SnapToItem
+                        function settle() {
+                            var maxX = Math.max(-leftMargin, contentWidth + rightMargin - width)
+                            var i = Math.round((contentX + centredX) / pitch)
+                            var target = i <= 0 ? -leftMargin : Math.min(i * pitch - centredX, maxX)
+                            if (Math.abs(target - contentX) > 0.5) {
+                                snapAnim.to = target
+                                snapAnim.restart()
+                            }
+                        }
+                        onMovementStarted: snapAnim.stop()  // a new grab wins
+                        onMovementEnded: settle()
+                        NumberAnimation on contentX {
+                            id: snapAnim
+                            running: false
+                            duration: 220
+                            easing.type: Easing.OutCubic
+                        }
                         clip: true
                         model: lib
                         boundsBehavior: Flickable.DragAndOvershootBounds
@@ -108,7 +126,7 @@ Item {
                                 Behavior on scale { NumberAnimation { duration: 90 } }
                                 Cover {
                                     width: row.tileW; height: row.tileW; source: tile.cover
-                                    pixels: row.tileW > 140 ? 400 : 280
+                                    pixels: row.tileW > 140 ? 400 : 320
                                 }
                                 Label {
                                     width: parent.width
