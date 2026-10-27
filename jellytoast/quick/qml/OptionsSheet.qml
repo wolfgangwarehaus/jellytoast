@@ -30,8 +30,16 @@ Sheet {
         { key: "DatePlayed,SortName", label: qsTr("Recently played") }
     ]
 
-    function show(model) {
+    // The page's title — names the scoped shuffle ("Shuffle Indie").
+    property string pageTitle: ""
+    // Shuffle follows the page: a genre or artist page shuffles just that
+    // (it used to always shuffle the whole library, august 2026-10-27).
+    readonly property string shuffleKind: lib === null ? ""
+        : lib.kind === "genreAlbums" ? "genre" : lib.kind === "artistAlbums" ? "artist" : ""
+
+    function show(model, title) {
         lib = model
+        pageTitle = title || ""
         expanded = ""
         open()
     }
@@ -256,8 +264,15 @@ Sheet {
     SheetRow {
         objectName: "shuffleAllRow"
         iconName: "shuffle"
-        text: qsTr("Shuffle all")
-        onClicked: { actions.shuffleLibrary(); sheet.close() }
+        text: sheet.shuffleKind !== "" && sheet.pageTitle !== ""
+              ? qsTr("Shuffle %1").arg(sheet.pageTitle) : qsTr("Shuffle all")
+        onClicked: {
+            if (sheet.shuffleKind !== "")
+                actions.run(sheet.shuffleKind, sheet.lib.parentId, sheet.pageTitle, "shuffle")
+            else
+                actions.shuffleLibrary()
+            sheet.close()
+        }
     }
     SheetRow {
         objectName: "settingsItem"

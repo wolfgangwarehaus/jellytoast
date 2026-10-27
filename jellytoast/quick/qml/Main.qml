@@ -190,7 +190,7 @@ ApplicationWindow {
                 anchors.verticalCenter: parent.verticalCenter
                 iconName: "more_vert"
                 visible: session.signedIn
-                onClicked: optionsSheet.show(lib)
+                onClicked: optionsSheet.show(lib, stack.currentItem && stack.currentItem.title ? stack.currentItem.title : "")
             }
             IconButton {
                 id: searchButton

@@ -52,43 +52,43 @@
 <context>
     <name>Actions</name>
     <message>
-        <location filename="../quick/actions.py" line="50"/>
-        <location filename="../quick/actions.py" line="107"/>
+        <location filename="../quick/actions.py" line="63"/>
+        <location filename="../quick/actions.py" line="120"/>
         <source>Nothing to play</source>
         <translation>Nada que reproducir</translation>
     </message>
     <message>
-        <location filename="../quick/actions.py" line="62"/>
+        <location filename="../quick/actions.py" line="75"/>
         <source>Playing next</source>
         <translation>Se reproducirá a continuación</translation>
     </message>
     <message>
-        <location filename="../quick/actions.py" line="65"/>
+        <location filename="../quick/actions.py" line="78"/>
         <source>Added to queue</source>
         <translation>Añadido a la cola</translation>
     </message>
     <message>
-        <location filename="../quick/actions.py" line="89"/>
+        <location filename="../quick/actions.py" line="102"/>
         <source>Downloading {0}</source>
         <translation>Descargando {0}</translation>
     </message>
     <message>
-        <location filename="../quick/actions.py" line="109"/>
+        <location filename="../quick/actions.py" line="122"/>
         <source>Your library</source>
         <translation>Tu biblioteca</translation>
     </message>
     <message>
-        <location filename="../quick/actions.py" line="127"/>
+        <location filename="../quick/actions.py" line="140"/>
         <source>Starting radio…</source>
         <translation>Iniciando radio…</translation>
     </message>
     <message>
-        <location filename="../quick/actions.py" line="135"/>
+        <location filename="../quick/actions.py" line="148"/>
         <source>Added to favorites</source>
         <translation>Añadido a favoritos</translation>
     </message>
     <message>
-        <location filename="../quick/actions.py" line="135"/>
+        <location filename="../quick/actions.py" line="148"/>
         <source>Removed from favorites</source>
         <translation>Quitado de favoritos</translation>
     </message>
@@ -2631,14 +2631,14 @@ jellytoast funcionará, pero las funciones de bandeja no estarán disponibles.</
 <context>
     <name>OptionsSheet</name>
     <message>
-        <location filename="../quick/qml/OptionsSheet.qml" line="42"/>
+        <location filename="../quick/qml/OptionsSheet.qml" line="50"/>
         <source>All</source>
         <translation>Todo</translation>
     </message>
     <message>
         <location filename="../quick/qml/OptionsSheet.qml" line="23"/>
         <location filename="../quick/qml/OptionsSheet.qml" line="26"/>
-        <location filename="../quick/qml/OptionsSheet.qml" line="50"/>
+        <location filename="../quick/qml/OptionsSheet.qml" line="58"/>
         <source>Name</source>
         <translation>Nombre</translation>
     </message>
@@ -2668,27 +2668,27 @@ jellytoast funcionará, pero las funciones de bandeja no estarán disponibles.</
         <translation>Escuchado recientemente</translation>
     </message>
     <message>
-        <location filename="../quick/qml/OptionsSheet.qml" line="44"/>
+        <location filename="../quick/qml/OptionsSheet.qml" line="52"/>
         <source>%1 libraries</source>
         <translation>%1 bibliotecas</translation>
     </message>
     <message>
-        <location filename="../quick/qml/OptionsSheet.qml" line="133"/>
+        <location filename="../quick/qml/OptionsSheet.qml" line="141"/>
         <source>Library</source>
         <translation>Biblioteca</translation>
     </message>
     <message>
-        <location filename="../quick/qml/OptionsSheet.qml" line="143"/>
+        <location filename="../quick/qml/OptionsSheet.qml" line="151"/>
         <source>All libraries</source>
         <translation>Todas las bibliotecas</translation>
     </message>
     <message>
-        <location filename="../quick/qml/OptionsSheet.qml" line="167"/>
+        <location filename="../quick/qml/OptionsSheet.qml" line="175"/>
         <source>Sort by</source>
         <translation>Ordenar por</translation>
     </message>
     <message>
-        <location filename="../quick/qml/OptionsSheet.qml" line="211"/>
+        <location filename="../quick/qml/OptionsSheet.qml" line="219"/>
         <source>View</source>
         <translation>Vista</translation>
     </message>
@@ -2701,12 +2701,17 @@ jellytoast funcionará, pero las funciones de bandeja no estarán disponibles.</
         <translation type="obsolete">Descendente</translation>
     </message>
     <message>
-        <location filename="../quick/qml/OptionsSheet.qml" line="259"/>
+        <location filename="../quick/qml/OptionsSheet.qml" line="268"/>
         <source>Shuffle all</source>
         <translation>Reproducir todo aleatorio</translation>
     </message>
     <message>
-        <location filename="../quick/qml/OptionsSheet.qml" line="265"/>
+        <location filename="../quick/qml/OptionsSheet.qml" line="268"/>
+        <source>Shuffle %1</source>
+        <translation>Aleatorio: %1</translation>
+    </message>
+    <message>
+        <location filename="../quick/qml/OptionsSheet.qml" line="280"/>
         <source>Settings</source>
         <translation>Ajustes</translation>
     </message>

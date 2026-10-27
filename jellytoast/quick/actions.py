@@ -25,6 +25,19 @@ def _tracks_for(prov, kind: str, item_id: str) -> List[Dict]:
         return list(prov.get_album_tracks(item_id) or [])
     if kind == "playlist":
         return list(prov.get_playlist_items(item_id) or [])
+    if kind == "genre":
+        # Every song in the genre (paged; capped so a huge genre can't stall),
+        # so the shuffle draws from all of it — Indie alone is 566 songs.
+        out = []
+        while len(out) < 2000:
+            resp = prov.get_items(
+                "", "Audio", 500, len(out), "Random", "Ascending", True, genre_ids=item_id
+            )
+            page = list((resp or {}).get("Items") or [])
+            out.extend(page)
+            if len(page) < 500:
+                break
+        return out
     if kind == "artist":
         albums = list(prov.get_artist_albums(item_id) or [])
         albums.sort(key=lambda a: int(a.get("ProductionYear") or 0))

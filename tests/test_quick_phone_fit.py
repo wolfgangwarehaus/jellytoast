@@ -107,3 +107,39 @@ def test_cover_cache_follows_the_servers_art_version(qapp, monkeypatch):
     c.request("ar-1@ar-1_new/256/12")
     assert asked == ["ar-1"]
     assert keys == ["ar-1@ar-1_new|quick"]
+
+
+def test_shuffle_follows_the_page_its_menu_is_opened_on(quick, fake_provider, monkeypatch):
+    """⋮ → Shuffle shuffled the whole library even on a genre page; there
+    it now reads "Shuffle <genre>" and shuffles that genre's songs."""
+    from jellytoast.player_state import PlayerBus
+
+    asked = []
+    real = fake_provider.get_items
+
+    def spy(*a, **k):
+        asked.append((a[1] if len(a) > 1 else k.get("item_type"), k.get("genre_ids", "")))
+        return real(*a, **k)
+
+    monkeypatch.setattr(fake_provider, "get_items", spy)
+    got = []
+    slot = lambda items, i, ctx: got.append(ctx)  # noqa: E731
+    PlayerBus.get().queue_play_now.connect(slot)
+    try:
+        quick.eval("win.openItem('genre', {id: 'Pop', name: 'Pop'})")
+        quick.wait_idle()
+        quick.tap("moreButton")
+        row = quick.wait_for("shuffleAllRow")
+        assert row.property("text") == "Shuffle Pop"
+        quick.tap("shuffleAllRow")
+        quick.wait_until(lambda: got)
+        assert ("Audio", "Pop") in asked
+        assert got[-1].source_label == "Pop"
+        # A plain section keeps the whole-library shuffle.
+        quick.key("esc")
+        quick.eval("win.showSection('album')")
+        quick.wait_idle()
+        quick.tap("moreButton")
+        assert quick.wait_for("shuffleAllRow").property("text") == "Shuffle all"
+    finally:
+        PlayerBus.get().queue_play_now.disconnect(slot)
