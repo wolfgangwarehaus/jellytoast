@@ -28,6 +28,10 @@ developer-facing history lives in [`docs/CHANGELOG.md`](docs/CHANGELOG.md).
   stay the right size on high-resolution phones (the cast menu was a mess),
   Radio's buttons fit small screens, and landscape puts the art beside the
   controls.
+- **New art shows up on phones.** Swap an album or artist picture on your
+  server and the phone app picks it up instead of keeping the old one.
+- **Shuffle follows the page.** In a genre, the ⋮ menu's shuffle plays that
+  genre ("Shuffle Indie").
 - **A more consistent look.** Buttons are one size everywhere, every dialog
   puts Cancel first, and checkbox labels match the buttons beside them.
 - **Artists without a photo** get a proper placeholder instead of a bright
