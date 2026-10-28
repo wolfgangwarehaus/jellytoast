@@ -306,6 +306,11 @@ def quick(qapp, fake_provider, isolated_settings):
     from jellytoast import library_selection as _ls
 
     _ls.reset_after_server_change()  # module state: no libraries known, 'all'
+    # Module state too: a desktop test's cached playlist list (same fake
+    # server url) left the phone picker empty in a full run.
+    from jellytoast import playlist_actions as _pa
+
+    _pa.invalidate_cache()
     saved_np = get_now_playing()
     set_now_playing(NowPlaying())  # global — never inherit another test's track
     engine = quick_ui.build_engine(qapp, start_core=False)

@@ -148,7 +148,9 @@ def test_two_slow_resizes_latch_the_session_onto_originals(server):
     _Handler.hits.clear()
     t0 = time.monotonic()
     assert _load("al-c|t", f"{server}/cover?id=c&size=600")[0] == "pix"
-    assert time.monotonic() - t0 < 1.0
+    # The hits check is the proof; the clock only rules out sitting through
+    # the 1.5 s resize, with room for a busy full-suite run.
+    assert time.monotonic() - t0 < 1.4
     assert all("size=" not in h for h in _Handler.hits)  # straight to the original
 
 

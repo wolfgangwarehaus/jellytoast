@@ -44,7 +44,11 @@ def _track_ids(kind: str, item_id: str) -> List[str]:
 
 
 class Playlists(QObject):
-    changed = Signal()  # the list of playlists / availability
+    changed = Signal()  # availability
+    # Separate, so a refresh that finds the same playlists doesn't rebuild
+    # the picker's rows under your finger.
+    itemsChanged = Signal()  # noqa: N815
+    loadingChanged = Signal()  # noqa: N815
     toast = Signal(str)
     edited = Signal(str)  # playlist id whose contents / name changed ("" = several)
 
@@ -57,7 +61,18 @@ class Playlists(QObject):
 
     # ── state ──
     available = Property(bool, lambda self: _pa.available(), notify=changed)
-    loading = Property(bool, lambda self: self._loading, notify=changed)
+    loading = Property(bool, lambda self: self._loading, notify=loadingChanged)
+
+    def _set_items(self, items) -> None:
+        items = list(items or [])
+        if items != self._items:
+            self._items = items
+            self.itemsChanged.emit()
+
+    def _set_loading(self, on: bool) -> None:
+        if on != self._loading:
+            self._loading = on
+            self.loadingChanged.emit()
 
     def _get_items(self) -> List[Dict]:
         return [
@@ -69,7 +84,7 @@ class Playlists(QObject):
             for p in self._items
         ]
 
-    items = Property("QVariantList", _get_items, notify=changed)
+    items = Property("QVariantList", _get_items, notify=itemsChanged)
 
     @Slot()
     def refresh(self) -> None:
@@ -80,25 +95,21 @@ class Playlists(QObject):
             return
         cached = _pa._cached_playlists()
         if cached is not None:
-            self._items = cached
-            self.changed.emit()
+            self._set_items(cached)
             return
-        self._loading = True
-        self.changed.emit()
+        self._set_loading(True)
         prov = _provider()
 
         def _got(items):
             import time
 
             _pa._cache.update(server=prov.server_url, at=time.monotonic(), items=list(items or []))
-            self._items = list(items or [])
-            self._loading = False
-            self.changed.emit()
+            self._set_items(items)
+            self._set_loading(False)
 
         def _failed(e):
             logger.warning("listing playlists failed: %s", e)
-            self._loading = False
-            self.changed.emit()
+            self._set_loading(False)
 
         async_io.run_async(prov.get_playlists, on_result=_got, on_error=_failed)
 

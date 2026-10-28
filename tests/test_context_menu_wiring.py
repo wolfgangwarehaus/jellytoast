@@ -47,6 +47,12 @@ def captured_menu(monkeypatch):
     monkeypatch.setattr(
         "jellytoast.songs_view.opaque_menu", _fake_opaque_menu, raising=False
     )
+    # "Add to playlist" shows only with a signed-in provider; whether one is
+    # around depends on test order (pytest-randomly) — every menu here is
+    # pinned without it.
+    from jellytoast import playlist_actions
+
+    monkeypatch.setattr(playlist_actions, "available", lambda: False)
     return recorded
 
 
@@ -89,11 +95,6 @@ def _no_downloads(monkeypatch):
     from jellytoast import offline
 
     monkeypatch.setattr(offline, "is_downloaded", lambda _id: False)
-    # "Add to playlist" shows only with a signed-in provider; whether one
-    # is around depends on test order — these menus are pinned without it.
-    from jellytoast import playlist_actions
-
-    monkeypatch.setattr(playlist_actions, "available", lambda: False)
 
 
 def _make_library_view(kind: str):

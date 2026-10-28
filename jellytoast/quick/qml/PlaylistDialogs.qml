@@ -54,8 +54,12 @@ Item {
             width: deleteDialog.availableWidth
             wrapMode: Text.WordWrap
             color: theme.text
-            text: playlists.deleteMessage(deleteDialog.item.name || "",
-                                          deleteDialog.item.sourceFile || "")
+            // Only while open: wrapping a long message in a dialog that isn't
+            // laid out yet was a binding loop on its height at start.
+            text: deleteDialog.visible
+                  ? playlists.deleteMessage(deleteDialog.item.name || "",
+                                            deleteDialog.item.sourceFile || "")
+                  : ""
         }
         onAccepted: {
             playlists.remove(item.id, item.name)

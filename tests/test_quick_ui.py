@@ -556,7 +556,9 @@ def test_cast_card_volume_group_members_and_stop(quick, monkeypatch):
         PlayerBus.get().volume_state.emit(25)
         quick.wait_until(lambda: round(quick.get("castVolume").property("value")) == 25)
         # Drag-free: a tap far along the slider sets the speaker's volume.
-        slider = quick.get("castVolume")
+        # Raw coordinates: wait for the sheet to finish growing to fit the
+        # card first (a tap mid-resize missed the slider under load).
+        slider = quick.wait_still("castVolume")
         pt = quick.point(slider)
         quick.tap((pt.x() + slider.width() * 0.3, pt.y()))
         quick.wait_until(lambda: spy.got["volume_changed"])
@@ -985,10 +987,26 @@ def _sheet_row(quick, name):
     quick.tap(name)
 
 
+def test_a_refresh_with_the_same_playlists_keeps_the_rows():
+    """The picker's rows were rebuilt on every refresh — under a finger
+    mid-tap (the add-to-playlist flake)."""
+    from jellytoast.quick.playlists import Playlists
+
+    pl = Playlists()
+    fired = []
+    pl.itemsChanged.connect(lambda: fired.append(1))
+    pl._set_items([{"Id": "pl1", "Name": "One"}])
+    pl._set_items([{"Id": "pl1", "Name": "One"}])
+    pl._set_loading(True)
+    pl._set_loading(False)
+    assert fired == [1]
+
+
 def test_add_album_to_existing_playlist(quick):
     quick.long_press("text:Album 004")
     _sheet_row(quick, "addToPlaylistRow")
     quick.wait_for("text:Playlist 2")
+    quick.wait_until(lambda: not quick.eval("playlists.loading"))
     quick.tap("text:Playlist 2")
     quick.wait_until(lambda: any(c[0] == "add_to_playlist" for c in quick.provider.calls))
     call = next(c for c in quick.provider.calls if c[0] == "add_to_playlist")

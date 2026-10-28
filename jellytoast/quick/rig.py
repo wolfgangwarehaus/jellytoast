@@ -319,11 +319,21 @@ class Rig:
     def scroll_to_end(self, target: Target, *, timeout: float = 20.0) -> None:
         """Flick a list / grid down until it stops loading more."""
         it = self.get(target)
-        deadline = time.monotonic() + timeout
+        start = time.monotonic()
+        deadline = start + timeout
         while time.monotonic() < deadline:
             if it.property("atYEnd") and not self._busy():
                 return
-            self.swipe("up", on=it, frac=0.6, ms=120)
+            if time.monotonic() - start < timeout / 3:
+                self.swipe("up", on=it, frac=0.6, ms=120)
+            else:
+                # A loaded machine drops flick momentum (a full test run):
+                # jump instead — paging follows the position either way.
+                # (positionViewAtEnd stops short of the bottom margin, so
+                # atYEnd never turns true — set contentY to the real end.)
+                end = (it.property("originY") + it.property("contentHeight")
+                       + it.property("bottomMargin") - it.height())
+                it.setProperty("contentY", max(0.0, end))
             pump(300)
         raise RigError("scroll_to_end timed out")
 
