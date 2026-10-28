@@ -25,7 +25,7 @@ from collections import OrderedDict
 from typing import Set
 
 from PySide6.QtCore import QObject, QSize, Signal, Slot
-from PySide6.QtGui import QPixmap
+from PySide6.QtGui import QColor, QPixmap
 from PySide6.QtQuick import QQuickImageProvider
 
 logger = logging.getLogger(__name__)
@@ -60,9 +60,12 @@ def _item_id(ident: str) -> str:
 
 class Covers(QObject):
     ready = Signal(str)  # key — its pixmap is now in the cache
+    toneReady = Signal(str, str)  # cover source, its picked colour (#rrggbb)
 
     def __init__(self, parent=None):
         super().__init__(parent)
+        self._tones: "OrderedDict[str, str]" = OrderedDict()
+        self._tone_inflight: Set[str] = set()
         self._pix: "OrderedDict[str, QPixmap]" = OrderedDict()
         self._inflight: Set[str] = set()
         self._missing: Set[str] = set()
@@ -135,6 +138,42 @@ class Covers(QObject):
         if len(parts) >= 3 and parts[-1].isdigit() and parts[-2].isdigit():
             return "/".join(parts[:-2]), int(parts[-2]), int(parts[-1])
         return "/".join(parts[:-1]), int(parts[-1]), 0
+
+    @Slot(str, result=str)
+    def tone(self, source: str) -> str:
+        """The colour picked from a cover (``image://cover/...`` source), as
+        ``#rrggbb`` — "" until known (then ``toneReady`` fires). A small
+        copy is loaded through the shared cover cache."""
+        if not source.startswith("image://cover/"):
+            return ""
+        if source in self._tones:
+            return self._tones[source]
+        if source in self._tone_inflight:
+            return ""
+        ident = source[len("image://cover/") :].rsplit("/", 1)[0]
+        try:
+            from jellytoast.providers import get_provider
+            from jellytoast.ui_helpers import load_image_async
+
+            url = get_provider().get_image_url(_item_id(ident), "Primary", 64)
+        except Exception:
+            return ""
+        self._tone_inflight.add(source)
+
+        def _landed(pix, src=source):
+            self._tone_inflight.discard(src)
+            if pix is None or pix.isNull():
+                return
+            name = pick_tone(pix.toImage()).name()
+            self._tones[src] = name
+            while len(self._tones) > 200:
+                self._tones.popitem(last=False)
+            self.toneReady.emit(src, name)
+
+        load_image_async(
+            f"{ident}|quick", url, 64, 64, _landed, on_error=lambda *_a, s=source: self._tone_inflight.discard(s)
+        )
+        return ""
 
     @Slot(str)
     def release(self, key: str) -> None:
@@ -219,3 +258,36 @@ class CoverPixmapProvider(QQuickImageProvider):
             size.setWidth(pix.width())
             size.setHeight(pix.height())
         return pix
+
+
+def pick_tone(img) -> QColor:
+    """The colour that best stands for an album cover: the most present
+    vivid hue (weighted by saturation x brightness), averaged within that
+    hue; a greyscale cover gives its average grey. A plain average turned
+    navy-and-gold covers into mud."""
+    small = img.scaled(24, 24)
+    buckets: dict = {}
+    total = [0.0, 0.0, 0.0, 0]
+    for y in range(small.height()):
+        for x in range(small.width()):
+            c = small.pixelColor(x, y)
+            total[0] += c.redF()
+            total[1] += c.greenF()
+            total[2] += c.blueF()
+            total[3] += 1
+            h, s, v = c.hsvHueF(), c.hsvSaturationF(), c.valueF()
+            if h < 0 or s < 0.2 or v < 0.15:
+                continue
+            w = s * v
+            b = buckets.setdefault(int(h * 12) % 12, [0.0, 0.0, 0.0, 0.0])
+            b[0] += c.redF() * w
+            b[1] += c.greenF() * w
+            b[2] += c.blueF() * w
+            b[3] += w
+    if buckets:
+        r, g, bl, w = max(buckets.values(), key=lambda b: b[3])
+        if w > 15:  # ~5% of the cover, vividly (of 576 pixels)
+            return QColor.fromRgbF(r / w, g / w, bl / w)
+    n = max(1, total[3])
+    return QColor.fromRgbF(total[0] / n, total[1] / n, total[2] / n)
+

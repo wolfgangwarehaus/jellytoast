@@ -89,16 +89,26 @@ def test_now_playing_takes_a_colour_from_the_cover(quick):
         quick.eval("prefs.setFrosted(true)")
 
 
-def test_album_and_artist_pages_get_a_blurred_art_header(quick):
-    quick.tap("text:Album 001")
-    quick.wait_for("trackList")
+def test_album_and_artist_pages_take_a_colour_from_their_art(quick):
+    """Like Now Playing: a colour picked from the art (covers.tone) behind
+    the header. The fake library has no images, so the test hands the
+    colour in through the same signal the cover cache uses."""
+    def _tone(name):
+        bd = quick.find(name, visible=False)
+        assert bd is not None
+        src = bd.property("source")
+        assert src  # it asked for this cover's colour
+        quick.eval(f"covers.toneReady('{src}', '#203060')")
+        quick.wait_until(lambda: quick.get(name).isVisible(), 5)
+
+    quick.eval("win.openItem('album', {id: 'al1', name: 'Album 001', cover: 'image://cover/al1/256'})")
     quick.wait_idle()
-    assert quick.get("albumBackdrop").isVisible()
+    _tone("albumBackdrop")
     quick.key("esc")
     quick.wait_idle()
     quick.eval("win.openItem('artist', {id: 'ar1', name: 'Artist 1', cover: 'image://cover/ar1/256'})")
     quick.wait_idle()
-    assert quick.get("artistBackdrop").isVisible()
+    _tone("artistBackdrop")
     assert quick.get("artistPortrait").isVisible()
 
 

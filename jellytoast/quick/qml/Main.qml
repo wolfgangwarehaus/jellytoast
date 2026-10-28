@@ -68,7 +68,9 @@ ApplicationWindow {
     // artists → their albums, genres → their albums.
     function openItem(kind, item) {
         if (kind === "album" || kind === "playlist")
-            stack.push(albumPage, { album: Object.assign({ kind: kind }, item) })
+            // Search rows call the artist `subtitle` — the album page reads
+            // `artist` (opened from search it showed no artist).
+            stack.push(albumPage, { album: Object.assign({ kind: kind, artist: item.subtitle || "" }, item) })
         else if (kind === "artist")
             stack.push(gridPage, { kind: "artistAlbums", parentId: item.id, title: item.name,
                                    cover: item.cover || "" })

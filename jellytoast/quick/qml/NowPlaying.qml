@@ -34,24 +34,11 @@ Rectangle {
     // for the theme — deep and muted on dark, pale on light — washing down
     // from the top into the page colour (august: a colour from the art, not
     // the art blurred). Crossfades between tracks.
-    Rectangle {
-        id: toneBackdrop
+    ToneBackdrop {
         objectName: "npBackdrop"
         anchors.fill: parent
-        visible: prefs.frosted && player.hasTone
-        readonly property bool lightTheme: theme.background.hslLightness > 0.5
-        property color tone: {
-            var c = player.artTone
-            var h = c.hslHue < 0 ? 0 : c.hslHue
-            var s = Math.min(c.hslSaturation, lightTheme ? 0.45 : 0.55)
-            return Qt.hsla(h, s, lightTheme ? 0.84 : 0.26, 1)
-        }
-        Behavior on tone { ColorAnimation { duration: 600 } }
-        gradient: Gradient {
-            GradientStop { position: 0.0; color: toneBackdrop.tone }
-            GradientStop { position: 0.55; color: Qt.tint(toneBackdrop.tone, Qt.rgba(theme.background.r, theme.background.g, theme.background.b, 0.55)) }
-            GradientStop { position: 1.0; color: theme.background }
-        }
+        baseTone: player.artTone
+        hasTone: player.hasTone
     }
 
     DragHandler {

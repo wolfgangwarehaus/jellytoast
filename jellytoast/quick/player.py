@@ -261,9 +261,11 @@ class PlayerController(QObject):
         except Exception:
             return
 
+        from jellytoast.quick.covers import pick_tone as _pick
+
         def _landed(pix, key=src):
             if key == self._tone_key and pix is not None and not pix.isNull():
-                self._set_tone(pick_tone(pix.toImage()))
+                self._set_tone(_pick(pix.toImage()))
 
         load_image_async(f"{ident}|quick", url, 64, 64, _landed)
 
@@ -402,33 +404,5 @@ class PlayerController(QObject):
         )
 
 
-def pick_tone(img) -> QColor:
-    """The colour that best stands for an album cover: the most present
-    vivid hue (weighted by saturation x brightness), averaged within that
-    hue; a greyscale cover gives its average grey. A plain average turned
-    navy-and-gold covers into mud."""
-    small = img.scaled(24, 24)
-    buckets: dict = {}
-    total = [0.0, 0.0, 0.0, 0]
-    for y in range(small.height()):
-        for x in range(small.width()):
-            c = small.pixelColor(x, y)
-            total[0] += c.redF()
-            total[1] += c.greenF()
-            total[2] += c.blueF()
-            total[3] += 1
-            h, s, v = c.hsvHueF(), c.hsvSaturationF(), c.valueF()
-            if h < 0 or s < 0.2 or v < 0.15:
-                continue
-            w = s * v
-            b = buckets.setdefault(int(h * 12) % 12, [0.0, 0.0, 0.0, 0.0])
-            b[0] += c.redF() * w
-            b[1] += c.greenF() * w
-            b[2] += c.blueF() * w
-            b[3] += w
-    if buckets:
-        r, g, bl, w = max(buckets.values(), key=lambda b: b[3])
-        if w > 15:  # ~5% of the cover, vividly (of 576 pixels)
-            return QColor.fromRgbF(r / w, g / w, bl / w)
-    n = max(1, total[3])
-    return QColor.fromRgbF(total[0] / n, total[1] / n, total[2] / n)
+# pick_tone lives with the cover cache now (album / artist headers use it too).
+from jellytoast.quick.covers import pick_tone  # noqa: E402,F401

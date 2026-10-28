@@ -18,12 +18,12 @@ developer-facing history lives in [`docs/CHANGELOG.md`](docs/CHANGELOG.md).
 - **Tidier at small sizes.** Shrink jellytoast right down and the extra
   top-bar buttons tuck into a ⋮ menu instead of piling on top of each other,
   and Settings fits a narrow window without scrolling sideways.
-- **More colour on phones.** Now Playing takes its colour from the album
-  cover, album and artist pages sit on a soft blur of their art, covers pulse
-  gently while they load, and you can pick your accent colour in Settings.
+- **More colour on phones.** Now Playing, album and artist pages take their
+  colour from the art, covers pulse gently while they load, and you can pick
+  your accent colour in Settings.
 - **Frosted glass on phones.** The top bar, mini player and menus are frosted
-  glass now, with your albums blurring underneath as you scroll. Turn it off under Settings → Frosted
-  glass if your phone struggles.
+  glass now, with your albums blurring underneath as you scroll. Turn it off
+  under Settings → Frosted glass if your phone struggles.
 - **The phone app fits your screen.** Home rows show whole albums, icons
   stay the right size on high-resolution phones (the cast menu was a mess),
   Radio's buttons fit small screens, and landscape puts the art beside the

@@ -180,20 +180,18 @@ Item {
     }
     Component {
         id: artistHeader
-        // The artist's photo blurred behind a round portrait (reaching up
-        // under the frosted top bar), then Play / Shuffle.
+        // A colour from the artist's photo behind a round portrait (reaching
+        // up under the frosted top bar), then Play / Shuffle.
         Item {
             width: grid.width
             height: page.cover !== "" ? 196 : 64
-            BlurBackdrop {
+            ToneBackdrop {
                 objectName: "artistBackdrop"
                 anchors.fill: parent
                 anchors.topMargin: -page.insetTop
                 anchors.leftMargin: -page.gutter
                 anchors.rightMargin: -page.gutter
                 source: page.cover
-                wash: 0.5
-                fadeBottom: true
             }
             Cover {
                 objectName: "artistPortrait"

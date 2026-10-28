@@ -35,15 +35,14 @@ Item {
         header: Item {
             width: list.width
             height: hcol.implicitHeight
-            // The album's art blurred behind its header, reaching up under
-            // the frosted top bar and fading into the track list.
-            BlurBackdrop {
+            // A colour from the album's art behind its header (as on Now
+            // Playing), reaching up under the frosted top bar and fading
+            // into the track list.
+            ToneBackdrop {
                 objectName: "albumBackdrop"
                 anchors.fill: parent
                 anchors.topMargin: -page.insetTop
                 source: page.album.cover || ""
-                wash: 0.5
-                fadeBottom: true
             }
         Column {
             id: hcol
