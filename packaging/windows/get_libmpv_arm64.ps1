@@ -33,9 +33,9 @@ $ErrorActionPreference = "Stop"
 # wolfgangwarehaus/jellytoast-deps ($Url; $UpstreamUrl is the origin and the
 # fallback). dev/mirror_libmpv.sh re-pins both scripts together and checks the
 # contained libmpv-2.dll is a genuine ARM64 PE (machine 0xAA64).
-$Url = "https://github.com/wolfgangwarehaus/jellytoast-deps/releases/download/libmpv-windows-20261018/mpv-dev-aarch64-20261018-git-01e2533f31.7z"
-$UpstreamUrl = "https://github.com/shinchiro/mpv-winbuild-cmake/releases/download/20261018/mpv-dev-aarch64-20261018-git-01e2533f31.7z"
-$Sha256 = "062b07022d1fadefd341485602658a51d973c216bb4282859e10daa09ad55478"
+$Url = "https://github.com/wolfgangwarehaus/jellytoast-deps/releases/download/libmpv-windows-20261020/mpv-dev-aarch64-20261020-git-6a262d11f6.7z"
+$UpstreamUrl = "https://github.com/shinchiro/mpv-winbuild-cmake/releases/download/20261020/mpv-dev-aarch64-20261020-git-6a262d11f6.7z"
+$Sha256 = "df0ba2c26a1c10842db4020b822e3d40e119ebd1c10fff9f3b976e8cbaafbc0c"
 
 $Dest = Join-Path $PSScriptRoot "libmpv"
 $Archive = Join-Path $env:TEMP "libmpv-dev-aarch64.7z"

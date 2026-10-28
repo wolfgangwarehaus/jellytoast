@@ -16,9 +16,9 @@
 $ErrorActionPreference = "Stop"
 
 # Plain x86_64 (not -v3) so older CPUs stay supported.
-$Url = "https://github.com/wolfgangwarehaus/jellytoast-deps/releases/download/libmpv-windows-20261018/mpv-dev-x86_64-20261018-git-01e2533f31.7z"
-$UpstreamUrl = "https://github.com/shinchiro/mpv-winbuild-cmake/releases/download/20261018/mpv-dev-x86_64-20261018-git-01e2533f31.7z"
-$Sha256 = "d7f5621f42b6e161fe032df914a10bdece28a89df3e57c6c3e16a5a250929b5e"
+$Url = "https://github.com/wolfgangwarehaus/jellytoast-deps/releases/download/libmpv-windows-20261020/mpv-dev-x86_64-20261020-git-6a262d11f6.7z"
+$UpstreamUrl = "https://github.com/shinchiro/mpv-winbuild-cmake/releases/download/20261020/mpv-dev-x86_64-20261020-git-6a262d11f6.7z"
+$Sha256 = "d16ea67bcc46d4ee9170f05b322d7184768f216f458bef089c3397a6beaff83e"
 
 $Dest = Join-Path $PSScriptRoot "libmpv"
 $Archive = Join-Path $env:TEMP "libmpv-dev.7z"
