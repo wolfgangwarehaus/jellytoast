@@ -8,7 +8,7 @@
 # pip-installable wheel with a single, properly-namespaced package.
 
 [build-system]
-requires = ["setuptools>=68", "wheel"]
+requires = ["setuptools>=84.2.1", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -50,30 +50,30 @@ dependencies = [
     # 0.2.0: it's where PySide6/shiboken6 ship the cp310-abi3 win_arm64 wheels
     # a native ARM64 Windows build needs, and it keeps the macOS universal2
     # wheel current. Installed today is 6.11.x anyway, so no real-world churn.
-    "PySide6>=6.11.0,<7.0",
-    "python-mpv>=1.0.5",
-    "pychromecast>=14.0.0,<16",
+    "PySide6>=6.12.0,<7.0",
+    "python-mpv>=1.0.8",
+    "pychromecast>=14.0.10,<16",
     # Security floor: bumped to 0.149.12 to clear CVE-2026-47180/47183/
     # 47184/48045 (pip-audit gate). 0.149.x is resolver-compatible —
     # pychromecast only needs zeroconf>=0.25.1. Open-ended above per the
     # policy note. NB: zeroconf underpins Chromecast/DLNA discovery, so a
     # real upgrade past the currently-installed build wants a discovery
     # re-verify on hardware (the floor bump stays within 0.149.x patch).
-    "zeroconf>=0.149.12",
+    "zeroconf>=0.151.5",
     # ifaddr enumerates local interfaces so Chromecast mDNS discovery can
     # bind to the LAN and exclude a Tailscale/CGNAT overlay (a default
     # all-interface bind sends the query out the tunnel and finds nothing
     # — jellytoast/cast_manager._discovery_interfaces). It's already pulled
     # in transitively by zeroconf, but we import it directly now, so
     # declare it. Falls back gracefully (default binding) if absent.
-    "ifaddr>=0.1.7",
+    "ifaddr>=0.2.0",
     # dbus-next is a Linux-only feature dep (MPRIS / freedesktop). The
     # platform marker keeps `pip install` clean on Windows / macOS.
     'dbus-next>=0.2.3 ; sys_platform == "linux"',
     # jeepney is imported directly (color_picker.py portal PickColor) —
     # declared so the import doesn't rely on keyring's transitive pin.
     # Linux-only.
-    'jeepney>=0.6 ; sys_platform == "linux"',
+    'jeepney>=0.9.0 ; sys_platform == "linux"',
     # pyatv (AirPlay 2) is broken on Windows — relies on asyncio +
     # low-level network primitives that don't ship there. macOS / Linux
     # only.
@@ -85,18 +85,18 @@ dependencies = [
     # error-tolerance patch), which has no stability guarantee — a 1.x
     # major could rename or restructure it out from under us. Installed
     # today is 0.17.0.
-    'pyatv>=0.17,<1.0 ; sys_platform != "win32"',
+    'pyatv>=0.18.0,<1.0 ; sys_platform != "win32"',
     # python-xlib backs the KDE startup-notification cursor cleanup
     # (jellytoast/app.py _finish_startup_notification → `from Xlib import …`).
     # Linux-only and gracefully optional — the import is wrapped in a
     # try/except behind an IS_LINUX guard, so a missing binding just
     # leaves the bouncing-cursor cleanup as a no-op. Declared here so a
     # clean install actually ships it instead of silently degrading.
-    'python-xlib>=0.30 ; sys_platform == "linux"',
+    'python-xlib>=0.33 ; sys_platform == "linux"',
     # Security floor: 2.32.4 patches CVE-2024-47081 (.netrc credential
     # leak) and the earlier CVE-2024-35195 verify-bypass.
-    "requests>=2.32.4",
-    "keyring>=23.0",
+    "requests>=2.34.2",
+    "keyring>=25.7.0",
     # Security floor: 43.0.1 is a current patched OpenSSL-backed release
     # (clears the GHSA-h4gh-qq45 / pyOpenSSL-side advisories that lingered
     # on the old >=41.0 floor). Narrow surface, so no upper cap.
@@ -106,7 +106,7 @@ dependencies = [
     # DPAPI instead (jellytoast/credentials.py) and pulls in NO cryptography —
     # our own declaration here is the sole cryptography puller on Windows, so
     # this marker removes it (and its transitive cffi) from the Windows resolve.
-    'cryptography>=43.0.1 ; sys_platform != "win32"',
+    'cryptography>=50.0.2 ; sys_platform != "win32"',
     # ── Cast / visualizer backends ────────────────────────────────────
     # Promoted from per-feature extras to required deps so EVERY install
     # (pipx, source, future AUR) ships the same backend set — no
@@ -114,32 +114,32 @@ dependencies = [
     # is still soft-imported behind an _ensure_* / is_available() guard and
     # gated by its Settings toggle, so a feature only runs when the user
     # enables it; bundling just guarantees the dependency is present.
-    "numpy>=1.24",  # visualizer FFT (spins up in the visualizer now-playing mode)
-    "async-upnp-client>=0.47.0,<1.0",  # DLNA / UPnP-AV cast backend
+    "numpy>=2.4.6",  # visualizer FFT (spins up in the visualizer now-playing mode)
+    "async-upnp-client>=0.49.0,<1.0",  # DLNA / UPnP-AV cast backend
     # Security floor: aiohttp is pulled transitively by async-upnp-client;
     # <3.14.0 carries CVE-2026-34993 (CookieJar.load RCE) + CVE-2026-47265
     # (cross-origin cookie leak). Declared directly to pin the floor.
-    "aiohttp>=3.14.0",
-    "soco>=0.31,<1",  # native Sonos cast backend
+    "aiohttp>=3.14.5",
+    "soco>=0.32.0,<1",  # native Sonos cast backend
     # Windows-only WinRT projections for System Media Transport Controls
     # (media flyout + hardware media keys) and now-playing toasts. The
     # per-namespace winrt-* packages are the maintained PyWinRT path;
     # imports are lazy + guarded so a missing/old projection degrades to a
     # no-op rather than breaking boot. (jellytoast/media_controls/_windows.py)
-    'winrt-runtime>=2.0 ; sys_platform == "win32"',
-    'winrt-Windows.ApplicationModel>=2.0 ; sys_platform == "win32"',
-    'winrt-Windows.Media>=2.0 ; sys_platform == "win32"',
-    'winrt-Windows.Media.Interop>=2.0 ; sys_platform == "win32"',
-    'winrt-Windows.Storage.Streams>=2.0 ; sys_platform == "win32"',
-    'winrt-Windows.Foundation>=2.0 ; sys_platform == "win32"',
+    'winrt-runtime>=4.0.3 ; sys_platform == "win32"',
+    'winrt-Windows.ApplicationModel>=4!10.0.28000.2705 ; sys_platform == "win32"',
+    'winrt-Windows.Media>=4!10.0.28000.2705 ; sys_platform == "win32"',
+    'winrt-Windows.Media.Interop>=4.0.0 ; sys_platform == "win32"',
+    'winrt-Windows.Storage.Streams>=4!10.0.28000.2705 ; sys_platform == "win32"',
+    'winrt-Windows.Foundation>=4!10.0.28000.2705 ; sys_platform == "win32"',
     # Windows toast notifications (download-complete + opt-in now-playing).
     # Maintained WinRT ToastNotificationManager wrapper; guarded so a
     # missing install just disables toasts. (jellytoast/notifications/_windows.py)
-    'windows-toasts>=1.1 ; sys_platform == "win32"',
+    'windows-toasts>=1.3.1 ; sys_platform == "win32"',
     # comtypes drives ITaskbarList3 for the taskbar overlay badge (Qt6
     # dropped QtWinExtras). Guarded so a missing install just disables the
     # badge. (jellytoast/taskbar.py)
-    'comtypes>=1.2 ; sys_platform == "win32"',
+    'comtypes>=1.4.17 ; sys_platform == "win32"',
     # ── macOS-only: pyobjc for the native bits ────────────────────────
     # Promoted from the [macos] extra (0.2.0): these back SHIPPED features —
     # NSVisualEffectView vibrancy (blur/_macos.py), the transparent-titlebar
@@ -150,17 +150,17 @@ dependencies = [
     # dmg's plain `pip install .` omitted them and every one of those degraded
     # silently. Imports stay lazy + guarded, so a source env without pyobjc
     # still boots with the no-op backends.
-    'pyobjc-core>=10.0 ; sys_platform == "darwin"',
-    'pyobjc-framework-Cocoa>=10.0 ; sys_platform == "darwin"',
-    'pyobjc-framework-MediaPlayer>=10.0 ; sys_platform == "darwin"',
-    'pyobjc-framework-UserNotifications>=10.0 ; sys_platform == "darwin"',
-    'pyobjc-framework-ServiceManagement>=10.0 ; sys_platform == "darwin"',
+    'pyobjc-core>=12.2.2 ; sys_platform == "darwin"',
+    'pyobjc-framework-Cocoa>=12.2.2 ; sys_platform == "darwin"',
+    'pyobjc-framework-MediaPlayer>=12.2.2 ; sys_platform == "darwin"',
+    'pyobjc-framework-UserNotifications>=12.2.2 ; sys_platform == "darwin"',
+    'pyobjc-framework-ServiceManagement>=12.2.2 ; sys_platform == "darwin"',
 ]
 
 [project.optional-dependencies]
 dev = [
-    "pytest>=7.0",
-    "pytest-xdist>=3.0",
+    "pytest>=9.1.1",
+    "pytest-xdist>=3.8.0",
     # Randomises test order every run (a fresh seed each CI run, printed
     # in the header so a failure reproduces via `pytest
     # --randomly-seed=N`). Guards against the order-dependent state leaks
@@ -169,20 +169,20 @@ dev = [
     # the single_instance pump, and the cast/async leak cluster (cast
     # discovery loop threads, the SettingsDialog auto-probe, smart-playlist
     # preview dispatch). All isolated as of 2026-05-30.
-    "pytest-randomly>=3.0",
+    "pytest-randomly>=5.0.0",
     # Coverage signal (non-gating — no --cov-fail-under). See
     # [tool.coverage.run]; CI prints a term report but never fails on it.
-    "pytest-cov>=4.0",
-    "ruff>=0.4",
-    "pre-commit>=3.0",
+    "pytest-cov>=7.1.0",
+    "ruff>=0.17.2",
+    "pre-commit>=4.7.0",
     # Static type checking, advisory + scoped to jellytoast/providers (the
     # cleanest contract-bearing package). See [tool.mypy]. types-requests
     # gives the requests-driven provider code resolvable stubs.
-    "mypy>=1.8",
+    "mypy>=2.4.0",
     "types-requests",
     # Dependency / advisory scanning (advisory CI step). Surfaces known
     # CVEs in the resolved dependency set.
-    "pip-audit>=2.7",
+    "pip-audit>=2.10.1",
     # The runtime dep is Linux-gated (MPRIS), but the mpris unit tests force
     # IS_LINUX and import it on every platform — pure-python, so unconditional
     # here keeps `pip install -e .[dev]` + pytest green on the Win/Mac QA boxes.
