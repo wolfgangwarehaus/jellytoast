@@ -39,3 +39,5 @@ coverage.xml
 *.swp
 *~
 .DS_Store
+jellytoast/DEV_BUILD
+phone-shot.png

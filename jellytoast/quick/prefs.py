@@ -365,6 +365,16 @@ class Prefs(QObject):
         try:
             from jellytoast.version import __version__
 
-            return str(__version__)
+            version = str(__version__)
         except Exception:
             return ""
+        # A dev build pushed to the phone (dev/phone.sh) says which commit.
+        try:
+            from pathlib import Path
+
+            build = (Path(__file__).resolve().parent.parent / "DEV_BUILD").read_text().strip()
+            if build:
+                version += f" (dev {build})"
+        except OSError:
+            pass
+        return version
