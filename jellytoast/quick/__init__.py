@@ -359,6 +359,9 @@ def _keep_running_in_background(app, window) -> None:
     window._jt_close_keeper = keeper
 
     def _bring_back():
+        from jellytoast.single_instance import use_activation_token
+
+        use_activation_token(getattr(app, "_single_instance", None))
         window.show()
         window.raise_()
         window.requestActivate()

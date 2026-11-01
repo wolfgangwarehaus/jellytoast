@@ -2210,7 +2210,15 @@ def main():
     app.setApplicationDisplayName("jellytoast")
     app.setApplicationVersion(__version__)
     app.setOrganizationName("jellytoast")
-    app.setDesktopFileName("jellytoast")
+    # The Wayland app_id. A phone shell (Plasma Mobile / Phosh) finds a
+    # running app's window by matching it to the launcher's .desktop id —
+    # with plain "jellytoast" against io.github…jellytoast.desktop, tapping
+    # the icon again started a second launch instead of showing the window.
+    # Desktops keep the stable "jellytoast" (users' own compositor window
+    # rules target it; Plasma matches it via StartupWMClass).
+    from jellytoast.platform_compat import desktop_entry_id, is_mobile_shell
+
+    app.setDesktopFileName(desktop_entry_id() if is_mobile_shell() else "jellytoast")
     app.setWindowIcon(QIcon(make_app_icon(64)))
     app.setQuitOnLastWindowClosed(False)
 
@@ -2530,6 +2538,9 @@ def main():
     # "did anything happen?" silence. Restore from minimize first so
     # show() actually surfaces it.
     def _raise_existing():
+        from jellytoast.single_instance import use_activation_token
+
+        use_activation_token(app._single_instance)
         if win.isMinimized():
             win.showNormal()
         win.show()

@@ -212,7 +212,7 @@ macos = []
 # packaging/aur/PKGBUILD invokes this entry point (authored + dry-run
 # validated; AUR submission still pending).
 [project.gui-scripts]
-jellytoast = "jellytoast.app:main"
+jellytoast = "jellytoast.launch:main"
 
 # Canonical project URLs — point at the real repo home,
 # wolfgangwarehaus/jellytoast (matches the git `origin` remote). The

@@ -21,9 +21,12 @@ listening, the holder is dead and we force-recover.
 """
 
 import logging
+import os
 
 from PySide6.QtCore import QObject, QSharedMemory, Signal
 from PySide6.QtNetwork import QLocalServer, QLocalSocket
+
+from jellytoast.single_instance_msg import launch_message, parse_launch_message  # noqa: F401
 
 logger = logging.getLogger(__name__)
 
@@ -78,6 +81,16 @@ def force_foreground(window) -> None:
         logger.debug("force_foreground failed: %s", e)
 
 
+def use_activation_token(single) -> None:
+    """Before ``requestActivate()``: hand the token a second launch relayed
+    to Qt, which reads ``XDG_ACTIVATION_TOKEN`` on its next activation and
+    uses it (once) to ask the compositor to bring the window forward."""
+    token = getattr(single, "activation_token", "") if single is not None else ""
+    if token:
+        os.environ["XDG_ACTIVATION_TOKEN"] = token
+        single.activation_token = ""
+
+
 class SingleInstance(QObject):
     """Acquire a per-key application-wide lock. If another instance
     already holds it, signal that instance to raise its window and tell
@@ -114,6 +127,9 @@ class SingleInstance(QObject):
         self._mem_key = f"{self._socket_name}-shm"
         self._mem: "QSharedMemory | None" = None
         self._server: "QLocalServer | None" = None
+        # The activation token the latest launch attempt relayed (see
+        # launch_message) — consumed by use_activation_token().
+        self.activation_token = ""
 
     def acquire(self) -> bool:
         """Try to acquire the lock. Returns True if we're the first
@@ -178,7 +194,7 @@ class SingleInstance(QObject):
         sock.connectToServer(self._socket_name)
         if not sock.waitForConnected(self._CONNECT_TIMEOUT_MS):
             return False
-        sock.write(b"raise")
+        sock.write(launch_message())
         sock.flush()
         sock.waitForBytesWritten(self._WRITE_TIMEOUT_MS)
         sock.disconnectFromServer()
@@ -190,12 +206,11 @@ class SingleInstance(QObject):
         sock = self._server.nextPendingConnection()
         if sock is None:
             return
-        # We don't actually need the message contents — any connection
-        # means "another launch happened, please come forward". Drain
-        # whatever was sent so the socket closes cleanly.
+        # Any connection means "another launch happened, please come
+        # forward"; the message may carry the launcher's activation token.
         try:
             sock.waitForReadyRead(200)
-            sock.readAll()
+            self.activation_token = parse_launch_message(bytes(sock.readAll().data()))
         finally:
             sock.disconnectFromServer()
             sock.deleteLater()

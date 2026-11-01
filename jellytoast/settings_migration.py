@@ -25,6 +25,10 @@ from jellytoast.platform_compat import IS_LINUX
 logger = logging.getLogger(__name__)
 
 
+class _SkipKeyring(Exception):
+    """The OS keyring is off here (see credentials.os_keyring_enabled)."""
+
+
 # QSettings org/app names. Pre-2026-05-15 these were "JellyToast" /
 # "JellyToast"; the migration helper copies keys forward on first
 # launch and sets a marker so it doesn't re-run.
@@ -312,8 +316,14 @@ def _migrate_legacy_org_name():
                         "migrate %s → %s failed: %s", entry, dst, e
                     )
 
-    # 4. Keyring — copy the access token under the new service name.
+    # 4. Keyring — copy the access token under the new service name (not on
+    # a phone shell, where the OS keyring isn't used: it would prompt for
+    # the wallet password).
+    from jellytoast.credentials import os_keyring_enabled
+
     try:
+        if not os_keyring_enabled():
+            raise _SkipKeyring
         import keyring
 
         old_token = keyring.get_password(_LEGACY_KEYRING_SERVICE, _KEYRING_USERNAME)
@@ -321,6 +331,8 @@ def _migrate_legacy_org_name():
             existing = keyring.get_password(_KEYRING_SERVICE, _KEYRING_USERNAME)
             if not existing:
                 keyring.set_password(_KEYRING_SERVICE, _KEYRING_USERNAME, old_token)
+    except _SkipKeyring:
+        pass
     except Exception as e:
         logger.warning("keyring migration failed: %s", e)
 

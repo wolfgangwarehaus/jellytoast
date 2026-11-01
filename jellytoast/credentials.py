@@ -286,6 +286,32 @@ def _decrypt_token(value: str) -> str:
         return ""
 
 
+def os_keyring_enabled() -> bool:
+    """Whether to use the OS secret store at all. Off on a phone shell
+    (Plasma Mobile, Phosh): the login there (PIN / autologin) doesn't
+    unlock KDE Wallet, so every launch asked for the wallet password — the
+    encrypted settings copy alone keeps you signed in. Kept on if that copy
+    can't be written (no ``cryptography``). ``JT_KEYRING=os`` / ``off``
+    overrides."""
+    forced = os.environ.get("JT_KEYRING", "").strip().lower()
+    if forced in ("os", "on", "1"):
+        return True
+    if forced in ("off", "0", "file"):
+        return False
+    if IS_WINDOWS:
+        return True
+    from jellytoast.platform_compat import is_mobile_shell
+
+    if not is_mobile_shell():
+        return True
+    import importlib.util
+
+    try:
+        return importlib.util.find_spec("cryptography") is None
+    except Exception:
+        return True
+
+
 def warm_keyring_async() -> None:
     """Fire a throwaway keyring read on a background thread so the
     OS secret service starts coming online while the rest of the app
@@ -297,7 +323,7 @@ def warm_keyring_async() -> None:
 
     Idempotent — only fires once per process. Daemon thread so a
     hung secret-service can't keep the app from exiting."""
-    if getattr(warm_keyring_async, "_started", False):
+    if getattr(warm_keyring_async, "_started", False) or not os_keyring_enabled():
         return
     warm_keyring_async._started = True  # type: ignore[attr-defined]
     import threading
@@ -330,6 +356,8 @@ def _keyring_get_token(max_attempts: int = 5, interval_s: float = 0.1) -> Option
     means a keyring miss falls through to the encrypted-file copy
     immediately — the user-visible cost is bounded by this read,
     not by a long retry budget."""
+    if not os_keyring_enabled():
+        return None
     try:
         import keyring  # lazy: avoids a hard dependency at import time
     except Exception:
@@ -392,6 +420,8 @@ def _keyring_set_token(value: str) -> bool:
     Sign-out path also clears the legacy ``"JellyToast"`` service name
     (pre-rename installs) so the user doesn't end up with two copies
     of the credential after the org migration."""
+    if not os_keyring_enabled():
+        return False
     try:
         import keyring
     except Exception:

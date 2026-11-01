@@ -12,6 +12,13 @@ developer-facing history lives in [`docs/CHANGELOG.md`](docs/CHANGELOG.md).
      should stand alone: the Store "What's new" shows just the title (+ first
      sentence in --detail mode). -->
 
+- **No more KDE Wallet prompts on phones.** On Plasma Mobile and Phosh,
+  jellytoast keeps your sign-in in its own encrypted settings instead of
+  the wallet, which asked for its password on every launch.
+- **Tapping the icon brings jellytoast back.** On a phone, opening it again
+  from the home screen now shows the app that's already running, straight
+  away, instead of spinning and dropping you back on the home screen.
+
 ## [0.2.5] — 2026-10-28
 
 - **Install and update through Flatpak.** Add jellytoast's own signed Flatpak

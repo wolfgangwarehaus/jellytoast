@@ -161,3 +161,52 @@ def test_keyring_backend_error_warns_once(monkeypatch, caplog):
     hits = [r for r in caplog.records if "OS keyring unavailable" in r.message]
     assert len(hits) == 1
     assert hits[0].levelname == "INFO"
+
+
+class TestPhoneShellSkipsTheOsKeyring:
+    """On Plasma Mobile / Phosh the login doesn't unlock KDE Wallet, so
+    every launch asked for its password — the encrypted settings copy alone
+    keeps the token there."""
+
+    def _mobile(self, monkeypatch, on: bool):
+        from jellytoast import platform_compat
+
+        monkeypatch.delenv("JT_KEYRING", raising=False)
+        monkeypatch.setattr(platform_compat, "is_mobile_shell", lambda: on)
+
+    def test_off_on_a_phone_shell(self, monkeypatch):
+        import keyring
+
+        from jellytoast import credentials
+
+        self._mobile(monkeypatch, True)
+        assert not credentials.os_keyring_enabled()
+
+        def boom(*a, **k):
+            raise AssertionError("touched the OS keyring")
+
+        monkeypatch.setattr(keyring, "get_password", boom)
+        monkeypatch.setattr(keyring, "set_password", boom)
+        assert credentials._keyring_get_token() is None
+        assert credentials._keyring_set_token("tok") is False
+        credentials.warm_keyring_async()  # no thread, no read
+
+    def test_on_off_a_phone_and_overridable(self, monkeypatch):
+        from jellytoast import credentials
+
+        self._mobile(monkeypatch, False)
+        assert credentials.os_keyring_enabled()
+        monkeypatch.setenv("JT_KEYRING", "off")
+        assert not credentials.os_keyring_enabled()
+        self._mobile(monkeypatch, True)
+        monkeypatch.setenv("JT_KEYRING", "os")
+        assert credentials.os_keyring_enabled()
+
+    def test_phone_token_round_trips_through_the_encrypted_copy(
+        self, monkeypatch, isolated_settings
+    ):
+        self._mobile(monkeypatch, True)
+        isolated_settings.access_token = "secret-token"
+        assert isolated_settings.access_token == "secret-token"
+        raw = isolated_settings._s.value("server/token", "", type=str)
+        assert raw and "secret-token" not in raw

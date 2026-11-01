@@ -206,3 +206,56 @@ def test_force_foreground_is_noop_off_windows():
     from jellytoast.single_instance import force_foreground
 
     force_foreground(None)  # must not raise on Linux/macOS
+
+
+# ── Second launch from a phone home screen ─────────────────────────────
+
+
+def test_launch_message_carries_the_activation_token(monkeypatch):
+    from jellytoast.single_instance_msg import launch_message, parse_launch_message
+
+    monkeypatch.delenv("XDG_ACTIVATION_TOKEN", raising=False)
+    assert launch_message() == b"raise"
+    assert parse_launch_message(launch_message()) == ""
+    monkeypatch.setenv("XDG_ACTIVATION_TOKEN", "kwin-123_abc")
+    assert parse_launch_message(launch_message()) == "kwin-123_abc"
+    assert parse_launch_message(b"junk") == ""
+
+
+def test_light_launcher_relays_the_token_and_qt_uses_it(qapp, monkeypatch):
+    """A repeat tap on the launcher: ``jellytoast.launch`` reaches the
+    running instance without Qt, passing the launcher's activation token;
+    the running window hands it to Qt (``XDG_ACTIVATION_TOKEN``) once, right
+    before it asks to come forward."""
+    import os
+
+    from jellytoast import launch
+    from jellytoast.single_instance import use_activation_token
+
+    key = _unique_key()
+    running = SingleInstance(key)
+    try:
+        assert running.acquire() is True
+        spy = QSignalSpy(running.raise_requested)
+        monkeypatch.setenv("JT_INSTANCE_KEY", key)
+        monkeypatch.setenv("XDG_ACTIVATION_TOKEN", "tok-42")
+        assert launch.relay_to_running() is True
+        if spy.count() == 0:
+            spy.wait(3000)
+        assert spy.count() == 1
+        assert running.activation_token == "tok-42"
+        monkeypatch.delenv("XDG_ACTIVATION_TOKEN")
+        use_activation_token(running)
+        assert os.environ.get("XDG_ACTIVATION_TOKEN") == "tok-42"
+        assert running.activation_token == ""  # used once
+    finally:
+        os.environ.pop("XDG_ACTIVATION_TOKEN", None)
+        if running._mem is not None:
+            running._mem.detach()
+
+
+def test_light_launcher_starts_the_app_when_none_is_running(monkeypatch):
+    from jellytoast import launch
+
+    monkeypatch.setenv("JT_INSTANCE_KEY", _unique_key())
+    assert launch.relay_to_running() is False
