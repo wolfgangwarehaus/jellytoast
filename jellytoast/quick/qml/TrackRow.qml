@@ -15,6 +15,7 @@ SwipeDelegate {
     property bool showCover: false
     // The placeholder glyph while the art is missing ("user" for an artist).
     property string coverGlyph: "music_note"
+    property bool roundCover: false  // artists, as everywhere else
     readonly property bool current: trackId !== "" && trackId === player.itemId
     signal queued()
     signal menuRequested(real x, real y)
@@ -63,7 +64,7 @@ SwipeDelegate {
             Cover {
                 anchors.fill: parent
                 visible: row.showCover
-                radius: 4
+                radius: row.roundCover ? width / 2 : 4
                 pixels: 132
                 glyph: row.coverGlyph
                 source: row.cover

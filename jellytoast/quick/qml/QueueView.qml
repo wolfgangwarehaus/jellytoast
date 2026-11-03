@@ -60,8 +60,15 @@ Item {
             focusPolicy: Qt.NoFocus
             hoverEnabled: false
             opacity: index < queue.current ? 0.5 : 1
-            background: Rectangle {
-                color: theme.background
+            // Clear, so the queue sits on the same backdrop as the cover and
+            // lyrics; filled only to cover the red Remove while swiping or
+            // the rows under a lifted one.
+            background: Item {
+                Rectangle {
+                    anchors.fill: parent
+                    color: theme.background
+                    visible: qrow.swipe.position !== 0 || qrow.lifted
+                }
                 Rectangle { anchors.fill: parent; color: theme.text; opacity: qrow.pressed ? 0.08 : 0 }
             }
             onClicked: queue.jump(index)

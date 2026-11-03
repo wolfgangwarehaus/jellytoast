@@ -16,7 +16,7 @@ Item {
     component Heading: Label {
         Layout.fillWidth: true
         Layout.topMargin: 18
-        leftPadding: 16
+        leftPadding: 24
         color: theme.textDim
         font.pixelSize: 12
         font.weight: Font.DemiBold
@@ -78,7 +78,7 @@ Item {
             Heading { text: qsTr("ACCOUNT") }
             Label {
                 Layout.fillWidth: true
-                leftPadding: 20; rightPadding: 20; topPadding: 8
+                leftPadding: 24; rightPadding: 24; topPadding: 8
                 text: session.username
                 color: theme.text
                 font.pixelSize: 17
@@ -87,7 +87,7 @@ Item {
             }
             Label {
                 Layout.fillWidth: true
-                leftPadding: 20; rightPadding: 20; bottomPadding: 12
+                leftPadding: 24; rightPadding: 24; bottomPadding: 12
                 text: (session.serverKind === "subsonic" ? "Navidrome / Subsonic" : "Jellyfin") + " · " + session.serverUrl
                 color: theme.textDim
                 font.pixelSize: 13
@@ -95,7 +95,7 @@ Item {
             }
             PillButton {
                 objectName: "signOutButton"
-                Layout.leftMargin: 16
+                Layout.leftMargin: 24
                 text: qsTr("Sign out")
                 onClicked: confirm.open()
             }
@@ -103,7 +103,7 @@ Item {
             Heading { text: qsTr("LOOK") }
             ChoiceRow {
                 objectName: "themeRow"
-                Layout.leftMargin: 12; Layout.rightMargin: 12
+                Layout.leftMargin: 8; Layout.rightMargin: 8
                 label: qsTr("Theme")
                 options: prefs.themes
                 value: prefs.theme
@@ -112,7 +112,7 @@ Item {
             ChoiceRow {
                 objectName: "themeModeRow"
                 visible: prefs.themeHasModes
-                Layout.leftMargin: 12; Layout.rightMargin: 12
+                Layout.leftMargin: 8; Layout.rightMargin: 8
                 label: qsTr("Appearance")
                 options: prefs.themeModes
                 value: prefs.themeMode
@@ -124,7 +124,7 @@ Item {
                 objectName: "accentRow"
                 visible: prefs.theme === "jellytoast"
                 Layout.fillWidth: true
-                Layout.leftMargin: 20; Layout.rightMargin: 20
+                Layout.leftMargin: 24; Layout.rightMargin: 24
                 Layout.topMargin: 6; Layout.bottomMargin: 6
                 Label {
                     Layout.fillWidth: true
@@ -160,7 +160,7 @@ Item {
             SwitchRow {
                 objectName: "frostedSwitch"
                 Layout.fillWidth: true
-                Layout.leftMargin: 12; Layout.rightMargin: 12
+                Layout.leftMargin: 8; Layout.rightMargin: 8
                 text: qsTr("Frosted glass")
                 checked: prefs.frosted
                 onToggled: prefs.setFrosted(checked)
@@ -169,7 +169,7 @@ Item {
             Heading { text: qsTr("PLAYBACK") }
             ChoiceRow {
                 objectName: "qualityRow"
-                Layout.leftMargin: 12; Layout.rightMargin: 12
+                Layout.leftMargin: 8; Layout.rightMargin: 8
                 label: qsTr("Streaming quality")
                 options: prefs.qualities
                 value: prefs.quality
@@ -177,7 +177,7 @@ Item {
             }
             ChoiceRow {
                 objectName: "downloadQualityRow"
-                Layout.leftMargin: 12; Layout.rightMargin: 12
+                Layout.leftMargin: 8; Layout.rightMargin: 8
                 label: qsTr("Download quality")
                 options: prefs.qualities
                 value: prefs.downloadQuality
@@ -185,7 +185,7 @@ Item {
             }
             ChoiceRow {
                 objectName: "normalizationRow"
-                Layout.leftMargin: 12; Layout.rightMargin: 12
+                Layout.leftMargin: 8; Layout.rightMargin: 8
                 label: qsTr("Normalization")
                 options: prefs.normalizations
                 value: prefs.normalization
@@ -194,14 +194,14 @@ Item {
             SwitchRow {
                 objectName: "mediaKeysSwitch"
                 Layout.fillWidth: true
-                Layout.leftMargin: 12; Layout.rightMargin: 12
+                Layout.leftMargin: 8; Layout.rightMargin: 8
                 text: qsTr("Lock screen & media controls")
                 checked: prefs.mediaKeys
                 onToggled: prefs.setMediaKeys(checked)
             }
             Label {
                 Layout.fillWidth: true
-                leftPadding: 20; rightPadding: 20
+                leftPadding: 24; rightPadding: 24
                 text: qsTr("Takes effect next time jellytoast starts.")
                 color: theme.textDim
                 font.pixelSize: 12
@@ -210,7 +210,7 @@ Item {
             Heading { text: qsTr("SOUND") }
             Label {
                 Layout.fillWidth: true
-                leftPadding: 20; rightPadding: 20
+                leftPadding: 24; rightPadding: 24
                 visible: prefs.bitPerfect
                 wrapMode: Text.WordWrap
                 text: qsTr("Bit-perfect playback is on, so the equalizer and crossfade are off.")
@@ -220,7 +220,7 @@ Item {
             SwitchRow {
                 objectName: "eqSwitch"
                 Layout.fillWidth: true
-                Layout.leftMargin: 12; Layout.rightMargin: 12
+                Layout.leftMargin: 8; Layout.rightMargin: 8
                 enabled: !prefs.bitPerfect
                 text: qsTr("Equalizer")
                 checked: prefs.eqEnabled
@@ -229,7 +229,7 @@ Item {
             ChoiceRow {
                 objectName: "eqPresetRow"
                 visible: prefs.eqEnabled
-                Layout.leftMargin: 12; Layout.rightMargin: 12
+                Layout.leftMargin: 8; Layout.rightMargin: 8
                 label: qsTr("Preset")
                 options: prefs.eqPresets.map(n => ({ label: n === "Custom" ? qsTr("Custom") : n, value: n }))
                 value: prefs.eqPreset
@@ -274,7 +274,7 @@ Item {
             SwitchRow {
                 objectName: "crossfadeSwitch"
                 Layout.fillWidth: true
-                Layout.leftMargin: 12; Layout.rightMargin: 12
+                Layout.leftMargin: 8; Layout.rightMargin: 8
                 enabled: !prefs.bitPerfect
                 text: qsTr("Crossfade between songs")
                 checked: prefs.crossfade
@@ -282,7 +282,7 @@ Item {
             }
             RowLayout {
                 Layout.fillWidth: true
-                Layout.leftMargin: 20; Layout.rightMargin: 20
+                Layout.leftMargin: 24; Layout.rightMargin: 24
                 visible: prefs.crossfade
                 AppSlider {
                     id: xf
@@ -302,7 +302,7 @@ Item {
             }
             ChoiceRow {
                 objectName: "lyricsSizeRow"
-                Layout.leftMargin: 12; Layout.rightMargin: 12
+                Layout.leftMargin: 8; Layout.rightMargin: 8
                 label: qsTr("Lyrics size")
                 options: prefs.lyricsSizes
                 value: prefs.lyricsSize
@@ -313,7 +313,7 @@ Item {
             // Last.fm
             RowLayout {
                 Layout.fillWidth: true
-                Layout.leftMargin: 20; Layout.rightMargin: 12
+                Layout.leftMargin: 24; Layout.rightMargin: 12
                 Layout.preferredHeight: 52
                 ColumnLayout {
                     Layout.fillWidth: true
@@ -340,7 +340,7 @@ Item {
             // ListenBrainz
             RowLayout {
                 Layout.fillWidth: true
-                Layout.leftMargin: 20; Layout.rightMargin: 12
+                Layout.leftMargin: 24; Layout.rightMargin: 12
                 Layout.preferredHeight: 52
                 ColumnLayout {
                     Layout.fillWidth: true
@@ -366,7 +366,7 @@ Item {
             }
             RowLayout {
                 Layout.fillWidth: true
-                Layout.leftMargin: 20; Layout.rightMargin: 12
+                Layout.leftMargin: 24; Layout.rightMargin: 12
                 visible: !scrobbling.listenbrainzConnected
                 spacing: 8
                 TextField {
@@ -395,7 +395,7 @@ Item {
             SwitchRow {
                 objectName: "offlineModeSwitch"
                 Layout.fillWidth: true
-                Layout.leftMargin: 12; Layout.rightMargin: 12
+                Layout.leftMargin: 8; Layout.rightMargin: 8
                 text: qsTr("Offline mode — only play downloads")
                 checked: prefs.offlineMode
                 onToggled: prefs.setOfflineMode(checked)
@@ -403,7 +403,7 @@ Item {
             SwitchRow {
                 objectName: "wifiOnlySwitch"
                 Layout.fillWidth: true
-                Layout.leftMargin: 12; Layout.rightMargin: 12
+                Layout.leftMargin: 8; Layout.rightMargin: 8
                 text: qsTr("Download on Wi-Fi only")
                 checked: prefs.wifiOnly
                 onToggled: prefs.setWifiOnly(checked)
@@ -416,7 +416,7 @@ Item {
                     required property var modelData
                     objectName: "cast_" + modelData.key
                     Layout.fillWidth: true
-                    Layout.leftMargin: 12; Layout.rightMargin: 12
+                    Layout.leftMargin: 8; Layout.rightMargin: 8
                     text: modelData.label
                     checked: modelData.on
                     onToggled: prefs.setCastType(modelData.key, checked)
@@ -426,7 +426,7 @@ Item {
             Heading { text: qsTr("INTERFACE") }
             Label {
                 Layout.fillWidth: true
-                leftPadding: 20; rightPadding: 20; topPadding: 6
+                leftPadding: 24; rightPadding: 24; topPadding: 6
                 wrapMode: Text.WordWrap
                 text: qsTr("This is the phone interface. You can go back to the classic one any time.")
                 color: theme.textDim
@@ -434,7 +434,7 @@ Item {
             }
             PillButton {
                 objectName: "classicUiButton"
-                Layout.leftMargin: 16
+                Layout.leftMargin: 24
                 Layout.topMargin: 8
                 text: qsTr("Use the classic interface")
                 onClicked: {
@@ -446,8 +446,9 @@ Item {
             Heading { text: qsTr("ABOUT") }
             Label {
                 Layout.fillWidth: true
-                leftPadding: 20; topPadding: 8
+                leftPadding: 24; rightPadding: 24; topPadding: 8
                 text: "jellytoast " + prefs.version()
+                wrapMode: Text.Wrap
                 color: theme.textDim
                 font.pixelSize: 14
             }

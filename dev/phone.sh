@@ -12,6 +12,8 @@
 #   dev/phone.sh log [N]                         app log (+ the dev unit's stderr)
 #   dev/phone.sh shot [PATH]                     screenshot → PATH (prints it)
 #   dev/phone.sh ctl ping|eval EXPR|exec CODE    test bridge (needs --bridge)
+#   dev/phone.sh q tap|tree|state|shot|js|…      dev/qctl.py against the phone's
+#                                                bridge (needs --bridge)
 #   dev/phone.sh undeploy                        back to the AUR build
 #   dev/phone.sh ssh [CMD…]                      a shell on the phone
 #
@@ -71,7 +73,7 @@ deploy)
     on_phone "mkdir -p $REMOTE_DIR/src $REMOTE_DIR/dev .local/share/applications"
     rsync -az --delete --exclude __pycache__ --exclude '*.pyc' --exclude DEV_BUILD \
         -e "ssh ${SSH_OPTS[*]}" "$ROOT/jellytoast" "$ROOT/pyproject.toml" "$PHONE:$REMOTE_DIR/src/"
-    rsync -az -e "ssh ${SSH_OPTS[*]}" "$ROOT/dev/jt_ctl.py" "$PHONE:$REMOTE_DIR/dev/"
+    rsync -az -e "ssh ${SSH_OPTS[*]}" "$ROOT/dev/jt_ctl.py" "$ROOT/dev/qctl.py" "$PHONE:$REMOTE_DIR/dev/"
     build="$(git -C "$ROOT" describe --always --dirty --abbrev=7) $(date '+%Y-%m-%d %H:%M')"
     on_phone "printf '%s\n' '$build' > $REMOTE_DIR/src/jellytoast/DEV_BUILD"
     # The launcher: same id as the packaged one, so the home screen's icon
@@ -121,6 +123,13 @@ ctl)
     args=""
     for a in "$@"; do args="$args $(printf '%q' "$a")"; done
     on_phone "PYTHONPATH=$REMOTE_DIR/src python3 $REMOTE_DIR/dev/jt_ctl.py$args"
+    ;;
+q)
+    # qctl.py aims at the rig's socket; point it at the app's own instead
+    # (default bridge name, under /tmp: JT_RIG_DIR=/ makes its TMPDIR /tmp).
+    args=""
+    for a in "$@"; do args="$args $(printf '%q' "$a")"; done
+    on_phone "JT_RIG_DIR=/ JT_BRIDGE_SOCKET=jellytoast-test-bridge-\$USER PYTHONPATH=$REMOTE_DIR/src python3 $REMOTE_DIR/dev/qctl.py$args"
     ;;
 undeploy)
     on_phone "rm -f .local/share/applications/$APP_ID.desktop; kbuildsycoca6 >/dev/null 2>&1 || true"

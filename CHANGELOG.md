@@ -18,6 +18,10 @@ developer-facing history lives in [`docs/CHANGELOG.md`](docs/CHANGELOG.md).
 - **Tapping the icon brings jellytoast back.** On a phone, opening it again
   from the home screen now shows the app that's already running, straight
   away, instead of spinning and dropping you back on the home screen.
+- **Phone interface polish.** The sleep timer is a proper sheet like the
+  other menus, the queue sits on the album's colours, playlist names keep
+  their endings, artists are round in search, Settings lines up, and a dark
+  band above menus and the mini player is gone.
 
 ## [0.2.5] — 2026-10-28
 

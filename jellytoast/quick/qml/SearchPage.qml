@@ -83,6 +83,7 @@ Item {
             bottomPadding: 4
             text: section
             color: theme.textDim
+            font.capitalization: Font.AllUppercase  // like every other heading
             font.pixelSize: 12
             font.weight: Font.DemiBold
             font.letterSpacing: 1
@@ -99,6 +100,7 @@ Item {
             width: list.width
             trackId: kind === "track" ? itemId : ""
             coverGlyph: kind === "artist" ? "user" : "music_note"
+            roundCover: kind === "artist"
             title: name
             showCover: true
             swipe.enabled: kind === "track"

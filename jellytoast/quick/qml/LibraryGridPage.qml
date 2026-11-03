@@ -30,6 +30,9 @@ Item {
     readonly property bool listMode: kind === "artist" ? prefs.artistViewMode === "list"
                                                        : prefs.viewMode === "list" && lib.sortable
     readonly property bool round: kind === "artist"
+    // Playlists often share a prefix ("Weekly-Exploration-2026-…"): keep
+    // both ends so they stay told apart.
+    readonly property int titleElide: kind === "playlist" ? Text.ElideMiddle : Text.ElideRight
     readonly property bool scrubbable: (kind === "album" || kind === "artist") && session.signedIn
     signal openItem(string kind, var item)
 
@@ -131,7 +134,7 @@ Item {
                     horizontalAlignment: page.round ? Text.AlignHCenter : Text.AlignLeft
                     text: cell.name
                     color: theme.text
-                    elide: Text.ElideRight
+                    elide: page.titleElide
                     font.pixelSize: 14
                     font.weight: Font.Medium
                 }
@@ -277,7 +280,7 @@ Item {
                         width: parent.width
                         text: lrow.name
                         color: theme.text
-                        elide: Text.ElideRight
+                        elide: page.titleElide
                         font.pixelSize: 15
                         font.weight: Font.Medium
                     }

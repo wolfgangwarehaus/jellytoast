@@ -85,6 +85,10 @@ Rectangle {
                 iconName: "chevron_down"
                 onClicked: np.close()
             }
+            // Balances the cast button so the heading sits mid-screen.
+            Item {
+                Layout.preferredWidth: castButton.visible ? castButton.width : 0
+            }
             ColumnLayout {
                 Layout.fillWidth: true
                 spacing: 0
@@ -107,6 +111,7 @@ Rectangle {
                 }
             }
             IconButton {
+                id: castButton
                 objectName: "castButton"
                 iconName: "cast"
                 tint: cast.active !== "" ? theme.accent : theme.text
@@ -395,7 +400,7 @@ Rectangle {
                 implicitWidth: sleepRow.implicitWidth + 24
                 implicitHeight: 48
                 readonly property bool on: player.sleepLeft >= 0
-                onClicked: sleepMenu.popup(sleepBtn, (width - sleepMenu.width) / 2, -sleepMenu.height)
+                onClicked: sleepSheet.open()
                 background: Rectangle { radius: 24; color: theme.text; opacity: sleepBtn.pressed ? 0.1 : 0 }
                 contentItem: Item {
                     Row {
@@ -415,29 +420,6 @@ Rectangle {
                         }
                     }
                 }
-                Menu {
-                    id: sleepMenu
-                    objectName: "sleepMenu"
-                    Repeater {
-                        model: [15, 30, 45, 60, 90]
-                        MenuItem {
-                            required property int modelData
-                            text: modelData < 60 ? qsTr("%1 minutes").arg(modelData)
-                                 : modelData === 60 ? qsTr("1 hour") : qsTr("1 h 30 min")
-                            onTriggered: player.startSleep(modelData)
-                        }
-                    }
-                    MenuItem {
-                        text: qsTr("After this song")
-                        onTriggered: player.startSleep(0)
-                    }
-                    MenuItem {
-                        text: qsTr("Turn off timer")
-                        visible: sleepBtn.on
-                        height: visible ? implicitHeight : 0
-                        onTriggered: player.cancelSleep()
-                    }
-                }
             }
             Item { Layout.fillWidth: true }
             IconButton {
@@ -453,6 +435,34 @@ Rectangle {
             Layout.row: 9
             Layout.column: 1
             Layout.fillHeight: true
+        }
+    }
+
+    // 🌙 — stop playing after a while, like the other menus here: a sheet.
+    Sheet {
+        id: sleepSheet
+        objectName: "sleepMenu"
+        SheetHeading { text: qsTr("SLEEP TIMER") }
+        Repeater {
+            model: [15, 30, 45, 60, 90]
+            SheetRow {
+                required property int modelData
+                iconName: "moon"
+                text: modelData < 60 ? qsTr("%1 minutes").arg(modelData)
+                     : modelData === 60 ? qsTr("1 hour") : qsTr("1 h 30 min")
+                onClicked: { sleepSheet.close(); player.startSleep(modelData) }
+            }
+        }
+        SheetRow {
+            iconName: "music_note"
+            text: qsTr("After this song")
+            onClicked: { sleepSheet.close(); player.startSleep(0) }
+        }
+        SheetRow {
+            iconName: "stop"
+            text: qsTr("Turn off timer")
+            visible: sleepBtn.on
+            onClicked: { sleepSheet.close(); player.cancelSleep() }
         }
     }
 

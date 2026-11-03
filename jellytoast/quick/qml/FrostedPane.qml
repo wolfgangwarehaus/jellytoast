@@ -64,6 +64,9 @@ Item {
         blur: 1.0
         blurMax: 48
         blurMultiplier: 1.5
+        // No padding: by default the blur spills blurMax × (1 + multiplier)
+        // (120 px) past the pane as a hard-edged band.
+        autoPaddingEnabled: false
         saturation: 0.15
         maskEnabled: pane.radius > 0
         maskSource: mask
