@@ -1,4 +1,5 @@
-// Bottom mini player. Tap (or swipe up) to open Now Playing.
+// Bottom mini player. Tap (or swipe up) to open Now Playing. While casting
+// it says where, and its cast button opens the card with Stop casting.
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
@@ -7,6 +8,8 @@ Rectangle {
     id: mini
     objectName: "miniPlayer"
     signal open()
+    signal openCast()
+    readonly property bool casting: cast.active !== ""
     // What the bar floats over (the page stack): shows through, frosted.
     property Item frostBehind: null
 
@@ -70,13 +73,33 @@ Rectangle {
                 font.pixelSize: 15
                 font.weight: Font.Medium
             }
-            Label {
+            RowLayout {
                 Layout.fillWidth: true
-                text: player.artist
-                color: theme.textDim
-                elide: Text.ElideRight
-                font.pixelSize: 13
+                spacing: 4
+                Icon {
+                    visible: mini.casting
+                    name: cast.activeKind === "group" ? "speaker_group"
+                          : cast.activeKind === "display" ? "tv" : "speaker"
+                    tint: theme.accent
+                    size: 14
+                }
+                Label {
+                    objectName: "miniSubtitle"
+                    Layout.fillWidth: true
+                    text: mini.casting ? cast.active : player.artist
+                    color: mini.casting ? theme.accent : theme.textDim
+                    elide: Text.ElideRight
+                    font.pixelSize: 13
+                }
             }
+        }
+        IconButton {
+            objectName: "miniCast"
+            visible: mini.casting
+            iconName: "cast"
+            iconSize: 24
+            tint: theme.accent
+            onClicked: mini.openCast()
         }
         IconButton {
             iconName: player.playing ? "pause" : "play"

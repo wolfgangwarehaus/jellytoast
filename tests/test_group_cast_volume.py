@@ -88,18 +88,49 @@ def test_prepare_is_idempotent_within_a_session(mgr, monkeypatch):
     assert sets == []
 
 
-def test_prepare_noop_without_a_saved_balance(mgr, monkeypatch):
+def test_prepare_without_a_saved_balance_still_snapshots(mgr, monkeypatch):
+    # Nothing is set before the media, but the members' levels are read so
+    # stop_cast can hand them back after the sliders moved them.
     sets = []
     mgr.chromecast_devices = [_member("tv", 0.80, sets)]
     monkeypatch.setattr(
         "jellytoast.settings.get_settings",
-        lambda: SimpleNamespace(cast_member_volumes={}, cast_home_volumes={}),
+        lambda: SimpleNamespace(cast_member_volumes={}, cast_home_volumes={"kit": 30}),
     )
+    pending = []
+    monkeypatch.setattr(mgr, "group_members_async", lambda dev, cb: pending.append(cb))
+    remembered = []
+    monkeypatch.setattr(mgr, "_remember_home_volumes", remembered.append)
 
     mgr.prepare_group_volume_before_media(_group("g1"))
+    assert mgr._pre_cast_member_volumes == []  # claimed for this session
+    pending[0]([
+        {"uuid": "tv", "name": "TV", "volume": 80, "available": True},
+        {"uuid": "kit", "name": "Kitchen", "volume": 10, "available": True},  # ledger wins
+        {"uuid": "gone", "name": "Off", "volume": 50, "available": False},
+    ])
+
+    assert mgr._pre_cast_member_volumes == [
+        {"uuid": "tv", "volume": 80},
+        {"uuid": "kit", "volume": 30},
+    ]
+    assert remembered == [{"tv": 80, "kit": 30}]
+    assert sets == []
+
+
+def test_member_snapshot_landing_after_the_cast_ended_is_dropped(mgr, monkeypatch):
+    monkeypatch.setattr(
+        "jellytoast.settings.get_settings",
+        lambda: SimpleNamespace(cast_member_volumes={}, cast_home_volumes={}),
+    )
+    pending = []
+    monkeypatch.setattr(mgr, "group_members_async", lambda dev, cb: pending.append(cb))
+    mgr.prepare_group_volume_before_media(_group("g1"))
+    mgr._pre_cast_member_volumes = None  # stop_cast's restore took it
+
+    pending[0]([{"uuid": "tv", "name": "TV", "volume": 80, "available": True}])
 
     assert mgr._pre_cast_member_volumes is None
-    assert sets == []
 
 
 def test_group_initial_volume_no_force_returns_aggregate(mgr, monkeypatch):

@@ -18,6 +18,15 @@ developer-facing history lives in [`docs/CHANGELOG.md`](docs/CHANGELOG.md).
 - **Tapping the icon brings jellytoast back.** On a phone, opening it again
   from the home screen now shows the app that's already running, straight
   away, instead of spinning and dropping you back on the home screen.
+- **Easier to stop casting on phones.** The mini player shows which speaker
+  you're casting to, with a cast button, and the "Playing on…" pill in Now
+  Playing has an × that stops it in one tap. The speaker list closes with
+  an × now, so scrolling it can't close it by accident.
+- **Lock screen shows your last song after a restart.** On Linux it comes
+  back paused where you left off, instead of looking stopped.
+- **Group casts hand the speakers their volume back.** Stopping a cast to a
+  speaker group now puts each speaker back to its own level, even for
+  groups you haven't set a balance for.
 - **Phone interface polish.** The sleep timer is a proper sheet like the
   other menus, the queue sits on the album's colours, playlist names keep
   their endings, artists are round in search, Settings lines up, and a dark

@@ -128,7 +128,9 @@ class Cast(_CastDispatcherMixin, QObject):
     enabled = Property(bool, _enabled, notify=changed)
 
     def _on_devices(self, devices: list) -> None:
-        devices = list(devices or [])
+        # By name: discovery reports in arrival order, which changes from
+        # scan to scan, and a row moving away from under a tap lost it.
+        devices = sorted(devices or [], key=lambda d: (d.name or "").casefold())
         key = [(d.uuid or d.name, d.name) for d in devices]
         self._devices = devices
         # Discovery reports the full list repeatedly; only repaint (which
@@ -263,6 +265,10 @@ class Cast(_CastDispatcherMixin, QObject):
     def disconnect(self) -> None:
         if self.cast_manager is not None:
             self.cast_manager.stop_cast()
+            # stop_cast() only ends the session; the rest of the app (the
+            # player handing the track back to the phone, this card) hears
+            # about it from cast_stopped — as with the desktop's Disconnect.
+            self.bus.cast_stopped.emit()
 
     # ── the two Widgets-dialog hooks ──
     def _cast_failed_ui(self, dev) -> None:

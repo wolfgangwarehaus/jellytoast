@@ -136,7 +136,8 @@ Rectangle {
             Layout.columnSpan: np.landscape ? 2 : 1
             Layout.alignment: Qt.AlignHCenter
             Layout.preferredHeight: 34
-            Layout.preferredWidth: Math.min(pillIcon.width + 8 + pillText.implicitWidth + 32, parent.width)
+            Layout.preferredWidth: Math.min(pillIcon.width + 8 + pillText.implicitWidth + 16 + pillStop.width + 4,
+                                            parent.width)
             Layout.bottomMargin: 6
             focusPolicy: Qt.NoFocus
             hoverEnabled: false
@@ -160,14 +161,34 @@ Rectangle {
                 id: pillText
                 anchors.left: pillIcon.right
                 anchors.leftMargin: 8
-                anchors.right: parent.right
-                anchors.rightMargin: 16
+                anchors.right: pillStop.left
                 anchors.verticalCenter: parent.verticalCenter
                 text: qsTr("Playing on %1").arg(cast.active)
                 color: theme.accent
                 elide: Text.ElideRight
                 font.pixelSize: 13
                 font.weight: Font.DemiBold
+            }
+            // × — stop casting right here; the music comes back to the phone
+            // (paused, where it was).
+            AbstractButton {
+                id: pillStop
+                objectName: "castPillStop"
+                anchors.right: parent.right
+                anchors.rightMargin: 4
+                anchors.verticalCenter: parent.verticalCenter
+                width: 30; height: 30
+                focusPolicy: Qt.NoFocus
+                hoverEnabled: false
+                onClicked: cast.disconnect()
+                background: Rectangle {
+                    radius: width / 2
+                    color: theme.accent
+                    opacity: pillStop.pressed ? 0.3 : 0
+                }
+                contentItem: Item {
+                    Icon { anchors.centerIn: parent; name: "win_close"; tint: theme.accent; size: 14 }
+                }
             }
         }
 
@@ -274,7 +295,7 @@ Rectangle {
             Layout.preferredHeight: 18
             horizontalAlignment: Text.AlignHCenter
             text: player.formatLine
-            color: player.formatLine.startsWith(qsTr("Casting")) ? theme.accent : theme.textDim
+            color: theme.textDim
             elide: Text.ElideRight
             font.pixelSize: 12
         }

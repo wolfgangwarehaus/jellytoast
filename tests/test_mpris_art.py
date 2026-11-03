@@ -80,3 +80,24 @@ class TestArtCache:
         left = sorted(f.name for f in tmp_path.glob("*.png"))
         assert len(left) == _mpris._ART_KEEP
         assert left[0] == f"{5:03d}.png"  # the 5 oldest went
+
+
+class TestRestoredSession:
+    def test_restored_track_reads_paused_where_it_left_off(self, qapp, player, monkeypatch):
+        # Last session's track comes back paused: the lock screen should
+        # offer it (Paused at its position), not read Stopped at 0:00.
+        p, sent = player
+        p._position = 0
+        svc = _mpris.MprisService.__new__(_mpris.MprisService)
+        svc._player = p
+        svc._art_item = ""
+        monkeypatch.setattr(svc, "_schedule", lambda fn: fn(), raising=False)
+        monkeypatch.setattr(svc, "_publish_art", lambda np: None, raising=False)
+        monkeypatch.setattr(_mpris, "_cached_art_path", lambda np: None)
+        np = _np()
+        np.position = 211_000
+        svc._on_restored(np)
+        assert sent[-1] == {"PlaybackStatus": "Paused"}
+        assert not any(d.get("PlaybackStatus") == "Playing" for d in sent)
+        assert sent[0]["Metadata"]["xesam:title"].value == "Song"
+        assert p._position == 211_000_000

@@ -814,6 +814,7 @@ class _ChromecastMixin:
         group_uuid = getattr(group_dev, "uuid", "")
         saved = get_settings().cast_member_volumes.get(group_uuid, {}) if group_uuid else {}
         if not saved:
+            self._snapshot_group_members_async(group_dev)
             return
         def _preset(uuid, level) -> Optional[Dict]:
             dev = next((d for d in self.chromecast_devices if d.uuid == uuid), None)
@@ -849,6 +850,32 @@ class _ChromecastMixin:
         ]
         self._pre_cast_member_volumes = snap
         self._remember_home_volumes({m["uuid"]: m["volume"] for m in snap})
+
+    def _snapshot_group_members_async(self, group_dev: CastDevice) -> None:
+        """No saved balance for this group: nothing is set before the
+        media, but the members' levels still have to come back on stop —
+        the master or a member slider moves them during the cast. Read
+        them in the background (member discovery is slow) into this
+        session's snapshot. The list is claimed now so a re-cast in the
+        same session doesn't snapshot again, and filled only if the
+        session is still on when the read lands."""
+        snap: List[Dict] = []
+        self._pre_cast_member_volumes = snap
+
+        def _got(members: List[Dict]) -> None:
+            if self._pre_cast_member_volumes is not snap:
+                return  # the cast ended (or restarted) meanwhile
+            from jellytoast.settings import get_settings
+
+            home = get_settings().cast_home_volumes
+            snap.extend(
+                {"uuid": m["uuid"], "volume": home.get(m["uuid"], m["volume"])}
+                for m in members
+                if m.get("available")
+            )
+            self._remember_home_volumes({m["uuid"]: m["volume"] for m in snap})
+
+        self.group_members_async(group_dev, _got)
 
     def group_members_async(self, group_dev: CastDevice, on_result: Callable):
         """Resolve a Chromecast group's member speakers + their current

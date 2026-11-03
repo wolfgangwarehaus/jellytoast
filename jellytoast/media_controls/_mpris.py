@@ -437,6 +437,7 @@ class MprisService(QObject):
 
     def _connect_signals(self):
         self.bus.playback_started.connect(self._on_started)
+        self.bus.playback_restored.connect(self._on_restored)
         self.bus.playback_paused.connect(lambda: self._update_status("Paused"))
         self.bus.playback_resumed.connect(lambda: self._update_status("Playing"))
         self.bus.playback_stopped.connect(lambda: self._update_status("Stopped"))
@@ -459,15 +460,28 @@ class MprisService(QObject):
 
     @Slot(object)
     def _on_started(self, np: NowPlaying):
+        self._announce(np, "Playing")
+
+    def _announce(self, np: NowPlaying, status: str) -> None:
         if not self._player:
             return
         self._art_item = np.item_id
         art = _cached_art_path(np)
         art_url = art.as_uri() if art is not None and art.exists() else ""
         self._schedule(lambda: self._player.update_metadata(np, art_url))
-        self._schedule(lambda: self._player.update_status("Playing"))
+        self._schedule(lambda: self._player.update_status(status))
         if not art_url:
             self._publish_art(np)
+
+    @Slot(object)
+    def _on_restored(self, np: NowPlaying):
+        """Last session's track, loaded paused: show it as Paused where it
+        left off, so the lock screen / media widget offers it straight away
+        (it read Stopped at 0:00 until the first play)."""
+        self._announce(np, "Paused")
+        pos = int(getattr(np, "position", 0) or 0)
+        if pos and self._player:
+            self._schedule(lambda: self._player.update_position(pos))
 
     def _publish_art(self, np: NowPlaying) -> None:
         """Load the track's cover through the app's image pipeline (memory /

@@ -129,10 +129,10 @@ class PlayerController(QObject):
 
     def _format_line(self) -> str:
         """Same reading as the desktop bar's info line, condensed:
-        "Streaming · FLAC · 1411 kbps", "Local playback · …",
-        "Casting to Kitchen"."""
+        "Streaming · FLAC · 1411 kbps", "Local playback · …". Empty while
+        casting: the "Playing on …" pill already says where."""
         if self._cast_to:
-            return self.tr("Casting to {0}").format(self._cast_to)
+            return ""
         np = get_now_playing()
         if not np.item_id or not (self._codec or self._kbps):
             return ""

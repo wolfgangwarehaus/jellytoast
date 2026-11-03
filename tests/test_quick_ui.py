@@ -507,10 +507,9 @@ class _FakeGroupCastManager(_FakeCastManager):
         on_done(True)
 
     def stop_cast(self):
-        from jellytoast.player_state import PlayerBus
-
+        # Like the real one: ends the session, announces nothing (callers
+        # emit cast_stopped).
         self.active_cast = None
-        PlayerBus.get().cast_stopped.emit()
 
     def group_members_async(self, dev, on_result):
         on_result(
@@ -576,6 +575,51 @@ def test_cast_card_volume_group_members_and_stop(quick, monkeypatch):
         spy.close()
 
 
+def _shown(quick, name):
+    item = quick.find(name, visible=False)
+    return item is not None and item.isVisible()
+
+
+def test_stopping_a_cast_from_the_mini_player_or_the_pill(quick, monkeypatch):
+    """Casting shows on the mini player (where, plus a cast button to the
+    card), and the Now Playing pill's × stops it in one tap."""
+    from jellytoast.player_state import get_now_playing
+    from jellytoast.quick.cast import Cast
+    from jellytoast.settings import get_settings
+
+    monkeypatch.setattr(get_settings(), "cast_chromecast_enabled", True, raising=False)
+    cm = _FakeGroupCastManager()
+    cast = Cast(cm, quick.engine)
+    quick.engine.rootContext().setContextProperty("cast", cast)
+    quick.fake_now_playing("Song", "Someone", position_ms=30_000)
+    get_now_playing().stream_url = "http://server/stream"
+    quick.wait_for("miniPlayer")
+    assert not _shown(quick, "miniCast")
+    quick.tap("text:Someone")
+    quick.wait_until(lambda: quick.state()["nowPlaying"])
+    quick.tap("castButton")
+    quick.wait_for("text:Home group")
+    quick.tap("text:Home group")
+    quick.wait_until(lambda: cast.property("active") == "Home group")
+    quick.tap("castClose")  # the sheet: an ×, not a swipe (its list scrolls)
+    quick.wait_until(lambda: not _shown(quick, "castCard"))
+    quick.key("esc")  # Now Playing
+    quick.wait_until(lambda: not quick.state()["nowPlaying"])
+    # The mini player says where, and its cast button opens the card.
+    assert quick.prop("miniSubtitle", "text") == "Home group"
+    quick.tap("miniCast")
+    quick.wait_for("castStop")
+    quick.tap("castClose")
+    quick.wait_until(lambda: not _shown(quick, "castCard"))
+    # Now Playing's pill: × stops casting.
+    quick.tap("miniPlayer")
+    quick.wait_until(lambda: quick.state()["nowPlaying"])
+    quick.tap("castPillStop")
+    quick.wait_until(lambda: cast.property("active") == "")
+    assert not _shown(quick, "castPill")
+    assert quick.prop("miniSubtitle", "text") == "Someone"
+
+
 def test_cast_scan_waits_for_the_core(quick):
     """The sheet opened before the core was up: the scan runs once the
     cast manager attaches, instead of never (only "This phone" listed)."""
@@ -586,8 +630,8 @@ def test_cast_scan_waits_for_the_core(quick):
     assert cast.property("scanning") and cast.property("devices") == []
     cm = _FakeCastManager()
     cast.attach(cm)
-    assert [d["name"] for d in cast.property("devices")] == ["Living Room TV", "Kitchen"]
-    assert [d["kind"] for d in cast.property("devices")] == ["display", "speaker"]
+    assert [d["name"] for d in cast.property("devices")] == ["Kitchen", "Living Room TV"]
+    assert [d["kind"] for d in cast.property("devices")] == ["speaker", "display"]
     cast.stopScan()
 
 
@@ -723,7 +767,9 @@ def test_now_playing_format_line(quick):
     quick.wait_until(lambda: "FLAC · 1411 kbps" in (quick.prop("formatLine", "text") or ""))
     assert quick.prop("formatLine", "text").startswith("Streaming")
     bus.cast_started.emit("Kitchen")
-    quick.wait_until(lambda: quick.prop("formatLine", "text") == "Casting to Kitchen")
+    # The "Playing on Kitchen" pill says where; the line doesn't repeat it.
+    quick.wait_until(lambda: quick.prop("castPill", "visible"))
+    assert quick.prop("formatLine", "text") == ""
     bus.cast_stopped.emit()
     quick.wait_until(lambda: "FLAC" in quick.prop("formatLine", "text"))
 
@@ -1267,3 +1313,19 @@ def test_albums_that_fail_to_load_retry(quick, monkeypatch):
     quick.tap("retryButton")
     quick.wait_until(lambda: albums.property("count") > 0)
     assert not albums.property("error")
+
+
+def test_cast_devices_keep_their_order_between_scans(quick):
+    # Discovery reports in arrival order; the sheet lists by name so a row
+    # never moves from under a tap when a rescan comes back reshuffled.
+    from types import SimpleNamespace
+
+    from jellytoast.quick.cast import Cast
+
+    cast = Cast(None, quick.engine)
+    dev = lambda n: SimpleNamespace(uuid=n.lower(), name=n, device_type=None, cast_type="audio")  # noqa: E731
+    cast._on_devices([dev("Sunroom"), dev("bedroom"), dev("Kitchen")])
+    first = [d["name"] for d in cast.property("devices")]
+    cast._on_devices([dev("Kitchen"), dev("Sunroom"), dev("bedroom")])
+    assert first == ["bedroom", "Kitchen", "Sunroom"]
+    assert [d["name"] for d in cast.property("devices")] == first

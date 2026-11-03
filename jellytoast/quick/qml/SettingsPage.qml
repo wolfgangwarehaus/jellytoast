@@ -318,7 +318,7 @@ Item {
                 ColumnLayout {
                     Layout.fillWidth: true
                     spacing: 1
-                    Label { text: "Last.fm"; color: theme.text; font.pixelSize: 16 }
+                    Label { Layout.fillWidth: true; text: "Last.fm"; color: theme.text; font.pixelSize: 16 }
                     Label {
                         Layout.fillWidth: true
                         visible: text !== ""
@@ -345,7 +345,7 @@ Item {
                 ColumnLayout {
                     Layout.fillWidth: true
                     spacing: 1
-                    Label { text: "ListenBrainz"; color: theme.text; font.pixelSize: 16 }
+                    Label { Layout.fillWidth: true; text: "ListenBrainz"; color: theme.text; font.pixelSize: 16 }
                     Label {
                         Layout.fillWidth: true
                         visible: text !== ""

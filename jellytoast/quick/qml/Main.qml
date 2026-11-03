@@ -297,6 +297,7 @@ ApplicationWindow {
             anchors.bottom: parent.bottom
             frostBehind: stack
             onOpen: nowPlaying.open()
+            onOpenCast: castSheet.open()
         }
     }
 

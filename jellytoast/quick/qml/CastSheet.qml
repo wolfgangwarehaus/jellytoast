@@ -12,12 +12,24 @@ Drawer {
     parent: Overlay.overlay
     edge: Qt.BottomEdge
     width: parent ? parent.width : 400
-    // Fixed height: devices are discovered while the sheet is open, and a
+    // No swipe-to-close: the list scrolls, and a scroll back up that ran
+    // past the top closed the sheet. The ×, a tap above the sheet or Esc /
+    // Back close it. A non-interactive Drawer ignores taps outside itself,
+    // so it covers the whole window and its top `gap` is a clear strip
+    // (over the dim) that closes it.
+    interactive: false
+    height: parent ? parent.height : 800
+    // Fixed sheet height: devices are discovered while it's open, and a
     // sheet that grew with them would move rows under the finger.
-    height: parent ? Math.round(parent.height * 0.78) : 600
+    readonly property int gap: Math.round(height * 0.22)
     modal: true
     dim: true
     Overlay.modal: Rectangle { color: "#80000000" }
+    Shortcut {
+        sequences: [StandardKey.Cancel, StandardKey.Back]
+        enabled: sheet.opened
+        onActivated: sheet.close()
+    }
     onOpened: {
         if (cast.enabled)
             cast.scan()
@@ -43,6 +55,7 @@ Drawer {
     background: Item {
         FrostedPane {
             anchors.fill: parent
+            anchors.topMargin: sheet.gap
             anchors.bottomMargin: -18
             // Only while open: a sheet keeping the window's content as its
             // texture source crashed window teardown.
@@ -54,12 +67,15 @@ Drawer {
         }
     }
 
-    Rectangle {  // grab handle
+    Item {  // the clear strip above the sheet
+        objectName: "castDismiss"
+        anchors.left: parent.left
+        anchors.right: parent.right
         anchors.top: parent.top
-        anchors.topMargin: 8
-        anchors.horizontalCenter: parent.horizontalCenter
-        width: 40; height: 4; radius: 2
-        color: theme.textFaint
+        height: sheet.gap
+        // A MouseArea, not a TapHandler: it keeps the press, which would
+        // otherwise go on to Now Playing under it and close that too.
+        MouseArea { anchors.fill: parent; onClicked: sheet.close() }
     }
 
     // ── header ──
@@ -68,7 +84,7 @@ Drawer {
         anchors.left: parent.left
         anchors.right: parent.right
         anchors.top: parent.top
-        anchors.topMargin: 22
+        anchors.topMargin: sheet.gap + 12
         anchors.leftMargin: 20
         anchors.rightMargin: 8
         height: 44
@@ -89,6 +105,11 @@ Drawer {
             visible: cast.enabled && !cast.scanning
             iconName: "refresh"
             onClicked: cast.scan()
+        }
+        IconButton {
+            objectName: "castClose"
+            iconName: "win_close"
+            onClicked: sheet.close()
         }
     }
 
