@@ -42,6 +42,7 @@ def _track(album: Dict[str, Any], n: int) -> Dict[str, Any]:
         "RunTimeTicks": (150 + n * 10) * 10_000_000,
         "Artists": [album["AlbumArtist"]],
         "AlbumArtist": album["AlbumArtist"],
+        "AlbumArtists": album["AlbumArtists"],
         "Album": album["Name"],
         "AlbumId": album["Id"],
         "Type": "Audio",

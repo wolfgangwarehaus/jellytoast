@@ -146,6 +146,9 @@ ApplicationWindow {
             width: parent.width
             height: 52
             readonly property bool root: stack.depth <= 1
+            // Takes touches on the bar's empty parts, so they don't reach
+            // the rows scrolled underneath it (the buttons above still win).
+            TapHandler { gesturePolicy: TapHandler.WithinBounds }
 
             IconButton {
                 objectName: "backButton"
@@ -315,7 +318,7 @@ ApplicationWindow {
     }
     Component {
         id: albumPage
-        AlbumPage { }
+        AlbumPage { onOpenItem: (kind, item) => win.openItem(kind, item) }
     }
     Component {
         id: radioPage

@@ -41,7 +41,10 @@ Rectangle {
         color: theme.accent
     }
 
-    TapHandler { onTapped: mini.open() }
+    // WithinBounds takes the touch on press: the default only takes a
+    // passive grab, so the press also reached the page's rows behind the
+    // bar (a tap on the mini player played the song under it).
+    TapHandler { gesturePolicy: TapHandler.WithinBounds; onTapped: mini.open() }
     DragHandler {
         id: drag
         target: null

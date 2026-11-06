@@ -42,6 +42,51 @@ def test_track_tap_queues_whole_album_from_that_track(quick):
     assert len(items) == 6 and idx == 3 and ctx.source_id == "al2"
 
 
+def test_album_artist_opens_their_page_and_back_returns(quick):
+    quick.tap("text:Album 002")
+    quick.wait_for("trackList")
+    quick.wait_until(lambda: quick.prop("albumArtist", "linked"))
+    quick.tap("albumArtist")
+    quick.wait_idle()
+    s = quick.state()
+    assert s["depth"] == 3 and s["page"] == "LibraryGridPage"
+    assert s["title"] == quick.provider.albums[2]["AlbumArtist"]
+    quick.key("esc")
+    quick.wait_idle()
+    s = quick.state()
+    assert s["depth"] == 2 and s["page"] == "AlbumPage"
+    assert quick.find("text:Track 3 of Album 002") is not None
+
+
+def test_bars_do_not_pass_touches_to_the_page_behind(quick):
+    """Rows scrolled under the frosted top bar / mini player must not play
+    when the bar is touched (the mini player opens Now Playing)."""
+    quick.tap("text:Album 002")
+    quick.wait_for("text:Track 4 of Album 002")
+    quick.fake_now_playing("Song", "Someone")
+    quick.wait_for("miniPlayer")
+    quick.wait_idle()  # the album's last row ends up behind the mini player
+    spy = _Spy("queue_play_now")
+    try:
+        mini = quick.find("miniPlayer")
+        pt = quick.point(mini)
+        quick.touch_tap((pt.x() - mini.width() / 2 + 30, pt.y()))  # over the cover
+        quick.wait_until(lambda: quick.state()["nowPlaying"])
+        quick.wait_idle()
+        assert not spy.got["queue_play_now"]
+        quick.key("esc")
+        quick.wait_idle()
+        # And the top bar's empty part, with the first row scrolled under it.
+        quick.get("trackList").setProperty("contentY", -10)
+        quick.wait_idle()
+        bar = quick.find("topBar")
+        quick.touch_tap((quick.point(bar).x() - 40, quick.point(bar).y()))
+        quick.wait_idle()
+        assert not spy.got["queue_play_now"]
+    finally:
+        spy.close()
+
+
 def test_grid_pages_in_more_albums_on_scroll(quick):
     assert quick.state()["albums"]["count"] == 100
     quick.scroll_to_end("albumGrid")

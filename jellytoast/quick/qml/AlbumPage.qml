@@ -2,6 +2,7 @@
 // its tracks. Swipe a track left to queue it; long-press for the menu.
 import QtQuick
 import QtQuick.Controls
+import QtQuick.Layouts
 import Jellytoast
 
 Item {
@@ -72,15 +73,47 @@ Item {
                 font.pixelSize: 20
                 font.weight: Font.DemiBold
             }
-            Label {
+            // Artist (tap → their page; back comes back here) · year · size.
+            RowLayout {
                 width: parent.width - 32
                 anchors.horizontalCenter: parent.horizontalCenter
-                horizontalAlignment: Text.AlignHCenter
-                text: [page.kind === "album" ? page.album.artist : "", page.album.year,
-                       (tracks ? tracks.summary : "")].filter(s => s).join(" · ")
-                color: theme.textDim
-                elide: Text.ElideRight
-                font.pixelSize: 13
+                spacing: 0
+                Item { Layout.fillWidth: true }
+                AbstractButton {
+                    id: artistLink
+                    objectName: "albumArtist"
+                    readonly property bool shown: page.kind === "album" && !!page.album.artist
+                    // The id comes with the loaded tracks (an album opened
+                    // from search / Home only knows the name until then).
+                    readonly property bool linked: shown && tracks.artistId !== ""
+                    visible: shown
+                    focusPolicy: Qt.NoFocus
+                    hoverEnabled: false
+                    // A finger-sized target: padding the text doesn't show
+                    // (the negative margins take it back out of the layout).
+                    topPadding: 6; bottomPadding: 6; leftPadding: 14; rightPadding: 14
+                    Layout.leftMargin: -14; Layout.rightMargin: -14
+                    Layout.maximumWidth: parent.width + 28
+                    onClicked: if (linked) page.openItem("artist", { kind: "artist", id: tracks.artistId,
+                                                                      name: page.album.artist })
+                    contentItem: Label {
+                        text: page.album.artist || ""
+                        color: artistLink.linked ? theme.accent : theme.textDim
+                        elide: Text.ElideRight
+                        font.pixelSize: 13
+                        opacity: artistLink.pressed ? 0.6 : 1
+                    }
+                    background: null
+                }
+                Label {
+                    text: (artistLink.shown ? " · " : "")
+                          + [page.album.year, (tracks ? tracks.summary : "")].filter(s => s).join(" · ")
+                    color: theme.textDim
+                    elide: Text.ElideRight
+                    font.pixelSize: 13
+                    Layout.fillWidth: false
+                }
+                Item { Layout.fillWidth: true }
             }
             // Download · Play · Shuffle — Play centred, the icons at the edges.
             Item {

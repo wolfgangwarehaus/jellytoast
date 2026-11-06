@@ -683,6 +683,20 @@ class TracksModel(QAbstractListModel):
 
     summary = Property(str, _get_summary, notify=infoChanged)
 
+    def _get_artist_id(self) -> str:
+        """The album artist's id, read off the loaded tracks — an album opened
+        from search / Home / Now Playing only knows the artist's name."""
+        if self._kind != "album":
+            return ""
+        for it in self._items:
+            for key in ("AlbumArtists", "ArtistItems"):
+                for a in it.get(key) or []:
+                    if isinstance(a, dict) and a.get("Id"):
+                        return str(a["Id"])
+        return ""
+
+    artistId = Property(str, _get_artist_id, notify=infoChanged)
+
     def _get_kind(self) -> str:
         return self._kind
 

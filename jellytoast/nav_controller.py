@@ -204,6 +204,8 @@ class _NavMixin:
             # Phone width: the page carries the controls the bar steps out.
             self.np_page.attach_transport_bar(self.np_bar)
             self.np_page.dismiss_requested.connect(self._dismiss_now_playing)
+            # Album preview's artist name → their page; Back comes back here.
+            self.np_page.artist_browse_requested.connect(self._show_artist_page)
             # Bottom-bar left cluster (cover + title + artist + heart)
             # follows the page's preview state inversely: visible while
             # previewing (so the currently-playing track stays surfaced

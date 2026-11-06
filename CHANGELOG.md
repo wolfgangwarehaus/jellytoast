@@ -18,6 +18,12 @@ developer-facing history lives in [`docs/CHANGELOG.md`](docs/CHANGELOG.md).
 - **Tapping the icon brings jellytoast back.** On a phone, opening it again
   from the home screen now shows the app that's already running, straight
   away, instead of spinning and dropping you back on the home screen.
+- **Tap an album's artist to open them.** On the album page the artist's name
+  is a link to their page, on phones and the desktop; Back returns to the
+  album.
+- **Tapping the mini player no longer plays the song behind it.** A tap on the
+  bar, or on the empty part of the top bar, used to reach the track
+  underneath it too.
 - **Easier to stop casting on phones.** The mini player shows which speaker
   you're casting to, with a cast button, and the "Playing on…" pill in Now
   Playing has an × that stops it in one tap. The speaker list closes with

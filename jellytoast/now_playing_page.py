@@ -139,6 +139,7 @@ class NowPlayingPage(_PhonePlayerMixin, _LeftPaneMixin, _LyricsMixin, QWidget):
 
     # Emitted when the user wants to dismiss the page (back button).
     dismiss_requested = Signal()
+    artist_browse_requested = Signal(str)  # artist_id → host's _show_artist_page
     # The phone player (np_phone) took over / gave back the page — the host
     # hides the transport bar while it's up (the page has the transport).
     phone_player_changed = Signal(bool)
@@ -653,6 +654,8 @@ class NowPlayingPage(_PhonePlayerMixin, _LeftPaneMixin, _LyricsMixin, QWidget):
         self._subtitle.setFont(font(TYPE_CAPTION))
         self._subtitle.setStyleSheet(f"color: {ink_alpha(0.62)};")
         self._subtitle.setTextFormat(Qt.TextFormat.RichText)
+        # An album preview's artist is a link to their page (_artist_link).
+        self._subtitle.linkActivated.connect(self.artist_browse_requested)
         self._subtitle.setAlignment(Qt.AlignmentFlag.AlignHCenter)
         self._subtitle.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
 
@@ -2073,6 +2076,31 @@ class NowPlayingPage(_PhonePlayerMixin, _LeftPaneMixin, _LyricsMixin, QWidget):
         self._refresh_fav_cta_icon()
         self.preview_changed.emit(False)
 
+    def _artist_link(self, meta: Dict, artist: str) -> str:
+        """The subtitle text for a previewed album: the artist as a link to
+        their page when we know their id (playlists keep plain text — their
+        subtitle is a curator, not an artist)."""
+        if self._preview_kind != QueueKind.ALBUM or not artist:
+            return artist
+        artist_id = next(
+            (
+                str(a["Id"])
+                for a in (meta.get("AlbumArtists") or meta.get("ArtistItems") or [])
+                if isinstance(a, dict) and a.get("Id")
+            ),
+            "",
+        )
+        if not artist_id:
+            return artist
+        from html import escape
+
+        from jellytoast import ui_helpers as _u
+
+        return (
+            f'<a href="{escape(artist_id, quote=True)}" '
+            f'style="color:{_u.ACCENT}; text-decoration:none;">{escape(artist)}</a>'
+        )
+
     @Slot(str, object)
     def _on_preview_meta_loaded(self, item_id: str, meta: Optional[Dict]):
         # Stale callback if user has moved on to a different preview.
@@ -2097,7 +2125,7 @@ class NowPlayingPage(_PhonePlayerMixin, _LeftPaneMixin, _LyricsMixin, QWidget):
             for a in (meta.get("AlbumArtists") or [])
             if isinstance(a, dict) and a.get("Name")
         )
-        self._subtitle.setText(artist)
+        self._subtitle.setText(self._artist_link(meta, artist))
         self._set_work_line("")
         # Cover load via the standard image URL helper. Match the
         # live-mode load size + DPR-scaling so this preview shares the

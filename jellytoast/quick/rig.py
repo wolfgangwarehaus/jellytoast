@@ -248,6 +248,30 @@ class Rig:
         QTest.mouseClick(self.window, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier, p)
         pump(settle)
 
+    def touch_tap(self, target: Target, hold: int = 60, settle: int = 120) -> None:
+        """A finger tap (touch events, not the mouse's): what the phone sends.
+        Items that only take mouse input never see it, and a handler's grab
+        policy matters — a press that isn't taken also reaches what's behind."""
+        from PySide6.QtTest import QTest as _QT
+
+        self._settle()
+        p = self.point(target)
+        w = self.window
+        seq = _QT.touchEvent(w, self._touch_device())
+        seq.press(0, p, w)
+        seq.commit()
+        pump(hold)
+        seq.release(0, p, w)
+        seq.commit()
+        pump(settle)
+
+    def _touch_device(self):
+        if getattr(self, "_touch_dev", None) is None:
+            from PySide6.QtTest import QTest as _QT
+
+            self._touch_dev = _QT.createTouchDevice()
+        return self._touch_dev
+
     def long_press(self, target: Target, hold: int = 1000, settle: int = 150) -> None:
         self._settle()
         p = self.point(target)
