@@ -6,7 +6,8 @@
 # brings it back. No root on the phone needed.
 #
 #   dev/phone.sh deploy [--restart] [--bridge]   copy this tree over (+ relaunch)
-#   dev/phone.sh restart [--bridge]              stop the app, start it again
+#   dev/phone.sh restart [--bridge] [--timing]   stop the app, start it again
+#                                                (--timing: boot marks → `log`)
 #   dev/phone.sh stop                            stop it
 #   dev/phone.sh status                          what's installed / running
 #   dev/phone.sh log [N]                         app log (+ the dev unit's stderr)
@@ -46,10 +47,11 @@ stop_app() {
 }
 
 start_app() {
-    local bridge="${1:-0}" home env_args
+    local bridge="${1:-0}" timing="${2:-0}" home env_args
     home="$(remote_home)"
     env_args="PYTHONPATH=$home/$REMOTE_DIR/src"
     [ "$bridge" = 1 ] && env_args="$env_args JT_TEST_BRIDGE=1"
+    [ "$timing" = 1 ] && env_args="$env_args JT_BOOT_TIMING=1"
     # A user service, so it lives in the Plasma session (WAYLAND_DISPLAY etc.
     # come from the user manager) and its stderr — QML warnings — lands in
     # the journal for `log`.
@@ -61,11 +63,12 @@ start_app() {
 cmd="${1:-}"; shift || true
 case "$cmd" in
 deploy)
-    restart=0 bridge=0
+    restart=0 bridge=0 timing=0
     for a in "$@"; do
         case "$a" in
             --restart) restart=1 ;;
             --bridge) bridge=1; restart=1 ;;
+            --timing) timing=1; restart=1 ;;
             *) echo "unknown option $a" >&2; exit 2 ;;
         esac
     done
@@ -86,13 +89,19 @@ deploy)
     echo "deployed $build to $PHONE"
     if [ "$restart" = 1 ]; then
         stop_app
-        start_app "$bridge"
+        start_app "$bridge" "$timing"
     fi
     ;;
 restart)
-    bridge=0; [ "${1:-}" = "--bridge" ] && bridge=1
+    bridge=0 timing=0
+    for a in "$@"; do
+        case "$a" in
+            --bridge) bridge=1 ;;
+            --timing) timing=1 ;;
+        esac
+    done
     stop_app
-    start_app "$bridge"
+    start_app "$bridge" "$timing"
     ;;
 stop)
     stop_app

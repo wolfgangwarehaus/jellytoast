@@ -18,6 +18,11 @@ developer-facing history lives in [`docs/CHANGELOG.md`](docs/CHANGELOG.md).
 - **Tapping the icon brings jellytoast back.** On a phone, opening it again
   from the home screen now shows the app that's already running, straight
   away, instead of spinning and dropping you back on the home screen.
+- **Faster start on phones.** The phone interface no longer loads the
+  desktop window, the player and the cast code before it can draw: the
+  screen comes up first and the rest starts behind it. The app also sleeps
+  properly between events instead of waking five times a second, and
+  playback repaints the progress bars only when they visibly move.
 - **Tap an album's artist to open them.** On the album page the artist's name
   is a link to their page, on phones and the desktop; Back returns to the
   album.

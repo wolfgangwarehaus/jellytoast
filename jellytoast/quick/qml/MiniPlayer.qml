@@ -37,7 +37,9 @@ Rectangle {
         anchors.top: parent.top
         height: 3
         radius: 1.5
-        width: player.duration > 0 ? parent.width * player.position / player.duration : 0
+        // Whole pixels: a position tick (~10/s) then only repaints when
+        // the bar actually moves (a 4-minute song: once every ~0.6 s).
+        width: player.duration > 0 ? Math.round(parent.width * player.position / player.duration) : 0
         color: theme.accent
     }
 

@@ -49,6 +49,17 @@ def relay_to_running() -> bool:
 def main() -> None:
     if relay_to_running():
         sys.exit(0)
+    # Process setup that must precede the first Qt import (either path).
+    from jellytoast import (
+        boot_env,  # noqa: F401
+        quick,
+    )
+
+    if quick.wanted():
+        # The phone UI's own entry: never imports jellytoast.app (the
+        # whole desktop window, mpv, D-Bus — a second of a phone's start).
+        quick.main()
+        return
     from jellytoast.app import main as app_main
 
     app_main()

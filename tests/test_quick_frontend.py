@@ -325,3 +325,52 @@ def test_covers_request_reports_a_synchronous_cache_hit(qapp, monkeypatch):
     c.ready.connect(fired.append)
     assert c.request("al1/156/78") is True
     assert fired == ["al1/156/78"] and c.cached("al1/156/78")
+
+
+def test_launcher_picks_the_phone_entry_without_the_desktop_window(monkeypatch):
+    """On a phone the launcher starts the Quick UI's own entry: the desktop
+    window module (and what it imports) never loads."""
+    import sys
+    import types
+
+    from jellytoast import launch, quick
+
+    monkeypatch.setattr(launch, "relay_to_running", lambda: False)
+    monkeypatch.setattr(quick, "wanted", lambda: True)
+    ran = []
+    monkeypatch.setattr(quick, "main", lambda: ran.append("quick"))
+    stub = types.ModuleType("jellytoast.app")
+    stub.main = lambda: ran.append("app")
+    monkeypatch.setitem(sys.modules, "jellytoast.app", stub)
+    launch.main()
+    assert ran == ["quick"]
+    monkeypatch.setattr(quick, "wanted", lambda: False)
+    launch.main()
+    assert ran == ["quick", "app"]
+
+
+def test_core_starts_once_after_the_first_frame(qapp):
+    """mpv / media controls / cast start only after the window has drawn
+    (their imports are the slow part of a phone's start), once, on the GUI
+    thread — afterRendering itself comes from the render thread."""
+    import threading
+
+    from PySide6.QtCore import QCoreApplication, QObject, Signal
+
+    from jellytoast.quick import _FirstFrameRelay
+
+    class _Win(QObject):
+        afterRendering = Signal()
+
+    win = _Win()
+    ran = []
+    _FirstFrameRelay(win, lambda: ran.append(threading.current_thread().name))
+    t = threading.Thread(target=lambda: (win.afterRendering.emit(), win.afterRendering.emit()))
+    t.start()
+    t.join()
+    assert ran == []  # not yet: queued onto the GUI thread
+    for _ in range(20):
+        QCoreApplication.processEvents()
+        if ran:
+            break
+    assert ran == [threading.main_thread().name]

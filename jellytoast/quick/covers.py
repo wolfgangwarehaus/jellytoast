@@ -30,7 +30,12 @@ from PySide6.QtQuick import QQuickImageProvider
 
 logger = logging.getLogger(__name__)
 
-_MAX = 400  # decoded covers kept for QML (the pipeline has its own caches too)
+# Decoded covers kept for QML, bounded in BYTES: a grid tile is ~1 MB
+# (512² ARGB), so the old cap of 400 entries could sit on 400 MB — on a
+# phone that's the app getting killed in the background. (The pipeline
+# has its own, byte-bounded caches too; the same QPixmap is shared.)
+_MAX_BYTES = 48 * 1024 * 1024
+_MAX = 400  # and never more entries than this
 # A cover that failed to load is retried after these delays (seconds), then
 # left as a placeholder until the next app-wide retry (back online). Covers
 # used to give up after ONE failure for the whole session — a cold server's
@@ -53,6 +58,10 @@ def cover_source(item_id: str, px: int, tag: str = "") -> str:
     return f"image://cover/{ident}/{int(px)}"
 
 
+def _pix_bytes(pix: QPixmap) -> int:
+    return pix.width() * pix.height() * 4
+
+
 def _item_id(ident: str) -> str:
     """The server item id inside a cover identity (``<id>[@<tag>]``)."""
     return ident.split("@", 1)[0]
@@ -67,6 +76,7 @@ class Covers(QObject):
         self._tones: "OrderedDict[str, str]" = OrderedDict()
         self._tone_inflight: Set[str] = set()
         self._pix: "OrderedDict[str, QPixmap]" = OrderedDict()
+        self._pix_bytes = 0
         self._inflight: Set[str] = set()
         self._missing: Set[str] = set()
         self._fails: dict = {}  # key → failed attempts so far
@@ -199,9 +209,14 @@ class Covers(QObject):
             self._schedule_retry(key)
             return
         self._fails.pop(key, None)
+        old = self._pix.pop(key, None)
+        if old is not None:
+            self._pix_bytes -= _pix_bytes(old)
         self._pix[key] = pix
-        while len(self._pix) > _MAX:
-            self._pix.popitem(last=False)
+        self._pix_bytes += _pix_bytes(pix)
+        while self._pix and (len(self._pix) > _MAX or self._pix_bytes > _MAX_BYTES):
+            _k, gone = self._pix.popitem(last=False)
+            self._pix_bytes -= _pix_bytes(gone)
         self.ready.emit(key)
 
     def _schedule_retry(self, key: str) -> None:

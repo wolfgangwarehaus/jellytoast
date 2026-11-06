@@ -155,6 +155,41 @@ could run.
   teardown really deletes the window (a dead window can keep the mouse
   grab).
 
+## Performance (phone)
+
+Measured 2026-11-06 — the rig on the desktop (`JT_BOOT_TIMING=1`, QML disk
+cache warm) and one import profile on the 6T (`python -X importtime`, a
+cold Python 3.14 start). The phone runs pure-Python imports ~10× slower
+than this desktop; the GPU side is a different story and needs the device.
+
+- **Start.** Importing `jellytoast.app` cost 2.1 s on the phone before any
+  window could exist, ~1.3 s of it code the phone never shows (the desktop
+  window, mpv, D-Bus, cast discovery). Now `jellytoast.launch` sends a phone
+  shell to `quick.main()`, which never imports `app`; both entries share
+  the pre-Qt setup in `boot_env.py`. The core (mpv / MPRIS / cast) starts
+  after the first frame (`_FirstFrameRelay`), and the library's first page
+  is requested before it. Desktop rig: first frame 580–650 ms → 460 ms,
+  with mpv + dbus_next + pychromecast now imported after it.
+  Phone path marks: `dev/phone.sh restart --timing` then `dev/phone.sh log`.
+- **Idle.** Nothing renders while the app sits still (0 frames / 5 s on the
+  grid and with a sheet open; the frosted panes only re-blur when what's
+  behind them changes). The 200 ms "wake Python for signals" timer is gone
+  (`boot_env.install_signal_handlers`: a wake-up fd + QSocketNotifier).
+- **Playing.** Position ticks come ~11/s; each used to repaint the window
+  because the progress bars moved a fraction of a pixel. The mini player's
+  bar and the seek bar now round to whole pixels, so a tick repaints only
+  when something visibly moves (a 4-minute song: every ~0.6 s).
+- **Scrolling.** Covers decode on the pool and come to the GUI thread as
+  pixmaps (ui_helpers); a six-fling scroll over 500 albums showed no
+  Python stall over 25 ms on the GUI thread, ~3 QML→Python calls per
+  tile (`covers.cached/request/release`). The quick cover cache is bounded
+  in bytes now (48 MB; it was 400 entries ≈ 400 MB of 512² tiles).
+- **Still to measure on the device** (needs the phone free):
+  `FrostedPane` cost while scrolling (three live blurs: top bar, mini
+  player, sheets — `Settings → Frosted glass` off is the A/B), RSS after a
+  long browse, and the boot marks above. `QSG_RENDER_TIMING=1` in the
+  unit's environment prints per-frame render times to `log`.
+
 ## Notes / risks
 
 - The stream (phone → desktop session → video back) adds latency no UI can

@@ -11,6 +11,9 @@ Item {
     property int dragMs: 0
     readonly property int shown: dragging ? dragMs : position
     readonly property real frac: duration > 0 ? Math.min(1, Math.max(0, shown / duration)) : 0
+    // The fill's and handle's x in whole pixels: a position tick then only
+    // repaints the bar when it visibly moves, not ten times a second.
+    readonly property int fillPx: Math.round(track.width * frac)
 
     function fmt(ms) {
         var s = Math.max(0, Math.floor(ms / 1000))
@@ -36,14 +39,14 @@ Item {
             radius: height / 2
             color: theme.groove
             Rectangle {
-                width: parent.width * root.frac
+                width: root.fillPx
                 height: parent.height
                 radius: height / 2
                 color: theme.text
             }
         }
         Rectangle {
-            x: parent.width * root.frac - width / 2
+            x: root.fillPx - width / 2
             anchors.verticalCenter: parent.verticalCenter
             width: root.dragging ? 18 : 12
             height: width
