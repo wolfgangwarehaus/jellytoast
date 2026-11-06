@@ -32,9 +32,12 @@ logger = logging.getLogger(__name__)
 
 # Decoded covers kept for QML, bounded in BYTES: a grid tile is ~1 MB
 # (512² ARGB), so the old cap of 400 entries could sit on 400 MB — on a
-# phone that's the app getting killed in the background. (The pipeline
-# has its own, byte-bounded caches too; the same QPixmap is shared.)
-_MAX_BYTES = 48 * 1024 * 1024
+# phone that's the app getting killed in the background. 96 MB is ~16
+# screens of grid: scrolling back over what you just browsed finds it
+# (a tighter 48 MB re-decoded covers on the way back — a pulse of
+# placeholders and the decode pool at full tilt). The pipeline's own
+# cache shares the same QPixmap objects (ui_helpers, 128 MB).
+_MAX_BYTES = 96 * 1024 * 1024
 _MAX = 400  # and never more entries than this
 # A cover that failed to load is retried after these delays (seconds), then
 # left as a placeholder until the next app-wide retry (back online). Covers

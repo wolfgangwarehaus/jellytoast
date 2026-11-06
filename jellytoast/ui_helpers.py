@@ -972,7 +972,32 @@ def scale_pixmap_for_dpr(
 # 256 is generous enough that a typical browse never repeats a fetch
 # but caps growth to single-digit megabytes.
 _IMAGE_CACHE_MAX = 256
+# …and in bytes: the count cap assumed ~200 px desktop tiles. The phone
+# grid asks for 512² tiles (1 MB each), and 256 of those was ~256 MB of
+# the app's 724 MB resident after a long browse on the 6T. 128 MB keeps
+# ~20 screens of phone grid (so scrolling back doesn't re-decode) and
+# never binds on the desktop's small tiles.
+_IMAGE_CACHE_BUDGET_BYTES = 128 * 1024 * 1024
 _image_cache: "OrderedDict[str, QPixmap]" = OrderedDict()
+
+
+def _pixmap_bytes(pix: "QPixmap") -> int:
+    return pix.width() * pix.height() * 4
+
+
+def _image_cache_put(cache_key: str, pix: "QPixmap") -> None:
+    """Store a derived pixmap (LRU; most recent at the end), evicting the
+    oldest past the entry cap or the byte budget. The total is summed on
+    each store (256 entries at most — cheaper than keeping a running
+    count honest against tests that poke the dict directly)."""
+    _image_cache[cache_key] = pix
+    _image_cache.move_to_end(cache_key)
+    total = sum(_pixmap_bytes(p) for p in _image_cache.values())
+    while len(_image_cache) > 1 and (
+        len(_image_cache) > _IMAGE_CACHE_MAX or total > _IMAGE_CACHE_BUDGET_BYTES
+    ):
+        _, gone = _image_cache.popitem(last=False)
+        total -= _pixmap_bytes(gone)
 
 
 def clear_image_caches():
@@ -1342,10 +1367,7 @@ def load_image_async(
     if raw is not None and _raw_covers_target(raw.width(), raw.height(), target_w, target_h):
         _raw_image_cache.move_to_end(sem_key)
         pix = _derive_pixmap(raw, target_w, target_h, rounded_radius)
-        _image_cache[cache_key] = pix
-        _image_cache.move_to_end(cache_key)
-        while len(_image_cache) > _IMAGE_CACHE_MAX:
-            _image_cache.popitem(last=False)
+        _image_cache_put(cache_key, pix)
         _disk_image_cache.put(cache_key, pix)
         callback(pix)
         return
@@ -1385,10 +1407,7 @@ def load_image_async(
                 _disk_image_cache.put(cache_key, pix)
             else:
                 pix = QPixmap.fromImage(img)
-            _image_cache[cache_key] = pix
-            _image_cache.move_to_end(cache_key)
-            while len(_image_cache) > _IMAGE_CACHE_MAX:
-                _image_cache.popitem(last=False)
+            _image_cache_put(cache_key, pix)
             callback(pix)
             return
         _after_disk_miss(
@@ -1967,10 +1986,7 @@ def _deliver_decoded(
     # on failure too, which made a transient server hiccup wedge the slot
     # permanently (every retry returned the cached placeholder until 256
     # newer entries evicted it, which on a real library never happens).
-    _image_cache[cache_key] = pix
-    _image_cache.move_to_end(cache_key)
-    while len(_image_cache) > _IMAGE_CACHE_MAX:
-        _image_cache.popitem(last=False)
+    _image_cache_put(cache_key, pix)
     _disk_image_cache.put(cache_key, pix)
     for cb, _err in _inflight_subscribers.pop(cache_key, []):
         # Guard each subscriber independently: many widgets coalesce onto

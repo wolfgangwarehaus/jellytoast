@@ -157,38 +157,56 @@ could run.
 
 ## Performance (phone)
 
-Measured 2026-11-06 — the rig on the desktop (`JT_BOOT_TIMING=1`, QML disk
-cache warm) and one import profile on the 6T (`python -X importtime`, a
-cold Python 3.14 start). The phone runs pure-Python imports ~10× slower
-than this desktop; the GPU side is a different story and needs the device.
+Measured 2026-11-06 on the 6T (OnePlus 6T, Plasma Mobile, Python 3.14)
+with `dev/phone.sh restart --timing` / the test bridge, and the rig on the
+desktop. The phone runs pure-Python imports ~10× slower than this desktop.
 
-- **Start.** Importing `jellytoast.app` cost 2.1 s on the phone before any
-  window could exist, ~1.3 s of it code the phone never shows (the desktop
-  window, mpv, D-Bus, cast discovery). Now `jellytoast.launch` sends a phone
-  shell to `quick.main()`, which never imports `app`; both entries share
-  the pre-Qt setup in `boot_env.py`. The core (mpv / MPRIS / cast) starts
-  after the first frame (`_FirstFrameRelay`), and the library's first page
-  is requested before it. Desktop rig: first frame 580–650 ms → 460 ms,
-  with mpv + dbus_next + pychromecast now imported after it.
-  Phone path marks: `dev/phone.sh restart --timing` then `dev/phone.sh log`.
+- **Start: 5.3 s → 1.8 s to the first frame** (launch → `quick: first
+  frame rendered`, wall clock from the unit's start; 1.74 s warm). Before,
+  importing `jellytoast.app` alone took 2.1–2.9 s on the phone, ~1.3 s of it
+  code the phone never shows (the desktop window, mpv, D-Bus, cast
+  discovery). Now `jellytoast.launch` sends a phone shell to `quick.main()`,
+  which never imports `app`; both entries share the pre-Qt setup in
+  `boot_env.py`. The core (mpv / MPRIS / cast) starts after the first frame
+  (`_FirstFrameRelay`); the library's first page is requested before it.
+  Phone split now: ~0.45 s to Python + Qt, 0.27 s bridge objects, 0.57–0.9 s
+  QML load (the QML disk cache in `~/.cache/jellytoast/qmlcache` is what
+  makes the warm number), 0.25 s to the frame, then 0.35 s core.
+- **Memory after a 12-fling browse: 794 MB → 518 MB resident.** 338 MB of
+  the old figure was memory the app had freed but glibc kept (`mallinfo2`
+  `fordblks`; `malloc_trim` gave 244 MB straight back): image buffers are
+  ~1 MB, past glibc's dynamic mmap threshold, so they lived on the main
+  heap. `boot_env.tune_malloc` fixes the mmap threshold at 256 KB and trims
+  promptly. The rest was the shared pixmap cache holding 256 phone-sized
+  tiles: both cover caches are byte-bounded now (quick 96 MB, ui_helpers
+  128 MB — tight enough caps re-decode covers when scrolling back).
 - **Idle.** Nothing renders while the app sits still (0 frames / 5 s on the
-  grid and with a sheet open; the frosted panes only re-blur when what's
-  behind them changes). The 200 ms "wake Python for signals" timer is gone
-  (`boot_env.install_signal_handlers`: a wake-up fd + QSocketNotifier).
-- **Playing.** Position ticks come ~11/s; each used to repaint the window
-  because the progress bars moved a fraction of a pixel. The mini player's
-  bar and the seek bar now round to whole pixels, so a tick repaints only
-  when something visibly moves (a 4-minute song: every ~0.6 s).
-- **Scrolling.** Covers decode on the pool and come to the GUI thread as
-  pixmaps (ui_helpers); a six-fling scroll over 500 albums showed no
-  Python stall over 25 ms on the GUI thread, ~3 QML→Python calls per
-  tile (`covers.cached/request/release`). The quick cover cache is bounded
-  in bytes now (48 MB; it was 400 entries ≈ 400 MB of 512² tiles).
-- **Still to measure on the device** (needs the phone free):
-  `FrostedPane` cost while scrolling (three live blurs: top bar, mini
-  player, sheets — `Settings → Frosted glass` off is the A/B), RSS after a
-  long browse, and the boot marks above. `QSG_RENDER_TIMING=1` in the
-  unit's environment prints per-frame render times to `log`.
+  grid, with a sheet open, on Now Playing). The 200 ms "wake Python for
+  signals" timer is gone (`boot_env.install_signal_handlers`: a wake-up
+  fd + QSocketNotifier), both UIs.
+- **Playing.** Position ticks come ~11/s; each repainted the window because
+  the progress bars moved a fraction of a pixel. The mini player's bar and
+  the seek bar round to whole pixels: a tick repaints only when something
+  visibly moves (a 4-minute song: every ~0.6 s).
+- **Scrolling.** Covers decode on the pool; a six-fling scroll over 500
+  albums showed no Python stall over 25 ms on the GUI thread. The GPU is
+  not the limit (clock ~260 of 710 MHz while flinging, frost on or off).
+  **Frosted glass doubles the app's CPU while scrolling** (7.6 s vs 3.7 s
+  per 16 s of flinging): each `FrostedPane` is a live `ShaderEffectSource`
+  of the page, so the top bar and the mini player each re-render the page
+  every frame. Not changed yet — two candidates, both need an A/B on the
+  device with the window exposed and the covers already cached (otherwise
+  the decode pool dominates the reading): (a) one shared capture of the
+  page per frame that every pane crops from; (b) a smaller blur
+  (`blurMax` 48 → 24, multiplier 1.0) if the passes rather than the capture
+  are the cost. Refreshing the capture on alternate frames was tried and
+  reverted: `scheduleUpdate()` itself requests a frame, which looped
+  (55k frames / 5 s on Now Playing in the rig).
+- Measuring: the window must be *exposed* (another app in front → 0 frames
+  and nothing to measure); keep the screen on with a `systemd-inhibit`
+  user unit + `kscreen-doctor --dpms on`; count frames via
+  `win.afterRendering`; `/proc/<pid>/stat` utime+stime for the app's CPU;
+  `/sys/class/devfreq/5000000.gpu/cur_freq` for the GPU clock.
 
 ## Notes / risks
 

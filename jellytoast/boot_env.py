@@ -316,6 +316,42 @@ def _enable_faulthandler() -> None:
         pass
 
 
+def tune_malloc() -> bool:
+    """glibc: give freed image buffers back to the OS.
+
+    Album art comes and goes in ~1 MB buffers (a 512² cover). glibc's
+    dynamic mmap threshold grows past that after the first big free, so
+    those buffers then live on the main heap — and a freed heap block
+    under live ones is never returned. On the 6T a 12-fling browse took
+    the app from 377 MB to 794 MB resident with 338 MB of it *free* in
+    the allocator (``mallinfo2``); ``malloc_trim`` gave 244 MB straight
+    back. A fixed mmap threshold keeps image-sized buffers in their own
+    mappings (returned on free), and a low trim threshold hands the heap
+    top back promptly. Both read by glibc at the next allocation, so this
+    runs at import, before Qt. No-op off glibc (musl, Windows, macOS).
+    True when applied."""
+    if not sys.platform.startswith("linux"):
+        return False
+    try:
+        import ctypes
+
+        libc = ctypes.CDLL("libc.so.6")
+        mallopt = libc.mallopt
+        mallopt.argtypes = (ctypes.c_int, ctypes.c_int)
+        mallopt.restype = ctypes.c_int
+        M_TRIM_THRESHOLD, M_TOP_PAD, M_MMAP_THRESHOLD = -1, -2, -3
+        ok = mallopt(M_MMAP_THRESHOLD, 256 * 1024) == 1
+        ok = mallopt(M_TRIM_THRESHOLD, 4 * 1024 * 1024) == 1 and ok
+        ok = mallopt(M_TOP_PAD, 1024 * 1024) == 1 and ok
+        return ok
+    except Exception as e:  # musl has no mallopt; nothing to tune
+        logger.debug("malloc tuning unavailable: %s", e)
+        return False
+
+
+_MALLOC_TUNED = tune_malloc()
+
+
 def install_signal_handlers(app) -> None:
     """SIGINT / SIGTERM / SIGHUP → a clean ``app.quit()`` (cast cleanup, queue
     save). Python only runs a signal handler on its own bytecode, and the Qt
