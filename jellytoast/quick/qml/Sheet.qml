@@ -17,16 +17,18 @@ Drawer {
     dim: true
     Overlay.modal: Rectangle { color: "#80000000" }
 
-    // Frosted glass over the app (the window's content; the sheet lives in
-    // the overlay, so it never samples itself). Runs past the bottom edge so
-    // only the top corners are rounded; `track` follows the slide-in.
+    // Frosted glass over the app (the page stack, or Now Playing while it's
+    // up — both layers, so this is one quad per frame; the sheet lives in
+    // the overlay, outside them). Runs past the bottom edge so only the top
+    // corners are rounded; `track` follows the slide-in.
     background: Item {
         FrostedPane {
             anchors.fill: parent
             anchors.bottomMargin: -18
             // Only while open: a sheet keeping the window's content as its
             // texture source crashed window teardown.
-            behind: sheet.visible ? ApplicationWindow.contentItem : null
+            // (The window is null until the sheet is parented into the overlay.)
+            behind: sheet.visible && ApplicationWindow.window ? ApplicationWindow.window.frostBehind : null
             track: sheet.position
             radius: 18
             tint: theme.surface

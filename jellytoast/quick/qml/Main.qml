@@ -8,6 +8,10 @@ import QtQuick.Layouts
 
 ApplicationWindow {
     id: win
+    // What a bottom sheet's frosted glass samples (sheets live in the
+    // overlay, outside this file's ids): Now Playing while it's up, else
+    // the page stack. Both render as a layer while frost is on — see stack.
+    readonly property Item frostBehind: nowPlaying.shown ? nowPlaying : stack
     width: 402
     height: 740
     visible: true
@@ -245,6 +249,13 @@ ApplicationWindow {
 
         StackView {
             id: stack
+            // A layer while frost is on: the frosted panes (top bar, mini
+            // player, sheets) each capture the page every frame, and a
+            // layered item renders as ONE textured quad instead of the
+            // whole page tree — on the 6T the per-pane traversal doubled
+            // the app's CPU while scrolling. The layer itself costs a
+            // render-to-texture pass the GPU has room for.
+            layer.enabled: prefs.frosted
             objectName: "stack"
             anchors.fill: parent
             z: 0
@@ -353,6 +364,7 @@ ApplicationWindow {
         width: win.width
         height: win.height
         z: 10
+        layer.enabled: prefs.frosted && shown  // its sheets sample it (one quad)
         onOpenCast: castSheet.open()
         onGoToArtist: artist => {
             var cur = stack.currentItem

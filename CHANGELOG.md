@@ -24,8 +24,9 @@ developer-facing history lives in [`docs/CHANGELOG.md`](docs/CHANGELOG.md).
   1.8 s to the first screen instead of about 5. It also uses far less
   memory after a long browse (artwork the app had let go of was being kept
   by the system allocator), sleeps properly between events instead of
-  waking five times a second, and repaints the progress bars only when
-  they visibly move.
+  waking five times a second, repaints the progress bars only when they
+  visibly move, and the frosted glass no longer costs extra while
+  scrolling.
 - **Tap an album's artist to open them.** On the album page the artist's name
   is a link to their page, on phones and the desktop; Back returns to the
   album.

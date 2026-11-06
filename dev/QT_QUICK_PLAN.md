@@ -191,17 +191,27 @@ desktop. The phone runs pure-Python imports ~10× slower than this desktop.
 - **Scrolling.** Covers decode on the pool; a six-fling scroll over 500
   albums showed no Python stall over 25 ms on the GUI thread. The GPU is
   not the limit (clock ~260 of 710 MHz while flinging, frost on or off).
-  **Frosted glass doubles the app's CPU while scrolling** (7.6 s vs 3.7 s
-  per 16 s of flinging): each `FrostedPane` is a live `ShaderEffectSource`
-  of the page, so the top bar and the mini player each re-render the page
-  every frame. Not changed yet — two candidates, both need an A/B on the
-  device with the window exposed and the covers already cached (otherwise
-  the decode pool dominates the reading): (a) one shared capture of the
-  page per frame that every pane crops from; (b) a smaller blur
-  (`blurMax` 48 → 24, multiplier 1.0) if the passes rather than the capture
-  are the cost. Refreshing the capture on alternate frames was tried and
-  reverted: `scheduleUpdate()` itself requests a frame, which looped
-  (55k frames / 5 s on Now Playing in the rig).
+  **Frosted glass used to double the app's CPU while scrolling** (7.6 s vs
+  3.7 s per 16 s of flinging): each `FrostedPane` is a live
+  `ShaderEffectSource` of the page, so the top bar and the mini player each
+  re-rendered the whole page tree every frame. Fixed by rendering the page
+  as a *layer* while frost is on (`stack.layer.enabled`, and Now Playing's
+  while it's up, for its sheets): a layered item renders as one textured
+  quad, so a pane's capture is one draw, and the panes' blurs stay as they
+  were. Measured on the 6T at equal cover-decode counts: frost on now costs
+  the same CPU as frost off; the per-pane version cost 30–100% more.
+  Two dead ends, for the record: refreshing a pane's capture on alternate
+  frames (`live: false` + `scheduleUpdate()` from `afterAnimating`) loops —
+  the update itself requests a frame; and one shared `ShaderEffectSource`
+  of the page that panes crop with a second `ShaderEffectSource` loops too
+  (two live sources feeding each other).
+- **Follow-up — covers re-derived on cached screens.** Dragging one screen
+  over a range already scrolled twice still produced 102 `covers.request`
+  misses and 87 `_derive_pixmap` calls (512² tiles: a smooth scale + corner
+  rounding each, on the GUI thread, ~ms each on the phone) with both cover
+  caches full (94 / 126 entries). The LRU should hold the last ~30 tiles;
+  something asks under keys that aren't retained. Instrument the key on
+  both sides (`Cover.key` vs what `_landed` stores) before touching caps.
 - Measuring: the window must be *exposed* (another app in front → 0 frames
   and nothing to measure); keep the screen on with a `systemd-inhibit`
   user unit + `kscreen-doctor --dpms on`; count frames via
