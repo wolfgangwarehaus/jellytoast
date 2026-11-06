@@ -205,13 +205,17 @@ desktop. The phone runs pure-Python imports ~10× slower than this desktop.
   the update itself requests a frame; and one shared `ShaderEffectSource`
   of the page that panes crop with a second `ShaderEffectSource` loops too
   (two live sources feeding each other).
-- **Follow-up — covers re-derived on cached screens.** Dragging one screen
-  over a range already scrolled twice still produced 102 `covers.request`
-  misses and 87 `_derive_pixmap` calls (512² tiles: a smooth scale + corner
-  rounding each, on the GUI thread, ~ms each on the phone) with both cover
-  caches full (94 / 126 entries). The LRU should hold the last ~30 tiles;
-  something asks under keys that aren't retained. Instrument the key on
-  both sides (`Cover.key` vs what `_landed` stores) before touching caps.
+- **Not a problem after all — covers on cached screens.** A one-screen
+  drag over a visited range looked like 102 cache misses and 87 GUI-thread
+  re-derivations with both caches full. It was the rig: `QTest` mouse
+  events carry their own clock, which only advances by the `delay` each
+  call is given, so a 300 ms drag read as ~15 ms and released at twenty
+  times the velocity — one "400 px" drag flung ~2,900 px (a hundred grid
+  rows), and of course that loaded a hundred covers. `Rig.drag` now passes
+  the real step timing (held drag: 346 px; flicked: ~980 px; swipe:
+  ~1,300 px). With that, scrolling back over a visited screen is 5 cache
+  hits, 0 loads. Keep in mind for every earlier scroll figure above: the
+  "6 flings" there traversed most of the library.
 - Measuring: the window must be *exposed* (another app in front → 0 frames
   and nothing to measure); keep the screen on with a `systemd-inhibit`
   user unit + `kscreen-doctor --dpms on`; count frames via

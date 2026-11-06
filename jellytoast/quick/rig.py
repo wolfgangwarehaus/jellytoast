@@ -300,16 +300,26 @@ class Rig:
         a = self.point(start)
         b = self.point(end) if end is not None else QPoint(int(a.x() + dx), int(a.y() + dy))
         w = self.window
-        QTest.mousePress(w, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier, a)
+        # QTest stamps its mouse events with its own clock, which only
+        # advances by the `delay` passed to each call — not by the real
+        # time `pump()` sleeps. Without it a 300 ms drag looked like a
+        # 15 ms one to the Flickable and released at twenty times the
+        # velocity: one "400 px" drag flung a hundred grid rows (2026-11-06).
+        step_ms = max(1, ms // steps)
+        QTest.mousePress(w, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier, a, step_ms)
         for i in range(1, steps + 1):
             f = i / steps
             QTest.mouseMove(
-                w, QPoint(int(a.x() + (b.x() - a.x()) * f), int(a.y() + (b.y() - a.y()) * f))
+                w,
+                QPoint(int(a.x() + (b.x() - a.x()) * f), int(a.y() + (b.y() - a.y()) * f)),
+                step_ms,
             )
-            pump(max(1, ms // steps))
+            pump(step_ms)
         if hold_end:
+            # A still finger before the release: no flick.
+            QTest.mouseMove(w, b, hold_end)
             pump(hold_end)
-        QTest.mouseRelease(w, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier, b)
+        QTest.mouseRelease(w, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier, b, step_ms)
         pump(settle)
 
     def swipe(
